@@ -4,6 +4,9 @@ import { motion, useReducedMotion } from "framer-motion";
 import Image from "next/image";
 import type { ReactNode } from "react";
 
+const DOWNLOAD_URL =
+  "https://github.com/PinticeBTW/altara-app/releases/latest/download/altara-setup.exe";
+
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
   visible: { opacity: 1, y: 0 },
@@ -66,10 +69,20 @@ function Logo() {
   );
 }
 
-function NavLink({ href, children }: { href: string; children: ReactNode }) {
+function NavLink({
+  href,
+  children,
+  isExternal = false,
+}: {
+  href: string;
+  children: ReactNode;
+  isExternal?: boolean;
+}) {
   return (
     <a
       href={href}
+      target={isExternal ? "_blank" : undefined}
+      rel={isExternal ? "noopener noreferrer" : undefined}
       className="text-sm font-medium text-slate-300 transition-colors duration-300 hover:text-white"
     >
       {children}
@@ -81,16 +94,20 @@ function ButtonLink({
   href,
   children,
   variant = "primary",
+  isExternal = false,
 }: {
   href: string;
   children: ReactNode;
   variant?: "primary" | "secondary";
+  isExternal?: boolean;
 }) {
   const isPrimary = variant === "primary";
 
   return (
     <motion.a
       href={href}
+      target={isExternal ? "_blank" : undefined}
+      rel={isExternal ? "noopener noreferrer" : undefined}
       whileHover={{ scale: 1.04, y: -2 }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: "spring", stiffness: 360, damping: 24 }}
@@ -284,11 +301,13 @@ export default function Home() {
           <Logo />
           <div className="hidden items-center gap-8 md:flex">
             <NavLink href="#features">Features</NavLink>
-            <NavLink href="#download">Download</NavLink>
+            <NavLink href={DOWNLOAD_URL} isExternal>Download</NavLink>
             <NavLink href="#browser">Browser</NavLink>
           </div>
           <a
-            href="#download"
+            href={DOWNLOAD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
             className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 shadow-[0_12px_34px_rgba(255,255,255,0.16)] transition-transform duration-300 hover:scale-105"
           >
             Download
@@ -335,7 +354,7 @@ export default function Home() {
               transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
               className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row"
             >
-              <ButtonLink href="#download">Download Altara</ButtonLink>
+              <ButtonLink href={DOWNLOAD_URL} isExternal>Download Altara</ButtonLink>
               <ButtonLink href="#browser" variant="secondary">Try in Browser</ButtonLink>
             </motion.div>
 
@@ -400,7 +419,7 @@ export default function Home() {
                 The fastest way into Altara, tuned for calls, messages and daily crew spaces.
               </p>
             </div>
-            <ButtonLink href="#download">Download Altara</ButtonLink>
+            <ButtonLink href={DOWNLOAD_URL} isExternal>Download Altara</ButtonLink>
           </div>
         </section>
 
