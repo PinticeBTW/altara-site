@@ -5,7 +5,7 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 
 const DOWNLOAD_URL =
-  "https://github.com/PinticeBTW/altara-app/releases/latest/download/altara-setup.exe";
+  "https://github.com/PinticeBTW/altara-updates/releases/latest/download/Altara.Setup.exe";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -145,11 +145,7 @@ function FloatingCard({
   return (
     <motion.div
       initial={{ opacity: 0, y: 18 }}
-      animate={
-        reduceMotion
-          ? { opacity: 1, y: 0 }
-          : { opacity: 1, y: [0, -8, 0] }
-      }
+      animate={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 1, y: [0, -8, 0] }}
       transition={{
         opacity: { duration: 0.7, delay },
         y: { duration: 5.5, delay, repeat: Infinity, ease: "easeInOut" },
@@ -176,7 +172,10 @@ function AppMockup() {
         role="img"
         aria-label="Altara app interface showing spaces, messages and call status"
       >
-        <div className="absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-cyan-200/45 to-transparent" aria-hidden="true" />
+        <div
+          className="absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-cyan-200/45 to-transparent"
+          aria-hidden="true"
+        />
 
         <div className="grid min-h-[25rem] grid-cols-[4.75rem_1fr] overflow-hidden rounded-[1.5rem] border border-white/[0.07] bg-[#0a0f1c] sm:grid-cols-[5.5rem_15rem_1fr]">
           <aside className="flex flex-col items-center gap-3 border-r border-white/[0.07] bg-white/[0.035] px-3 py-5" aria-label="Spaces sidebar">
@@ -297,13 +296,19 @@ export default function Home() {
       />
 
       <header className="sticky top-0 z-50 border-b border-white/[0.07] bg-slate-950/48 backdrop-blur-2xl">
-        <nav className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-5 sm:px-6 lg:px-8" aria-label="Primary navigation">
+        <nav
+          className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-5 sm:px-6 lg:px-8"
+          aria-label="Primary navigation"
+        >
           <Logo />
           <div className="hidden items-center gap-8 md:flex">
             <NavLink href="#features">Features</NavLink>
-            <NavLink href={DOWNLOAD_URL} isExternal>Download</NavLink>
+            <NavLink href={DOWNLOAD_URL} isExternal>
+              Download
+            </NavLink>
             <NavLink href="#browser">Browser</NavLink>
           </div>
+
           <a
             href={DOWNLOAD_URL}
             target="_blank"
@@ -316,7 +321,10 @@ export default function Home() {
       </header>
 
       <main id="home" className="relative z-10">
-        <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-7xl flex-col items-center px-5 pb-20 pt-20 text-center sm:px-6 sm:pt-24 lg:px-8" aria-labelledby="hero-title">
+        <section
+          className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-7xl flex-col items-center px-5 pb-20 pt-20 text-center sm:px-6 sm:pt-24 lg:px-8"
+          aria-labelledby="hero-title"
+        >
           <motion.div
             initial="hidden"
             animate="visible"
@@ -354,8 +362,12 @@ export default function Home() {
               transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
               className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row"
             >
-              <ButtonLink href={DOWNLOAD_URL} isExternal>Download Altara</ButtonLink>
-              <ButtonLink href="#browser" variant="secondary">Try in Browser</ButtonLink>
+              <ButtonLink href={DOWNLOAD_URL} isExternal>
+                Download Altara
+              </ButtonLink>
+              <ButtonLink href="#browser" variant="secondary">
+                Try in Browser
+              </ButtonLink>
             </motion.div>
 
             <motion.p
@@ -370,7 +382,11 @@ export default function Home() {
           <AppMockup />
         </section>
 
-        <section id="features" className="mx-auto w-full max-w-7xl px-5 pb-24 sm:px-6 lg:px-8" aria-labelledby="features-title">
+        <section
+          id="features"
+          className="mx-auto w-full max-w-7xl px-5 pb-24 sm:px-6 lg:px-8"
+          aria-labelledby="features-title"
+        >
           <motion.div
             initial="hidden"
             whileInView="visible"
@@ -383,8 +399,13 @@ export default function Home() {
               transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
               className="mx-auto max-w-2xl text-center"
             >
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-100/68">Why Altara</p>
-              <h2 id="features-title" className="mt-3 text-3xl font-bold tracking-[-0.045em] text-white sm:text-4xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-100/68">
+                Why Altara
+              </p>
+              <h2
+                id="features-title"
+                className="mt-3 text-3xl font-bold tracking-[-0.045em] text-white sm:text-4xl"
+              >
                 Built for focused communication.
               </h2>
             </motion.div>
@@ -401,29 +422,43 @@ export default function Home() {
                   <div className="mb-7 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.07] text-sm font-bold text-cyan-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
                     0{index + 1}
                   </div>
-                  <h3 className="text-xl font-semibold tracking-[-0.03em] text-white">{feature.title}</h3>
-                  <p className="mt-3 text-sm leading-6 text-slate-400">{feature.description}</p>
+                  <h3 className="text-xl font-semibold tracking-[-0.03em] text-white">
+                    {feature.title}
+                  </h3>
+                  <p className="mt-3 text-sm leading-6 text-slate-400">
+                    {feature.description}
+                  </p>
                 </motion.article>
               ))}
             </div>
           </motion.div>
         </section>
 
-        <section id="download" className="mx-auto w-full max-w-7xl px-5 pb-20 sm:px-6 lg:px-8" aria-labelledby="download-title">
+        <section
+          id="download"
+          className="mx-auto w-full max-w-7xl px-5 pb-20 sm:px-6 lg:px-8"
+          aria-labelledby="download-title"
+        >
           <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-6 rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 text-center shadow-[0_30px_100px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl sm:p-8 md:flex-row md:text-left">
             <div>
-              <h2 id="download-title" className="text-2xl font-bold tracking-[-0.04em] text-white sm:text-3xl">
+              <h2
+                id="download-title"
+                className="text-2xl font-bold tracking-[-0.04em] text-white sm:text-3xl"
+              >
                 Start with the desktop app.
               </h2>
               <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">
                 The fastest way into Altara, tuned for calls, messages and daily crew spaces.
               </p>
             </div>
-            <ButtonLink href={DOWNLOAD_URL} isExternal>Download Altara</ButtonLink>
+
+            <ButtonLink href={DOWNLOAD_URL} isExternal>
+              Download Altara
+            </ButtonLink>
           </div>
         </section>
 
-        <section id="browser" className="sr-only" aria-labelledby="browser-title">
+                <section id="browser" className="sr-only" aria-labelledby="browser-title">
           <h2 id="browser-title">Try Altara in your browser</h2>
         </section>
       </main>
