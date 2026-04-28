@@ -19,11 +19,127 @@ export function CustomCursor() {
     let ringX = mouseX;
     let ringY = mouseY;
     let frame = 0;
+    let previewFrame: HTMLElement | null = null;
+
+    const resetPreviewTilt = () => {
+      if (!previewFrame) {
+        return;
+      }
+
+      previewFrame.style.transform = "";
+      previewFrame.style.setProperty("--glare-x", "92%");
+      previewFrame.style.setProperty("--glare-y", "10%");
+      previewFrame.style.setProperty("--spot-x", "92%");
+      previewFrame.style.setProperty("--spot-y", "10%");
+      previewFrame.style.setProperty("--spot-opacity", "0");
+      previewFrame.style.setProperty("--edge-left", "0.04");
+      previewFrame.style.setProperty("--edge-right", "0.08");
+      previewFrame.style.setProperty("--edge-top", "0.08");
+      previewFrame.style.setProperty("--edge-bottom", "0.04");
+      previewFrame.style.setProperty("--shade-left", "0.04");
+      previewFrame.style.setProperty("--shade-right", "0.03");
+      previewFrame.style.setProperty("--shade-top", "0.03");
+      previewFrame.style.setProperty("--shade-bottom", "0.04");
+      previewFrame.style.setProperty("--shadow-x", "52px");
+      previewFrame.style.setProperty("--shadow-y", "70px");
+      previewFrame.style.setProperty("--shadow-blur", "110px");
+      previewFrame.style.setProperty("--purple-shadow-x", "-18px");
+      previewFrame.style.setProperty("--purple-shadow-y", "26px");
+      previewFrame.style.setProperty("--depth-x", "0px");
+      previewFrame.style.setProperty("--depth-y", "0px");
+      previewFrame.classList.remove("is-tilting");
+    };
+
+    const tiltPreview = (event: MouseEvent) => {
+      previewFrame ??= document.querySelector<HTMLElement>("[data-tilt-preview]");
+
+      if (!previewFrame) {
+        return;
+      }
+
+      const hitbox = previewFrame.closest<HTMLElement>(".demo") ?? previewFrame;
+      const rect = hitbox.getBoundingClientRect();
+      const inside =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+
+      if (!inside) {
+        if (previewFrame.classList.contains("is-tilting")) {
+          resetPreviewTilt();
+        }
+
+        return;
+      }
+
+      const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
+      const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+      const leftSide = x < 0;
+      const bodyX = leftSide ? x * 0.42 : x * 0.78;
+      const bodyY = y * 0.78;
+      const reactionX = -bodyX;
+      const reactionY = -bodyY;
+      const absX = Math.abs(bodyX);
+      const absY = Math.abs(bodyY);
+      const cursorLift = Math.min(1, 0.18 + Math.abs(x) * 0.5 + Math.abs(y) * 0.4);
+      const cornerLift = Math.min(1, 0.16 + absX * 0.52 + absY * 0.44);
+      const rotateX = 5 + reactionY * 6;
+      const rotateY = -10 + reactionX * 7.5;
+      const rotateZ = -1 + reactionX * 0.28;
+      const shiftX = reactionX * 8;
+      const shiftY = reactionY * 5;
+      const depth = 24 + cornerLift * 14;
+      const scale = 1.004 + cornerLift * 0.006;
+      const shadowX = 52 + bodyX * 24;
+      const shadowY = 70 + bodyY * 12;
+      const purpleShadowX = -18 - bodyX * 20;
+      const purpleShadowY = 26 - bodyY * 9;
+      const leftLight = 0.03 + Math.max(0, -x) * 0.16;
+      const rightLight = 0.04 + Math.max(0, x) * 0.28;
+      const topLight = 0.04 + Math.max(0, -y) * 0.3;
+      const bottomLight = 0.03 + Math.max(0, y) * 0.24;
+      const leftShade = 0.03 + Math.max(0, x) * 0.28;
+      const rightShade = 0.03 + Math.max(0, -x) * 0.12;
+      const topShade = 0.02 + Math.max(0, y) * 0.22;
+      const bottomShade = 0.03 + Math.max(0, -y) * 0.22;
+      const spotOpacity = (leftSide ? 0.14 : 0.22) + cursorLift * (leftSide ? 0.16 : 0.24);
+
+      previewFrame.style.transform = `
+        rotateX(${rotateX.toFixed(2)}deg)
+        rotateY(${rotateY.toFixed(2)}deg)
+        rotateZ(${rotateZ.toFixed(2)}deg)
+        translate3d(${shiftX.toFixed(1)}px, ${shiftY.toFixed(1)}px, ${depth.toFixed(1)}px)
+        scale(${scale.toFixed(3)})
+      `;
+      previewFrame.style.setProperty("--glare-x", `${((x + 1) * 50).toFixed(1)}%`);
+      previewFrame.style.setProperty("--glare-y", `${((y + 1) * 50).toFixed(1)}%`);
+      previewFrame.style.setProperty("--spot-x", `${((x + 1) * 50).toFixed(1)}%`);
+      previewFrame.style.setProperty("--spot-y", `${((y + 1) * 50).toFixed(1)}%`);
+      previewFrame.style.setProperty("--spot-opacity", spotOpacity.toFixed(3));
+      previewFrame.style.setProperty("--edge-left", leftLight.toFixed(3));
+      previewFrame.style.setProperty("--edge-right", rightLight.toFixed(3));
+      previewFrame.style.setProperty("--edge-top", topLight.toFixed(3));
+      previewFrame.style.setProperty("--edge-bottom", bottomLight.toFixed(3));
+      previewFrame.style.setProperty("--shade-left", leftShade.toFixed(3));
+      previewFrame.style.setProperty("--shade-right", rightShade.toFixed(3));
+      previewFrame.style.setProperty("--shade-top", topShade.toFixed(3));
+      previewFrame.style.setProperty("--shade-bottom", bottomShade.toFixed(3));
+      previewFrame.style.setProperty("--shadow-x", `${shadowX.toFixed(1)}px`);
+      previewFrame.style.setProperty("--shadow-y", `${shadowY.toFixed(1)}px`);
+      previewFrame.style.setProperty("--shadow-blur", `${(96 + cornerLift * 22).toFixed(1)}px`);
+      previewFrame.style.setProperty("--purple-shadow-x", `${purpleShadowX.toFixed(1)}px`);
+      previewFrame.style.setProperty("--purple-shadow-y", `${purpleShadowY.toFixed(1)}px`);
+      previewFrame.style.setProperty("--depth-x", `${(reactionX * 2).toFixed(1)}px`);
+      previewFrame.style.setProperty("--depth-y", `${(reactionY * 2).toFixed(1)}px`);
+      previewFrame.classList.add("is-tilting");
+    };
 
     const onMove = (event: MouseEvent) => {
       mouseX = event.clientX;
       mouseY = event.clientY;
       dot.style.transform = `translate(${mouseX}px, ${mouseY}px) translate(-50%, -50%)`;
+      tiltPreview(event);
     };
 
     const onOver = (event: MouseEvent) => {
@@ -50,13 +166,16 @@ export function CustomCursor() {
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseover", onOver);
     document.addEventListener("mouseout", onOut);
+    window.addEventListener("scroll", resetPreviewTilt, { passive: true });
     frame = window.requestAnimationFrame(animate);
 
     return () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseover", onOver);
       document.removeEventListener("mouseout", onOut);
+      window.removeEventListener("scroll", resetPreviewTilt);
       window.cancelAnimationFrame(frame);
+      resetPreviewTilt();
       dot.remove();
       ring.remove();
     };

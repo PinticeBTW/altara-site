@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 import {
   DOWNLOAD_URL,
   SiteFooter,
@@ -79,135 +81,18 @@ export default function Home() {
 
             <div className="demo" id="preview">
               <div className="demo-glow" />
-              <div className="demo-frame" data-cursor="hover">
-                <div className="demo-titlebar">
-                  <div className="demo-dots">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                  <div className="demo-url">altara.app - #widgets</div>
-                </div>
-
-                <div className="app-preview-shell">
-                  <aside className="preview-sidebar">
-                    <div className="preview-nav">
-                      <button type="button" className="preview-nav-btn">
-                        {"<"}
-                      </button>
-                      <button type="button" className="preview-nav-btn">
-                        {">"}
-                      </button>
-                    </div>
-
-                    <div className="preview-user-card">
-                      <div className="preview-user-avatar">P</div>
-                      <div className="preview-user-meta">
-                        <strong>pintice do aco</strong>
-                        <span>@pintice</span>
-                      </div>
-                    </div>
-
-                    <div className="preview-section-label">Best friends - 1</div>
-                    <div className="preview-friend active">
-                      <span className="preview-friend-avatar">L</span>
-                      <span>landix</span>
-                    </div>
-
-                    <div className="preview-section-label">Friends - 4</div>
-                    <div className="preview-friend">
-                      <span className="preview-friend-avatar alt">G</span>
-                      <span>guuzy guuzy</span>
-                    </div>
-                    <div className="preview-friend">
-                      <span className="preview-friend-avatar dark">S</span>
-                      <span>silver sigma</span>
-                    </div>
-                    <div className="preview-friend">
-                      <span className="preview-friend-avatar teal">R</span>
-                      <span>ruiva</span>
-                    </div>
-                    <div className="preview-friend">
-                      <span className="preview-friend-avatar red">L</span>
-                      <span>lobo</span>
-                    </div>
-                  </aside>
-
-                  <section className="preview-main">
-                    <div className="preview-tabs">
-                      <span className="active">Widgets</span>
-                      <span>Friends</span>
-                      <span>Pending</span>
-                      <span>Add friend</span>
-                    </div>
-
-                    <div className="preview-grid">
-                      <article className="preview-card">
-                        <header>
-                          <h4>Checklist</h4>
-                          <span>2 overdue</span>
-                        </header>
-                        <div className="preview-metric">4/7</div>
-                        <p>2 overdue tasks</p>
-                        <div className="preview-line" />
-                        <div className="preview-line short" />
-                        <div className="preview-input">Add task...</div>
-                      </article>
-
-                      <article className="preview-card">
-                        <header>
-                          <h4>Calendar</h4>
-                          <span>April 2026</span>
-                        </header>
-                        <div className="preview-metric">26 Apr</div>
-                        <p>Friday - two pending reminders</p>
-                        <div className="preview-line" />
-                        <div className="preview-line short" />
-                      </article>
-
-                      <article className="preview-card preview-card-wide">
-                        <header>
-                          <h4>Notepad</h4>
-                          <span>Quick notes</span>
-                        </header>
-                        <div className="preview-notes">Write quick notes here...</div>
-                        <div className="preview-footer-row">
-                          <small>0 / 4000</small>
-                          <button type="button">Clear</button>
-                        </div>
-                      </article>
-
-                      <article className="preview-card">
-                        <header>
-                          <h4>Call</h4>
-                          <span>Active DM</span>
-                        </header>
-                        <div className="preview-metric">No active call</div>
-                        <div className="preview-mini-buttons">
-                          <button type="button">Open friends</button>
-                          <button type="button">Open pending</button>
-                        </div>
-                      </article>
-
-                      <article className="preview-card preview-stat">
-                        <header>
-                          <h4>Online now</h4>
-                          <span>Friends</span>
-                        </header>
-                        <div className="preview-metric">2</div>
-                        <p>friends online</p>
-                      </article>
-
-                      <article className="preview-card preview-stat">
-                        <header>
-                          <h4>Unread DMs</h4>
-                          <span>Inbox</span>
-                        </header>
-                        <div className="preview-metric">0</div>
-                        <p>messages to read</p>
-                      </article>
-                    </div>
-                  </section>
+              <div className="demo-frame demo-frame-screenshot" data-cursor="hover" data-tilt-preview>
+                <div className="preview-screenshot-wrap">
+                  <Image
+                    src="/altara-app-preview-20260428.png"
+                    alt="ALTARA app preview showing widgets, friends, calendar, calls, notes, and DMs"
+                    className="preview-screenshot"
+                    width={1478}
+                    height={885}
+                    sizes="(max-width: 1200px) 100vw, 1120px"
+                    priority
+                    unoptimized
+                  />
                 </div>
               </div>
             </div>
