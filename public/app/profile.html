@@ -1,0 +1,145 @@
+﻿<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Perfil • altara</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">Perfil</div>
+      <div style="display:flex; gap:10px;">
+        <a class="btn" href="./index.html">Home</a>
+        <button class="btn" id="btnLogout">Logout</button>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card padded">
+        <div style="display:flex; gap:14px; align-items:center;">
+          <div class="avatar avatar-pick" id="avatarPreview" style="width:64px; height:64px;" role="button" tabindex="0" aria-label="Alterar avatar">
+            <div class="avatar-pick__overlay">Editar</div>
+          </div>
+          <div style="min-width:0">
+            <div class="uName" id="meLine">…</div>
+            <div class="uSub" id="uidLine">…</div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Username (único)</label>
+          <input id="username" placeholder="ex: pintice" />
+          <div class="hint">Isto é o @ que usas para adicionar pessoas.</div>
+        </div>
+
+        <button class="btn primary" id="btnSaveUsername">Guardar username</button>
+
+        <div class="field" style="margin-top:18px;">
+          <label>Display name</label>
+          <input id="displayName" placeholder="ex: pintice do aço" />
+        </div>
+
+        <div class="field">
+          <label>Bio</label>
+          <textarea id="bio" placeholder="Escreve uma bio…"></textarea>
+        </div>
+
+        <button class="btn" id="btnSaveProfile">Guardar perfil</button>
+      </div>
+
+      <div class="card padded">
+        <div style="font-weight:800; margin-bottom:8px;">Avatar</div>
+        <div class="hint">Estilo Discord: para mudares o avatar, clica no teu ícone (o redondo). Depois ajusta zoom/posição e faz Apply.</div>
+
+        <input id="avatarFile" class="sr-only" type="file" accept="image/png,image/jpeg" />
+
+        <div style="height:14px"></div>
+        <div style="font-weight:800; margin-bottom:8px;">Segurança</div>
+
+        <div class="field">
+          <label>Novo email</label>
+          <input id="newEmail" type="email" placeholder="novo@email.com" />
+        </div>
+        <button class="btn" id="btnEmail">Trocar email</button>
+
+        <div class="field" style="margin-top:14px;">
+          <label>Nova password</label>
+          <input id="newPass" type="password" placeholder="nova password" />
+        </div>
+        <button class="btn" id="btnPass">Trocar password</button>
+      </div>
+    </div>
+
+    <pre id="debug">{}</pre>
+  </div>
+
+  <!-- Avatar Editor Modal (zoom + drag, tipo Discord) -->
+  <div id="avatarEditorModal" class="modal hidden" aria-hidden="true">
+    <div class="modal__backdrop" data-close="1"></div>
+    <div class="modal__card" role="dialog" aria-modal="true" aria-labelledby="avatarEditorTitle">
+      <div class="modal__header">
+        <div class="modal__title" id="avatarEditorTitle">Editar avatar</div>
+        <button class="icon-btn" id="avatarEditorClose" aria-label="Fechar">✕</button>
+      </div>
+
+      <div class="modal__body avatar-editor">
+        <div class="avatar-editor__left">
+          <div class="avatar-editor__preview" title="Arrasta para posicionar">
+            <canvas id="avatarEditorCanvas" width="420" height="420"></canvas>
+            <div class="avatar-editor__ring" aria-hidden="true"></div>
+          </div>
+        </div>
+
+        <div class="avatar-editor__right">
+          <div class="muted" style="margin-bottom:8px;">Zoom</div>
+          <input id="avatarEditorZoom" type="range" min="1" max="3" step="0.01" value="1" />
+          <div class="avatar-editor__actions">
+            <button class="btn" id="avatarEditorReset">Reset</button>
+            <button class="btn primary" id="avatarEditorApply">Apply</button>
+          </div>
+          <div class="muted" style="margin-top:10px;">Dica: arrasta a imagem para posicionar.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INCOMING CALL OVERLAY (global) -->
+  <div class="callOverlay" id="globalCallOverlay" aria-hidden="true">
+    <div class="callModal">
+      <div class="callModal__top">
+        <div class="callModal__title" id="globalCallTitle">Chamada</div>
+        <div class="callModal__sub" id="globalCallSub">…</div>
+      </div>
+
+      <div class="callModal__actions">
+        <button class="btn primary" id="globalCallAccept" type="button">Atender</button>
+        <button class="btn" id="globalCallDecline" type="button">Desligar</button>
+      </div>
+
+      <div class="callModal__hint" id="globalCallHint"></div>
+    </div>
+  </div>
+
+  <!-- IN CALL BAR (global) -->
+  <div class="inCallBar" id="inCallBar" aria-hidden="true">
+    <div class="inCallDot"></div>
+    <div style="min-width:0">
+      <div class="inCallBar__title" id="inCallBarTitle">Em chamada</div>
+      <div class="inCallBar__sub" id="inCallBarSub">Ligado</div>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <a class="btn btn-mini" id="inCallBarBack" href="./index.html">Voltar</a>
+      <button class="btn btn-mini" id="inCallBarHang" type="button">Desligar</button>
+    </div>
+  </div>
+
+  <audio id="callRemoteAudio" autoplay playsinline></audio>
+
+  <script type="module" src="./profile.js"></script>
+</body>
+</html>
+
+
+

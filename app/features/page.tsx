@@ -1,5 +1,9 @@
-import Link from "next/link";
-import { DOWNLOAD_URL, SiteFooter, SiteNav } from "../components/site-chrome";
+import {
+  DOWNLOAD_URL,
+  SiteFooter,
+  SiteNav,
+  TRY_IN_BROWSER_URL,
+} from "../components/site-chrome";
 
 const specItems = [
   { title: "No ads, ever", description: "We make money from Pro. Not from you." },
@@ -421,7 +425,7 @@ export default function FeaturesPage() {
                     <span className="platform-soon">Em breve</span>
                   </div>
                 </button>
-                <Link href="/#preview" className="platform-btn">
+                <a href={TRY_IN_BROWSER_URL} className="platform-btn">
                   <span className="platform-icon" aria-hidden="true">
                     <svg
                       viewBox="0 0 24 24"
@@ -440,7 +444,7 @@ export default function FeaturesPage() {
                     <small>Or just</small>
                     <span className="platform-name">Try in browser</span>
                   </div>
-                </Link>
+                </a>
               </div>
             </div>
           </div>

@@ -1,0 +1,2615 @@
+﻿<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>altara</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="boot-hide-call-chrome">
+  <script>
+    (() => {
+      try {
+        const bridge = window?.altaraDesktop;
+        const isDesktop = !!bridge && bridge.isDesktopApp === true;
+        const platform = String(bridge?.platform || "").trim().toLowerCase();
+        const useNativeOverlay = isDesktop && (platform === "win32" || platform === "linux");
+        const useShellOverlay = useNativeOverlay || !isDesktop;
+        if (useShellOverlay) document.body.classList.add("desktop-titlebar-overlay");
+        if (useNativeOverlay) document.body.classList.add("desktop-native-titlebar-overlay");
+      } catch (_) {
+        document.body.classList.add("desktop-titlebar-overlay");
+      }
+    })();
+  </script>
+  <div id="desktopTitlebarDragRegion" class="desktopTitlebarDragRegion" aria-hidden="true"></div>
+  <div id="desktopWindowControls" class="desktopWindowControls hidden" role="group" aria-label="Window controls">
+    <button id="btnDesktopInbox" class="desktopWindowBtn desktopWindowBtn--inbox" type="button" aria-label="Open inbox" title="Open inbox" aria-haspopup="dialog" aria-expanded="false">
+      <svg class="desktopWindowIcon desktopWindowIcon--inbox" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 8.5A2.5 2.5 0 0 1 7 6h10a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 17 18H7a2.5 2.5 0 0 1-2.5-2.5z"></path>
+        <path d="M4.5 13.5h4l1.4 2h4.2l1.4-2h4"></path>
+      </svg>
+      <span id="desktopInboxBadge" class="desktopWindowBtn__badge" style="display:none;" aria-hidden="true">0</span>
+    </button>
+    <button id="btnDesktopWindowMin" class="desktopWindowBtn" type="button" aria-label="Minimize" title="Minimize">
+      <svg class="desktopWindowIcon desktopWindowIcon--min" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.5 12.5h11"></path>
+      </svg>
+    </button>
+    <button id="btnDesktopWindowMax" class="desktopWindowBtn" type="button" aria-label="Maximize" title="Maximize">
+      <svg class="desktopWindowBtn__iconMax desktopWindowIcon desktopWindowIcon--max" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="6.5" y="6.5" width="11" height="11" rx="1.6"></rect>
+      </svg>
+      <svg class="desktopWindowBtn__iconRestore desktopWindowIcon desktopWindowIcon--restore" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7.5 9.5h8v8h-8z"></path>
+        <path d="M9.5 7.5h8v8"></path>
+      </svg>
+    </button>
+    <button id="btnDesktopWindowClose" class="desktopWindowBtn desktopWindowBtn--close" type="button" aria-label="Close" title="Close">
+      <svg class="desktopWindowIcon desktopWindowIcon--close" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m8 8 8 8"></path>
+        <path d="m16 8-8 8"></path>
+      </svg>
+    </button>
+  </div>
+  <div id="desktopInboxPanel" class="desktopInboxPanel hidden" role="dialog" aria-label="Inbox" aria-hidden="true"></div>
+
+  <!-- Nav arrows are a direct child of body (NOT inside .midTop or any animated
+       element). CSS opacity/transform on a parent creates a new stacking context
+       that would re-parent position:fixed children and misplace the arrows. -->
+  <div id="midNavButtons" class="midNavButtons" role="group" aria-label="Navigation">
+    <button id="btnNavBack" class="btn ghost midNavBtn arrowNavBtn" type="button" aria-label="Back" title="Back">
+      <span class="midNavBtn__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M15.5 5 8.5 12l7 7"></path>
+        </svg>
+      </span>
+    </button>
+    <button id="btnNavForward" class="btn ghost midNavBtn arrowNavBtn" type="button" aria-label="Forward" title="Forward">
+      <span class="midNavBtn__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M8.5 5 15.5 12l-7 7"></path>
+        </svg>
+      </span>
+    </button>
+  </div>
+
+  <div class="app">
+    <!-- LEFT -->
+    <aside class="panel left">
+      <div class="leftTop">
+        <div id="meProfileCard" class="meRow">
+          <div class="meAvatarWrap">
+            <div id="meAvatar" class="meAvatar" role="button" tabindex="0" aria-label="Open profile"></div>
+          </div>
+
+          <div class="meText">
+            <div id="meName" class="meName">...</div>
+            <div id="meTag" class="meTag">@...</div>
+
+            <button id="meStatusBtn" class="statusPill" type="button">
+              <span class="dotMini" data-status-mini="online"></span>
+              <span id="meStatusLabel">online</span>
+            </button>
+          </div>
+
+          <div class="meControls" role="group" aria-label="Quick controls">
+            <button id="btnHeaderMicToggle" class="btn ghost meCtrlBtn" type="button" title="Mute microphone" aria-label="Mute microphone">
+              <span class="meCtrlBtn__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"></path>
+                  <path d="M5 10a7 7 0 0 0 14 0"></path>
+                  <path d="M12 17v3"></path>
+                  <path d="M9 20h6"></path>
+                </svg>
+              </span>
+              <span class="sr-only" id="btnHeaderMicSrOnly">Mute microphone</span>
+            </button>
+            <button id="btnHeaderDeafenToggle" class="btn ghost meCtrlBtn" type="button" title="Mute incoming audio" aria-label="Mute incoming audio">
+              <span class="meCtrlBtn__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 12a8 8 0 0 1 16 0"></path>
+                  <rect x="3" y="12" width="4" height="8" rx="2"></rect>
+                  <rect x="17" y="12" width="4" height="8" rx="2"></rect>
+                </svg>
+              </span>
+              <span class="sr-only" id="btnHeaderDeafenSrOnly">Mute incoming audio</span>
+            </button>
+            <button id="btnHeaderSettings" class="btn ghost meCtrlBtn" type="button" title="Open settings" aria-label="Open settings">
+              <span class="meCtrlBtn__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="3.2"></circle>
+                  <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.9 1.9 0 0 1 0 2.7 1.9 1.9 0 0 1-2.7 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9v.3a1.9 1.9 0 0 1-1.9 1.9 1.9 1.9 0 0 1-1.9-1.9v-.2a1 1 0 0 0-.7-1 1 1 0 0 0-1.1.2l-.1.1a1.9 1.9 0 0 1-2.7 0 1.9 1.9 0 0 1 0-2.7l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6h-.3A1.9 1.9 0 0 1 2 12.7a1.9 1.9 0 0 1 1.9-1.9h.2a1 1 0 0 0 1-.7 1 1 0 0 0-.2-1.1l-.1-.1a1.9 1.9 0 0 1 0-2.7 1.9 1.9 0 0 1 2.7 0l.1.1a1 1 0 0 0 1.1.2h.1a1 1 0 0 0 .6-.9v-.3A1.9 1.9 0 0 1 12.1 2a1.9 1.9 0 0 1 1.9 1.9v.2a1 1 0 0 0 .7 1 1 1 0 0 0 1.1-.2l.1-.1a1.9 1.9 0 0 1 2.7 0 1.9 1.9 0 0 1 0 2.7l-.1.1a1 1 0 0 0-.2 1.1v.1a1 1 0 0 0 .9.6h.3A1.9 1.9 0 0 1 22 12.1a1.9 1.9 0 0 1-1.9 1.9h-.2a1 1 0 0 0-1 .7z"></path>
+                </svg>
+              </span>
+              <span class="sr-only" id="btnHeaderSettingsSrOnly">Open settings</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="leftTabsSingle">
+          <button class="chip active" type="button">Friends</button>
+        </div>
+
+        <div class="searchBox">
+          <input id="friendSearch" class="input" placeholder="Search..." />
+        </div>
+      </div>
+
+      <div class="leftList leftDock">
+        <section class="leftDockGroups">
+          <div id="leftGroupsRail" class="groupsRail">
+            <div id="leftGroupsLoadingHint" class="hint">Loading...</div>
+          </div>
+        </section>
+
+        <section class="leftDockDms">
+          <aside id="serverChannelsPanel" class="serverChannelsPanel hidden" aria-hidden="true"></aside>
+          <div id="dmList" class="list">
+            <div id="dmListLoadingHint" class="hint">Loading...</div>
+          </div>
+        </section>
+
+        <div id="leftFriends" style="display:none;"></div>
+      </div>
+    </aside>
+    <button
+      id="leftSidebarResizer"
+      class="leftSidebarResizer"
+      type="button"
+      role="separator"
+      aria-label="Resize sidebar"
+      aria-orientation="vertical"
+      aria-valuemin="300"
+      aria-valuemax="420"
+      aria-valuenow="340"
+      title="Drag to resize"
+    ></button>
+    <!-- MID -->
+    <main class="panel mid">
+      <div class="midTop">
+        <div class="midTabs">
+          <button class="chip active" data-tab="widgets" type="button">Widgets</button>
+          <button class="chip" data-tab="friends" type="button">Friends</button>
+          <button class="chip" data-tab="pending" type="button">
+            Pending <span id="pendingBadge" class="badge" style="display:none;">0</span>
+          </button>
+          <button class="chip" data-tab="add" type="button">Add Friend</button>
+        </div>
+      </div>
+
+      <!-- Widgets tab -->
+      <section id="tabWidgets" class="midBody widgetsTab">
+        <div id="widgetsEditBar" class="widgetsEditBar hidden" aria-hidden="true"></div>
+        <div id="widgetsAddPanel" class="widgetsAddPanel hidden" aria-hidden="true"></div>
+        <div id="widgetsGrid" class="widgetsGrid"></div>
+        <div class="widgetsEditFabRow">
+          <button id="btnWidgetsEditMode" class="btn ghost widgetsEditFab" type="button" title="Edit widgets">
+            Edit widgets
+          </button>
+        </div>
+      </section>
+
+      <!-- Friends tab -->
+      <section id="tabFriends" class="midBody" style="display:none;">
+        <div class="search friendsSearch">
+          <input id="friendSearchMain" class="input" placeholder="Search friends..." />
+        </div>
+        <div id="friendsList" class="list">
+          <div id="friendsListLoadingHint" class="hint">Loading...</div>
+        </div>
+      </section>
+
+      <!-- Pending tab -->
+      <section id="tabPending" class="midBody" style="display:none;">
+        <div class="split2">
+          <div>
+            <div id="pendingIncomingTitle" class="sectionTitle">Incoming</div>
+            <div id="incomingList" class="list"></div>
+          </div>
+          <div>
+            <div id="pendingOutgoingTitle" class="sectionTitle">Outgoing</div>
+            <div id="outgoingList" class="list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Add tab -->
+      <section id="tabAdd" class="midBody" style="display:none;">
+        <div class="addToolsStack">
+          <div class="card addToolCard">
+            <div id="addFriendSectionTitle" class="sectionTitle">Add friend</div>
+            <div class="rowInline">
+              <input id="addUsername" class="input" placeholder="username" />
+              <button id="btnSendRequest" class="btn primary">Send</button>
+            </div>
+            <div id="addFriendHint" class="hint">Example: <b>silver</b></div>
+            <div id="addFriendPreview" class="addFriendPreviewHost"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DM VIEW -->
+      <section id="dmMain" class="dmMain" style="display:none;">
+        <div class="dmHeader">
+          <button id="btnBackToFriends" class="btn ghost arrowNavBtn" type="button" aria-label="Back" title="Back">
+            <span class="arrowNavBtn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M15.5 5 8.5 12l7 7"></path>
+              </svg>
+            </span>
+          </button>
+
+          <div class="dmHeaderText">
+            <div class="dmTitleRow">
+              <div id="dmTitle" class="dmTitle">DM</div>
+            </div>
+            <div id="callStatus" class="dmSub" style="display:none;"></div>
+          </div>
+
+          <div class="dmHeaderActions">
+            <button id="btnCall" class="btn ghost dmHeaderIconBtn" type="button" title="Call" aria-label="Call">
+              <span class="dmHeaderIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M20 15.5v3a2 2 0 0 1-2.2 2 15 15 0 0 1-6.5-2.3 14.7 14.7 0 0 1-4.5-4.5A15 15 0 0 1 4.5 7.2 2 2 0 0 1 6.5 5h3a2 2 0 0 1 2 1.7l.4 2.3a2 2 0 0 1-.6 1.9l-1 1a12 12 0 0 0 4 4l1-1a2 2 0 0 1 1.9-.6l2.3.4a2 2 0 0 1 1.5 1.8z"></path>
+                </svg>
+              </span>
+              <span class="sr-only" id="btnCallSrOnly">Call</span>
+            </button>
+            <button id="btnAnswer" class="btn ghost dmHeaderIconBtn" type="button" style="display:none;" title="Answer" aria-label="Answer">
+              <span class="dmHeaderIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M20 15.5v3a2 2 0 0 1-2.2 2 15 15 0 0 1-6.5-2.3 14.7 14.7 0 0 1-4.5-4.5A15 15 0 0 1 4.5 7.2 2 2 0 0 1 6.5 5h3a2 2 0 0 1 2 1.7l.4 2.3a2 2 0 0 1-.6 1.9l-1 1a12 12 0 0 0 4 4l1-1a2 2 0 0 1 1.9-.6l2.3.4a2 2 0 0 1 1.5 1.8z"></path>
+                  <path d="M14 5h6"></path>
+                  <path d="M17 2v6"></path>
+                </svg>
+              </span>
+              <span class="sr-only" id="btnAnswerSrOnly">Answer</span>
+            </button>
+            <button id="btnHangup" class="btn danger dmHeaderIconBtn" type="button" style="display:none;" title="Hang up" aria-label="Hang up">
+              <span class="dmHeaderIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 14c4.5-4 11.5-4 16 0"></path>
+                </svg>
+              </span>
+              <span class="sr-only" id="btnHangupSrOnly">Hang up</span>
+            </button>
+            <button id="btnDmCreateGroup" class="btn ghost dmHeaderIconBtn" type="button" title="Create Group DM" aria-label="Create Group DM">
+              <span class="dmHeaderIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="10" cy="9" r="3.25"></circle>
+                  <path d="M4.8 19a5.2 5.2 0 0 1 10.4 0"></path>
+                  <path d="M18.5 7v6"></path>
+                  <path d="M15.5 10h6"></path>
+                </svg>
+              </span>
+              <span class="sr-only" id="btnDmCreateGroupSrOnly">Create Group DM</span>
+            </button>
+            <button id="btnDmGroupEdit" class="btn ghost dmHeaderIconBtn" type="button" style="display:none;" title="Edit group" aria-label="Edit group">
+              <span class="dmHeaderIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="m4 20 4.2-1.1L19 8.1 15.9 5 5.1 15.8 4 20z"></path>
+                  <path d="m13.8 7.1 3.1 3.1"></path>
+                </svg>
+              </span>
+              <span class="sr-only" id="btnDmGroupEditSrOnly">Edit group</span>
+            </button>
+            <button id="btnDmGroupManage" class="btn ghost dmHeaderIconBtn dmHeaderIconBtn--group-manage" type="button" style="display:none;" title="Leave group" aria-label="Leave group">
+              <span class="dmHeaderIcon dmHeaderIcon--leave" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="m10 16-4-4 4-4"></path>
+                  <path d="M6 12h9"></path>
+                  <path d="M15 5h4v14h-4"></path>
+                </svg>
+              </span>
+              <span class="dmHeaderIcon dmHeaderIcon--delete" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M3 6h18"></path>
+                  <path d="M8 6V4h8v2"></path>
+                  <path d="M19 6l-1 14H6L5 6"></path>
+                  <path d="M10 11v6"></path>
+                  <path d="M14 11v6"></path>
+                </svg>
+              </span>
+              <span class="sr-only" id="btnDmGroupManageSrOnly">Leave group</span>
+            </button>
+            <button id="btnDmPins" class="btn ghost dmHeaderIconBtn" type="button" style="display:none;" title="Pins" aria-label="Pins">
+              <span class="dmHeaderIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M14 3 9 8l2 2-4 4 3 3 4-4 2 2 5-5z"></path>
+                  <path d="M12 16v5"></path>
+                </svg>
+              </span>
+              <span class="sr-only">Pins</span>
+            </button>
+            <button id="btnDmProfilePanel" class="btn ghost dmHeaderIconBtn" type="button" title="Profile" aria-label="Profile">
+              <span class="dmHeaderIcon dmHeaderIcon--profile" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="9" r="3.2"></circle>
+                  <path d="M5 20a7 7 0 0 1 14 0"></path>
+                </svg>
+              </span>
+              <span class="dmHeaderIcon dmHeaderIcon--members" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M16.5 20a4.5 4.5 0 0 0-9 0"></path>
+                  <circle cx="12" cy="9" r="3.1"></circle>
+                  <path d="M20.5 20a3.5 3.5 0 0 0-5-3.2"></path>
+                  <circle cx="18" cy="10" r="2.3"></circle>
+                </svg>
+              </span>
+              <span class="sr-only" id="btnDmProfilePanelSrOnly">Profile</span>
+            </button>
+            <button id="btnShareScreen" class="btn ghost dmHeaderIconBtn" type="button" style="display:none;" title="Share" aria-label="Share">
+              <span class="dmHeaderIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+                  <path d="M8 20h8"></path>
+                  <path d="M12 16v4"></path>
+                  <path d="M12 7v6"></path>
+                  <path d="m9.5 9.5 2.5-2.5 2.5 2.5"></path>
+                </svg>
+              </span>
+              <span class="sr-only">Share</span>
+            </button>
+            <button id="btnCamera" class="btn ghost dmHeaderIconBtn" type="button" style="display:none;" title="Camera" aria-label="Camera">
+              <span class="dmHeaderIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="7" width="12" height="10" rx="2"></rect>
+                  <path d="m15 11 6-3v8l-6-3z"></path>
+                </svg>
+              </span>
+              <span class="sr-only">Camera</span>
+            </button>
+          </div>
+        </div>
+        <div class="dmMainBody">
+          <div class="dmThread">
+            <div id="dmCallDock" class="dmCallDock"></div>
+
+            <div id="dmMessages" class="dmMessages">
+              <div id="dmMessagesEmpty" class="hint">No messages yet. Say hi &#x1F44B;</div>
+            </div>
+            <button id="btnDmJumpLatest" class="dmJumpLatest" type="button" aria-hidden="true" title="Jump to latest messages">
+              <span class="dmJumpLatest__icon" aria-hidden="true">&#8595;</span>
+              <span id="dmJumpLatestLabel">Jump to latest</span>
+            </button>
+
+            <div id="dmDropOverlay" class="dmDropOverlay" aria-hidden="true">
+              <div class="dmDropOverlay__card">
+                <div id="dmDropTitle" class="dmDropOverlay__title">Drop files here</div>
+                <div id="dmDropSub" class="dmDropOverlay__sub">Any file type, up to 35GB each</div>
+              </div>
+            </div>
+          </div>
+
+          <aside id="dmPinsPanel" class="dmPinsPanel hidden" aria-hidden="true">
+            <div class="dmPinsPanel__top">
+              <div class="dmPinsPanel__title">&#x1F4CC; Pinned Messages</div>
+              <button id="btnDmPinsClose" class="btn ghost" type="button" aria-label="Close pins">&times;</button>
+            </div>
+            <div id="dmPinsList" class="dmPinsList">
+              <div id="dmPinsEmpty" class="hint">No pinned messages.</div>
+            </div>
+          </aside>
+
+          <aside id="dmProfilePanel" class="dmProfilePanel hidden" aria-hidden="true">
+            <div class="dmProfilePanel__top">
+              <div class="dmProfilePanel__title">&#128100; Profile</div>
+              <button id="btnDmProfileClose" class="btn ghost" type="button" aria-label="Close profile">&times;</button>
+            </div>
+            <div id="dmProfileBanner" class="dmProfilePanel__banner"></div>
+            <button id="dmProfileAvatar" class="dmProfileAvatar" type="button" aria-label="Open full profile"></button>
+            <div class="dmProfilePanel__body">
+              <div id="dmProfileName" class="dmProfileName">User</div>
+              <div id="dmProfileHandle" class="dmProfileHandle">@user</div>
+              <div class="dmProfilePresence">
+                <span id="dmProfileStatusDot" class="dmProfileStatusDot" data-status="offline"></span>
+                <span id="dmProfileStatusText" class="dmProfileStatusText">offline</span>
+              </div>
+
+              <div class="dmProfileSection">
+                <div class="dmProfileSection__title">About Me</div>
+                <div id="dmProfileBio" class="dmProfileBio">No bio.</div>
+              </div>
+            </div>
+            <div class="dmProfilePanel__footer">
+              <button id="btnDmProfileOpenCard" class="btn ghost w100" type="button">View Full Profile</button>
+            </div>
+          </aside>
+        </div>
+
+        <div id="dmReplyBar" class="dmReplyBar" style="display:none;"></div>
+        <div id="dmPendingAttachments" class="dmPendingAttachments" style="display:none;"></div>
+
+        <div class="dmComposer">
+          <button id="btnAttach" class="btn ghost dmAttachBtn" type="button" title="Attach file">+</button>
+          <div id="dmInputWrap" class="dmInputWrap">
+            <div id="dmInputRichMirror" class="dmInputRichMirror" aria-hidden="true"></div>
+            <textarea id="dmInput" class="input" placeholder="Message..." rows="1" spellcheck="false" autocorrect="off" autocapitalize="off" data-gramm="false"></textarea>
+          </div>
+          <div class="dmComposerTools" aria-label="Message actions">
+            <button id="btnGif" class="btn ghost" type="button">GIF</button>
+            <button id="btnEmoji" class="btn ghost" type="button" title="Emoji">&#x1F642;</button>
+          </div>
+          <input id="dmFileInput" type="file" class="sr-only" multiple />
+          <button id="dmSend" class="btn primary">Send</button>
+        </div>
+        <div id="dmFormatToolbar" class="dmFormatToolbar" style="display:none;" aria-hidden="true">
+          <button class="dmFormatToolbar__btn" type="button" data-dm-format="bold" title="Bold"><b>B</b></button>
+          <button class="dmFormatToolbar__btn" type="button" data-dm-format="italic" title="Italic"><i>I</i></button>
+          <button class="dmFormatToolbar__btn" type="button" data-dm-format="strike" title="Strikethrough"><s>S</s></button>
+          <button class="dmFormatToolbar__btn" type="button" data-dm-format="code" title="Code">&lt;/&gt;</button>
+          <button class="dmFormatToolbar__btn" type="button" data-dm-format="spoiler" title="Spoiler">&#x25CC;</button>
+          <button id="btnDmFormatColor" class="dmFormatToolbar__btn dmFormatToolbar__btn--color" type="button" title="Color">A</button>
+          <input id="dmFormatColorPicker" class="sr-only" type="text" value="#8ea0ff" aria-label="Choose text color" data-gradient-disabled="1" />
+        </div>
+      </section>
+
+      <pre id="debug" class="debug"></pre>
+    </main>
+
+    <!-- RIGHT -->
+    <aside class="panel right">
+      <div class="rightTop">
+        <div class="rightTitleRow">
+          <div class="hTitle">Active Now</div>
+          <div id="onlineCount" class="count">0</div>
+        </div>
+      </div>
+
+      <div class="rightBody">
+        <div id="serverMembersPanel" class="serverMembersPanel hidden" aria-hidden="true">
+          <div class="serverMembersSearchWrap">
+            <input
+              id="serverMembersSearch"
+              class="input serverMembersSearch"
+              type="text"
+              placeholder="Search members..."
+              autocomplete="off"
+            />
+          </div>
+          <div id="serverMembersList" class="serverMembersList"></div>
+        </div>
+
+        <div class="rightSectionLabel">ACTIVE NOW</div>
+        <div id="activeNow" class="list"></div>
+
+        <div class="rightSectionLabel">OFFLINE</div>
+        <div id="offlineList" class="list"></div>
+      </div>
+    </aside>
+    <button
+      id="rightSidebarResizer"
+      class="rightSidebarResizer"
+      type="button"
+      role="separator"
+      aria-label="Resize Active Now"
+      aria-orientation="vertical"
+      aria-valuemin="220"
+      aria-valuemax="420"
+      aria-valuenow="320"
+      title="Drag to resize"
+    ></button>
+    <div id="rightSidebarPeekZone" class="rightSidebarPeekZone" aria-hidden="true"></div>
+
+  </div>
+
+  <!-- SETTINGS OVERLAY -->
+  <div id="profileOverlay" class="modal hidden settingsOverlay" aria-hidden="true" data-close="1">
+    <div class="modalCard settingsCard" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <aside class="settingsSidebar">
+        <div class="settingsSidebarUser">
+          <div id="settingsUserAvatar" class="settingsSidebarAvatar"></div>
+          <div class="settingsSidebarMeta">
+            <div id="settingsUserName" class="settingsSidebarName">...</div>
+            <div id="settingsUserTag" class="settingsSidebarTag">@...</div>
+          </div>
+        </div>
+
+        <div class="settingsSearchWrap">
+          <input id="settingsSearch" class="input settingsSearchInput" placeholder="Search settings..." />
+        </div>
+
+        <div class="settingsSidebarSection">
+          <div id="settingsGroupLabel" class="settingsGroupLabel">User Settings</div>
+          <nav class="settingsNav" aria-label="Settings navigation">
+            <button class="settingsNavItem is-active" type="button" data-settings-tab="account" aria-current="page">
+              <span id="settingsNavAccount">My Account</span>
+            </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="security">
+              <span class="settingsNavLabelRow">
+                <span id="settingsNavSecurity">Security</span>
+                <span id="settingsNavSecurityLock" class="settingsNavLockIcon" hidden aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+                    <path d="M7.5 10.5v-2a4.5 4.5 0 1 1 9 0v2h.75A1.75 1.75 0 0 1 19 12.25v7A1.75 1.75 0 0 1 17.25 21h-10.5A1.75 1.75 0 0 1 5 19.25v-7A1.75 1.75 0 0 1 6.75 10.5h.75zm1.5 0h6v-2a3 3 0 1 0-6 0v2z"></path>
+                  </svg>
+                </span>
+              </span>
+            </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="profiles" disabled>
+              <span id="settingsNavProfiles">Profiles</span>
+              <small>em breve</small>
+            </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="notifications">
+              <span id="settingsNavNotifications">Notifications</span>
+            </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="blocked-users">
+              <span id="settingsNavBlockedUsers">Blocked Users</span>
+            </button>
+            <button id="settingsNavReportsButton" class="settingsNavItem" type="button" data-settings-tab="reports" hidden>
+              <span id="settingsNavReports">Reports</span>
+            </button>
+          </nav>
+        </div>
+
+        <div class="settingsSidebarSection">
+          <div id="settingsGroupBillingLabel" class="settingsGroupLabel">Billing Settings</div>
+          <nav class="settingsNav" aria-label="Billing navigation">
+            <button class="settingsNavItem" type="button" disabled>
+              <span id="settingsNavNitro">Nitro</span>
+              <small>em breve</small>
+            </button>
+            <button class="settingsNavItem" type="button" disabled>
+              <span id="settingsNavServerBoost">Server Boost</span>
+              <small>em breve</small>
+            </button>
+            <button class="settingsNavItem" type="button" disabled>
+              <span id="settingsNavSubscriptions">Subscriptions</span>
+              <small>em breve</small>
+            </button>
+          </nav>
+        </div>
+
+        <div class="settingsSidebarSection">
+          <div id="settingsGroupAppLabel" class="settingsGroupLabel">App Settings</div>
+          <nav class="settingsNav" aria-label="App navigation">
+            <button class="settingsNavItem" type="button" data-settings-tab="voice-video">
+              <span id="settingsNavVoiceVideo">Voice &amp; Video</span>
+            </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="keybinds">
+              <span id="settingsNavKeybinds">Binds</span>
+            </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="appearance">
+              <span id="settingsNavAppearance">Appearance</span>
+            </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="advanced">
+              <span id="settingsNavAdvanced">Advanced</span>
+            </button>
+          </nav>
+        </div>
+
+        <div class="settingsSidebarSection settingsSidebarSection--logout">
+          <button id="btnSettingsLogout" class="settingsNavItem settingsNavItem--danger" type="button" aria-label="Log out">
+            <span id="settingsNavLogout">Log out</span>
+          </button>
+        </div>
+      </aside>
+
+      <section class="settingsMain">
+        <div class="settingsMainTop">
+          <div>
+            <div id="settingsTitle" class="settingsTitle">My Account</div>
+            <div id="settingsSubtitle" class="settingsSubtitle">Manage your profile and status.</div>
+          </div>
+          <div class="settingsMainTopActions">
+            <button id="btnSettingsFullMode" class="btn ghost settingsMainTopBack" type="button" hidden>All settings</button>
+            <button id="btnCloseProfile" class="btn ghost settingsCloseBtn" type="button" aria-label="Close settings">&times;</button>
+          </div>
+        </div>
+
+        <div class="settingsMainBody">
+          <div class="settingsPanel is-active" data-settings-panel="account">
+            <div class="settingsIdentityCard">
+              <div id="settingsIdentityBanner" class="settingsIdentityBanner" tabindex="0" role="button" aria-label="Change banner"></div>
+              <div class="settingsIdentityBody">
+                <div id="avatarPreview" class="avatarBig settingsAvatarPick" tabindex="0" role="button" aria-label="Change avatar"></div>
+                <input id="avatarFile" type="file" accept="image/*" style="display:none;" />
+                <input id="bannerFile" type="file" accept="image/*" style="display:none;" />
+                <div class="settingsIdentityMeta">
+                  <div class="settingsIdentityNameRow">
+                    <div id="meLine" class="settingsIdentityName">...</div>
+                    <div id="pronounsLine" class="settingsIdentityPronouns" hidden>...</div>
+                  </div>
+                  <div id="uidLine" class="settingsIdentityUid">@...</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settingsCardSection">
+              <div id="settingsSectionProfile" class="settingsSectionTitle">Profile</div>
+              <div class="grid2 settingsGrid settingsProfileGrid">
+                <div class="settingsColumn settingsProfileColumn">
+                  <label class="label" for="username">Username</label>
+                  <input id="username" class="input" />
+                  <label class="label" for="displayName">Display name</label>
+                  <input id="displayName" class="input" />
+                  <label class="label" for="bio">Bio</label>
+                  <textarea id="bio" class="input" rows="4" maxlength="280"></textarea>
+                  <div id="bioCharCount" class="settingsHint settingsBioCounter">0/280</div>
+                </div>
+                <div class="settingsColumn settingsProfileColumn">
+                  <label class="label" for="pronouns">Pronouns</label>
+                  <input id="pronouns" class="input" maxlength="40" placeholder="e.g. he/him" />
+                  <div id="profilePronounsHint" class="settingsHint">Optional. Appears on your profile.</div>
+                  <label class="label" for="nameColor">Name color</label>
+                  <input id="nameColor" class="themeColorInput" type="text" value="#f1f2f5" />
+                  <label class="label" for="callTileColor">Call background</label>
+                  <input id="callTileColor" class="themeColorInput" type="text" value="#1b2230" />
+                </div>
+              </div>
+              <div class="settingsProfileActions">
+                <button id="btnSaveUsername" class="btn ghost" type="button">Save username</button>
+                <button id="btnSaveProfile" class="btn primary" type="button">Save profile</button>
+                <button id="btnOpenProfileWidgets" class="btn ghost" type="button">Widgets</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="security">
+            <div id="settingsSecuritySetupScreen" class="settingsCardSection settingsSecuritySetupScreen" hidden>
+              <div class="settingsSecurityLockedIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+                  <path d="M7.5 10.5v-2a4.5 4.5 0 1 1 9 0v2h.75A1.75 1.75 0 0 1 19 12.25v7A1.75 1.75 0 0 1 17.25 21h-10.5A1.75 1.75 0 0 1 5 19.25v-7A1.75 1.75 0 0 1 6.75 10.5h.75zm1.5 0h6v-2a3 3 0 1 0-6 0v2z"></path>
+                </svg>
+              </div>
+              <div id="settingsSecuritySetupTitle" class="settingsSecuritySetupTitle">Protect this tab with a code?</div>
+              <div id="settingsSecuritySetupHint" class="settingsHint">Create a security code now to lock this tab. You can also skip for now and set it up later.</div>
+              <div class="settingsSecuritySetupActions">
+                <button id="btnSecuritySetupCreate" class="btn ghost" type="button">Create security code</button>
+                <button id="btnSecuritySetupSkip" class="btn ghost" type="button">Not now</button>
+              </div>
+            </div>
+
+            <div id="settingsSecurityLockedScreen" class="settingsCardSection settingsSecurityLockedScreen" hidden>
+              <div class="settingsSecurityLockedIcon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+                  <path d="M7.5 10.5v-2a4.5 4.5 0 1 1 9 0v2h.75A1.75 1.75 0 0 1 19 12.25v7A1.75 1.75 0 0 1 17.25 21h-10.5A1.75 1.75 0 0 1 5 19.25v-7A1.75 1.75 0 0 1 6.75 10.5h.75zm1.5 0h6v-2a3 3 0 1 0-6 0v2z"></path>
+                </svg>
+              </div>
+              <div id="settingsSecurityLockedTitle" class="settingsSectionTitle">Security locked</div>
+              <div id="settingsSecurityLockedHint" class="settingsHint">Enter your security code to access this tab.</div>
+              <div class="settingsSecurityLockedForm">
+                <label class="label" for="securityUnlockCode">Enter security code</label>
+                <input id="securityUnlockCode" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" />
+                <button id="btnSecurityUnlock" class="btn ghost w100" type="button">Unlock security</button>
+              </div>
+              <div class="settingsSecurityLockedActions">
+                <button id="btnSecurityForgotCode" class="btn ghost w100" type="button">Forgot security code</button>
+                <div id="settingsSecurityLockedResetWrap" class="settingsSecurityRemoveVerifyWrap" hidden>
+                  <label class="label" for="securityForgotEmailCode">Email verification code</label>
+                  <input id="securityForgotEmailCode" class="input" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="12" placeholder="123456" />
+                  <button id="btnSecurityConfirmForgotCode" class="btn ghost w100" type="button">Reset security code</button>
+                  <div id="settingsSecurityLockedResetHint" class="settingsHint">We sent a verification code to your email. Enter it to reset your security code.</div>
+                </div>
+              </div>
+            </div>
+
+            <div id="settingsSecurityContent">
+              <div class="settingsCardSection">
+                <div id="settingsSectionSecurity" class="settingsSectionTitle">Security</div>
+                <div id="settingsSectionSecurityCode" class="settingsSectionTitle">Security code lock</div>
+                <div id="settingsSecurityCodeHint" class="settingsHint">Create a code to lock this Security tab. You will need it to open security options later.</div>
+                <div id="settingsSecurityCodeState" class="settingsHint">No security code configured.</div>
+                <div id="settingsSecurityQuickCreateWrap" class="settingsSecurityQuickCreateWrap" hidden>
+                  <button id="btnSecurityQuickCreate" class="btn ghost" type="button">Create security code</button>
+                </div>
+
+                <div id="settingsSecurityManageWrap" class="grid2 settingsGrid">
+                  <div class="settingsColumn">
+                    <label class="label" for="securityCode">Security code</label>
+                    <input id="securityCode" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" />
+                    <label class="label" for="securityCodeConfirm">Confirm code</label>
+                    <input id="securityCodeConfirm" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" />
+                    <button id="btnSecuritySaveCode" class="btn ghost w100" type="button">Save security code</button>
+                  </div>
+                  <div class="settingsColumn">
+                    <div id="settingsSecurityManageHint" class="settingsHint">Only numbers, between 4 and 10 digits.</div>
+                    <button id="btnSecurityRemoveCode" class="btn ghost w100" type="button">Remove security code</button>
+                    <div id="settingsSecurityRemoveVerifyWrap" class="settingsSecurityRemoveVerifyWrap" hidden>
+                      <label class="label" for="securityRemoveEmailCode">Email verification code</label>
+                      <input id="securityRemoveEmailCode" class="input" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="12" placeholder="123456" />
+                      <button id="btnSecurityConfirmRemoveCode" class="btn ghost w100" type="button">Confirm remove security code</button>
+                      <div id="settingsSecurityRemoveVerifyHint" class="settingsHint">We sent a verification code to your email. Enter it to remove the security code.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            <div id="settingsSecurityProtectedWrap" class="settingsCardSection">
+              <div class="grid2 settingsGrid">
+                <div class="settingsColumn">
+                  <label class="label" for="currentEmail">Current email</label>
+                  <input id="currentEmail" class="input" readonly />
+                    <label class="label" for="newEmail">New email</label>
+                    <input id="newEmail" class="input" placeholder="email@..." />
+                    <button id="btnEmail" class="btn ghost w100" type="button">Update email</button>
+                  </div>
+                  <div class="settingsColumn">
+                    <label class="label" for="currentPass">Current password</label>
+                    <input id="currentPass" class="input" type="password" placeholder="******" />
+                    <label class="label" for="newPass">New password</label>
+                    <input id="newPass" class="input" type="password" placeholder="******" />
+                  <button id="btnPass" class="btn ghost w100" type="button">Update password</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="settingsDmE2eeBackupCard" class="settingsCardSection" hidden>
+              <div id="settingsSectionDmE2eeBackup" class="settingsSectionTitle">Encrypted DM backup</div>
+              <div id="settingsDmE2eeBackupHint" class="settingsHint">Private DM uses one encrypted identity per account. ALTARA uses your account password during sign-in to create, protect, or restore that portable key on each device. The password is only used locally and is not kept after sync.</div>
+              <div id="settingsDmE2eeBackupStatus" class="settingsHint">Loading encrypted DM backup status...</div>
+              <div id="settingsDmE2eeBackupAutoHint" class="settingsHint">Automatic Private DM restore runs during password sign-in.</div>
+              <div class="settingsGrid">
+                <div class="settingsColumn">
+                  <button id="btnSettingsDmE2eeBackupRefresh" class="btn ghost" type="button">Refresh Private DM status</button>
+                  <div id="settingsDmE2eeBackupLimitations" class="settingsHint">If you change your account password, sign out and sign back in on a device that still has your Private DM key so ALTARA can refresh the portable backup.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+          <div class="settingsPanel" data-settings-panel="profiles">
+            <div id="settingsPlaceholderProfiles" class="settingsPlaceholder">Profiles coming soon.</div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="reports" hidden>
+            <div class="settingsCardSection">
+              <div id="settingsSectionReports" class="settingsSectionTitle">Reports</div>
+              <div id="settingsReportsHint" class="settingsHint">Only context explicitly attached by the reporting user may appear here.</div>
+              <div class="settingsReportsShell">
+                <div id="settingsReportsList" class="settingsReportsList">
+                  <div class="settingsPlaceholder">Loading reports...</div>
+                </div>
+                <div id="settingsReportsDetail" class="settingsReportsDetail">
+                  <div class="settingsPlaceholder">Select a report to review.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="voice-video">
+            <div class="settingsCardSection">
+              <div id="settingsSectionVoiceDevices" class="settingsSectionTitle">Voice Devices</div>
+              <div class="grid2 settingsGrid">
+                <div class="settingsColumn">
+                  <label id="settingsVoiceInputLabel" class="label" for="settingsVoiceInput">Microphone</label>
+                  <select id="settingsVoiceInput" class="input">
+                    <option value="">Default microphone</option>
+                  </select>
+                </div>
+                <div class="settingsColumn">
+                  <label id="settingsVoiceOutputLabel" class="label" for="settingsVoiceOutput">Speaker</label>
+                  <select id="settingsVoiceOutput" class="input">
+                    <option value="">Default speaker</option>
+                  </select>
+                </div>
+              </div>
+              <div class="grid2 settingsGrid">
+                <div class="settingsColumn">
+                  <div class="appearanceRangeRow">
+                    <span id="settingsVoiceMicVolumeLabel" class="appearanceLabel">Microphone Volume</span>
+                    <span id="settingsVoiceMicVolumeValue" class="appearanceValue">100%</span>
+                  </div>
+                  <input id="settingsVoiceMicVolume" type="range" min="0" max="100" step="1" value="100" />
+                </div>
+                <div class="settingsColumn">
+                  <div class="appearanceRangeRow">
+                    <span id="settingsVoiceSpeakerVolumeLabel" class="appearanceLabel">Speaker Volume</span>
+                    <span id="settingsVoiceSpeakerVolumeValue" class="appearanceValue">100%</span>
+                  </div>
+                  <input id="settingsVoiceSpeakerVolume" type="range" min="0" max="100" step="1" value="100" />
+                </div>
+              </div>
+              <div id="settingsVoiceDeviceHint" class="settingsHint">Choose your call input and output devices.</div>
+              <div class="settingsVoiceMicTestRow">
+                <button id="settingsVoiceMicTestBtn" class="btn ghost settingsVoiceMicTestBtn" type="button">Mic Test</button>
+                <div id="settingsVoiceMicTestMeter" class="settingsVoiceMicTestMeter" aria-hidden="true">
+                  <div id="settingsVoiceMicTestMeterFill" class="settingsVoiceMicTestMeterFill"></div>
+                </div>
+              </div>
+              <div id="settingsVoiceMicTestHint" class="settingsHint">Click Mic Test and speak to check your voice.</div>
+            </div>
+            <div class="settingsCardSection">
+              <div id="settingsSectionInputProfile" class="settingsSectionTitle">Input Sensitivity</div>
+              <label class="appearanceSwitchRow" for="settingsVoiceAutoSensitivity">
+                <span class="appearanceSwitchText">
+                  <b id="settingsVoiceAutoSensitivityLabel">Automatically Adjust Input Sensitivity</b>
+                  <small id="settingsVoiceAutoSensitivityHint">When enabled, Altara auto-tunes your mic detection threshold.</small>
+                </span>
+                <input id="settingsVoiceAutoSensitivity" type="checkbox" checked />
+              </label>
+              <div class="appearanceRangeRow">
+                <span id="settingsVoiceSensitivityLabel" class="appearanceLabel">Manual Sensitivity</span>
+                <span id="settingsVoiceSensitivityValue" class="appearanceValue">50%</span>
+              </div>
+              <input id="settingsVoiceSensitivity" type="range" min="0" max="100" step="1" value="50" />
+              <div id="settingsVoiceSensitivityExplain" class="settingsHint">Input Sensitivity decides when your mic opens; Automatic Gain Control decides how loud your voice is after it opens.</div>
+            </div>
+            <div class="settingsCardSection">
+              <div id="settingsSectionVoiceProcessing" class="settingsSectionTitle">Voice Processing</div>
+              <div class="appearanceSwitchRow settingsVoiceSelectRow">
+                <span class="appearanceSwitchText">
+                  <b id="settingsVoiceNoiseSuppressionLabel">Noise Suppression</b>
+                  <small id="settingsVoiceNoiseSuppressionHint">Reduce background noise from your microphone.</small>
+                </span>
+                <select id="settingsVoiceNoiseSuppression" class="input settingsVoiceInlineSelect">
+                  <option value="off">Off</option>
+                  <option value="standard">Standard</option>
+                </select>
+              </div>
+
+              <label class="appearanceSwitchRow" for="settingsVoiceEchoCancellation">
+                <span class="appearanceSwitchText">
+                  <b id="settingsVoiceEchoCancellationLabel">Echo Cancellation</b>
+                  <small id="settingsVoiceEchoCancellationHint">Helps remove speaker feedback from your mic signal.</small>
+                </span>
+                <input id="settingsVoiceEchoCancellation" type="checkbox" checked />
+              </label>
+
+              <label class="appearanceSwitchRow" for="settingsVoiceAutoGainControl">
+                <span class="appearanceSwitchText">
+                  <b id="settingsVoiceAutoGainControlLabel">Automatic Gain Control</b>
+                  <small id="settingsVoiceAutoGainControlHint">Automatically stabilizes your microphone loudness.</small>
+                </span>
+                <input id="settingsVoiceAutoGainControl" type="checkbox" checked />
+              </label>
+
+              <div id="settingsVoiceProcessingHint" class="settingsHint">Changes are applied immediately while in a call.</div>
+            </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="notifications">
+            <div class="settingsCardSection">
+              <div id="settingsSectionCallSounds" class="settingsSectionTitle">Call Sounds</div>
+              <div id="settingsCallSoundsHint" class="settingsHint">Custom sound uploads are coming soon. You can still test the default cues.</div>
+              <div id="settingsCallSoundsList" class="settingsSoundList"></div>
+            </div>
+            <div class="settingsCardSection">
+              <div id="settingsSectionNotificationBehavior" class="settingsSectionTitle">Notification Behavior</div>
+              <label class="appearanceSwitchRow" for="settingsDndMuteNotifications">
+                <span class="appearanceSwitchText">
+                  <b id="settingsDndMuteNotificationsLabel">Mute notification sounds while Do Not Disturb</b>
+                  <small id="settingsDndMuteNotificationsHint">When your status is DND, message and ringing sounds are muted.</small>
+                </span>
+                <input id="settingsDndMuteNotifications" type="checkbox" checked />
+              </label>
+            </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="blocked-users">
+            <div class="settingsCardSection">
+              <div id="settingsSectionBlockedUsers" class="settingsSectionTitle">Blocked Users</div>
+              <div id="settingsBlockedUsersHint" class="settingsHint">Users you blocked will appear here.</div>
+              <div id="settingsBlockedUsersList" class="settingsBlockedList"></div>
+            </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="appearance">
+            <div class="settingsCardSection">
+              <div id="settingsSectionTheme" class="settingsSectionTitle">Theme</div>
+              <div class="themeGrid">
+                <div class="field">
+                  <label for="themePreset">Preset</label>
+                  <select id="themePreset" class="input">
+                    <option value="default-altara">Default ALTARA</option>
+                    <option value="midnight">Midnight</option>
+                    <option value="neon">Neon</option>
+                    <option value="clean-light">Clean Light</option>
+                    <option value="purple-dream">Purple Dream</option>
+                    <option value="zen-dark">Zen Dark</option>
+                    <option value="frost-glass">Frost Glass</option>
+                    <option value="discord-ish">Discord-ish</option>
+                    <option value="amoled">AMOLED</option>
+                    <option value="high-contrast">High Contrast</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+                <div class="themePresetInline">
+                  <label for="themeCustomPresetName">My theme preset</label>
+                  <div class="themePresetInline__row">
+                    <input id="themeCustomPresetName" class="input" type="text" maxlength="48" placeholder="Preset name..." />
+                    <button id="btnThemeSavePreset" class="btn ghost" type="button">Save</button>
+                  </div>
+                </div>
+                <div class="themePresetInline">
+                  <label for="themeCustomPresetSelect">Saved presets</label>
+                  <div class="themePresetInline__row">
+                    <select id="themeCustomPresetSelect" class="input">
+                      <option value="">None</option>
+                    </select>
+                    <button id="btnThemeApplyCustomPreset" class="btn ghost" type="button">Load</button>
+                    <button id="btnThemeDeleteCustomPreset" class="btn ghost" type="button">Delete</button>
+                  </div>
+                </div>
+
+                <div class="themeColorSections">
+                  <div class="themeColorSection">
+                    <div class="themeColorSectionTitle">Core (Background)</div>
+                    <div class="themeColorGrid themeColorGrid--core">
+                      <label class="themeColorField">
+                        <span>Background</span>
+                        <input id="themeBgColor" class="themeColorInput" type="text" value="#131417" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Accent</span>
+                        <input id="themeAccentColor" class="themeColorInput" type="text" value="#8ea0ff" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Secondary Accent</span>
+                        <input id="themeSecondaryAccentColor" class="themeColorInput" type="text" value="#62d1ff" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Background Secondary</span>
+                        <input id="themeBgSecondaryColor" class="themeColorInput" type="text" value="#1b1f27" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="themeColorSection">
+                    <div class="themeColorSectionTitle">Interface States</div>
+                    <div class="themeColorGrid themeColorGrid--extended">
+                      <label class="themeColorField">
+                        <span>Primary Button</span>
+                        <input id="themeButtonPrimaryColor" class="themeColorInput" type="text" value="#8ea0ff" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Secondary Button</span>
+                        <input id="themeButtonSecondaryColor" class="themeColorInput" type="text" value="#283043" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Input</span>
+                        <input id="themeInputColor" class="themeColorInput" type="text" value="#111722" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Border</span>
+                        <input id="themeBorderColor" class="themeColorInput" type="text" value="#4a5063" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Hover</span>
+                        <input id="themeHoverColor" class="themeColorInput" type="text" value="#2a3348" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Active</span>
+                        <input id="themeActiveColor" class="themeColorInput" type="text" value="#3d4b68" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="themeColorSection">
+                    <div class="themeColorSectionTitle">Messages & Links</div>
+                    <div class="themeColorGrid themeColorGrid--extended">
+                      <label class="themeColorField">
+                        <span>Message Sent</span>
+                        <input id="themeMessageSentColor" class="themeColorInput" type="text" value="#3f5076" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Message Received</span>
+                        <input id="themeMessageReceivedColor" class="themeColorInput" type="text" value="#202635" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Links</span>
+                        <input id="themeLinkColor" class="themeColorInput" type="text" value="#9ec3ff" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Success</span>
+                        <input id="themeSuccessColor" class="themeColorInput" type="text" value="#49d17f" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Warning</span>
+                        <input id="themeWarningColor" class="themeColorInput" type="text" value="#f5c354" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Error</span>
+                        <input id="themeDangerColor" class="themeColorInput" type="text" value="#f26f6f" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Info</span>
+                        <input id="themeInfoColor" class="themeColorInput" type="text" value="#62d1ff" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="themeColorSection">
+                    <div class="themeColorSectionTitle">Advanced Surfaces</div>
+                    <div class="themeColorGrid themeColorGrid--extended">
+                      <label class="themeColorField">
+                        <span>Surface Secondary</span>
+                        <input id="themeSurfaceSecondaryColor" class="themeColorInput" type="text" value="#1f2430" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Rows</span>
+                        <input id="themeRowColor" class="themeColorInput" type="text" value="#121318" />
+                      </label>
+                      <label class="themeColorField">
+                        <span>Text</span>
+                        <input id="themeTextColor" class="themeColorInput" type="text" value="#f1f2f5" />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <small class="themeGradientHint">Tip: Background now controls Surface + Sidebar + Shell + Top Bar (including gradient).</small>
+                <div class="themeLivePreviewBlock">
+                  <div id="settingsThemeLivePreview" class="themeLivePreview" aria-hidden="true">
+                    <div class="themeLivePreview__frame">
+                      <div class="themeLivePreview__sidebar">
+                        <div class="themeLivePreview__sidebarTop"></div>
+                        <div class="themeLivePreview__sidebarList">
+                          <span class="themeLivePreview__dot themeLivePreview__dot--active"></span>
+                          <span class="themeLivePreview__dot"></span>
+                          <span class="themeLivePreview__dot"></span>
+                        </div>
+                      </div>
+                      <div class="themeLivePreview__main">
+                        <div class="themeLivePreview__topbar">
+                          <span class="themeLivePreview__topPill"></span>
+                          <span class="themeLivePreview__topPill"></span>
+                        </div>
+                        <div class="themeLivePreview__content">
+                          <span class="themeLivePreview__row themeLivePreview__row--accent"></span>
+                          <span class="themeLivePreview__row"></span>
+                          <span class="themeLivePreview__row"></span>
+                          <div class="themeLivePreview__composer">
+                            <span class="themeLivePreview__composerLine"></span>
+                            <span class="themeLivePreview__composerSend"></span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <small class="themeLivePreviewHint">Live preview updates instantly while you edit.</small>
+                </div>
+                <input id="themeSurfaceColor" type="hidden" value="#131417" />
+                <input id="themeLeftSidebarColor" type="hidden" value="#131417" />
+                <input id="themeShellColor" type="hidden" value="#131417" />
+                <input id="themeTopbarColor" type="hidden" value="#131417" />
+                <input id="themeColorIntensity" type="hidden" value="100" />
+              </div>
+              <div class="themeActions">
+                <button id="btnSaveTheme" class="btn primary" type="button">Apply</button>
+                <button id="btnCancelTheme" class="btn ghost" type="button">Cancel</button>
+                <button id="btnResetTheme" class="btn ghost" type="button">Reset</button>
+                <button id="btnThemeExport" class="btn ghost" type="button">Export JSON</button>
+                <button id="btnThemeImport" class="btn ghost" type="button">Import JSON</button>
+              </div>
+              <input id="themeImportFile" type="file" accept="application/json,.json" hidden />
+              <div id="settingsThemeHint" class="hint">These colors are saved to your account.</div>
+              <div id="themeAutoAdjustHint" class="hint hidden"></div>
+            </div>
+
+            <div class="settingsCardSection">
+              <div id="settingsSectionMore" class="settingsSectionTitle">More Personalization</div>
+
+              <div class="themeAppearanceMetaGrid">
+                <div class="field">
+                  <label for="themeMode">Mode</label>
+                  <select id="themeMode" class="input">
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                    <option value="auto">Auto (system)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="themeVisualStyle">Visual Style</label>
+                  <select id="themeVisualStyle" class="input">
+                    <option value="minimal">Minimal</option>
+                    <option value="soft">Soft</option>
+                    <option value="glass">Glass</option>
+                    <option value="solid">Solid</option>
+                    <option value="gaming">Gaming</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="themeDensity">Density</label>
+                  <select id="themeDensity" class="input">
+                    <option value="compact">Compact</option>
+                    <option value="normal">Normal</option>
+                    <option value="comfortable">Comfortable</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="themeLayoutMood">Layout Mood</label>
+                  <select id="themeLayoutMood" class="input">
+                    <option value="calm">Calm</option>
+                    <option value="gaming">Gaming</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <label id="themeLanguageLabel" for="themeLanguage">Language</label>
+                <select id="themeLanguage" class="input">
+                  <option value="en">English</option>
+                  <option value="pt">Português</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label id="themeTimeFormatLabel" for="themeTimeFormat">Message time format</label>
+                <select id="themeTimeFormat" class="input">
+                  <option value="24h">24-hour (23:59)</option>
+                  <option value="12h">12-hour (11:59 PM)</option>
+                </select>
+                <div id="themeTimeFormatHint" class="hint">Choose 24h or 12h AM/PM (US style).</div>
+              </div>
+
+              <label class="appearanceSwitchRow" for="themeProfileCardBanner">
+                <span class="appearanceSwitchText">
+                  <b>Profile Card Banner</b>
+                  <small>Show your profile banner behind the card in the left sidebar.</small>
+                </span>
+                <input id="themeProfileCardBanner" type="checkbox" checked />
+              </label>
+
+              <div class="appearanceControls">
+                <label class="appearanceRangeRow" for="themeRoundness">
+                  <span class="appearanceLabel">UI Roundness</span>
+                  <span id="themeRoundnessValue" class="appearanceValue">58%</span>
+                </label>
+                <input id="themeRoundness" type="range" min="0" max="100" step="1" value="58" />
+
+                <label class="appearanceRangeRow" for="themeBlurStrength">
+                  <span class="appearanceLabel">Blur Intensity</span>
+                  <span id="themeBlurStrengthValue" class="appearanceValue">12px</span>
+                </label>
+                <input id="themeBlurStrength" type="range" min="0" max="40" step="1" value="12" />
+
+                <label class="appearanceRangeRow" for="themePanelAlpha">
+                  <span class="appearanceLabel">Panel Opacity</span>
+                  <span id="themePanelAlphaValue" class="appearanceValue">94%</span>
+                </label>
+                <input id="themePanelAlpha" type="range" min="45" max="100" step="1" value="94" />
+
+                <label class="appearanceRangeRow" for="themeBorderThickness">
+                  <span class="appearanceLabel">Border Thickness</span>
+                  <span id="themeBorderThicknessValue" class="appearanceValue">1px</span>
+                </label>
+                <input id="themeBorderThickness" type="range" min="0" max="4" step="1" value="1" />
+
+                <label class="appearanceRangeRow" for="themeShadowStrength">
+                  <span class="appearanceLabel">Shadow Strength</span>
+                  <span id="themeShadowStrengthValue" class="appearanceValue">55%</span>
+                </label>
+                <input id="themeShadowStrength" type="range" min="0" max="100" step="1" value="55" />
+
+                <label class="appearanceRangeRow" for="themeSpacingScale">
+                  <span class="appearanceLabel">Spacing Scale</span>
+                  <span id="themeSpacingScaleValue" class="appearanceValue">100%</span>
+                </label>
+                <input id="themeSpacingScale" type="range" min="70" max="140" step="1" value="100" />
+
+                <label class="appearanceRangeRow" for="themeFontScale">
+                  <span class="appearanceLabel">Font Scale</span>
+                  <span id="themeFontScaleValue" class="appearanceValue">100%</span>
+                </label>
+                <input id="themeFontScale" type="range" min="85" max="135" step="1" value="100" />
+
+                <label class="appearanceRangeRow" for="themeUiScale">
+                  <span class="appearanceLabel">UI Scale</span>
+                  <span id="themeUiScaleValue" class="appearanceValue">100%</span>
+                </label>
+                <input id="themeUiScale" type="range" min="70" max="150" step="1" value="100" />
+
+                <label class="appearanceRangeRow" for="themeLeftSidebarWidth">
+                  <span class="appearanceLabel">Left Sidebar Width</span>
+                  <span id="themeLeftSidebarWidthValue" class="appearanceValue">340px</span>
+                </label>
+                <input id="themeLeftSidebarWidth" type="range" min="300" max="420" step="1" value="340" />
+
+                <label class="appearanceRangeRow" for="themeUiZoom">
+                  <span id="themeUiZoomLabel" class="appearanceLabel">UI Zoom</span>
+                  <span id="themeUiZoomValue" class="appearanceValue">100%</span>
+                </label>
+                <input id="themeUiZoom" type="range" min="70" max="200" step="1" value="100" />
+                <small id="themeUiZoomHint" class="appearanceHint">Tip: configure your zoom shortcut in Binds.</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="keybinds">
+            <div id="settingsCallKeybindsSection" class="settingsCardSection">
+              <div id="settingsSectionCallKeybinds" class="settingsSectionTitle">Call Keybinds</div>
+              <div class="settingsKeybindList">
+                <div class="settingsKeybindRow">
+                  <div class="settingsKeybindMeta">
+                    <b id="settingsCallKeybindMicLabel">Toggle Microphone</b>
+                    <small id="settingsCallKeybindMicHint">Mute or unmute your microphone anytime.</small>
+                  </div>
+                  <div class="settingsKeybindActions">
+                    <button id="btnSettingsCallKeybindMic" class="btn ghost settingsKeybindBtn" type="button">Not set</button>
+                    <button id="btnSettingsCallKeybindMicReset" class="btn ghost settingsKeybindResetBtn" type="button">Clear</button>
+                  </div>
+                </div>
+                <div class="settingsKeybindRow">
+                  <div class="settingsKeybindMeta">
+                    <b id="settingsCallKeybindDeafenLabel">Toggle Headphones</b>
+                    <small id="settingsCallKeybindDeafenHint">Mute or unmute incoming audio anytime.</small>
+                  </div>
+                  <div class="settingsKeybindActions">
+                    <button id="btnSettingsCallKeybindDeafen" class="btn ghost settingsKeybindBtn" type="button">Not set</button>
+                    <button id="btnSettingsCallKeybindDeafenReset" class="btn ghost settingsKeybindResetBtn" type="button">Clear</button>
+                  </div>
+                </div>
+              </div>
+              <div id="settingsCallKeybindCaptureHint" class="settingsHint settingsKeybindCaptureHint">These shortcuts work anywhere in the app.</div>
+            </div>
+            <div id="settingsAppKeybindsSection" class="settingsCardSection">
+              <div id="settingsSectionAppKeybinds" class="settingsSectionTitle">App Binds</div>
+              <div class="settingsKeybindList">
+                <div class="settingsKeybindRow">
+                  <div class="settingsKeybindMeta">
+                    <b id="settingsAppKeybindAltSLabel">Toggle Sidebars / DM Profile</b>
+                    <small id="settingsAppKeybindAltSHint">Context shortcut: in DMs it toggles profile, elsewhere it toggles side panels.</small>
+                  </div>
+                  <div class="settingsKeybindActions">
+                    <button id="btnSettingsAppKeybindTogglePanels" class="btn ghost settingsKeybindBtn" type="button">Alt + S</button>
+                    <button id="btnSettingsAppKeybindTogglePanelsReset" class="btn ghost settingsKeybindResetBtn" type="button">Clear</button>
+                  </div>
+                </div>
+                <div class="settingsKeybindRow">
+                  <div class="settingsKeybindMeta">
+                    <b id="settingsAppKeybindUiZoomLabel">UI Zoom</b>
+                    <small id="settingsAppKeybindUiZoomHint">Hold Alt and use the mouse wheel to zoom the interface.</small>
+                  </div>
+                  <div class="settingsKeybindActions">
+                    <button id="btnSettingsAppKeybindUiZoom" class="btn ghost settingsKeybindBtn" type="button">Alt + Mouse Wheel</button>
+                    <button id="btnSettingsAppKeybindUiZoomReset" class="btn ghost settingsKeybindResetBtn" type="button">Clear</button>
+                  </div>
+                </div>
+                <div class="settingsKeybindRow">
+                  <div class="settingsKeybindMeta">
+                    <b id="settingsAppKeybindDmEditLabel">Edit Last DM Message</b>
+                    <small id="settingsAppKeybindDmEditHint">In DMs, press Arrow Up on an empty composer to edit your latest message.</small>
+                  </div>
+                  <div class="settingsKeybindActions">
+                    <button id="btnSettingsAppKeybindDmEdit" class="btn ghost settingsKeybindBtn" type="button">Arrow Up</button>
+                    <button id="btnSettingsAppKeybindDmEditReset" class="btn ghost settingsKeybindResetBtn" type="button">Clear</button>
+                  </div>
+                </div>
+              </div>
+              <div id="settingsAppKeybindHint" class="settingsHint settingsKeybindCaptureHint">These app shortcuts work anywhere in the app.</div>
+            </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="advanced">
+            <div id="settingsDesktopBehaviorSection" class="settingsCardSection">
+              <div id="settingsSectionDesktopBehavior" class="settingsSectionTitle">Desktop Behavior</div>
+              <label class="appearanceSwitchRow" for="settingsDesktopCloseToTray">
+                <span class="appearanceSwitchText">
+                  <b id="settingsDesktopCloseToTrayLabel">Close button minimizes to tray</b>
+                  <small id="settingsDesktopCloseToTrayHint">When you click X, Altara keeps running in the system tray.</small>
+                </span>
+                <input id="settingsDesktopCloseToTray" type="checkbox" checked />
+              </label>
+              <label class="appearanceSwitchRow" for="settingsDesktopLaunchOnStartup">
+                <span class="appearanceSwitchText">
+                  <b id="settingsDesktopLaunchOnStartupLabel">Open Altara when the computer starts</b>
+                  <small id="settingsDesktopLaunchOnStartupHint">Start Altara automatically when you sign in to Windows.</small>
+                </span>
+                <input id="settingsDesktopLaunchOnStartup" type="checkbox" checked />
+              </label>
+              <div id="settingsDesktopBehaviorHint" class="settingsHint">Desktop app only.</div>
+            </div>
+            <div id="settingsDesktopPerformanceSection" class="settingsCardSection">
+              <div id="settingsSectionPerformance" class="settingsSectionTitle">Performance</div>
+              <label class="appearanceSwitchRow" for="settingsReduceMotion">
+                <span class="appearanceSwitchText">
+                  <b id="settingsReduceMotionLabel">Reduce interface animations</b>
+                  <small id="settingsReduceMotionHint">Cuts transitions and motion-heavy effects to keep the app lighter.</small>
+                </span>
+                <input id="settingsReduceMotion" type="checkbox" />
+              </label>
+              <label class="appearanceSwitchRow" for="settingsPauseGifsWhenUnfocused">
+                <span class="appearanceSwitchText">
+                  <b id="settingsPauseGifsWhenUnfocusedLabel">Pause GIFs when Altara is in the background</b>
+                  <small id="settingsPauseGifsWhenUnfocusedHint">Stops GIF playback while the window is not focused.</small>
+                </span>
+                <input id="settingsPauseGifsWhenUnfocused" type="checkbox" />
+              </label>
+              <label class="appearanceSwitchRow" for="settingsGifsPlayOnHover">
+                <span class="appearanceSwitchText">
+                  <b id="settingsGifsPlayOnHoverLabel">Play GIFs only on hover</b>
+                  <small id="settingsGifsPlayOnHoverHint">GIF messages stay paused until you hover them.</small>
+                </span>
+                <input id="settingsGifsPlayOnHover" type="checkbox" />
+              </label>
+              <label class="appearanceSwitchRow" for="settingsHardwareAcceleration">
+                <span class="appearanceSwitchText">
+                  <b id="settingsHardwareAccelerationLabel">Use hardware acceleration</b>
+                  <small id="settingsHardwareAccelerationHint">Uses the GPU to help render the desktop app. Can reduce CPU on some PCs.</small>
+                </span>
+                <input id="settingsHardwareAcceleration" type="checkbox" checked />
+              </label>
+            </div>
+            <div id="settingsDesktopUpdateSection" class="settingsCardSection">
+              <div id="settingsSectionDesktopUpdates" class="settingsSectionTitle">Desktop Updates</div>
+              <div class="settingsDesktopUpdateActions">
+                <button id="btnSettingsDesktopUpdateCheck" class="btn ghost" type="button">Check for updates</button>
+                <button id="btnSettingsDesktopUpdateDownload" class="btn hidden" type="button">Download update</button>
+                <button id="btnSettingsDesktopUpdateInstall" class="btn hidden" type="button">Restart & Update</button>
+              </div>
+              <div id="settingsDesktopUpdateStatus" class="settingsHint settingsDesktopUpdateStatus">Click check to verify if this app is up to date.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- AVATAR EDITOR MODAL -->
+  <div id="avatarEditorModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard">
+      <div class="modalTop">
+        <div class="modalTitle">Editar Avatar</div>
+        <button id="avatarEditorClose" class="btn ghost">&times;</button>
+      </div>
+
+      <div class="editorWrap">
+        <canvas id="avatarEditorCanvas" class="editorCanvas"></canvas>
+      </div>
+
+      <input id="avatarEditorZoom" type="range" min="1" max="3" step="0.001" value="1" />
+
+      <div class="rowInline">
+        <button id="avatarEditorReset" class="btn ghost">Reset</button>
+        <button id="avatarEditorApply" class="btn primary">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BANNER EDITOR MODAL -->
+  <div id="bannerEditorModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard">
+      <div class="modalTop">
+        <div class="modalTitle">Editar Banner</div>
+        <button id="bannerEditorClose" class="btn ghost">&times;</button>
+      </div>
+
+      <div class="editorWrap">
+        <canvas id="bannerEditorCanvas" class="editorCanvas editorCanvas--banner"></canvas>
+      </div>
+
+      <input id="bannerEditorZoom" type="range" min="1" max="3" step="0.001" value="1" />
+
+      <div class="rowInline">
+        <button id="bannerEditorReset" class="btn ghost">Reset</button>
+        <button id="bannerEditorApply" class="btn primary">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GIF MODAL -->
+  <div id="gifModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard">
+      <div class="modalTop">
+        <div class="modalTitle">Escolher GIF</div>
+        <button id="btnGifClose" class="btn ghost">&times;</button>
+      </div>
+      <div class="editorWrap">
+        <div id="gifFolderTop" class="gifFolderTop" style="display:none;">
+          <button id="btnGifFolderBack" class="gifFolderBack arrowNavBtn" type="button" aria-label="Voltar" title="Voltar">
+            <span class="arrowNavBtn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M15.5 5 8.5 12l7 7"></path>
+              </svg>
+            </span>
+          </button>
+          <div id="gifFolderTitle" class="gifFolderTitle">Favorites</div>
+        </div>
+        <div id="gifSearchRow" class="gifSearchRow">
+          <div class="gifSearchField">
+            <span class="gifSearchIcon" aria-hidden="true">&#128269;</span>
+            <input id="gifSearch" class="input" placeholder="Search Tenor" />
+          </div>
+        </div>
+        <button id="btnGifTrending" class="sr-only" type="button">Trending</button>
+        <button id="btnGifFavorites" class="sr-only" type="button">Favoritos</button>
+        <div id="gifQuickTags" class="gifQuickTags"></div>
+        <div id="gifGrid" class="gifGrid"></div>
+        <div id="gifHint" class="hint" style="margin-top:10px; display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- USER CARD MODAL -->
+  <div id="userCardModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard userCardCard" role="dialog" aria-modal="true">
+      <button id="btnUserCardClose" class="btn ghost userCardCloseBtn" type="button">&times;</button>
+      <div class="userCardSurface">
+        <aside class="userCardOverview">
+          <div class="userCardBanner"></div>
+          <div class="userCardBody">
+            <div class="userCardIdentity">
+              <div id="userCardAvatar" class="userCardAvatar"></div>
+              <div class="userCardIdentityMeta">
+                <div class="userCardBadgeRow">
+                  <div id="userCardRelation" class="userCardRelation" hidden></div>
+                </div>
+                <div id="userCardName" class="userCardName">...</div>
+                <div id="userCardHandle" class="userCardHandle">@...</div>
+                <div id="userCardPronouns" class="userCardPronouns" hidden></div>
+              </div>
+            </div>
+            <div id="userCardBio" class="userCardBio">No bio.</div>
+            <section class="userCardSection">
+              <div id="userCardSectionAccountTitle" class="userCardSection__title">Account</div>
+              <div id="userCardFacts" class="userCardFacts"></div>
+            </section>
+            <div class="userCardActions">
+              <button id="btnUserCardDm" class="btn primary" type="button">Message</button>
+              <button id="btnUserCardOpenProfile" class="btn ghost" type="button">Profile</button>
+            </div>
+          </div>
+        </aside>
+        <section class="userCardPanelsArea">
+          <div id="userCardTabsGroup" class="userCardTabs" role="tablist" aria-label="Profile">
+            <button id="userCardTabActivity" class="userCardTab is-active" type="button" role="tab" aria-selected="true" data-user-card-tab="activity">Activity</button>
+            <button id="userCardTabMedia" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="media">Media</button>
+            <button id="userCardTabShared" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="shared">Connections</button>
+            <button id="userCardTabWidgets" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="widgets">Widgets</button>
+          </div>
+          <div class="userCardPanels">
+            <section id="userCardActivityPanel" class="userCardPanel is-active" data-user-card-panel="activity"></section>
+            <section id="userCardMediaPanel" class="userCardPanel" data-user-card-panel="media" hidden></section>
+            <section id="userCardSharedPanel" class="userCardPanel" data-user-card-panel="shared" hidden></section>
+            <section id="userCardWidgetsPanel" class="userCardPanel" data-user-card-panel="widgets" hidden></section>
+          </div>
+        </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="profileWidgetModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard profileWidgetModalCard" role="dialog" aria-modal="true" aria-labelledby="profileWidgetModalTitle">
+      <div class="modalTop">
+        <div id="profileWidgetModalTitle" class="modalTitle">Widget</div>
+        <button id="btnProfileWidgetModalClose" class="btn ghost" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal__body profileWidgetModalBody">
+        <input id="profileWidgetMode" type="hidden" value="create" />
+        <input id="profileWidgetId" type="hidden" value="" />
+
+        <div class="field">
+          <label for="profileWidgetType">Type</label>
+          <select id="profileWidgetType" class="input">
+            <option value="games">Games</option>
+            <option value="movies">Movies</option>
+            <option value="series">Series</option>
+            <option value="music">Music</option>
+            <option value="anime">Anime</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="profileWidgetTitleInput">Title</label>
+          <input id="profileWidgetTitleInput" class="input" maxlength="120" placeholder="My favorite games" />
+        </div>
+
+        <div class="field">
+          <label for="profileWidgetVisibility">Visibility</label>
+          <select id="profileWidgetVisibility" class="input">
+            <option value="public">Public</option>
+            <option value="friends">Friends</option>
+            <option value="private">Private</option>
+          </select>
+        </div>
+
+        <label class="appearanceSwitchRow profileWidgetEnabledRow" for="profileWidgetEnabled">
+          <div class="appearanceSwitchText">
+            <b>Enabled</b>
+            <small>Disable to hide this widget from public view.</small>
+          </div>
+          <input id="profileWidgetEnabled" type="checkbox" checked />
+        </label>
+      </div>
+      <div class="profileWidgetModalActions">
+        <button id="btnProfileWidgetModalCancel" class="btn ghost" type="button">Cancel</button>
+        <button id="btnProfileWidgetModalSave" class="btn primary" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="profileWidgetItemModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard profileWidgetItemModalCard" role="dialog" aria-modal="true" aria-labelledby="profileWidgetItemModalTitle">
+      <div class="modalTop">
+        <div id="profileWidgetItemModalTitle" class="modalTitle">Widget Item</div>
+        <button id="btnProfileWidgetItemModalClose" class="btn ghost" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal__body profileWidgetItemModalBody">
+        <input id="profileWidgetItemMode" type="hidden" value="create" />
+        <input id="profileWidgetItemId" type="hidden" value="" />
+        <input id="profileWidgetItemWidgetId" type="hidden" value="" />
+        <input id="profileWidgetItemMetadata" type="hidden" value="{}" />
+
+        <section id="profileWidgetCatalogSearch" class="profileWidgetCatalogSearch">
+          <div class="field">
+            <label for="profileWidgetItemCatalogQuery">Search online</label>
+            <input id="profileWidgetItemCatalogQuery" class="input" maxlength="80" placeholder="Search games..." autocomplete="off" />
+          </div>
+          <div id="profileWidgetCatalogStatus" class="profileWidgetCatalogStatus"></div>
+          <div id="profileWidgetCatalogResults" class="profileWidgetCatalogResults"></div>
+        </section>
+
+        <div id="profileWidgetItemManualFields" class="profileWidgetItemManualFields">
+          <section id="profileWidgetItemReadonlyPreview" class="profileWidgetItemReadonlyPreview hidden" aria-hidden="true">
+            <div id="profileWidgetItemReadonlyPreviewMedia" class="profileWidgetItemReadonlyPreviewMedia"></div>
+            <div class="profileWidgetItemReadonlyPreviewBody">
+              <div id="profileWidgetItemReadonlyPreviewTitle" class="profileWidgetItemReadonlyPreviewTitle"></div>
+              <div id="profileWidgetItemReadonlyPreviewMeta" class="profileWidgetItemReadonlyPreviewMeta"></div>
+            </div>
+          </section>
+
+          <div id="profileWidgetItemTitleField" class="field">
+            <label for="profileWidgetItemTitle">Title</label>
+            <input id="profileWidgetItemTitle" class="input" maxlength="120" placeholder="Cyberpunk 2077" />
+          </div>
+
+          <div id="profileWidgetItemCoverUrlField" class="field">
+            <label for="profileWidgetItemCoverUrl">Cover URL (optional)</label>
+            <input id="profileWidgetItemCoverUrl" class="input" placeholder="https://..." />
+          </div>
+
+          <div id="profileWidgetItemExternalUrlField" class="field">
+            <label for="profileWidgetItemExternalUrl">External URL (optional)</label>
+            <input id="profileWidgetItemExternalUrl" class="input" placeholder="https://..." />
+          </div>
+
+          <div class="grid2 settingsGrid">
+            <div class="settingsColumn">
+              <div class="field">
+                <label for="profileWidgetItemStatus">Status</label>
+                <select id="profileWidgetItemStatus" class="input">
+                  <option value="favorite">Favorite</option>
+                  <option value="current">Currently</option>
+                  <option value="wishlist">Want to</option>
+                  <option value="completed">Completed</option>
+                  <option value="dropped">Dropped</option>
+                </select>
+              </div>
+            </div>
+            <div class="settingsColumn">
+              <div class="field">
+                <label for="profileWidgetItemRating">Rating</label>
+                <select id="profileWidgetItemRating" class="input">
+                  <option value="">No rating</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="profileWidgetItemNote">Note (optional)</label>
+            <textarea id="profileWidgetItemNote" class="input" rows="4" maxlength="280" placeholder="Quick note..."></textarea>
+          </div>
+
+          <label class="appearanceSwitchRow profileWidgetEnabledRow" for="profileWidgetItemFeatured">
+            <div class="appearanceSwitchText">
+              <b>Featured</b>
+              <small>Show this as the main highlighted item.</small>
+            </div>
+            <input id="profileWidgetItemFeatured" type="checkbox" />
+          </label>
+        </div>
+      </div>
+      <div class="profileWidgetModalActions">
+        <button id="btnProfileWidgetItemModalCancel" class="btn ghost" type="button">Cancel</button>
+        <button id="btnProfileWidgetItemModalSave" class="btn primary" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ATTACHMENT PREVIEW MODAL -->
+  <div id="dmAttachmentModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard dmAttachmentCard" role="dialog" aria-modal="true">
+      <div class="modalTop dmAttachmentTop">
+        <div>
+          <div id="dmAttachmentModalTitle" class="modalTitle">Anexo</div>
+          <div id="dmAttachmentModalInfo" class="hint"></div>
+        </div>
+        <div class="dmAttachmentTopActions">
+          <a id="btnDmAttachmentDownload" class="btn ghost" href="#" download target="_blank" rel="noopener noreferrer" title="Download">Download</a>
+          <button id="btnDmAttachmentClose" class="btn ghost" type="button">&times;</button>
+        </div>
+      </div>
+      <div id="dmAttachmentModalBody" class="dmAttachmentBody"></div>
+    </div>
+  </div>
+
+  <!-- CREATE SERVER MODAL -->
+  <div id="serverCreateModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard serverCreateCard" role="dialog" aria-modal="true" aria-labelledby="serverCreateTitle">
+      <div class="modalTop serverCreateTop">
+        <div>
+          <div id="serverCreateTitle" class="modalTitle">Customize Your Server</div>
+          <div class="hint">Give your new server a name and an icon. You can always change it later.</div>
+        </div>
+        <button id="btnServerCreateClose" class="btn ghost" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="serverCreateBody">
+        <div class="serverCreateIconRow">
+          <button id="serverCreateIconPreview" class="serverCreateIconPreview" type="button" aria-label="Choose server icon">
+            <span class="groupDmAvatarFallback">S</span>
+            <span class="serverCreateIconPlus" aria-hidden="true">+</span>
+          </button>
+          <div class="serverCreateIconActions">
+            <button id="btnServerCreateIconPick" class="btn ghost" type="button">Upload</button>
+            <button id="btnServerCreateIconClear" class="btn ghost" type="button">Remove</button>
+          </div>
+          <input id="serverCreateIconFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+        </div>
+
+        <div class="field">
+          <label for="serverCreateName">Server Name</label>
+          <input id="serverCreateName" class="input" placeholder="My server" maxlength="60" />
+        </div>
+      </div>
+
+      <div class="serverCreateFooter">
+        <button id="btnServerCreateCancel" class="btn ghost" type="button">Back</button>
+        <button id="btnServerCreateConfirm" class="btn primary" type="button">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CREATE SERVER CHANNEL MODAL -->
+  <div id="serverChannelCreateModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard serverChannelCreateCard" role="dialog" aria-modal="true" aria-labelledby="serverChannelCreateTitle">
+      <div class="modalTop serverCreateTop">
+        <div>
+          <div id="serverChannelCreateTitle" class="modalTitle">Create Channel</div>
+          <div id="serverChannelCreateSub" class="hint">Choose a channel type and name.</div>
+        </div>
+        <button id="btnServerChannelCreateClose" class="btn ghost" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="serverCreateBody serverChannelCreateBody">
+        <input id="serverChannelCreateType" type="hidden" value="text" />
+        <input id="serverChannelCreateCategory" type="hidden" value="" />
+
+        <section id="serverChannelCreateTypeSection" class="serverChannelCreateSection">
+          <div class="serverChannelCreateSectionTitle">Channel Type</div>
+          <div class="serverChannelTypeList" role="radiogroup" aria-label="Channel Type">
+            <label class="serverChannelTypeOption">
+              <input class="serverChannelTypeOption__input" type="radio" name="serverChannelCreateTypeRadio" value="text" checked />
+              <span class="serverChannelTypeOption__radio" aria-hidden="true"></span>
+              <span class="serverChannelTypeOption__content">
+                <span class="serverChannelTypeOption__top">
+                  <span class="serverChannelTypeOption__icon" aria-hidden="true">#</span>
+                  <span class="serverChannelTypeOption__title">Text</span>
+                </span>
+                <span class="serverChannelTypeOption__desc">Send messages, images, GIFs, emoji, opinions, and files.</span>
+              </span>
+            </label>
+
+            <label class="serverChannelTypeOption">
+              <input class="serverChannelTypeOption__input" type="radio" name="serverChannelCreateTypeRadio" value="voice" />
+              <span class="serverChannelTypeOption__radio" aria-hidden="true"></span>
+              <span class="serverChannelTypeOption__content">
+                <span class="serverChannelTypeOption__top">
+                  <span class="serverChannelTypeOption__icon" aria-hidden="true">&#127911;</span>
+                  <span class="serverChannelTypeOption__title">Voice</span>
+                </span>
+                <span class="serverChannelTypeOption__desc">Hang out together with voice, video, and screen share.</span>
+              </span>
+            </label>
+
+            <label class="serverChannelTypeOption">
+              <input class="serverChannelTypeOption__input" type="radio" name="serverChannelCreateTypeRadio" value="category" />
+              <span class="serverChannelTypeOption__radio" aria-hidden="true"></span>
+              <span class="serverChannelTypeOption__content">
+                <span class="serverChannelTypeOption__top">
+                  <span class="serverChannelTypeOption__icon" aria-hidden="true">&#8801;</span>
+                  <span class="serverChannelTypeOption__title">Category</span>
+                </span>
+                <span class="serverChannelTypeOption__desc">Organize text and voice channels into sections.</span>
+              </span>
+            </label>
+          </div>
+        </section>
+
+        <section id="serverChannelCreateCategorySection" class="serverChannelCreateSection">
+          <label class="serverChannelCreateSectionTitle" for="serverChannelCreateCategorySelect">Category</label>
+          <div class="serverChannelCreateSelectWrap">
+            <select id="serverChannelCreateCategorySelect" class="serverChannelCreateCategorySelect" aria-label="Channel category">
+              <option value="">No Category</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="serverChannelCreateSection">
+          <label id="serverChannelCreateNameLabel" class="serverChannelCreateSectionTitle" for="serverChannelCreateName">Channel Name</label>
+          <div class="serverChannelNameField">
+            <span id="serverChannelCreateNamePrefix" class="serverChannelNameField__prefix" aria-hidden="true">#</span>
+            <input id="serverChannelCreateName" class="serverChannelNameField__input" placeholder="new-channel" maxlength="60" />
+          </div>
+        </section>
+
+        <section id="serverChannelCreateVoiceSettingsSection" class="serverChannelCreateSection">
+          <div class="serverChannelCreateSectionTitle">Voice Settings</div>
+
+          <div id="serverChannelCreateUserLimitSection" class="field">
+            <label for="serverChannelCreateUserLimit">User Limit</label>
+            <input
+              id="serverChannelCreateUserLimit"
+              class="input"
+              type="number"
+              min="0"
+              max="99"
+              step="1"
+              inputmode="numeric"
+              value="0"
+            />
+            <div class="hint">Set to 0 to use only the technical media cap.</div>
+          </div>
+
+          <div id="serverChannelCreateMediaModeSection" class="field">
+            <label for="serverChannelCreateMediaMode">Media Mode</label>
+            <div class="serverChannelCreateSelectWrap">
+              <select id="serverChannelCreateMediaMode" class="serverChannelCreateCategorySelect" aria-label="Voice channel media mode">
+                <option value="audio_only" selected>Audio only</option>
+                <option value="video_enabled">Video enabled</option>
+                <option value="screenshare_enabled">Screen share enabled</option>
+                <option value="stage_like" disabled>Stage-like (coming soon)</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="serverChannelCreateVoiceMetaHint" class="hint"></div>
+        </section>
+
+        <section id="serverChannelCreatePrivateSection" class="serverChannelCreateSection serverChannelCreatePrivate">
+          <div class="serverChannelCreatePrivate__text">
+            <div class="serverChannelCreatePrivate__title">Private Channel</div>
+            <div class="serverChannelCreatePrivate__hint">Only selected members and roles will be able to view this channel.</div>
+          </div>
+          <label class="serverChannelCreatePrivate__switch" aria-label="Private Channel">
+            <input id="serverChannelCreatePrivate" type="checkbox" />
+            <span class="serverChannelCreatePrivate__slider" aria-hidden="true"></span>
+          </label>
+        </section>
+
+        <section id="serverChannelCreateAccessSection" class="serverChannelCreateSection serverChannelCreateAccess">
+          <div class="serverChannelCreateSectionTitle">Who Can Access</div>
+          <div id="serverChannelCreateAccessMeta" class="hint">Select roles or members. You always keep access.</div>
+          <div class="serverChannelCreateAccessGrid">
+            <div class="serverChannelCreateAccessGroup">
+              <div class="serverChannelCreateAccessGroup__title">Roles</div>
+              <div id="serverChannelCreateRoleAccessList" class="serverChannelCreateAccessList">
+                <div class="hint">No custom roles yet.</div>
+              </div>
+            </div>
+            <div class="serverChannelCreateAccessGroup">
+              <div class="serverChannelCreateAccessGroup__title">Members</div>
+              <div id="serverChannelCreateMemberAccessList" class="serverChannelCreateAccessList">
+                <div class="hint">Loading members...</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="serverCreateFooter">
+        <button id="btnServerChannelCreateCancel" class="btn ghost" type="button">Cancel</button>
+        <button id="btnServerChannelCreateConfirm" class="btn primary" type="button">Create Channel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SERVER INVITE MODAL -->
+  <div id="serverInviteModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard serverChannelCreateCard" role="dialog" aria-modal="true" aria-labelledby="serverInviteTitle">
+      <div class="modalTop serverCreateTop">
+        <div>
+          <div id="serverInviteTitle" class="modalTitle">Invite People</div>
+          <div id="serverInviteSub" class="hint">Create an invite link and share it.</div>
+        </div>
+        <button id="btnServerInviteClose" class="btn ghost" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="serverCreateBody">
+        <div class="field">
+          <label for="serverInviteLinkInput">Invite Link</label>
+          <div class="serverInviteLinkRow">
+            <input id="serverInviteLinkInput" class="input" placeholder="Generate a link..." readonly />
+            <button id="btnServerInviteCopy" class="btn ghost" type="button">Copy</button>
+          </div>
+        </div>
+        <div id="serverInviteMeta" class="hint">Generate a new link to invite people to this server.</div>
+
+        <section class="serverInviteSettingsCard">
+          <div class="serverInviteSettingsCard__head">
+            <div class="serverInviteSettingsCard__title">Invite Link Settings</div>
+            <div id="serverInviteSettingsSummary" class="serverInviteSettingsCard__summary">7 days • No limit</div>
+          </div>
+          <div class="serverInviteSettingsGrid">
+            <div class="field">
+              <label for="serverInviteExpireSelect">Expire After</label>
+              <select id="serverInviteExpireSelect" class="input">
+                <option value="1">1 hour</option>
+                <option value="12">12 hours</option>
+                <option value="24">1 day</option>
+                <option value="72">3 days</option>
+                <option value="168" selected>7 days</option>
+                <option value="720">30 days</option>
+                <option value="0">Never</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="serverInviteMaxUsesSelect">Max Number Of Uses</label>
+              <select id="serverInviteMaxUsesSelect" class="input">
+                <option value="0" selected>No limit</option>
+                <option value="1">1 use</option>
+                <option value="5">5 uses</option>
+                <option value="10">10 uses</option>
+                <option value="25">25 uses</option>
+                <option value="50">50 uses</option>
+                <option value="100">100 uses</option>
+              </select>
+            </div>
+          </div>
+          <div class="serverInviteSettingsCard__note">Change the settings, then generate a fresh link with those rules.</div>
+        </section>
+
+        <div class="field">
+          <label for="serverInviteFriendSearch">Send Invite Link In DM</label>
+          <input id="serverInviteFriendSearch" class="input" placeholder="Search friends..." />
+          <div id="serverInviteFriendsList" class="serverInviteFriendsList">
+            <div class="hint">Loading friends...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="serverCreateFooter">
+        <button id="btnServerInviteCancel" class="btn ghost" type="button">Cancel</button>
+        <button id="btnServerInviteConfirm" class="btn primary" type="button">Generate Link</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SERVER SETTINGS MODAL -->
+  <div id="serverSettingsModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard serverCreateCard serverSettingsCard" role="dialog" aria-modal="true" aria-labelledby="serverSettingsTitle">
+      <div class="modalTop serverCreateTop">
+        <div>
+          <div id="serverSettingsTitle" class="modalTitle">Server Settings</div>
+          <div id="serverSettingsSub" class="hint">Change server name, icon and roles.</div>
+        </div>
+        <button id="btnServerSettingsClose" class="btn ghost" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="serverCreateBody">
+        <div class="serverCreateIconRow">
+          <button id="serverSettingsIconPreview" class="serverCreateIconPreview" type="button" aria-label="Choose server icon">
+            <span class="groupDmAvatarFallback">S</span>
+            <span class="serverCreateIconPlus" aria-hidden="true">+</span>
+          </button>
+          <div class="serverCreateIconActions">
+            <button id="btnServerSettingsIconPick" class="btn ghost" type="button">Upload</button>
+            <button id="btnServerSettingsIconClear" class="btn ghost" type="button">Remove</button>
+          </div>
+          <input id="serverSettingsIconFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+        </div>
+
+        <div class="field">
+          <label for="serverSettingsName">Server Name</label>
+          <input id="serverSettingsName" class="input" placeholder="Server name" maxlength="60" />
+        </div>
+
+        <div class="field">
+          <label for="serverSettingsWelcomeChannel">Welcome Channel</label>
+          <select id="serverSettingsWelcomeChannel" class="input">
+            <option value="">Loading channels...</option>
+          </select>
+          <div id="serverSettingsWelcomeHint" class="hint">Member join/leave messages are posted in this channel.</div>
+        </div>
+
+        <section class="serverSettingsRolesSection" aria-label="Server Roles">
+          <div class="serverSettingsRolesHead">
+            <div class="label">Roles</div>
+            <div class="hint">Create roles and assign members.</div>
+          </div>
+
+          <div class="serverSettingsRoleCreateRow">
+            <input id="serverSettingsRoleName" class="input" placeholder="New role name" maxlength="40" />
+            <input
+              id="serverSettingsRoleColor"
+              class="serverSettingsRoleColorInput"
+              type="color"
+              value="#5865f2"
+              aria-label="Role color"
+            />
+            <select id="serverSettingsRolePreset" class="input serverSettingsRolePresetSelect" aria-label="Role preset">
+              <option value="custom">Custom Permissions</option>
+              <option value="staff">STAFF Preset</option>
+            </select>
+            <button id="btnServerSettingsRoleCreate" class="btn ghost" type="button">Create Role</button>
+          </div>
+
+          <div id="serverSettingsRolesMeta" class="hint serverSettingsRolesMeta">Loading roles...</div>
+
+          <div class="serverSettingsRolesGrid">
+            <div id="serverSettingsRolesList" class="serverSettingsRolesList">
+              <div class="hint">Loading roles...</div>
+            </div>
+            <div id="serverSettingsRoleMembers" class="serverSettingsRoleMembers">
+              <div class="hint">Select a role to manage members.</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="serverCreateFooter">
+        <button id="btnServerSettingsCancel" class="btn ghost" type="button">Back</button>
+        <button id="btnServerSettingsSave" class="btn primary" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CREATE GROUP DM MODAL -->
+  <div id="dmCreateGroupModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard dmGroupCreateCard" role="dialog" aria-modal="true" aria-labelledby="dmCreateGroupTitle">
+      <div class="modalTop dmGroupCreateTop">
+        <div>
+          <div id="dmCreateGroupTitle" class="modalTitle">Criar Group DM</div>
+          <div id="dmCreateGroupBase" class="hint">Inclui automaticamente a pessoa desta DM.</div>
+        </div>
+        <button id="btnDmCreateGroupClose" class="btn ghost" type="button" aria-label="Fechar">&times;</button>
+      </div>
+
+      <div class="dmGroupCreateBody">
+        <div class="field">
+          <label for="dmCreateGroupName">Nome do Group DM (opcional)</label>
+          <input id="dmCreateGroupName" class="input" placeholder="Ex: Squad de hoje" maxlength="72" />
+        </div>
+
+        <div class="field">
+          <label>Foto do Group DM (opcional)</label>
+          <div class="dmGroupAvatarEditorRow">
+            <button id="dmCreateGroupAvatarPreview" class="dmGroupAvatarEditorPreview" type="button" aria-label="Escolher foto do Group DM">
+              <span class="groupDmAvatarFallback">G</span>
+            </button>
+            <div class="dmGroupAvatarEditorActions">
+              <button id="btnDmCreateGroupAvatarPick" class="btn ghost" type="button">Escolher foto</button>
+              <button id="btnDmCreateGroupAvatarClear" class="btn ghost" type="button">Remover</button>
+            </div>
+          </div>
+          <input id="dmCreateGroupAvatarFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+        </div>
+
+        <div class="field">
+          <label for="dmCreateGroupSearch">Adicionar amigos</label>
+          <input id="dmCreateGroupSearch" class="input" placeholder="Pesquisar amigos..." />
+        </div>
+
+        <div id="dmCreateGroupPicker" class="partyFriendPicker">
+          <div class="hint">A carregar amigos...</div>
+        </div>
+        <div id="dmCreateGroupMeta" class="hint">Selecionados: 2/10 (inclui-te + pessoa da DM)</div>
+      </div>
+
+      <div class="dmGroupCreateFooter">
+        <button id="btnDmCreateGroupCancel" class="btn ghost" type="button">Cancelar</button>
+        <button id="btnDmCreateGroupConfirm" class="btn primary" type="button">Criar Group DM</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT GROUP DM MODAL -->
+  <div id="dmGroupEditModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard dmGroupCreateCard" role="dialog" aria-modal="true" aria-labelledby="dmGroupEditTitle">
+      <div class="modalTop dmGroupCreateTop">
+        <div>
+          <div id="dmGroupEditTitle" class="modalTitle">Editar Group DM</div>
+          <div id="dmGroupEditSub" class="hint">Muda nome e foto do grupo.</div>
+        </div>
+        <button id="btnDmGroupEditClose" class="btn ghost" type="button" aria-label="Fechar">&times;</button>
+      </div>
+
+      <div class="dmGroupCreateBody">
+        <div class="field">
+          <label for="dmGroupEditName">Nome do Group DM (opcional)</label>
+          <input id="dmGroupEditName" class="input" placeholder="Ex: Squad de hoje" maxlength="72" />
+        </div>
+
+        <div class="field">
+          <label>Foto do Group DM (opcional)</label>
+          <div class="dmGroupAvatarEditorRow">
+            <button id="dmGroupEditAvatarPreview" class="dmGroupAvatarEditorPreview" type="button" aria-label="Escolher foto do Group DM">
+              <span class="groupDmAvatarFallback">G</span>
+            </button>
+            <div class="dmGroupAvatarEditorActions">
+              <button id="btnDmGroupEditAvatarPick" class="btn ghost" type="button">Escolher foto</button>
+              <button id="btnDmGroupEditAvatarClear" class="btn ghost" type="button">Remover</button>
+            </div>
+          </div>
+          <input id="dmGroupEditAvatarFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+        </div>
+      </div>
+
+      <div class="dmGroupCreateFooter">
+        <button id="btnDmGroupEditCancel" class="btn ghost" type="button">Cancelar</button>
+        <button id="btnDmGroupEditSave" class="btn primary" type="button">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EMOJI PICKER -->
+  <div id="emojiPicker" class="emojiPicker hidden" aria-hidden="true">
+    <div class="emojiPickerTop">
+      <input id="emojiSearch" class="input" placeholder="Procurar emoji ou :skull:" />
+      <button id="btnEmojiPickerClose" class="btn ghost" type="button">&times;</button>
+    </div>
+    <div id="emojiPickerCats" class="emojiPickerCats" role="tablist" aria-label="Categorias de emoji"></div>
+    <div id="emojiPickerGrid" class="emojiPickerGrid"></div>
+  </div>
+
+  <!-- CALL OVERLAY (incoming call) -->
+  <div id="globalCallOverlay" class="callOverlay" aria-hidden="true" style="display:none;">
+    <div class="callOverlayCard">
+      <div id="globalCallTitle" class="callOverlayTitle">&#x1F4DE; Chamada a entrar</div>
+      <div id="globalCallSub" class="callOverlaySub">De: ...</div>
+      <div id="globalCallHint" class="callOverlayHint">Podes atender daqui.</div>
+      <div class="rowInline">
+        <button id="globalCallDecline" class="btn danger">Decline</button>
+        <button id="globalCallAccept" class="btn primary">Accept</button>
+      </div>
+    </div>
+  </div>
+  <!-- CALL STAGE -->
+  <div id="callStage" class="callStage" aria-hidden="true" hidden>
+    <div class="callStageCard">
+      <div class="callStageTop">
+        <div class="callStageInfo">
+          <div id="callStageTitle" class="callStageTitle">Em chamada</div>
+          <div id="callStageSub" class="callStageSub">...</div>
+        </div>
+        <div class="callStageTopActions">
+          <button id="btnServerVoiceReconnect" class="btn ghost" type="button" hidden style="display:none;">Reconnect audio</button>
+          <button id="btnPopoutStage" class="btn ghost" type="button" hidden style="display:none;">Pop Out</button>
+          <button id="btnExitFullscreen" class="btn ghost" type="button" hidden style="display:none;">Sair Fullscreen</button>
+        </div>
+      </div>
+
+      <div id="serverVoiceAudioFallback" class="serverVoiceAudioFallback" hidden aria-hidden="true">
+        <div id="serverVoiceAudioFallbackText" class="serverVoiceAudioFallback__text">Connecting audio...</div>
+      </div>
+
+      <div class="callStageViewport">
+        <video id="callRemoteVideo" class="callVideo" autoplay playsinline></video>
+        <video id="callLocalPreview" class="callLocalPreview" autoplay muted playsinline></video>
+        <div id="remoteWatchGate" class="callWatchGate" hidden>
+          <video id="callRemoteWatchPreview" class="callWatchPreview" autoplay muted playsinline></video>
+          <button id="btnWatchRemoteStream" class="btn ghost callWatchBtn" type="button">Watch Stream</button>
+          <div class="callWatchHint">Clica para ver a partilha</div>
+        </div>
+        <div class="callStagePlaceholder">
+          <div id="callStageAvatar" class="avatarBig"></div>
+          <div id="callStageLabel" class="callStageLabel">amigo</div>
+        </div>
+        <aside id="serverVoiceDebugOverlay" class="serverVoiceDebugOverlay" hidden aria-hidden="true">
+          <div class="serverVoiceDebugOverlay__head">
+            <span class="serverVoiceDebugOverlay__title">Server Voice Inspector</span>
+            <div class="serverVoiceDebugOverlay__actions">
+              <button id="btnServerVoiceCopyDiagnostics" class="btn ghost serverVoiceDebugOverlay__copyBtn" type="button" hidden>Copy call diagnostics</button>
+              <span class="serverVoiceDebugOverlay__flag">DEBUG</span>
+            </div>
+          </div>
+          <div id="serverVoiceDebugOverlayBody" class="serverVoiceDebugOverlay__body"></div>
+        </aside>
+        <div id="callStageGrid" class="callStageGrid" aria-label="Participantes">
+          <button id="gridRemote" class="stageGridTile is-active" type="button">
+            <video id="callRemoteGridVideo" class="stageGridVideo" autoplay muted playsinline></video>
+            <div id="callRemoteGridAvatar" class="stageGridAvatar"></div>
+            <div id="callRemoteGridLabel" class="stageGridLabel">amigo</div>
+            <div class="callTileWatchCta" hidden>
+              <span class="callTileWatchBtn">Watch Stream</span>
+              <span class="callTileWatchHint">Clica para ver a partilha</span>
+            </div>
+          </button>
+          <button id="gridRemoteAux" class="stageGridTile" type="button" hidden>
+            <video id="callRemoteAuxGridVideo" class="stageGridVideo" autoplay muted playsinline></video>
+            <div id="callRemoteAuxGridAvatar" class="stageGridAvatar"></div>
+            <div id="callRemoteAuxGridLabel" class="stageGridLabel">amigo • Câmara</div>
+          </button>
+          <button id="gridSelf" class="stageGridTile" type="button">
+            <video id="callSelfGridVideo" class="stageGridVideo" autoplay muted playsinline></video>
+            <div id="callSelfGridAvatar" class="stageGridAvatar"></div>
+            <div id="callSelfGridLabel" class="stageGridLabel">Tu</div>
+          </button>
+          <button id="gridSelfAux" class="stageGridTile" type="button" hidden>
+            <video id="callSelfAuxGridVideo" class="stageGridVideo" autoplay muted playsinline></video>
+            <div id="callSelfAuxGridAvatar" class="stageGridAvatar"></div>
+            <div id="callSelfAuxGridLabel" class="stageGridLabel">Tu • Câmara</div>
+          </button>
+        </div>
+        <button id="btnFullscreenStage" class="btn ghost callCtrlBtn callStageViewportFsBtn" type="button" title="Fullscreen" aria-label="Fullscreen">
+          <span class="callCtrlBtn__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M8 3H3v5"></path>
+              <path d="M16 3h5v5"></path>
+              <path d="M8 21H3v-5"></path>
+              <path d="M21 16v5h-5"></path>
+            </svg>
+          </span>
+          <span class="sr-only">Fullscreen</span>
+        </button>
+      </div>
+
+      <div class="callStageParticipants">
+        <button id="tileRemote" class="participantTile is-active" type="button">
+          <video id="callRemoteThumb" class="participantVideo" autoplay muted playsinline></video>
+          <div id="callRemoteAvatar" class="participantAvatar"></div>
+          <div id="callRemoteLabel" class="participantLabel">amigo</div>
+          <div class="callTileWatchCta" hidden>
+            <span class="callTileWatchBtn">Watch Stream</span>
+            <span class="callTileWatchHint">Clica para ver a partilha</span>
+          </div>
+        </button>
+        <button id="tileRemoteAux" class="participantTile" type="button" hidden>
+          <video id="callRemoteAuxThumb" class="participantVideo" autoplay muted playsinline></video>
+          <div id="callRemoteAuxAvatar" class="participantAvatar"></div>
+          <div id="callRemoteAuxLabel" class="participantLabel">amigo • Câmara</div>
+        </button>
+        <button id="tileSelf" class="participantTile" type="button">
+          <video id="callSelfThumb" class="participantVideo" autoplay muted playsinline></video>
+          <div id="callSelfAvatar" class="participantAvatar"></div>
+          <div id="callSelfLabel" class="participantLabel">Tu</div>
+        </button>
+        <button id="tileSelfAux" class="participantTile" type="button" hidden>
+          <video id="callSelfAuxThumb" class="participantVideo" autoplay muted playsinline></video>
+          <div id="callSelfAuxAvatar" class="participantAvatar"></div>
+          <div id="callSelfAuxLabel" class="participantLabel">Tu • Câmara</div>
+        </button>
+      </div>
+
+      <div id="dmStageResizeGrip" class="dmStageResizeGrip" title="Arrasta para mudar o tamanho"></div>
+      <div class="callStageControls">
+        <div class="callStageControls__group" role="group" aria-label="Audio">
+          <button id="btnMicToggle" class="btn ghost callCtrlBtn" type="button" title="Mute" aria-label="Mute">
+            <span class="callCtrlBtn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"></path>
+                <path d="M5 10a7 7 0 0 0 14 0"></path>
+                <path d="M12 17v3"></path>
+                <path d="M9 20h6"></path>
+              </svg>
+            </span>
+            <span class="sr-only">Mute</span>
+          </button>
+          <button id="btnDeafenToggle" class="btn ghost callCtrlBtn" type="button" title="Fones" aria-label="Fones">
+            <span class="callCtrlBtn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 12a8 8 0 0 1 16 0"></path>
+                <rect x="3" y="12" width="4" height="8" rx="2"></rect>
+                <rect x="17" y="12" width="4" height="8" rx="2"></rect>
+              </svg>
+            </span>
+            <span class="sr-only">Fones</span>
+          </button>
+        </div>
+
+        <div class="callStageControls__group" role="group" aria-label="Partilha e Video">
+          <div id="callShareSplitStage" class="callShareSplit" data-call-share-split="stage">
+            <button id="btnShareScreenStage" class="btn ghost callCtrlBtn callShareSplit__main" type="button" title="Share" aria-label="Share">
+              <span class="callCtrlBtn__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+                  <path d="M8 20h8"></path>
+                  <path d="M12 16v4"></path>
+                  <path d="M12 7v6"></path>
+                  <path d="M9.5 9.5 12 7l2.5 2.5"></path>
+                </svg>
+              </span>
+              <span class="sr-only">Share</span>
+            </button>
+            <button id="btnShareScreenStageMenu" class="btn ghost callCtrlBtn callShareSplit__arrow" type="button" title="Share options" aria-label="Share options" hidden>
+              <span class="callCtrlBtn__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="m7 10 5 5 5-5"></path>
+                </svg>
+              </span>
+              <span class="sr-only">Share options</span>
+            </button>
+          </div>
+          <div id="callCameraSplitStage" class="callShareSplit callCameraSplit" data-call-camera-split="stage">
+            <button id="btnCameraStage" class="btn ghost callCtrlBtn callShareSplit__main" type="button" title="Camera" aria-label="Camera">
+              <span class="callCtrlBtn__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="7" width="12" height="10" rx="2"></rect>
+                  <path d="m15 11 6-3v8l-6-3z"></path>
+                </svg>
+              </span>
+              <span class="sr-only">Camera</span>
+            </button>
+            <button id="btnCameraStageMenu" class="btn ghost callCtrlBtn callShareSplit__arrow" type="button" title="Camera options" aria-label="Camera options" hidden>
+              <span class="callCtrlBtn__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="m7 10 5 5 5-5"></path>
+                </svg>
+              </span>
+              <span class="sr-only">Camera options</span>
+            </button>
+          </div>
+        </div>
+
+        <button id="btnCallEndStage" class="btn danger callCtrlBtn callCtrlBtn--danger" type="button" title="Desligar chamada" aria-label="Desligar chamada">
+          <span class="callCtrlBtn__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 14c4.5-4 11.5-4 16 0"></path>
+            </svg>
+          </span>
+          <span class="sr-only">Desligar chamada</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- CALL BAR -->
+  <div id="callBar" class="callBar" aria-hidden="true" hidden>
+    <div class="callBarHeader">
+      <span class="callBarLiveIcon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M4 8a10 10 0 0 1 0 8"></path>
+          <path d="M8 10a6 6 0 0 1 0 4"></path>
+          <circle cx="13.5" cy="12" r="1.5"></circle>
+        </svg>
+      </span>
+      <div id="callBarText" class="callBarText">Em chamada...</div>
+      <span id="callBarShareBadge" class="callBarShareBadge" hidden>Balanced • 1080p 60fps</span>
+      <span id="callBarPing" class="callBarPing" hidden>-- ms</span>
+    </div>
+    <div class="callBarActions" role="group" aria-label="Controlos rapidos da chamada">
+      <button id="btnServerVoiceReconnectSmall" class="btn ghost callMiniBtn" type="button" title="Reconnect audio" aria-label="Reconnect audio" hidden>
+        <span>Reconnect</span>
+      </button>
+      <div id="callShareSplitSmall" class="callShareSplit callShareSplit--small" data-call-share-split="small">
+        <button id="btnShareScreenSmall" class="btn ghost callMiniBtn callShareSplit__main" type="button" title="Partilhar ecra" aria-label="Partilhar ecra">
+          <span class="callMiniBtn__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+              <path d="M8 20h8"></path>
+              <path d="M12 16v4"></path>
+              <path d="M12 7v6"></path>
+              <path d="M9.5 9.5 12 7l2.5 2.5"></path>
+            </svg>
+          </span>
+          <span class="sr-only">Partilhar ecra</span>
+        </button>
+        <button id="btnShareScreenSmallMenu" class="btn ghost callMiniBtn callShareSplit__arrow" type="button" title="Opções da partilha" aria-label="Opções da partilha" hidden>
+          <span class="callMiniBtn__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="m7 10 5 5 5-5"></path>
+            </svg>
+          </span>
+          <span class="sr-only">Opções da partilha</span>
+        </button>
+      </div>
+      <div id="callCameraSplitSmall" class="callShareSplit callShareSplit--small callCameraSplit" data-call-camera-split="small">
+        <button id="btnCameraSmall" class="btn ghost callMiniBtn callShareSplit__main" type="button" title="Camera" aria-label="Camera">
+          <span class="callMiniBtn__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="3" y="7" width="12" height="10" rx="2"></rect>
+              <path d="m15 11 6-3v8l-6-3z"></path>
+            </svg>
+          </span>
+          <span class="sr-only">Camera</span>
+        </button>
+        <button id="btnCameraSmallMenu" class="btn ghost callMiniBtn callShareSplit__arrow" type="button" title="Camera options" aria-label="Camera options" hidden>
+          <span class="callMiniBtn__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="m7 10 5 5 5-5"></path>
+            </svg>
+          </span>
+          <span class="sr-only">Camera options</span>
+        </button>
+      </div>
+      <button id="btnMicToggleSmall" class="btn ghost callMiniBtn" type="button" title="Silenciar microfone" aria-label="Silenciar microfone">
+        <span class="callMiniBtn__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"></path>
+            <path d="M5 10a7 7 0 0 0 14 0"></path>
+            <path d="M12 17v3"></path>
+            <path d="M9 20h6"></path>
+          </svg>
+        </span>
+        <span class="sr-only">Silenciar microfone</span>
+      </button>
+      <button id="btnDeafenToggleSmall" class="btn ghost callMiniBtn" type="button" title="Silenciar audio recebido" aria-label="Silenciar audio recebido">
+        <span class="callMiniBtn__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 12a8 8 0 0 1 16 0"></path>
+            <rect x="3" y="12" width="4" height="8" rx="2"></rect>
+            <rect x="17" y="12" width="4" height="8" rx="2"></rect>
+          </svg>
+        </span>
+        <span class="sr-only">Silenciar audio recebido</span>
+      </button>
+      <button id="btnCallEndSmall" class="btn danger callMiniBtn callMiniBtn--danger" type="button" title="Desligar chamada" aria-label="Desligar chamada">
+        <span class="callMiniBtn__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 14c4.5-4 11.5-4 16 0"></path>
+          </svg>
+        </span>
+        <span class="sr-only">Desligar chamada</span>
+      </button>
+    </div>
+  </div>
+
+  <audio id="callRemoteAudio" autoplay playsinline style="display:none;"></audio>
+
+  <div id="callAudioMenu" class="callAudioMenu" aria-hidden="true">
+    <div class="callAudioMenu__title">Audio</div>
+    <section id="callVoiceGroup" class="callAudioMenu__section">
+      <label class="callAudioMenu__check">
+        <span>Mute</span>
+        <input id="callVoiceMuteToggle" type="checkbox" />
+      </label>
+      <label class="callAudioMenu__row" for="callVoiceVolumeSlider">
+        <span id="callVoiceVolumeLabel" class="callAudioMenu__label">Voz da pessoa</span>
+        <span id="callVoiceVolumeValue" class="callAudioMenu__value">100%</span>
+      </label>
+      <input id="callVoiceVolumeSlider" class="callAudioMenu__slider" type="range" min="0" max="100" step="1" value="100" />
+    </section>
+
+    <section id="callShareGroup" class="callAudioMenu__section">
+      <button id="callShareWatchToggleBtn" class="callAudioMenu__action" type="button">Stop Watching</button>
+      <label class="callAudioMenu__check">
+        <span>Mute</span>
+        <input id="callShareMuteToggle" type="checkbox" />
+      </label>
+      <label class="callAudioMenu__row" for="callShareVolumeSlider">
+        <span id="callShareVolumeLabel" class="callAudioMenu__label">Som da partilha</span>
+        <span id="callShareVolumeValue" class="callAudioMenu__value">100%</span>
+      </label>
+      <input id="callShareVolumeSlider" class="callAudioMenu__slider" type="range" min="0" max="100" step="1" value="100" />
+      <button id="callSharePopoutBtn" class="callAudioMenu__action" type="button">Pop Out Stream</button>
+      <label class="callAudioMenu__check" id="callShareAttenuationWrap">
+        <span>Stream Attenuation</span>
+        <input id="callShareAttenuationToggle" type="checkbox" />
+      </label>
+      <label class="callAudioMenu__row" id="callShareAttenuationStrengthRow" for="callShareAttenuationStrengthSlider">
+        <span class="callAudioMenu__label">Attenuation Strength</span>
+        <span id="callShareAttenuationStrengthValue" class="callAudioMenu__value">50%</span>
+      </label>
+      <input id="callShareAttenuationStrengthSlider" class="callAudioMenu__slider" type="range" min="0" max="100" step="1" value="50" />
+      <button id="callShareMoreOptionsBtn" class="callAudioMenu__action" type="button">More Options</button>
+    </section>
+  </div>
+
+  <div id="callShareMenu" class="callShareMenu" aria-hidden="true" role="menu">
+    <div id="callShareMenuInfo" class="callShareMenu__info" aria-hidden="true" hidden></div>
+    <button class="callShareMenu__item" type="button" data-call-share-act="stop" id="callShareMenuPrimaryBtn">
+      <span class="callShareMenu__itemIcon">&#x25B6;</span>
+      <span id="callShareMenuStopLabel">Start Sharing</span>
+    </button>
+    <button class="callShareMenu__item" type="button" data-call-share-act="change" id="callShareMenuSourceBtn">
+      <span class="callShareMenu__itemIcon">&#x21BA;</span>
+      <span id="callShareMenuChangeLabel">Source</span>
+    </button>
+    <button class="callShareMenu__item callShareMenu__item--audio" type="button" data-call-share-act="toggle-audio" id="callShareMenuAudioBtn">
+      <span class="callShareMenu__itemIcon" id="callShareMenuAudioIcon">&#x1F50A;</span>
+      <span id="callShareMenuAudioLabel">Share Stream Audio</span>
+      <span class="callShareMenu__audioState" id="callShareMenuAudioState">Off</span>
+    </button>
+    <button class="callShareMenu__item" type="button" data-call-share-act="quality" id="callShareMenuQualityBtn">
+      <span class="callShareMenu__itemIcon">&#9881;</span>
+      <span>Stream Quality</span>
+    </button>
+    <button class="callShareMenu__item" type="button" data-call-share-act="popout" id="callShareMenuPopoutBtn">
+      <span class="callShareMenu__itemIcon">&#9974;</span>
+      <span>Pop Out Stream</span>
+    </button>
+    <button class="callShareMenu__item" type="button" data-call-share-act="more-options" id="callShareMenuMoreBtn">
+      <span class="callShareMenu__itemIcon">&#8942;</span>
+      <span>More Options</span>
+    </button>
+  </div>
+
+  <div id="callCameraMenu" class="callShareMenu" aria-hidden="true" role="menu">
+    <button class="callShareMenu__item" type="button" data-call-camera-act="toggle" id="callCameraMenuToggleBtn">
+      <span class="callShareMenu__itemIcon">&#x1F4F9;</span>
+      <span id="callCameraMenuToggleLabel">Turn Camera On</span>
+    </button>
+    <button class="callShareMenu__item callShareMenu__item--submenu" type="button" data-call-camera-act="open-device-menu" id="callCameraMenuChangeBtn">
+      <span class="callShareMenu__itemIcon">&#x21BA;</span>
+      <span>Change Camera</span>
+      <span class="callShareMenu__submenuArrow">&#8250;</span>
+    </button>
+  </div>
+  <div id="callCameraDeviceMenu" class="callShareMenu" aria-hidden="true" role="menu"></div>
+
+  <!-- Quality/audio settings kept as hidden inputs for localStorage-backed logic -->
+  <input id="shareQuality" type="hidden" />
+  <input id="shareProfile" type="hidden" />
+  <input id="shareWithAudio" type="hidden" />
+
+  <div id="desktopSharePickerModal" class="modal hidden" aria-hidden="true">
+    <div class="modal__backdrop" data-desktop-share-close="1"></div>
+    <div class="modalCard desktopSharePickerCard" role="dialog" aria-modal="true" aria-labelledby="desktopSharePickerTitle">
+      <div class="desktopSharePickerTop">
+        <div class="desktopSharePickerHead">
+          <div id="desktopSharePickerTitle" class="modalTitle">Share your screen</div>
+          <div id="desktopSharePickerHint" class="hint">Select a window or screen to share</div>
+        </div>
+        <button class="icon-btn" type="button" data-desktop-share-close="1" aria-label="Close">&#x2715;</button>
+      </div>
+
+      <div class="desktopSharePickerTabs" role="tablist" aria-label="Share category">
+        <button id="desktopShareTabScreen" class="desktopSharePickerTab is-active" type="button" data-desktop-share-tab="screen">Entire Screen</button>
+        <button id="desktopShareTabWindow" class="desktopSharePickerTab" type="button" data-desktop-share-tab="window">Applications</button>
+        <button id="desktopSharePickerRefreshBtn" class="btn ghost desktopSharePickerRefresh" type="button" data-desktop-share-refresh="1">Refresh</button>
+      </div>
+
+      <div class="desktopSharePickerBody">
+        <div id="desktopSharePickerGrid" class="desktopSharePickerGrid">
+          <div class="hint">Loading sources...</div>
+        </div>
+        <div id="desktopSharePickerMeta" class="desktopSharePickerMeta">Searching windows and screens...</div>
+      </div>
+
+      <div class="desktopSharePickerFooter">
+        <div class="desktopSharePickerFooter__left">
+          <label class="shareAudioToggle desktopSharePickerAudio">
+            <input id="desktopSharePickerAudioToggle" type="checkbox" />
+            <span id="desktopSharePickerAudioLabel">Share Stream Audio</span>
+          </label>
+          <div class="desktopSharePickerQuality" role="group" aria-label="Stream quality">
+            <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-quality="1080p30">1080p • 30fps</button>
+            <button class="desktopSharePickerQualityBtn is-active" type="button" data-desktop-share-quality="1080p60">1080p • 60fps</button>
+            <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-quality="2160p60">4K • 60fps</button>
+            <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-quality="source">Source</button>
+          </div>
+          <div id="desktopSharePickerServerVoiceControls" class="desktopSharePickerServerVoiceControls" hidden>
+            <div class="desktopSharePickerServerVoiceControls__top">
+              <div class="desktopSharePickerServerVoiceControls__label">Stream Preset</div>
+              <div id="desktopSharePickerServerVoicePresetValue" class="desktopSharePickerServerVoiceControls__value">720p / 30 FPS</div>
+            </div>
+            <div class="desktopSharePickerServerVoiceControls__group" role="group" aria-label="Stream quality">
+              <button class="desktopSharePickerQualityBtn is-active" type="button" data-desktop-share-server-quality="720p">720p</button>
+              <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-server-quality="1080p">1080p</button>
+              <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-server-quality="2160p">4K</button>
+              <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-server-quality="source">Source / Native</button>
+            </div>
+            <div class="desktopSharePickerServerVoiceControls__group" role="group" aria-label="Stream frame rate">
+              <button class="desktopSharePickerQualityBtn is-active" type="button" data-desktop-share-server-fps="30">30 FPS</button>
+              <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-server-fps="60">60 FPS</button>
+            </div>
+          </div>
+        </div>
+        <div class="desktopSharePickerFooter__actions">
+          <button id="desktopSharePickerCancelBtn" class="btn ghost" type="button" data-desktop-share-cancel="1">Cancel</button>
+          <button id="desktopSharePickerStopBtn" class="btn danger" type="button" data-desktop-share-act="stop" hidden>Stop Streaming</button>
+          <button id="desktopSharePickerStartBtn" class="btn primary" type="button" data-desktop-share-act="confirm" hidden>Start Streaming</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="appConfirmModal" class="modal hidden" aria-hidden="true">
+    <div class="modal__backdrop" data-app-confirm-close="1"></div>
+    <div class="modalCard appConfirmModalCard" role="dialog" aria-modal="true" aria-labelledby="appConfirmTitle">
+      <div class="modalTop">
+        <div id="appConfirmTitle" class="modalTitle">Confirm action</div>
+        <button id="btnAppConfirmClose" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal__body appConfirmModalBody">
+        <div id="appConfirmMessage" class="appConfirmModalMessage"></div>
+        <div id="appConfirmInputWrap" class="appConfirmModalInput" hidden>
+          <label id="appConfirmInputLabel" class="label" for="appConfirmInput">Message</label>
+          <textarea id="appConfirmInput" class="input appConfirmModalTextarea" rows="5" maxlength="4000"></textarea>
+          <div id="appConfirmInputHint" class="settingsHint appConfirmModalInputHint"></div>
+        </div>
+      </div>
+      <div class="appConfirmModalActions">
+        <button id="btnAppConfirmCancel" class="btn ghost" type="button">Cancel</button>
+        <button id="btnAppConfirmOk" class="btn primary" type="button">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="desktopUpdatePrompt" class="desktopUpdatePrompt hidden" aria-hidden="true">
+    <div class="desktopUpdatePrompt__meta">
+      <div class="desktopUpdatePrompt__title">Update</div>
+      <div id="desktopUpdatePromptText" class="desktopUpdatePrompt__text">Nova atualizacao disponivel.</div>
+      <div id="desktopUpdateProgressWrap" class="desktopUpdateProgressWrap hidden" aria-hidden="true">
+        <div id="desktopUpdateProgressBar" class="desktopUpdateProgressBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="width:0%"></div>
+      </div>
+    </div>
+    <div class="desktopUpdatePrompt__actions">
+      <button id="btnDesktopUpdateDownload" class="btn desktopUpdateBtn desktopUpdateBtn--download" type="button">Download</button>
+      <button id="btnDesktopUpdateInstall" class="btn desktopUpdateBtn desktopUpdateBtn--install hidden" type="button">Reiniciar &amp; Atualizar</button>
+      <button id="btnDesktopUpdateDismiss" class="btn ghost desktopUpdateBtn desktopUpdateBtn--dismiss" type="button" title="Fechar">x</button>
+    </div>
+  </div>
+
+  <div id="desktopUpdatingOverlay" class="desktopUpdatingOverlay hidden" aria-hidden="true">
+    <div class="desktopUpdatingOverlay__card" role="status" aria-live="assertive" aria-atomic="true">
+      <div class="desktopUpdatingOverlay__brand">ALTARA</div>
+      <div class="desktopUpdatingOverlay__logo" aria-hidden="true">
+        <img id="desktopUpdatingOverlayLogo" class="desktopUpdatingOverlay__logoImg" src="build/icon.jpg" alt="" loading="eager" />
+      </div>
+      <div id="desktopUpdatingOverlayTitle" class="desktopUpdatingOverlay__title">Updating Altara...</div>
+      <div id="desktopUpdatingOverlayText" class="desktopUpdatingOverlay__text">Applying update. Please wait a moment.</div>
+      <div class="desktopUpdatingOverlay__loader" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <div id="desktopInstallWelcomeOverlay" class="desktopInstallWelcomeOverlay hidden" aria-hidden="true">
+    <div class="desktopInstallWelcomeOverlay__backdrop" aria-hidden="true"></div>
+    <div class="desktopInstallWelcomeOverlay__glow desktopInstallWelcomeOverlay__glow--one" aria-hidden="true"></div>
+    <div class="desktopInstallWelcomeOverlay__glow desktopInstallWelcomeOverlay__glow--two" aria-hidden="true"></div>
+    <div class="desktopInstallWelcomeOverlay__noise" aria-hidden="true"></div>
+    <div class="desktopInstallWelcomeOverlay__card" role="dialog" aria-modal="true" aria-labelledby="desktopInstallWelcomeTitle">
+      <div class="desktopInstallWelcomeOverlay__brand">ALTARA</div>
+      <h1 id="desktopInstallWelcomeTitle" class="desktopInstallWelcomeOverlay__title">Where friends stay close.</h1>
+      <p id="desktopInstallWelcomeLineOne" class="desktopInstallWelcomeOverlay__line">From late-night laughs to voice calls that feel real.</p>
+      <p id="desktopInstallWelcomeLineTwo" class="desktopInstallWelcomeOverlay__line desktopInstallWelcomeOverlay__line--sub">Keep your memories alive, one message at a time.</p>
+      <button id="btnDesktopInstallWelcomeContinue" class="btn primary desktopInstallWelcomeOverlay__cta" type="button">Enter Altara</button>
+    </div>
+  </div>
+
+  <!-- Report User Modal -->
+  <div id="reportUserModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="reportUserModalTitle">
+      <div class="modalTop">
+        <div>
+          <div id="reportUserModalTitle" class="modalTitle">Report User</div>
+          <div id="reportUserModalSubtitle" class="modalSubtitle"></div>
+        </div>
+        <button class="modalClose" data-modal-close="reportUserModal" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modalBody" style="display:flex;flex-direction:column;gap:12px;">
+        <div>
+          <label id="reportUserReasonLabel" class="settingsLabel" for="reportUserReason" style="margin-bottom:6px;display:block;">Motivo</label>
+          <select id="reportUserReason" class="settingsInput" style="width:100%;">
+            <option id="reportUserReasonPlaceholder" value="">Seleciona um motivo...</option>
+            <option value="spam">Spam</option>
+            <option value="harassment">Assédio ou bullying</option>
+            <option value="hate_speech">Discurso de ódio</option>
+            <option value="inappropriate_content">Conteúdo inapropriado</option>
+            <option value="impersonation">Imitação de outra pessoa</option>
+            <option value="threats">Ameaças ou violência</option>
+            <option value="other">Outro</option>
+          </select>
+        </div>
+        <div>
+          <label class="settingsLabel" for="reportUserDetails" style="margin-bottom:6px;display:block;"><span id="reportUserDetailsLabel">Detalhes adicionais</span> <span id="reportUserDetailsOptional" style="opacity:.5;font-size:.85em;">(opcional)</span></label>
+          <textarea id="reportUserDetails" class="settingsInput" rows="3" maxlength="400" placeholder="Descreve o que aconteceu..." style="width:100%;resize:vertical;"></textarea>
+        </div>
+        <div id="reportUserEvidenceWrap" class="reportUserEvidence hidden" hidden>
+          <label class="reportUserEvidenceToggle" for="reportUserIncludeContext">
+            <input id="reportUserIncludeContext" type="checkbox" />
+            <span class="reportUserEvidenceText">
+              <b id="reportUserEvidenceLabel">Incluir contexto desta DM como prova</b>
+              <small id="reportUserEvidenceHint">Ao ativar esta opção, vais partilhar com a moderação da ALTARA a mensagem denunciada e algumas mensagens próximas.</small>
+            </span>
+          </label>
+          <div class="reportUserEvidencePreview">
+            <small id="reportUserEvidenceSummary">Esta denúncia pode incluir a mensagem denunciada e até 3 mensagens antes e 3 depois.</small>
+            <div>
+              <small id="reportUserEvidenceReportedLabel">Mensagem denunciada</small>
+              <div id="reportUserEvidenceReportedMessage" class="reportUserEvidencePreviewText"></div>
+            </div>
+          </div>
+        </div>
+        <input type="hidden" id="reportUserTargetId" value="">
+      </div>
+      <div class="modalFooter" style="display:flex;gap:8px;justify-content:flex-end;padding-top:12px;">
+        <button id="reportUserCancelBtn" class="btn secondary" data-modal-close="reportUserModal" type="button">Cancelar</button>
+        <button id="btnSubmitReport" class="btn danger" type="button">Enviar denúncia</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

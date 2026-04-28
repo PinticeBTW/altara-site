@@ -1,4 +1,9 @@
-import { DOWNLOAD_URL, SiteFooter, SiteNav } from "./components/site-chrome";
+import {
+  DOWNLOAD_URL,
+  SiteFooter,
+  SiteNav,
+  TRY_IN_BROWSER_URL,
+} from "./components/site-chrome";
 
 const featureCards = [
   {
@@ -54,7 +59,7 @@ export default function Home() {
                 >
                   Download ALTARA
                 </a>
-                <a href="#preview" className="btn btn-secondary">
+                <a href={TRY_IN_BROWSER_URL} className="btn btn-secondary">
                   Try in browser
                 </a>
               </div>
@@ -309,7 +314,7 @@ export default function Home() {
                     <span className="platform-soon">Em breve</span>
                   </div>
                 </button>
-                <a href="#preview" className="platform-btn">
+                <a href={TRY_IN_BROWSER_URL} className="platform-btn">
                   <span className="platform-icon" aria-hidden="true">
                     <svg
                       viewBox="0 0 24 24"

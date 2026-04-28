@@ -1,0 +1,109 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login - Altara</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="authPage auth-checking" data-auth-page="login">
+  <div class="authDesktopDragRegion" aria-hidden="true"></div>
+  <div class="authLangDock">
+    <button id="btnAuthLang" class="authLangBtn" type="button" aria-label="Switch language" title="Switch language">PT</button>
+  </div>
+
+  <div id="authInstallWelcomeOverlay" class="authInstallWelcomeOverlay hidden" aria-hidden="true">
+    <div class="authInstallWelcomeOverlay__backdrop" aria-hidden="true"></div>
+    <div class="authInstallWelcomeOverlay__glow authInstallWelcomeOverlay__glow--one" aria-hidden="true"></div>
+    <div class="authInstallWelcomeOverlay__glow authInstallWelcomeOverlay__glow--two" aria-hidden="true"></div>
+    <div class="authInstallWelcomeOverlay__grain" aria-hidden="true"></div>
+    <div class="authInstallWelcomeOverlay__card" role="dialog" aria-modal="true" aria-labelledby="authInstallWelcomeTitle">
+      <div class="authInstallWelcomeOverlay__logoWrap" aria-hidden="true">
+        <img class="authInstallWelcomeOverlay__logo" src="./build/icon.jpg" alt="" />
+      </div>
+      <div class="authInstallWelcomeOverlay__brand">ALTARA</div>
+      <h1 id="authInstallWelcomeTitle" class="authInstallWelcomeOverlay__title">Where friends stay close.</h1>
+      <p id="authInstallWelcomeLineOne" class="authInstallWelcomeOverlay__line">From late-night laughs to voice calls that feel real.</p>
+      <p id="authInstallWelcomeLineTwo" class="authInstallWelcomeOverlay__line authInstallWelcomeOverlay__line--sub">Keep your memories alive, one message at a time.</p>
+      <div class="authInstallWelcomeOverlay__moments" aria-hidden="true">
+        <span id="authInstallMomentOne">friends</span>
+        <span id="authInstallMomentTwo">laughs</span>
+        <span id="authInstallMomentThree">memories</span>
+        <span id="authInstallMomentFour">calls</span>
+      </div>
+      <button id="btnAuthInstallWelcomeStart" class="btn primary authInstallWelcomeOverlay__cta" type="button">Start</button>
+    </div>
+  </div>
+
+  <div class="authShell">
+    <aside class="card authShowcase" aria-hidden="true">
+      <div class="authShowcase__glow"></div>
+      <div class="authShowcase__logoRow">
+        <div class="authShowcase__logoOrb">
+          <img src="./build/icon.jpg" alt="" />
+        </div>
+        <div id="authShowcaseLogoWord" class="authShowcase__logoWord">ALTARA</div>
+      </div>
+      <h1 id="authShowcaseTitle" class="authShowcase__title">Where friends stay close.</h1>
+      <p id="authShowcaseText" class="authShowcase__text">Your home to talk, laugh and keep the moments that matter.</p>
+      <div class="authShowcase__chips">
+        <span id="authShowcaseChipOne" class="authShowcase__chip">Real-time voice</span>
+        <span id="authShowcaseChipTwo" class="authShowcase__chip">Servers & calls</span>
+        <span id="authShowcaseChipThree" class="authShowcase__chip">Friends first</span>
+      </div>
+      <div class="authShowcase__waves" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </aside>
+
+    <main class="card padded authCard">
+      <div id="authBadge" class="authBadge">WELCOME BACK</div>
+      <h2 id="authCardTitle" class="authTitle">Login</h2>
+      <p id="authCardSub" class="authSub">Sign in with your email and password.</p>
+      <div id="authFeedback" class="authFeedback" role="status" aria-live="polite" hidden></div>
+
+      <div class="field">
+        <label id="authEmailLabel" for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@email.com" />
+      </div>
+
+      <div class="field">
+        <label id="authPasswordLabel" for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="minimum 6" />
+      </div>
+
+      <div class="authActions">
+        <button class="btn primary" id="btnLogin">Login</button>
+        <a class="btn" id="authAltLink" href="./register.html">Create account</a>
+      </div>
+
+      <div class="authRecoveryLinks">
+        <button id="btnForgotPassword" class="authRecoveryLink" type="button">Forgot password?</button>
+        <button id="btnForgotEmail" class="authRecoveryLink" type="button">Forgot email?</button>
+      </div>
+
+      <div id="authRecoveryCard" class="authRecoveryCard" hidden>
+        <div id="authRecoveryTitle" class="authRecoveryTitle">Recover access</div>
+        <div id="authRecoveryHint" class="authRecoveryHint">Enter your account email to receive a recovery code.</div>
+        <label id="authRecoveryLabel" for="authRecoveryIdentifier">Email</label>
+        <input id="authRecoveryIdentifier" type="text" autocomplete="username email" placeholder="you@email.com" />
+        <div id="authRecoverySecretWrap" hidden>
+          <label id="authRecoverySecretLabel" for="authRecoverySecret">Confirm new password</label>
+          <input id="authRecoverySecret" type="password" autocomplete="new-password" placeholder="repeat your new password" />
+        </div>
+        <div class="authRecoveryActions">
+          <button id="btnAuthRecoverySend" class="btn ghost" type="button">Send recovery email</button>
+          <button id="btnAuthRecoveryClose" class="btn" type="button">Close</button>
+        </div>
+        <div id="authRecoveryResult" class="authRecoveryResult" hidden></div>
+      </div>
+
+      <pre id="debug">{}</pre>
+    </main>
+  </div>
+
+  <script type="module" src="./login.js"></script>
+</body>
+</html>

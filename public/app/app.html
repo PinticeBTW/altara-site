@@ -1,0 +1,314 @@
+﻿<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>altara</title>
+  <script>
+    window.location.replace("./index.html");
+  </script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div class="wrap app">
+    <div class="appGrid">
+      <aside class="card panel leftCol">
+        <div class="panelHeader">
+          <div class="userCard">
+            <div class="avatar" id="meAvatar"></div>
+            <div>
+              <div class="uName" id="meName">...</div>
+              <div class="uSub" id="meTag">@...</div>
+            </div>
+          </div>
+
+          <div class="navRow" style="margin-top:10px;">
+            <button class="btn" id="btnProfile" type="button">Perfil</button>
+            <button class="btn" id="btnLogout" type="button">Logout</button>
+          </div>
+
+          <div class="statusPill">
+            <span class="dotMini" data-status-mini="online"></span>
+            <span id="meStatusLabel">online</span>
+          </div>
+        </div>
+
+        <div class="panelBody">
+          <div class="pillTabs">
+            <div class="pill active" data-left="friends">Friends</div>
+            <div class="pill" data-left="dms">Direct Messages</div>
+            <div class="pill" data-left="groups">Groups</div>
+          </div>
+
+          <div class="search">
+            <input id="friendSearch" placeholder="Search..." />
+          </div>
+
+          <div id="leftFriends" class="list"></div>
+
+          <div id="leftDms" class="list" style="display:none;">
+            <div id="dmList"></div>
+          </div>
+
+          <div id="leftGroups" class="list" style="display:none;">
+            <div class="hint">Groups ainda nao implementado.</div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="card panel midCol">
+        <div class="panelHeader">
+          <div class="panelTitle" id="midTitle">Friends</div>
+
+          <div class="pillTabs">
+            <div class="pill active" data-tab="friends">Friends</div>
+            <div class="pill" data-tab="pending">
+              Pending <span class="badge" id="pendingBadge" style="display:none;">0</span>
+            </div>
+            <div class="pill" data-tab="add">Add Friend</div>
+          </div>
+        </div>
+
+        <div class="panelBody">
+          <section id="tabFriends">
+            <div class="hint">Lista de amigos aceites.</div>
+            <div id="friendsList" class="list"></div>
+            <div id="friendsMain" class="list" style="margin-top:12px;"></div>
+          </section>
+
+          <section id="tabPending" style="display:none;">
+            <div class="grid2">
+              <div>
+                <div class="panelTitle" style="margin-bottom:8px;">Incoming</div>
+                <div id="incomingList" class="list"></div>
+              </div>
+              <div>
+                <div class="panelTitle" style="margin-bottom:8px;">Outgoing</div>
+                <div id="outgoingList" class="list"></div>
+              </div>
+            </div>
+          </section>
+
+          <section id="tabAdd" style="display:none;">
+            <div class="field">
+              <label>Username</label>
+              <input id="addUsername" placeholder="ex: silver" />
+            </div>
+
+            <button class="btn primary" id="btnSendRequest" type="button">Enviar pedido</button>
+            <div class="hint">Escreve o username exato.</div>
+          </section>
+
+          <section id="dmMain" style="display:none;">
+            <div class="dm">
+              <div class="dm__top">
+                <div style="display:flex; gap:10px; align-items:center; min-width:0;">
+                  <button class="btn ghost" id="btnBackToFriends" type="button">Voltar</button>
+                  <div class="dm__title" id="dmTitle">DM</div>
+                </div>
+
+                <div style="display:flex; gap:10px; align-items:center;">
+                  <button class="btn primary" id="btnCall" type="button">Call</button>
+                  <button class="btn" id="btnAnswer" type="button" style="display:none;">Answer</button>
+                  <button class="btn danger" id="btnHangup" type="button" style="display:none;">Hangup</button>
+                </div>
+              </div>
+
+              <div id="callStatus" class="hint" style="display:none;"></div>
+
+              <div class="dm__messages" id="dmMessages"></div>
+
+              <div class="dm__composer">
+                <input class="input" id="dmInput" placeholder="Escreve uma mensagem..." />
+                <button class="btn primary" id="dmSend" type="button">Enviar</button>
+              </div>
+
+              <div class="callStage" id="callStage" aria-hidden="true">
+                <div class="callStage__top">
+                  <div>
+                    <div class="callStage__title" id="callStageTitle">Em chamada</div>
+                    <div class="callStage__sub" id="callStageSub">Ligado</div>
+                  </div>
+                  <button class="btn ghost" id="btnCallMinimize" type="button">_</button>
+                </div>
+
+                <div class="callStage__center">
+                  <div class="callStage__avatar" id="callStageAvatar"></div>
+                </div>
+
+                <div class="callStage__controls">
+                  <button class="callBtn" id="btnMicToggle" type="button" title="Mute">M</button>
+                  <button class="callBtn" id="btnDeafenToggle" type="button" title="Deafen">F</button>
+                  <button class="callBtn callBtn--danger" id="btnCallEndStage" type="button" title="End">End</button>
+                </div>
+              </div>
+            </div>
+
+            <audio id="callRemoteAudio" autoplay playsinline></audio>
+          </section>
+
+          <pre id="debug" style="display:none;"></pre>
+        </div>
+      </main>
+
+      <aside class="card panel rightCol">
+        <div class="panelHeader">
+          <div class="panelTitle">Active Now</div>
+          <div id="onlineCount" class="uSub">0</div>
+        </div>
+
+        <div class="panelBody">
+          <div class="search">
+            <input id="searchInput" placeholder="Search..." />
+          </div>
+
+          <div class="sectionTitle">Online</div>
+          <div id="activeNow" class="list">
+            <div class="hint">A carregar...</div>
+          </div>
+
+          <div class="sectionTitle">Offline</div>
+          <div id="offlineList" class="list">
+            <div class="hint">A carregar...</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="callBar" id="callBar" aria-hidden="true">
+    <div class="callBar__left">
+      <span class="dotLive"></span>
+      <span id="callBarText">Em chamada</span>
+      <button class="btn ghost" id="btnReturnToCall" type="button">Open</button>
+    </div>
+
+    <div class="callBar__right">
+      <button class="btn" id="btnMicToggleSmall" type="button">Mute</button>
+      <button class="btn" id="btnDeafenToggleSmall" type="button">Fones</button>
+      <button class="btn danger" id="btnCallEndSmall" type="button">End</button>
+    </div>
+  </div>
+
+  <div class="callOverlay" id="globalCallOverlay" aria-hidden="true">
+    <div class="callModal">
+      <div class="callModal__top">
+        <div class="callModal__title" id="globalCallTitle">Chamada</div>
+        <div class="callModal__sub" id="globalCallSub">...</div>
+      </div>
+
+      <div class="callModal__actions">
+        <button class="btn primary" id="globalCallAccept" type="button">Accept</button>
+        <button class="btn danger" id="globalCallDecline" type="button">Decline</button>
+      </div>
+
+      <div class="callModal__hint" id="globalCallHint"></div>
+    </div>
+  </div>
+
+  <div class="profileOverlay hidden" id="profileOverlay" aria-hidden="true">
+    <div class="profileOverlay__backdrop" data-close="1"></div>
+
+    <div class="profileOverlay__card card profileCard">
+      <div class="profileOverlay__header">
+        <div style="font-weight:700; font-size:18px;">Perfil</div>
+        <button class="btn" id="btnCloseProfile" type="button">Fechar</button>
+      </div>
+
+      <div class="profileOverlay__body">
+        <div class="grid2" style="grid-template-columns: 1.1fr .9fr;">
+          <div class="card padded">
+            <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px;">
+              <div class="avatar avatar-pick" id="avatarPreview" style="width:64px; height:64px;" role="button" tabindex="0" aria-label="Alterar avatar">
+                <div class="avatar-pick__overlay">Editar</div>
+              </div>
+              <div style="min-width:0;">
+                <div class="uName" id="meLine">...</div>
+                <div class="uSub" id="uidLine">...</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Username (unico)</label>
+              <input id="username" placeholder="ex: pintice" />
+              <div class="hint">Isto e o @ que usas para adicionar pessoas.</div>
+            </div>
+
+            <button class="btn primary" id="btnSaveUsername" type="button">Guardar username</button>
+
+            <div class="field" style="margin-top:14px;">
+              <label>Display name</label>
+              <input id="displayName" placeholder="ex: pintice do aco" />
+            </div>
+
+            <div class="field">
+              <label>Bio</label>
+              <textarea id="bio" placeholder="Escreve uma bio..."></textarea>
+            </div>
+
+            <button class="btn" id="btnSaveProfile" type="button">Guardar perfil</button>
+          </div>
+
+          <div class="card padded">
+            <div style="font-weight:700; margin-bottom:8px;">Avatar</div>
+            <div class="hint">Clica no avatar, escolhe imagem e ajusta no editor.</div>
+
+            <input id="avatarFile" class="sr-only" type="file" accept="image/png,image/jpeg" />
+
+            <div style="height:14px;"></div>
+            <div style="font-weight:700; margin-bottom:8px;">Seguranca</div>
+
+            <div class="field">
+              <label>Novo email</label>
+              <input id="newEmail" type="email" placeholder="novo@email.com" />
+            </div>
+            <button class="btn" id="btnEmail" type="button">Trocar email</button>
+
+            <div class="field" style="margin-top:14px;">
+              <label>Nova password</label>
+              <input id="newPass" type="password" placeholder="nova password" />
+            </div>
+            <button class="btn" id="btnPass" type="button">Trocar password</button>
+
+            <pre id="debugProfile" style="display:none; margin-top:14px;"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="avatarEditorModal" class="modal hidden" aria-hidden="true">
+      <div class="modal__backdrop" data-close="1"></div>
+      <div class="modal__card" role="dialog" aria-modal="true" aria-labelledby="avatarEditorTitle">
+        <div class="modal__header">
+          <div class="modal__title" id="avatarEditorTitle">Editar avatar</div>
+          <button class="icon-btn" id="avatarEditorClose" aria-label="Fechar">X</button>
+        </div>
+
+        <div class="modal__body avatar-editor">
+          <div class="avatar-editor__left">
+            <div class="avatar-editor__preview" title="Arrasta para posicionar">
+              <canvas id="avatarEditorCanvas" width="420" height="420"></canvas>
+              <div class="avatar-editor__ring" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="avatar-editor__right">
+            <div class="muted">Zoom</div>
+            <input id="avatarEditorZoom" type="range" min="1" max="3" step="0.01" value="1" />
+            <div class="avatar-editor__actions">
+              <button class="btn" id="avatarEditorReset" type="button">Reset</button>
+              <button class="btn primary" id="avatarEditorApply" type="button">Apply</button>
+            </div>
+            <div class="muted">Dica: arrasta a imagem para posicionar.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
+
+

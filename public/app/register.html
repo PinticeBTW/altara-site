@@ -1,0 +1,94 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create account - Altara</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="authPage auth-checking" data-auth-page="register">
+  <div class="authDesktopDragRegion" aria-hidden="true"></div>
+  <div class="authLangDock">
+    <button id="btnAuthLang" class="authLangBtn" type="button" aria-label="Switch language" title="Switch language">PT</button>
+  </div>
+
+  <div id="authInstallWelcomeOverlay" class="authInstallWelcomeOverlay hidden" aria-hidden="true">
+    <div class="authInstallWelcomeOverlay__backdrop" aria-hidden="true"></div>
+    <div class="authInstallWelcomeOverlay__glow authInstallWelcomeOverlay__glow--one" aria-hidden="true"></div>
+    <div class="authInstallWelcomeOverlay__glow authInstallWelcomeOverlay__glow--two" aria-hidden="true"></div>
+    <div class="authInstallWelcomeOverlay__grain" aria-hidden="true"></div>
+    <div class="authInstallWelcomeOverlay__card" role="dialog" aria-modal="true" aria-labelledby="authInstallWelcomeTitle">
+      <div class="authInstallWelcomeOverlay__logoWrap" aria-hidden="true">
+        <img class="authInstallWelcomeOverlay__logo" src="./build/icon.jpg" alt="" />
+      </div>
+      <div class="authInstallWelcomeOverlay__brand">ALTARA</div>
+      <h1 id="authInstallWelcomeTitle" class="authInstallWelcomeOverlay__title">Where friends stay close.</h1>
+      <p id="authInstallWelcomeLineOne" class="authInstallWelcomeOverlay__line">From late-night laughs to voice calls that feel real.</p>
+      <p id="authInstallWelcomeLineTwo" class="authInstallWelcomeOverlay__line authInstallWelcomeOverlay__line--sub">Keep your memories alive, one message at a time.</p>
+      <div class="authInstallWelcomeOverlay__moments" aria-hidden="true">
+        <span id="authInstallMomentOne">friends</span>
+        <span id="authInstallMomentTwo">laughs</span>
+        <span id="authInstallMomentThree">memories</span>
+        <span id="authInstallMomentFour">calls</span>
+      </div>
+      <button id="btnAuthInstallWelcomeStart" class="btn primary authInstallWelcomeOverlay__cta" type="button">Start</button>
+    </div>
+  </div>
+
+  <div class="authShell">
+    <aside class="card authShowcase" aria-hidden="true">
+      <div class="authShowcase__glow"></div>
+      <div class="authShowcase__logoRow">
+        <div class="authShowcase__logoOrb">
+          <img src="./build/icon.jpg" alt="" />
+        </div>
+        <div id="authShowcaseLogoWord" class="authShowcase__logoWord">ALTARA</div>
+      </div>
+      <h1 id="authShowcaseTitle" class="authShowcase__title">Where friends stay close.</h1>
+      <p id="authShowcaseText" class="authShowcase__text">Create your account and join a space made for real friendships.</p>
+      <div class="authShowcase__chips">
+        <span id="authShowcaseChipOne" class="authShowcase__chip">Instant friends</span>
+        <span id="authShowcaseChipTwo" class="authShowcase__chip">Community servers</span>
+        <span id="authShowcaseChipThree" class="authShowcase__chip">Memories that stay</span>
+      </div>
+      <div class="authShowcase__waves" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </aside>
+
+    <main class="card padded authCard">
+      <div id="authBadge" class="authBadge">CREATE ACCOUNT</div>
+      <h2 id="authCardTitle" class="authTitle">Create account</h2>
+      <p id="authCardSub" class="authSub">Username is required, just like Discord.</p>
+      <div id="authFeedback" class="authFeedback" role="status" aria-live="polite" hidden></div>
+
+      <div class="field">
+        <label id="authUsernameLabel" for="username">Username (3-20, letters/numbers/_/. and spaces)</label>
+        <input id="username" maxlength="20" minlength="3" pattern="[A-Za-z0-9_. ]{3,20}" title="3-20 chars: a-z, 0-9, _, . and spaces" autocomplete="username" placeholder="e.g. pintice" />
+        <div id="authUsernameHint" class="hint">Allowed: a-z 0-9 _ . and spaces.</div>
+      </div>
+
+      <div class="field">
+        <label id="authEmailLabel" for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@email.com" />
+      </div>
+
+      <div class="field">
+        <label id="authPasswordLabel" for="password">Password</label>
+        <input id="password" type="password" autocomplete="new-password" placeholder="minimum 6" />
+      </div>
+
+      <div class="authActions">
+        <button class="btn primary" id="btnRegister">Create account</button>
+        <a class="btn" id="authAltLink" href="./login.html">Go to login</a>
+      </div>
+
+      <pre id="debug">{}</pre>
+    </main>
+  </div>
+
+  <script type="module" src="./register.js"></script>
+</body>
+</html>

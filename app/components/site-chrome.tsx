@@ -3,6 +3,7 @@ import Link from "next/link";
 
 export const DOWNLOAD_URL =
   "/download";
+export const TRY_IN_BROWSER_URL = "/try";
 
 type NavPage = "home" | "features" | "about";
 
@@ -52,7 +53,7 @@ const footerColumns = [
     links: [
       { label: "Features", href: "/features" },
       { label: "Download", href: "/#download" },
-      { label: "Try in browser", href: "/#preview" },
+      { label: "Try in browser", href: TRY_IN_BROWSER_URL },
     ],
   },
   {
