@@ -1,4 +1,4 @@
-const FALLBACK_URL = "/app";
+const FALLBACK_URL = "/app/";
 const WEB_APP_URL_ENV_KEYS = ["ALTARA_WEB_URL", "NEXT_PUBLIC_TRY_IN_BROWSER_URL"];
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ function getConfiguredWebAppUrl() {
 
 function normalizeWebAppUrl(value: string) {
   if (value.startsWith("/")) {
-    if (value === "/app/index.html") {
+    if (value === "/app" || value === "/app/index.html") {
       return FALLBACK_URL;
     }
 
