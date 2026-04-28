@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 export const DOWNLOAD_URL =
-  "https://github.com/PinticeBTW/altara-updates/releases/latest/download/Altara.Setup.exe";
+  "/download";
 
 type NavPage = "home" | "features" | "about";
 
