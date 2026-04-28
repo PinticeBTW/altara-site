@@ -9,18 +9,18 @@ const principles = [
   },
   {
     id: "02",
-    title: "Privacy is not a feature toggle.",
-    body: "End-to-end encryption is the default and the floor. Not a paid add-on and not hidden behind settings.",
+    title: "Private spaces should feel private.",
+    body: "We are building DMs and calls around privacy-first defaults, without pretending public servers and groups need the same rules.",
   },
   {
     id: "03",
-    title: "No ads. No tracking pixels.",
-    body: "We make money from optional upgrades. Your hangout is not the product and your data is not sold.",
+    title: "ALTARA+ funds the work.",
+    body: "ALTARA+ is how we plan to fund development while keeping the core app focused and useful.",
   },
   {
     id: "04",
     title: "Ship things that feel good.",
-    body: "Soft motion, fast shortcuts, clean sound design, and careful details that make everyday chat better.",
+    body: "Soft motion, fast shortcuts, and careful details that make everyday chat better.",
   },
 ];
 

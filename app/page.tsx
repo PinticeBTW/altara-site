@@ -9,19 +9,19 @@ import {
 
 const featureCards = [
   {
-    title: "Widgets, your way",
+    title: "Personal widgets dashboard",
     description:
-      "Drop polls, music players, notes, watch-along tools, and custom widgets directly in channels.",
+      "Your own home screen for notes, checklists, calendar reminders, calls, and custom widgets in one clean dashboard.",
   },
   {
-    title: "Encrypted DMs",
+    title: "Private DMs",
     description:
-      "Private messages and calls are encrypted by default so your group stays your group.",
+      "Private messages and calls built for one-to-one conversations, with privacy controls that stay out of public servers.",
   },
   {
     title: "Make it yours",
     description:
-      "Themes, channel skins, sound packs, and personal touches that match your crew's vibe.",
+      "Themes, channel skins, and personal touches that make ALTARA feel like your own space.",
   },
 ];
 
@@ -72,9 +72,6 @@ export default function Home() {
                 </span>
                 <span>
                   <span className="dot" /> macOS - Windows - Linux
-                </span>
-                <span>
-                  <span className="dot" /> No ads, ever
                 </span>
               </div>
             </div>
@@ -131,7 +128,7 @@ export default function Home() {
               <div className="blob blob-1" />
               <div className="blob blob-2" />
               <span className="eyebrow">
-                <span className="dot" /> Free - 28MB - No account needed to try
+                <span className="dot" /> Free - 76MB - Windows, macOS, and Linux
               </span>
               <h2>Get the gang together. Download Altara.</h2>
               <p>

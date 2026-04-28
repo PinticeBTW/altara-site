@@ -271,9 +271,10 @@ p {
 .hero .blob-3 {
   width: 380px;
   height: 380px;
-  bottom: -120px;
-  left: 30%;
-  opacity: 0.35;
+  bottom: -210px;
+  left: 38%;
+  background: radial-gradient(circle, rgba(244, 114, 182, 0.72), rgba(167, 139, 250, 0.24) 46%, transparent 70%);
+  opacity: 0.18;
 }
 
 .hero-inner {
@@ -376,7 +377,7 @@ p {
   will-change: transform;
   box-shadow:
     var(--shadow-x) var(--shadow-y) var(--shadow-blur) -70px rgba(0, 0, 0, 0.95),
-    var(--purple-shadow-x) var(--purple-shadow-y) 76px -44px rgba(170, 120, 255, 0.72),
+    var(--purple-shadow-x) var(--purple-shadow-y) 92px -58px rgba(170, 120, 255, 0.5),
     0 0 0 1px var(--border);
 }
 
@@ -384,7 +385,7 @@ p {
   transition-duration: 90ms;
   box-shadow:
     var(--shadow-x) var(--shadow-y) var(--shadow-blur) -72px rgba(0, 0, 0, 0.98),
-    var(--purple-shadow-x) var(--purple-shadow-y) 92px -48px rgba(170, 120, 255, 0.84),
+    var(--purple-shadow-x) var(--purple-shadow-y) 110px -62px rgba(170, 120, 255, 0.58),
     0 0 0 1px var(--border);
 }
 
@@ -427,12 +428,15 @@ p {
 
 .demo-glow {
   position: absolute;
-  inset: -2px;
-  border-radius: calc(var(--radius-lg) + 2px);
-  background: var(--accent-1);
-  opacity: 0.18;
-  filter: blur(50px);
+  inset: 10% 8% 18%;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 42% 48%, rgba(167, 139, 250, 0.42), transparent 58%),
+    radial-gradient(ellipse at 62% 58%, rgba(244, 114, 182, 0.2), transparent 64%);
+  opacity: 0.22;
+  filter: blur(74px);
   z-index: -1;
+  transform: translateY(8%);
 }
 
 .demo-titlebar {
@@ -1880,6 +1884,46 @@ p {
   margin: 0;
 }
 
+.w-calendar-simple {
+  margin-top: -2px;
+}
+
+.w-calendar-simple > span {
+  display: block;
+  color: #ff5d7d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.w-calendar-simple strong {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 5px;
+  font-family: var(--font-bricolage), "Bricolage Grotesque", sans-serif;
+  font-size: 42px;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+}
+
+.w-calendar-simple em {
+  color: var(--fg-muted);
+  font-family: var(--font-inter), "Inter", sans-serif;
+  font-size: 17px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.w-calendar-simple p {
+  color: var(--fg-muted);
+  font-size: 12px;
+  margin: 7px 0 0;
+}
+
 .w-poll-row {
   display: flex;
   align-items: center;
@@ -1924,6 +1968,12 @@ p {
   border-radius: 8px;
   background: linear-gradient(135deg, var(--accent-2), var(--accent-3));
   flex-shrink: 0;
+}
+
+.w-music .album.note {
+  background:
+    linear-gradient(135deg, rgba(167, 139, 250, 0.88), rgba(244, 114, 182, 0.66)),
+    var(--bg-card);
 }
 
 .w-music .info {

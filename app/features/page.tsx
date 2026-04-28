@@ -6,14 +6,14 @@ import {
 } from "../components/site-chrome";
 
 const specItems = [
-  { title: "No ads, ever", description: "We make money from Pro. Not from you." },
-  { title: "28MB install", description: "Native everywhere. Boots in under a second." },
-  { title: "Cross-platform sync", description: "Mac, Windows, Linux, web, mobile. Same gang." },
-  { title: "Voice rooms", description: "HD audio, screen share, low latency." },
-  { title: "Self-destructing messages", description: "From 5 seconds to 30 days. Or never." },
-  { title: "Vault folders", description: "Hide channels behind a passcode." },
-  { title: "Drag-drop sharing", description: "Files up to 2GB. Right from your desktop." },
-  { title: "Keyboard-first", description: "Cmd/Ctrl + K to do anything." },
+  { title: "ALTARA+ supported", description: "ALTARA+ helps fund development while the core app stays focused." },
+  { title: "76MB download", description: "Latest Windows installer is about 76MB." },
+  { title: "Cross-platform app", description: "Windows, macOS, Linux, and browser access." },
+  { title: "Voice rooms", description: "Voice calls, rooms, and screen sharing for hanging out." },
+  { title: "Browser access", description: "Jump into ALTARA from the web when you need it." },
+  { title: "Widget dashboard", description: "Calendar, checklist, notepad, calls, status, and unread DMs." },
+  { title: "Drag-drop sharing", description: "Share files up to 35MB right from your desktop." },
+  { title: "ALT shortcuts", description: "Default shortcuts use ALT so actions stay quick." },
 ];
 
 export default function FeaturesPage() {
@@ -35,7 +35,7 @@ export default function FeaturesPage() {
               <span className="gradient-text">should have.</span>
             </h1>
             <p>
-              No bloat. No corporate enterprise tier. Just the things you actually use, made well.
+              No bloat. Just the things you actually use, made well.
             </p>
           </div>
         </section>
@@ -45,30 +45,30 @@ export default function FeaturesPage() {
             <div className="feature-text">
               <div className="num">01 - Widgets</div>
               <h2>
-                Channels you can <span className="gradient-text">actually shape.</span>
+                Your dashboard, <span className="gradient-text">your widgets.</span>
               </h2>
               <p>
-                Drop a poll into a channel. Pin a music player to your voice room. Make a
-                watch-along widget so everyone hits play together.
+                Keep notes, checklists, calendar reminders, calls, and message status on your own
+                ALTARA home screen.
               </p>
               <ul className="feature-list">
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>40+ built-in widgets</strong> - polls, music, notes, watch-along,
-                    counters, leaderboards.
+                    <strong>Personal widgets dashboard</strong> for quick tools you use every day.
                   </span>
                 </li>
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>Marketplace</strong> with community-built widgets, free to install.
+                    <strong>Built-in widgets today</strong> - calendar, checklist, notepad, calls,
+                    online status, and unread DMs.
                   </span>
                 </li>
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>Build your own</strong> in plain HTML/JS.
+                    <strong>Clean home screen</strong> before you jump into chats, groups, or calls.
                   </span>
                 </li>
               </ul>
@@ -77,40 +77,32 @@ export default function FeaturesPage() {
             <div className="feature-visual">
               <div className="widgets-grid">
                 <div className="w-card">
-                  <div className="w-head">Poll</div>
-                  <h4>Pizza tonight?</h4>
-                  <div className="w-poll-row">
-                    <span className="label">Yes</span>
-                    <div className="bar">
-                      <div style={{ width: "74%" }} />
-                    </div>
-                    <span className="pct">74%</span>
-                  </div>
-                  <div className="w-poll-row">
-                    <span className="label">Sushi</span>
-                    <div className="bar">
-                      <div style={{ width: "26%" }} />
-                    </div>
-                    <span className="pct">26%</span>
+                  <div className="w-head">Calendar</div>
+                  <div className="w-calendar-simple">
+                    <span>TUE</span>
+                    <strong>
+                      28 <em>Apr</em>
+                    </strong>
+                    <p>2 overdue</p>
                   </div>
                 </div>
 
                 <div className="w-card">
-                  <div className="w-head">Counter</div>
+                  <div className="w-head">Checklist</div>
                   <div className="w-counter">
-                    142 <span>days streak</span>
+                    4/7 <span>tasks done</span>
                   </div>
                 </div>
 
                 <div className="w-card span">
-                  <div className="w-head">Now playing</div>
+                  <div className="w-head">Notepad</div>
                   <div className="w-music">
-                    <div className="album" />
+                    <div className="album note" />
                     <div className="info">
-                      <div className="t">brat - bumpin that</div>
-                      <div className="a">Charli XCX - 4 listening</div>
+                      <div className="t">Quick notes</div>
+                      <div className="a">Write reminders, ideas, or plans.</div>
                     </div>
-                    <div className="play">▶</div>
+                    <div className="play">+</div>
                   </div>
                 </div>
               </div>
@@ -119,145 +111,31 @@ export default function FeaturesPage() {
 
           <section className="feature flip">
             <div className="feature-text">
-              <div className="num">02 - Privacy</div>
+              <div className="num">02 - Personalization</div>
               <h2>
-                DMs that are <span className="gradient-text">actually private.</span>
+                Make ALTARA feel like <span className="gradient-text">your space.</span>
               </h2>
               <p>
-                Every direct message and private call is end-to-end encrypted by default. Not as a
-                setting you have to find, as the only way it works.
+                Set up your profile, keep your people close, and jump back into the widgets,
+                chats, and calls you use most.
               </p>
               <ul className="feature-list">
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>Signal-grade protocols</strong> for messages and voice.
+                    <strong>Profile card</strong> with your avatar, display name, and username.
                   </span>
                 </li>
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>Self-destructing messages</strong> from 5 seconds to 30 days.
+                    <strong>Friends and group DMs</strong> kept close in the sidebar.
                   </span>
                 </li>
                 <li>
                   <span className="check">✓</span>
                   <span>
-                    <strong>Zero-knowledge backups</strong> so only your devices can decrypt.
-                  </span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="feature-visual">
-              <div className="encrypted">
-                <div className="enc-msg">
-                  <div className="avatar av-1">M</div>
-                  <div className="enc-bubble">
-                    only us can read this, right?
-                    <span className="lock">
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <rect width="14" height="9" x="5" y="11" rx="2" />
-                        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-                <div className="enc-msg right">
-                  <div className="avatar av-2">T</div>
-                  <div className="enc-bubble">
-                    yep. server cannot read it.
-                    <span className="lock">
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <rect width="14" height="9" x="5" y="11" rx="2" />
-                        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-                <div className="enc-msg">
-                  <div className="avatar av-1">M</div>
-                  <div className="enc-bubble">
-                    okay now tell me everything.
-                    <span className="lock">
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <rect width="14" height="9" x="5" y="11" rx="2" />
-                        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-                <div className="enc-banner">
-                  <div className="shield">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7l8-4z" />
-                      <path d="m9 12 2 2 4-4" />
-                    </svg>
-                  </div>
-                  <div>
-                    End-to-end encrypted - key fingerprint
-                    <div className="key">9f3a - b27e - c4d1 - 8a55</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="feature">
-            <div className="feature-text">
-              <div className="num">03 - Personalization</div>
-              <h2>
-                Make it look like <span className="gradient-text">your gang.</span>
-              </h2>
-              <p>
-                Every group has a vibe. Pick a theme, build one, swap fonts, change emoji, layer
-                custom sounds. Express something.
-              </p>
-              <ul className="feature-list">
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Theme builder</strong> - colors, fonts, radius, density.
-                  </span>
-                </li>
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Per-server skins</strong> so each community feels unique.
-                  </span>
-                </li>
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Custom emoji and sound packs</strong> with no forced Pro wall.
+                    <strong>Personal workspace</strong> focused on widgets, calls, and chats.
                   </span>
                 </li>
               </ul>
@@ -266,7 +144,7 @@ export default function FeaturesPage() {
             <div className="feature-visual">
               <div className="themes">
                 <div className="theme-card t1">
-                  <div className="badge-active">✓</div>
+                  <div className="badge-active">âœ“</div>
                   <div className="tname">Midnight</div>
                   <div className="swatches">
                     <div className="sw" style={{ background: "#a78bfa" }} />
@@ -354,7 +232,7 @@ export default function FeaturesPage() {
               <div className="blob blob-1" />
               <div className="blob blob-2" />
               <span className="eyebrow" style={{ marginBottom: "18px" }}>
-                <span className="dot" /> Free - 28MB - No account needed to try
+                <span className="dot" /> Free - 76MB - Windows, macOS, and Linux
               </span>
               <h2>
                 Get the gang together.
@@ -455,3 +333,4 @@ export default function FeaturesPage() {
     </div>
   );
 }
+
