@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import { DOWNLOAD_URL, SiteFooter, SiteNav } from "../components/site-chrome";
 
 const description =
-  "Learn why ALTARA started in February 2026 as a smaller, cleaner alternative to Discord for real friend groups, private spaces, and everyday voice chat.";
+  "Learn why ALTARA started in February 2026 as a smaller, cleaner Discord alternative for friend groups, gaming groups, small communities, and everyday voice chat.";
 
 export const metadata: Metadata = {
   title: "About",
@@ -77,7 +77,9 @@ export default function AboutPage() {
                 </h1>
               </div>
               <p className="lead">
-                ALTARA is not a startup with a rocket-ship deck. It is <strong>one person, mostly</strong>, with help from friends building the chat app we wanted for our own group and now sharing it.
+                ALTARA is not a startup with a rocket-ship deck. It is{" "}
+                <strong>one person, mostly</strong>, with help from friends building the chat app
+                we wanted for our own group, gaming nights, and the communities around them.
               </p>
             </div>
           </div>
@@ -96,12 +98,13 @@ export default function AboutPage() {
                 <p>
                   ALTARA started in February 2026 because there did not seem to be a real
                   alternative for the kind of space we wanted. Not a Discord clone, not another
-                  giant social app, just something a little more personal and a little different.
+                  giant social app, just something a little more personal for friends, gaming
+                  groups, and small communities.
                 </p>
                 <p>
                   From that first prototype, it became a name, a logo, and an app friends could
-                  actually use: voice, private messages, small spaces, widgets, and fewer things
-                  fighting for attention. That is ALTARA.
+                  actually use: voice, private messages, community spaces, widgets, and fewer
+                  things fighting for attention. That is ALTARA.
                 </p>
               </div>
             </div>
@@ -197,8 +200,8 @@ export default function AboutPage() {
                     <path d="M22 11l-3 3-2-2" />
                   </svg>
                 </div>
-                <h4>Hiring soon-ish</h4>
-                <p>Frontend engineer who likes weird animation. Drop us a line.</p>
+                <h4>Built with friends</h4>
+                <p>Art, feedback, testing, and a lot of calls from the people around the app.</p>
               </article>
 
               <article className="placeholder-card">

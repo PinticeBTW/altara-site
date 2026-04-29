@@ -5,7 +5,7 @@ import "./globals.css";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://altara.app";
 const siteDescription =
-  "ALTARA is a fast, clean communication app for friends, with private DMs, voice calls, widgets, and simple group spaces.";
+  "ALTARA is a fast, clean Discord alternative for friends, gaming groups, and small communities, with voice calls, private messages, widgets, and simple group spaces.";
 
 const bricolage = Bricolage_Grotesque({
   variable: "--font-bricolage",
@@ -37,6 +37,8 @@ export const metadata: Metadata = {
     "voice calls",
     "private messages",
     "group chat",
+    "gaming groups",
+    "small communities",
     "widgets dashboard",
   ],
   authors: [{ name: "Tomás Nunes" }],

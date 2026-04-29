@@ -4,8 +4,13 @@ import Link from "next/link";
 export const DOWNLOAD_URL =
   "/download";
 export const TRY_IN_BROWSER_URL = "/try";
+export const RELEASES_URL = "https://github.com/PinticeBTW/altara-updates/releases";
 
-type NavPage = "home" | "features" | "about";
+type NavPage = "home" | "features" | "faq" | "about";
+type FooterLink = {
+  label: string;
+  href: string;
+};
 
 function Brand() {
   return (
@@ -38,6 +43,9 @@ export function SiteNav({ active }: { active: NavPage }) {
           <Link href="/features" className={active === "features" ? "active" : undefined}>
             Features
           </Link>
+          <Link href="/faq" className={active === "faq" ? "active" : undefined}>
+            FAQ
+          </Link>
           <Link href="/about" className={active === "about" ? "active" : undefined}>
             About
           </Link>
@@ -52,27 +60,48 @@ const footerColumns = [
     title: "Product",
     links: [
       { label: "Features", href: "/features" },
-      { label: "Download", href: "/#download" },
+      { label: "FAQ", href: "/faq" },
+      { label: "Download for Windows", href: "/#download" },
       { label: "Try in browser", href: TRY_IN_BROWSER_URL },
+      { label: "Release notes", href: RELEASES_URL },
     ],
   },
   {
     title: "Company",
     links: [
       { label: "About", href: "/about" },
-      { label: "Blog", href: "/" },
-      { label: "Careers", href: "/" },
+      { label: "GitHub releases", href: RELEASES_URL },
     ],
   },
   {
     title: "Connect",
     links: [
-      { label: "Twitter", href: "/" },
-      { label: "Instagram", href: "/" },
-      { label: "GitHub", href: "/" },
+      { label: "Instagram", href: "https://www.instagram.com/pintice__/" },
+      { label: "NID Boys YouTube", href: "https://www.youtube.com/@NID-boys" },
+      { label: "pintice YouTube", href: "https://www.youtube.com/@pintice" },
     ],
   },
 ];
+
+function isExternalLink(href: string) {
+  return href.startsWith("http://") || href.startsWith("https://");
+}
+
+function FooterLinkItem({ link }: { link: FooterLink }) {
+  if (isExternalLink(link.href)) {
+    return (
+      <a href={link.href} target="_blank" rel="noopener noreferrer" data-cursor="hover">
+        {link.label}
+      </a>
+    );
+  }
+
+  return (
+    <Link href={link.href} data-cursor="hover">
+      {link.label}
+    </Link>
+  );
+}
 
 export function SiteFooter() {
   return (
@@ -84,8 +113,7 @@ export function SiteFooter() {
               <Brand />
             </Link>
             <p className="footer-tagline">
-              Where friends stay close. Built with love by a small team that just wanted a better
-              hangout.
+              Where friends, gaming groups, and small communities stay close.
             </p>
           </div>
 
@@ -95,9 +123,7 @@ export function SiteFooter() {
               <ul>
                 {column.links.map((link) => (
                   <li key={link.label}>
-                    <Link href={link.href} data-cursor="hover">
-                      {link.label}
-                    </Link>
+                    <FooterLinkItem link={link} />
                   </li>
                 ))}
               </ul>

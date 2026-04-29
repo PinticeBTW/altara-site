@@ -3,13 +3,14 @@ import type { Metadata } from "next";
 
 import {
   DOWNLOAD_URL,
+  RELEASES_URL,
   SiteFooter,
   SiteNav,
   TRY_IN_BROWSER_URL,
 } from "./components/site-chrome";
 
 const description =
-  "ALTARA is a clean hangout app for friends, with voice, private messages, widgets, and simple group spaces without the noise.";
+  "ALTARA is a clean Discord alternative for friends, gaming groups, and small communities, with voice, private messages, widgets, and simple group spaces without the noise.";
 
 export const metadata: Metadata = {
   title: {
@@ -46,14 +47,44 @@ const featureCards = [
       "Your own home screen for notes, checklists, calendar reminders, calls, and custom widgets in one clean dashboard.",
   },
   {
-    title: "Private DMs",
+    title: "Private DMs and calls",
     description:
-      "Private messages and calls built for one-to-one conversations, with privacy controls that stay out of public servers.",
+      "One-to-one messages and voice calls for the conversations that should stay away from public channels.",
   },
   {
-    title: "Make it yours",
+    title: "Friends and communities",
     description:
-      "Themes, channel skins, and personal touches that make ALTARA feel like your own space.",
+      "Small groups, gaming nights, and community spaces without the feed energy that makes everything feel loud.",
+  },
+];
+
+const productProof = [
+  {
+    title: "Widgets first",
+    description: "Checklist, calendar, notepad, calls, status, and unread DMs live on the same clean home screen.",
+    className: "proof-widgets",
+    image: "/proof-widgets.png",
+    imageWidth: 1136,
+    imageHeight: 790,
+    alt: "ALTARA widgets dashboard with checklist, calendar, notepad, call panel, online status, and unread DMs",
+  },
+  {
+    title: "People stay close",
+    description: "Friends, best friends, and group spaces stay visible without turning the app into a giant public feed.",
+    className: "proof-people",
+    image: "/proof-people.png",
+    imageWidth: 252,
+    imageHeight: 520,
+    alt: "ALTARA friends list with best friends and online people",
+  },
+  {
+    title: "Calls stay quick",
+    description: "Jump into voice, open pending requests, or start a DM without digging through layers of UI.",
+    className: "proof-calls",
+    image: "/proof-calls.png",
+    imageWidth: 1146,
+    imageHeight: 888,
+    alt: "ALTARA group call screen with call controls and active speaker",
   },
 ];
 
@@ -80,8 +111,8 @@ export default function Home() {
               </h1>
 
               <p className="hero-sub">
-                A clean hangout for your crew. Voice, messages, and private spaces without the
-                noise.
+                A cleaner chat app for friends, gaming groups, and small communities. Voice,
+                messages, widgets, and private spaces without the noise.
               </p>
 
               <div className="hero-cta">
@@ -103,7 +134,7 @@ export default function Home() {
                   <span className="dot" /> Free forever
                 </span>
                 <span>
-                  <span className="dot" /> macOS - Windows - Linux
+                  <span className="dot" /> Windows now - macOS/Linux soon
                 </span>
               </div>
             </div>
@@ -154,18 +185,86 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="product-proof">
+          <div className="container">
+            <div className="section-head">
+              <h2>
+                Actual app, <span className="gradient-text">actual screens.</span>
+              </h2>
+              <p className="lead">
+                The site should show the thing itself, so here is the current ALTARA dashboard doing
+                real product work.
+              </p>
+            </div>
+
+            <div className="proof-grid">
+              {productProof.map((item) => (
+                <article key={item.title} className="proof-card" data-cursor="hover">
+                  <div className={`proof-shot ${item.className}`}>
+                    <Image
+                      src={item.image}
+                      alt={item.alt}
+                      width={item.imageWidth}
+                      height={item.imageHeight}
+                      sizes="(max-width: 800px) 100vw, 360px"
+                      unoptimized
+                    />
+                  </div>
+                  <h3>{item.title}</h3>
+                  <p>{item.description}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="release-strip">
+          <div className="container">
+            <div className="release-card">
+              <span className="eyebrow">
+                <span className="dot" /> Latest version
+              </span>
+              <div className="release-copy">
+                <h2>v1.0 is the public beta.</h2>
+                <p>
+                  Windows is live now. Browser access is open, and macOS/Linux builds are coming
+                  next.
+                </p>
+              </div>
+              <div className="release-actions">
+                <a
+                  href={DOWNLOAD_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-primary"
+                >
+                  Download Windows
+                </a>
+                <a
+                  href={RELEASES_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary"
+                >
+                  Release notes
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="download">
           <div className="container">
             <div className="cta-band">
               <div className="blob blob-1" />
               <div className="blob blob-2" />
               <span className="eyebrow">
-                <span className="dot" /> Free - 76MB - Windows, macOS, and Linux
+                <span className="dot" /> Free - 76MB - Windows now
               </span>
-              <h2>Get the gang together. Download ALTARA.</h2>
+              <h2>Get the gang together. Download ALTARA for Windows.</h2>
               <p>
-                Available on every platform you use. Sync across all of them and pick up where you
-                left off.
+                Browser access is open too. macOS and Linux are planned next, once the core app
+                feels right.
               </p>
 
               <div className="cta-platforms">
@@ -183,7 +282,7 @@ export default function Home() {
                   <div className="platform-copy">
                     <small>Download for</small>
                     <span className="platform-name">macOS</span>
-                    <span className="platform-soon">Em breve</span>
+                    <span className="platform-soon">Coming soon</span>
                   </div>
                 </button>
                 <a
@@ -225,7 +324,7 @@ export default function Home() {
                   <div className="platform-copy">
                     <small>Download for</small>
                     <span className="platform-name">Linux</span>
-                    <span className="platform-soon">Em breve</span>
+                    <span className="platform-soon">Coming soon</span>
                   </div>
                 </button>
                 <a href={TRY_IN_BROWSER_URL} className="platform-btn">
