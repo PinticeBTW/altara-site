@@ -8512,6 +8512,112 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
   word-break: break-word;
 }
 
+.dmProfileWidgetsPreview {
+  margin-top: 12px;
+}
+
+.dmProfileWidgetsPreview.hidden {
+  display: none !important;
+}
+
+.dmProfileWidgetsPreviewShell {
+  display: grid;
+  gap: 8px;
+}
+
+.dmProfileWidgetsPreviewTitle {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.dmProfileWidgetPreviewList {
+  display: grid;
+  gap: 8px;
+}
+
+.dmProfileWidgetPreviewCard {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: var(--surface-row);
+  color: var(--text-main);
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dmProfileWidgetPreviewCard:hover,
+.dmProfileWidgetPreviewCard:focus-visible {
+  border-color: rgba(162, 205, 255, 0.42);
+  background: rgba(132, 182, 255, 0.12);
+}
+
+.dmProfileWidgetPreviewMedia {
+  width: 58px;
+  height: 58px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(114, 148, 255, 0.22), rgba(14, 19, 31, 0.9));
+  display: grid;
+  place-items: center;
+  color: rgba(239, 245, 255, 0.9);
+  font-weight: 800;
+}
+
+.dmProfileWidgetPreviewMedia img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.dmProfileWidgetPreviewBody {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.dmProfileWidgetPreviewBadge {
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 999px;
+  border: 1px solid rgba(200, 232, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(231, 238, 252, 0.9);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.dmProfileWidgetPreviewName {
+  min-width: 0;
+  color: #f3f7ff;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dmProfileWidgetPreviewMeta,
+.dmProfileWidgetsPreviewLoading {
+  min-width: 0;
+  color: rgba(219, 226, 245, 0.72);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .dmProfilePanel__footer {
   margin-top: auto;
   border-top: 1px solid rgba(200, 232, 255, 0.1);
@@ -8802,8 +8908,8 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 }
 
 .userCardCard {
-  width: min(780px, calc(100vw - 16px));
-  max-width: min(780px, calc(100vw - 16px));
+  width: min(900px, calc(100vw - 16px));
+  max-width: min(900px, calc(100vw - 16px));
   overflow: hidden;
 }
 
@@ -8823,8 +8929,14 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 #userCardModal .userCardCard {
   position: fixed;
   margin: 0;
-  width: min(780px, calc(100vw - 16px));
-  max-width: min(780px, calc(100vw - 16px));
+  width: min(900px, calc(100vw - 16px));
+  max-width: min(900px, calc(100vw - 16px));
+}
+
+#userCardModal:not(.userCardModal--preview) .userCardCard {
+  height: min(680px, calc(100vh - 24px));
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
 }
 
 .userCardCloseBtn {
@@ -8866,17 +8978,26 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 
 .userCardSurface {
   display: grid;
-  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
-  min-height: min(560px, calc(100vh - 24px));
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  min-height: min(680px, calc(100vh - 24px));
+  min-width: 0;
   background:
     radial-gradient(circle at top left, rgba(105, 174, 255, 0.14), transparent 46%),
     linear-gradient(160deg, rgba(7, 12, 19, 0.98), rgba(3, 7, 13, 1));
+}
+
+#userCardModal:not(.userCardModal--preview) .userCardSurface {
+  height: 100%;
+  min-height: 0;
 }
 
 .userCardOverview {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   background:
     linear-gradient(180deg, rgba(14, 20, 30, 0.96), rgba(8, 12, 19, 0.98)),
     radial-gradient(circle at top, rgba(120, 167, 255, 0.1), transparent 42%);
@@ -9114,6 +9235,7 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 #userCardModal.userCardModal--preview .userCardPanelsArea {
@@ -9122,6 +9244,7 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 
 .userCardTabs {
   display: flex;
+  flex: 0 0 auto;
   gap: 10px;
   padding: 18px 18px 0;
   border-bottom: 1px solid rgba(200, 232, 255, 0.1);
@@ -9167,11 +9290,13 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
   min-height: 0;
   overflow: auto;
   padding: 18px;
+  scrollbar-gutter: stable;
 }
 
 .userCardPanel {
   display: none;
   gap: 16px;
+  min-height: 0;
 }
 
 .userCardPanel.is-active {
@@ -10237,15 +10362,17 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 @media (max-width: 900px) {
   .userCardSurface {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .userCardOverview {
     border-right: 0;
     border-bottom: 1px solid rgba(200, 232, 255, 0.1);
+    max-height: min(330px, 45vh);
   }
 
   .userCardPanelsArea {
-    min-height: 280px;
+    min-height: 0;
   }
 
   .userCardWidgetItemsArea {
@@ -10795,9 +10922,9 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 }
 
 #userCardModal .userCardCard {
-  width: min(780px, calc(100vw - 16px));
-  max-width: min(780px, calc(100vw - 16px));
-  overflow: visible;
+  width: min(900px, calc(100vw - 16px));
+  max-width: min(900px, calc(100vw - 16px));
+  overflow: hidden;
 }
 
 .modal__header,

@@ -1,4 +1,4 @@
-import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabaseClient.js";
+﻿import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabaseClient.js";
 import { $, esc, escapeAttr as escAttr, setDebug, requireAuth, getMyProfile, logout, enhancePasswordVisibilityToggles } from "./ui.js";
 import {
   createCallChannel as createRealtimeCallChannel,
@@ -1714,7 +1714,7 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.voice.device_hint": "Choose your call input and output devices.",
     "settings.performance.reduce_motion": "Reduce interface animations",
     "settings.performance.reduce_motion_hint": "Cuts transitions and motion-heavy effects to keep the app lighter.",
-    "settings.performance.pause_gifs_unfocused": "Pause GIFs when ALTARA is in the background",
+    "settings.performance.pause_gifs_unfocused": "Pause GIFs when Altara is in the background",
     "settings.performance.pause_gifs_unfocused_hint": "Stops animated GIF playback while the window is not focused.",
     "settings.performance.gifs_hover": "Play GIFs only on hover",
     "settings.performance.gifs_hover_hint": "Animated GIFs stay paused until you hover them.",
@@ -1722,8 +1722,8 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.performance.gif_placeholder_paused": "Paused to save resources",
     "settings.desktop.hardware_acceleration": "Use hardware acceleration",
     "settings.desktop.hardware_acceleration_hint": "Uses the GPU to help render the desktop app. Can reduce CPU on some PCs.",
-    "settings.desktop.hardware_acceleration_hint_restart": "Restart ALTARA to apply this hardware acceleration change.",
-    "settings.desktop.hardware_acceleration_restart_alert": "Restart ALTARA completely to apply the new hardware acceleration mode.",
+    "settings.desktop.hardware_acceleration_hint_restart": "Restart Altara to apply this hardware acceleration change.",
+    "settings.desktop.hardware_acceleration_restart_alert": "Restart Altara completely to apply the new hardware acceleration mode.",
     "settings.voice.mic_volume": "Microphone Volume",
     "settings.voice.speaker_volume": "Speaker Volume",
     "settings.voice.mic_test_start": "Mic Test",
@@ -1755,9 +1755,9 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.voice.saved": "Voice settings saved.",
     "settings.section.desktop_behavior": "Desktop Behavior",
     "settings.desktop.close_to_tray": "Close button minimizes to tray",
-    "settings.desktop.close_to_tray_hint": "When you click X, ALTARA keeps running in the system tray.",
-    "settings.desktop.launch_on_startup": "Open ALTARA when the computer starts",
-    "settings.desktop.launch_on_startup_hint": "Start ALTARA automatically when you sign in to Windows.",
+    "settings.desktop.close_to_tray_hint": "When you click X, Altara keeps running in the system tray.",
+    "settings.desktop.launch_on_startup": "Open Altara when the computer starts",
+    "settings.desktop.launch_on_startup_hint": "Start Altara automatically when you sign in to Windows.",
     "settings.desktop.hint.desktop_only": "Desktop app only.",
     "settings.section.desktop_updates": "Desktop Updates",
     "settings.desktop.update.check": "Check for updates",
@@ -1779,12 +1779,12 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.desktop.update.status.error": "Update failed. Try again.",
     "desktop.boot.overlay.title": "Starting...",
     "desktop.boot.overlay.text": "Preparing your space.",
-    "desktop.update.overlay.title": "ALTARA is updating...",
+    "desktop.update.overlay.title": "Altara is updating...",
     "desktop.update.overlay.text": "We're installing the latest version. The app will reopen in a moment.",
     "desktop.install_welcome.title": "Where friends stay close.",
     "desktop.install_welcome.line1": "From late-night laughs to voice calls that feel real.",
     "desktop.install_welcome.line2": "Keep your memories alive, one message at a time.",
-    "desktop.install_welcome.cta": "Enter ALTARA",
+    "desktop.install_welcome.cta": "Enter Altara",
     "settings.section.call_keybinds": "Call Binds",
     "settings.section.app_keybinds": "App Binds",
     "settings.keybind.mic.label": "Toggle Microphone",
@@ -2448,7 +2448,7 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.voice.device_hint": "Escolhe os dispositivos de entrada e saida da chamada.",
     "settings.performance.reduce_motion": "Reduzir animacoes da interface",
     "settings.performance.reduce_motion_hint": "Corta transicoes e efeitos com muito movimento para deixar a app mais leve.",
-    "settings.performance.pause_gifs_unfocused": "Pausar GIFs quando o ALTARA estiver em segundo plano",
+    "settings.performance.pause_gifs_unfocused": "Pausar GIFs quando o Altara estiver em segundo plano",
     "settings.performance.pause_gifs_unfocused_hint": "Para a reproducao dos GIFs animados enquanto a janela nao estiver focada.",
     "settings.performance.gifs_hover": "Reproduzir GIFs so ao passar com o rato",
     "settings.performance.gifs_hover_hint": "Os GIFs animados ficam pausados ate passares com o rato por cima.",
@@ -2456,8 +2456,8 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.performance.gif_placeholder_paused": "Pausado para poupar recursos",
     "settings.desktop.hardware_acceleration": "Usar aceleracao por hardware",
     "settings.desktop.hardware_acceleration_hint": "Usa a GPU para ajudar a renderizar a app desktop. Pode baixar o CPU em alguns PCs.",
-    "settings.desktop.hardware_acceleration_hint_restart": "Reinicia o ALTARA para aplicar esta mudanca de aceleracao por hardware.",
-    "settings.desktop.hardware_acceleration_restart_alert": "Reinicia o ALTARA por completo para aplicar o novo modo de aceleracao por hardware.",
+    "settings.desktop.hardware_acceleration_hint_restart": "Reinicia o Altara para aplicar esta mudanca de aceleracao por hardware.",
+    "settings.desktop.hardware_acceleration_restart_alert": "Reinicia o Altara por completo para aplicar o novo modo de aceleracao por hardware.",
     "settings.voice.mic_volume": "Volume do microfone",
     "settings.voice.speaker_volume": "Volume dos fones",
     "settings.voice.mic_test_start": "Testar microfone",
@@ -2489,9 +2489,9 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.voice.saved": "Definicoes de voz guardadas.",
     "settings.section.desktop_behavior": "Comportamento desktop",
     "settings.desktop.close_to_tray": "Botao fechar minimiza para a bandeja",
-    "settings.desktop.close_to_tray_hint": "Quando clicas no X, o ALTARA continua a correr na bandeja do sistema.",
-    "settings.desktop.launch_on_startup": "Abrir ALTARA ao iniciar o computador",
-    "settings.desktop.launch_on_startup_hint": "Inicia o ALTARA automaticamente quando entras no Windows.",
+    "settings.desktop.close_to_tray_hint": "Quando clicas no X, o Altara continua a correr na bandeja do sistema.",
+    "settings.desktop.launch_on_startup": "Abrir Altara ao iniciar o computador",
+    "settings.desktop.launch_on_startup_hint": "Inicia o Altara automaticamente quando entras no Windows.",
     "settings.desktop.hint.desktop_only": "Disponivel apenas na app desktop.",
     "settings.section.desktop_updates": "Atualizacoes desktop",
     "settings.desktop.update.check": "Procurar atualizacoes",
@@ -2513,12 +2513,12 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.desktop.update.status.error": "Falha na update. Tenta novamente.",
     "desktop.boot.overlay.title": "A iniciar...",
     "desktop.boot.overlay.text": "A preparar o teu espaco.",
-    "desktop.update.overlay.title": "ALTARA esta a atualizar...",
+    "desktop.update.overlay.title": "Altara esta a atualizar...",
     "desktop.update.overlay.text": "Estamos a instalar a versao mais recente. A app vai reabrir em instantes.",
     "desktop.install_welcome.title": "Where friends stay close.",
     "desktop.install_welcome.line1": "Das risadas de madrugada as calls que parecem reais.",
     "desktop.install_welcome.line2": "Guarda memorias com os teus amigos, mensagem a mensagem.",
-    "desktop.install_welcome.cta": "Entrar no ALTARA",
+    "desktop.install_welcome.cta": "Entrar no Altara",
     "settings.section.call_keybinds": "Binds da call",
     "settings.section.app_keybinds": "Binds da app",
     "settings.keybind.mic.label": "Alternar microfone",
@@ -11688,11 +11688,11 @@ function applyLanguageToStaticUi() {
   const desktopCloseLabel = document.getElementById("settingsDesktopCloseToTrayLabel");
   if (desktopCloseLabel) desktopCloseLabel.textContent = t("settings.desktop.close_to_tray", "Close button minimizes to tray");
   const desktopCloseHint = document.getElementById("settingsDesktopCloseToTrayHint");
-  if (desktopCloseHint) desktopCloseHint.textContent = t("settings.desktop.close_to_tray_hint", "When you click X, ALTARA keeps running in the system tray.");
+  if (desktopCloseHint) desktopCloseHint.textContent = t("settings.desktop.close_to_tray_hint", "When you click X, Altara keeps running in the system tray.");
   const desktopStartupLabel = document.getElementById("settingsDesktopLaunchOnStartupLabel");
-  if (desktopStartupLabel) desktopStartupLabel.textContent = t("settings.desktop.launch_on_startup", "Open ALTARA when the computer starts");
+  if (desktopStartupLabel) desktopStartupLabel.textContent = t("settings.desktop.launch_on_startup", "Open Altara when the computer starts");
   const desktopStartupHint = document.getElementById("settingsDesktopLaunchOnStartupHint");
-  if (desktopStartupHint) desktopStartupHint.textContent = t("settings.desktop.launch_on_startup_hint", "Start ALTARA automatically when you sign in to Windows.");
+  if (desktopStartupHint) desktopStartupHint.textContent = t("settings.desktop.launch_on_startup_hint", "Start Altara automatically when you sign in to Windows.");
   const desktopBehaviorHint = document.getElementById("settingsDesktopBehaviorHint");
   if (desktopBehaviorHint) desktopBehaviorHint.textContent = t("settings.desktop.hint.desktop_only", "Desktop app only.");
   const secPerformance = document.getElementById("settingsSectionPerformance");
@@ -11702,7 +11702,7 @@ function applyLanguageToStaticUi() {
   const reduceMotionHint = document.getElementById("settingsReduceMotionHint");
   if (reduceMotionHint) reduceMotionHint.textContent = t("settings.performance.reduce_motion_hint", "Cuts transitions and motion-heavy effects to keep the app lighter.");
   const pauseGifsLabel = document.getElementById("settingsPauseGifsWhenUnfocusedLabel");
-  if (pauseGifsLabel) pauseGifsLabel.textContent = t("settings.performance.pause_gifs_unfocused", "Pause GIFs when ALTARA is in the background");
+  if (pauseGifsLabel) pauseGifsLabel.textContent = t("settings.performance.pause_gifs_unfocused", "Pause GIFs when Altara is in the background");
   const pauseGifsHint = document.getElementById("settingsPauseGifsWhenUnfocusedHint");
   if (pauseGifsHint) pauseGifsHint.textContent = t("settings.performance.pause_gifs_unfocused_hint", "Stops animated GIF playback while the window is not focused.");
   const hoverGifsLabel = document.getElementById("settingsGifsPlayOnHoverLabel");
@@ -18088,11 +18088,11 @@ function renderGroupsRail() {
       class="groupOrb groupOrb--app-home${isHomeOrbActive ? " is-active" : ""}"
       type="button"
       data-open-rail-home="1"
-      title="ALTARA Home"
-      aria-label="ALTARA Home"
+      title="Altara Home"
+      aria-label="Altara Home"
     >
       <span class="groupOrbAppLogo" aria-hidden="true">
-        <img class="groupOrbAppLogoImg" src="${escAttr(homeOrbIconSrc)}" alt="ALTARA" loading="eager" />
+        <img class="groupOrbAppLogoImg" src="${escAttr(homeOrbIconSrc)}" alt="Altara" loading="eager" />
       </span>
     </button>
   `;
@@ -23597,7 +23597,7 @@ function renderServerInviteModalState({ busy = false, statusText = "" } = {}) {
       ? `Updating link to ${settingsSummary}. The current visible link is outdated until the new one finishes generating.`
       : `Settings changed to ${settingsSummary}. Generating a fresh link now.`;
     else if (serverInviteLinkUrl) metaEl.textContent = isDesktopLink
-      ? `Invite link ready. ${settingsSummary}. Share this ALTARA link. It opens the app directly on computers with ALTARA installed.`
+      ? `Invite link ready. ${settingsSummary}. Share this Altara link. It opens the app directly on computers with Altara installed.`
       : isLocalHost
       ? `Invite link ready. ${settingsSummary}. On 127.0.0.1/localhost, only users who can open this address can join.`
       : `Invite link ready. ${settingsSummary}. Share this link in DM or anywhere else. Whoever opens it can join.`;
@@ -35105,7 +35105,7 @@ let userCardLastAnchorRect = null;
 let userCardCurrentContext = null;
 let userCardCurrentInsights = null;
 let userCardInsightsLoading = false;
-let userCardActiveTab = "activity";
+let userCardActiveTab = "widgets";
 let userCardRequestToken = 0;
 let userCardPresentationMode = "anchored";
 let userCardLayoutMode = "full";
@@ -35135,10 +35135,11 @@ let profileWidgetInlineSearchResults = [];
 /** @typedef {"favorite"|"current"|"wishlist"|"completed"|"dropped"} WidgetStatus */
 /** @typedef {"public"|"friends"|"private"} WidgetVisibility */
 /** @typedef {"game"|"movie"|"series"|"music"|"anime"|"custom"} CatalogType */
-/** @typedef {"rawg"|"tmdb"|"spotify"|"apple_music"|"anilist"|"local"|"mock"} CatalogSource */
+/** @typedef {"rawg"|"tmdb"|"tvmaze"|"omdb"|"deezer"|"spotify"|"apple_music"|"anilist"|"local"|"mock"} CatalogSource */
 /** @typedef {{ source: CatalogSource, source_id: string, type: CatalogType, title: string, cover_url?: string|null, release_year?: number|null, external_url?: string|null, metadata?: Record<string, unknown>, result_origin?: "local"|"external" }} CatalogItem */
 
 const PROFILE_WIDGET_TYPES = Object.freeze(["games", "movies", "series", "music", "anime", "custom"]);
+const PROFILE_WIDGET_CREATE_TYPES = Object.freeze(["games", "movies", "series", "music", "anime"]);
 const PROFILE_WIDGET_STATUSES = Object.freeze(["favorite", "current", "wishlist", "completed", "dropped"]);
 const PROFILE_WIDGET_VISIBILITY = Object.freeze(["public", "friends", "private"]);
 const PROFILE_WIDGET_TO_CATALOG_TYPE = Object.freeze({
@@ -35154,6 +35155,7 @@ const PROFILE_WIDGET_CATALOG_SEARCH_DEBOUNCE_MS = 300;
 const PROFILE_WIDGET_CATALOG_SEARCH_LIMIT = 10;
 // TODO: mover RAWG call para backend/Edge Function e remover API key do frontend.
 const PROFILE_WIDGET_RAWG_FRONTEND_API_KEY = "dd7a8950868c4d348baf79e030922ea8";
+const PROFILE_WIDGET_OMDB_FRONTEND_API_KEY = "3364c468";
 const PROFILE_WIDGET_LIMITS = Object.freeze({
   maxWidgets: 12,
   maxItems: 20,
@@ -43511,6 +43513,7 @@ function renderDmGroupMembersPanel(members = [], { loading = false } = {}) {
   const handleEl = document.getElementById("dmProfileHandle");
   const statusWrap = document.querySelector("#dmProfilePanel .dmProfilePresence");
   const bioWrap = document.querySelector("#dmProfilePanel .dmProfileSection");
+  const widgetsPreviewEl = document.getElementById("dmProfileWidgetsPreview");
   const btnOpen = document.getElementById("btnDmProfileOpenCard");
   if (!panel || !bodyEl) return;
 
@@ -43533,6 +43536,11 @@ function renderDmGroupMembersPanel(members = [], { loading = false } = {}) {
   if (handleEl) handleEl.style.display = "none";
   if (statusWrap) statusWrap.style.display = "none";
   if (bioWrap) bioWrap.style.display = "none";
+  if (widgetsPreviewEl) {
+    widgetsPreviewEl.classList.add("hidden");
+    widgetsPreviewEl.setAttribute("aria-hidden", "true");
+    widgetsPreviewEl.innerHTML = "";
+  }
   if (footerEl) footerEl.style.display = "none";
   if (btnOpen) btnOpen.style.display = "none";
   membersBody.style.display = "block";
@@ -43575,6 +43583,85 @@ function renderDmGroupMembersPanel(members = [], { loading = false } = {}) {
   }).join("")}
     </div>
   `;
+}
+
+function buildDmProfileWidgetsPreviewHtml(widgets = [], {
+  loading = false,
+  error = "",
+} = {}) {
+  const safeWidgets = Array.isArray(widgets) ? widgets.filter((widget) => !!widget) : [];
+  const previewWidgets = safeWidgets
+    .map((widget) => {
+      const items = Array.isArray(widget?.items) ? widget.items : [];
+      const featured = getProfileWidgetFeaturedItem(widget);
+      const item = featured || items[0] || null;
+      return { widget, item, itemCount: items.length };
+    })
+    .filter((entry) => entry.item || entry.itemCount)
+    .slice(0, 2);
+
+  if (!previewWidgets.length) {
+    if (loading) {
+      return `
+        <section class="dmProfileWidgetsPreviewShell" aria-label="${escAttr(t("profile.widgets.eyebrow", "Widgets"))}">
+          <div class="dmProfileWidgetsPreviewTitle">${esc(t("profile.widgets.eyebrow", "Widgets"))}</div>
+          <div class="dmProfileWidgetsPreviewLoading">${esc(t("profile.widgets.loading.text", "Fetching profile interests."))}</div>
+        </section>
+      `;
+    }
+    if (error) {
+      return `
+        <section class="dmProfileWidgetsPreviewShell" aria-label="${escAttr(t("profile.widgets.eyebrow", "Widgets"))}">
+          <div class="dmProfileWidgetsPreviewTitle">${esc(t("profile.widgets.eyebrow", "Widgets"))}</div>
+          <div class="dmProfileWidgetsPreviewLoading">${esc(error)}</div>
+        </section>
+      `;
+    }
+    return "";
+  }
+
+  return `
+    <section class="dmProfileWidgetsPreviewShell" aria-label="${escAttr(t("profile.widgets.eyebrow", "Widgets"))}">
+      <div class="dmProfileWidgetsPreviewTitle">${esc(t("profile.widgets.eyebrow", "Widgets"))}</div>
+      <div class="dmProfileWidgetPreviewList">
+        ${previewWidgets.map(({ widget, item, itemCount }) => {
+    const typeLabel = getProfileWidgetTypeLabel(widget?.widget_type || "");
+    const title = normalizeProfileWidgetTitle(item?.title || widget?.title || "") || t("profile.widgets.item.untitled", "Untitled");
+    const coverUrl = normalizeCatalogCoverUrl(item?.cover_url || "");
+    const metaText = itemCount > 1
+      ? t("profile.widgets.preview.more", "{count} items").replace("{count}", String(itemCount))
+      : (normalizeProfileWidgetTitle(widget?.title || "") || typeLabel);
+    const mediaHtml = coverUrl
+      ? `<img src="${escAttr(coverUrl)}" alt="" loading="lazy" />`
+      : `<span>${esc(String(title).charAt(0).toUpperCase() || "?")}</span>`;
+    return `
+          <button class="dmProfileWidgetPreviewCard" type="button" data-dm-profile-widget-preview="1">
+            <span class="dmProfileWidgetPreviewMedia">${mediaHtml}</span>
+            <span class="dmProfileWidgetPreviewBody">
+              <span class="dmProfileWidgetPreviewBadge">${esc(typeLabel)}</span>
+              <span class="dmProfileWidgetPreviewName">${esc(title)}</span>
+              <span class="dmProfileWidgetPreviewMeta">${esc(metaText)}</span>
+            </span>
+          </button>
+        `;
+  }).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderDmProfileWidgetsPreview(userId = "", widgets = [], {
+  loading = false,
+  error = "",
+} = {}) {
+  const el = document.getElementById("dmProfileWidgetsPreview");
+  if (!el) return;
+  const uid = normId(userId || "");
+  const html = buildDmProfileWidgetsPreviewHtml(widgets, { loading, error });
+  el.innerHTML = html;
+  el.dataset.userId = uid;
+  el.classList.toggle("hidden", !html);
+  el.setAttribute("aria-hidden", html ? "false" : "true");
 }
 
 async function openDmGroupMembersPanel({ force = false } = {}) {
@@ -43625,6 +43712,7 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
   const membersBody = document.getElementById("dmGroupMembersBody");
   const statusWrap = document.querySelector("#dmProfilePanel .dmProfilePresence");
   const bioWrap = document.querySelector("#dmProfilePanel .dmProfileSection");
+  const widgetsPreviewEl = document.getElementById("dmProfileWidgetsPreview");
   const btnOpen = document.getElementById("btnDmProfileOpenCard");
 
   if (panel) panel.classList.remove("is-group-members");
@@ -43635,6 +43723,7 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
   if (handleEl) handleEl.style.display = "";
   if (statusWrap) statusWrap.style.display = "";
   if (bioWrap) bioWrap.style.display = "";
+  if (widgetsPreviewEl) widgetsPreviewEl.style.display = "";
   if (footerEl) footerEl.style.display = "";
   if (btnOpen) btnOpen.style.display = "";
   if (membersBody) {
@@ -43684,6 +43773,7 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
   if (statusDotEl) statusDotEl.setAttribute("data-status", status || "offline");
   if (statusTextEl) statusTextEl.textContent = dmStatusLabel(status);
   if (bioEl) bioEl.textContent = bio || (loading ? t("app.loading", "Loading...") : t("dm.no_bio", "No bio."));
+  renderDmProfileWidgetsPreview(uid, getCachedProfileWidgetsForUser(uid), { loading });
 }
 
 function refreshDmProfilePanel() {
@@ -43734,12 +43824,23 @@ async function openDmProfilePanel({ force = false } = {}) {
 
   const requestId = ++dmProfilePanelRequestSeq;
   const uid = seed.id;
-  const fetched = await fetchProfilesByIds([uid], { includeBio: true, force: true });
+  const [fetched, widgetsResult] = await Promise.all([
+    fetchProfilesByIds([uid], { includeBio: true, force: true }).catch(() => []),
+    fetchProfileWidgetsForUser(uid, { force: !!force })
+      .then((rows) => ({ rows, error: null }))
+      .catch((error) => ({ rows: getCachedProfileWidgetsForUser(uid), error })),
+  ]);
   if (requestId !== dmProfilePanelRequestSeq) return;
   if (!dmProfilePanelOpen || uid !== getActiveDmPeerUserId()) return;
 
   const profile = fetched?.[0] || getCachedProfile(uid) || seed;
   renderDmProfilePanel(profile, { loading: false });
+  if (widgetsResult?.error) {
+    renderDmProfileWidgetsPreview(uid, widgetsResult.rows || [], {
+      loading: false,
+      error: toProfileWidgetError(widgetsResult.error, t("profile.widgets.error.load", "Could not load widgets.")),
+    });
+  }
 }
 
 function closeDmProfilePanel() {
@@ -44028,6 +44129,7 @@ function bindDmProfilePanelOnce() {
       serverId: normId(state.activeDm?.serverId || ""),
       kind: normId(state.activeDm?.serverId || "") ? "server" : String(state.activeDm?.kind || "").trim().toLowerCase(),
       presentation: "overlay",
+      initialTab: "widgets",
     });
   };
   const bindProfileOpenTarget = (el) => {
@@ -44066,6 +44168,20 @@ function bindDmProfilePanelOnce() {
   panelBody?.addEventListener("click", async (e) => {
     const target = eventTargetElement(e);
     if (!target) return;
+    const widgetPreview = target.closest("[data-dm-profile-widget-preview]");
+    if (widgetPreview) {
+      const uid = getActiveDmPeerUserId();
+      if (!uid) return;
+      await openUserCardModal(uid, { username: state.activeDm?.username || "" }, {
+        conversationId: normId(activeDmId || state.activeDm?.conversationId || ""),
+        conversationLabel: String(state.activeDm?.displayName || state.activeDm?.username || "").trim(),
+        serverId: normId(state.activeDm?.serverId || ""),
+        kind: normId(state.activeDm?.serverId || "") ? "server" : String(state.activeDm?.kind || "").trim().toLowerCase(),
+        presentation: "overlay",
+        initialTab: "widgets",
+      });
+      return;
+    }
     const row = target.closest("[data-group-member-id]");
     if (!row) return;
     const uid = normId(row.getAttribute("data-group-member-id") || "");
@@ -44206,7 +44322,7 @@ function closeUserCardModal() {
   userCardWidgetsError = "";
   userCardWidgetsMutating = false;
   userCardWidgetRefreshToken += 1;
-  userCardActiveTab = "activity";
+  userCardActiveTab = "widgets";
   applyUserCardModalPresentation("anchored");
   applyUserCardModalLayout("full");
   closeProfileWidgetInlineSearchPopover({ refresh: false });
@@ -44630,6 +44746,11 @@ function normalizeProfileWidgetType(value = "") {
   return PROFILE_WIDGET_TYPES.includes(raw) ? raw : "custom";
 }
 
+function normalizeProfileWidgetCreateType(value = "") {
+  const type = normalizeProfileWidgetType(value);
+  return PROFILE_WIDGET_CREATE_TYPES.includes(type) ? type : "games";
+}
+
 function normalizeProfileWidgetStatus(value = "") {
   const raw = String(value || "").trim().toLowerCase();
   return PROFILE_WIDGET_STATUSES.includes(raw) ? raw : "favorite";
@@ -44686,7 +44807,7 @@ function catalogTypeFromWidgetType(widgetTypeInput = "") {
 function normalizeCatalogSource(value = "") {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) return "local";
-  if (["rawg", "tmdb", "spotify", "apple_music", "anilist", "local", "mock"].includes(raw)) return raw;
+  if (["rawg", "tmdb", "tvmaze", "omdb", "deezer", "spotify", "apple_music", "anilist", "local", "mock"].includes(raw)) return raw;
   return "local";
 }
 
@@ -44697,7 +44818,7 @@ function normalizeProfileWidgetItemMetadata(input = {}) {
   const out = {};
 
   const sourceRaw = String(src.source || src.catalog_source || "").trim().toLowerCase();
-  const source = sourceRaw && ["rawg", "tmdb", "spotify", "apple_music", "anilist", "local", "mock"].includes(sourceRaw)
+  const source = sourceRaw && ["rawg", "tmdb", "tvmaze", "omdb", "deezer", "spotify", "apple_music", "anilist", "local", "mock"].includes(sourceRaw)
     ? sourceRaw
     : "";
   const sourceId = String(src.source_id || src.catalog_source_id || "").trim().slice(0, 80);
@@ -44739,6 +44860,37 @@ function normalizeProfileWidgetItemMetadata(input = {}) {
   if (Number.isFinite(rating)) out.rating = Math.max(0, Math.min(5, Number(rating.toFixed(2))));
   const rawgRating = Number(src.rawg_rating);
   if (Number.isFinite(rawgRating)) out.rawg_rating = Math.max(0, Math.min(5, Number(rawgRating.toFixed(2))));
+
+  const imdbId = String(src.imdb || src.imdb_id || "").trim().slice(0, 32);
+  if (imdbId) out.imdb = imdbId;
+  const omdbType = String(src.omdb_type || "").trim().toLowerCase();
+  if (omdbType === "movie" || omdbType === "series" || omdbType === "episode") out.omdb_type = omdbType;
+  const yearText = String(src.year_text || "").trim().slice(0, 24);
+  if (yearText) out.year_text = yearText;
+  const anilistFormat = String(src.anilist_format || "").trim().slice(0, 32);
+  if (anilistFormat) out.anilist_format = anilistFormat;
+  const anilistStatus = String(src.anilist_status || "").trim().slice(0, 32);
+  if (anilistStatus) out.anilist_status = anilistStatus;
+  const averageScore = Number(src.average_score);
+  if (Number.isFinite(averageScore)) out.average_score = Math.max(0, Math.min(100, Math.round(averageScore)));
+  const trackTitle = String(src.track_title || "").trim().slice(0, 120);
+  if (trackTitle) out.track_title = trackTitle;
+  const artistName = String(src.artist || src.artist_name || "").trim().slice(0, 120);
+  if (artistName) out.artist = artistName;
+  const artistId = String(src.artist_id || "").trim().slice(0, 40);
+  if (artistId) out.artist_id = artistId;
+  const artistUrl = normalizeCatalogExternalUrl(src.artist_url || "");
+  if (artistUrl) out.artist_url = artistUrl;
+  const albumTitle = String(src.album || src.album_title || "").trim().slice(0, 120);
+  if (albumTitle) out.album = albumTitle;
+  const albumId = String(src.album_id || "").trim().slice(0, 40);
+  if (albumId) out.album_id = albumId;
+  const previewUrl = normalizeCatalogExternalUrl(src.preview_url || src.preview || "");
+  if (previewUrl) out.preview_url = previewUrl;
+  const durationSeconds = Number(src.duration_seconds ?? src.duration);
+  if (Number.isFinite(durationSeconds) && durationSeconds > 0) out.duration_seconds = clampInt(durationSeconds, 1, 36000, 1);
+  const deezerRank = Number(src.deezer_rank ?? src.rank);
+  if (Number.isFinite(deezerRank) && deezerRank > 0) out.deezer_rank = Math.min(Math.round(deezerRank), 1000000000);
 
   return out;
 }
@@ -44786,6 +44938,9 @@ function getCatalogSourceLabel(sourceInput = "") {
   if (source === "mock") return "MOCK";
   if (source === "rawg") return "RAWG";
   if (source === "tmdb") return "TMDB";
+  if (source === "omdb") return "OMDb";
+  if (source === "tvmaze") return "TVMaze";
+  if (source === "deezer") return "Deezer";
   if (source === "spotify") return "Spotify";
   if (source === "apple_music") return "Apple Music";
   if (source === "anilist") return "AniList";
@@ -45319,6 +45474,276 @@ async function searchGamesRAWG(queryInput = "", {
   }
 }
 
+async function searchTitlesOMDb(queryInput = "", {
+  catalogTypeInput = "series",
+  limitInput = PROFILE_WIDGET_CATALOG_SEARCH_LIMIT,
+  signal = null,
+} = {}) {
+  const query = String(queryInput || "").trim().replace(/\s+/g, " ");
+  const catalogType = normalizeCatalogType(catalogTypeInput || "");
+  const limit = clampInt(limitInput, 1, 20, PROFILE_WIDGET_CATALOG_SEARCH_LIMIT);
+  const apiKey = String(PROFILE_WIDGET_OMDB_FRONTEND_API_KEY || "").trim();
+  if (query.length < 2) return [];
+  if (catalogType !== "movie" && catalogType !== "series") return [];
+  if (!apiKey) throw new Error("missing_omdb_api_key");
+
+  const endpoint = new URL("https://www.omdbapi.com/");
+  endpoint.searchParams.set("apikey", apiKey);
+  endpoint.searchParams.set("s", query);
+  endpoint.searchParams.set("type", catalogType);
+  endpoint.searchParams.set("page", "1");
+
+  const response = await fetch(endpoint.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+    ...(signal ? { signal } : {}),
+  });
+  if (!response.ok) {
+    throw new Error(`OMDb request failed (${response.status})`);
+  }
+
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch (_) {
+    payload = {};
+  }
+  const searchRows = Array.isArray(payload?.Search) ? payload.Search : [];
+  const mapped = searchRows.map((entry) => {
+    const title = normalizeProfileWidgetTitle(entry?.Title || "");
+    const imdbId = String(entry?.imdbID || "").trim();
+    if (!title || !imdbId) return null;
+
+    const resultTypeRaw = String(entry?.Type || "").trim().toLowerCase();
+    const resultType = resultTypeRaw === "movie" || resultTypeRaw === "series"
+      ? resultTypeRaw
+      : catalogType;
+    if (resultType !== catalogType) return null;
+
+    const yearText = String(entry?.Year || "").trim();
+    const releaseYear = /^\d{4}/.test(yearText)
+      ? clampInt(yearText.slice(0, 4), 1900, 2100, 1900)
+      : null;
+    const posterRaw = String(entry?.Poster || "").trim();
+    const coverUrl = posterRaw && posterRaw.toUpperCase() !== "N/A"
+      ? normalizeCatalogCoverUrl(posterRaw)
+      : "";
+
+    return {
+      source: "omdb",
+      source_id: `${catalogType}:${imdbId}`,
+      type: catalogType,
+      title,
+      cover_url: coverUrl,
+      release_year: releaseYear,
+      external_url: normalizeCatalogExternalUrl(`https://www.imdb.com/title/${encodeURIComponent(imdbId)}/`),
+      metadata: normalizeProfileWidgetItemMetadata({
+        source: "omdb",
+        source_id: imdbId,
+        imdb: imdbId,
+        catalog_type: catalogType,
+        omdb_type: resultType,
+        year_text: yearText,
+        release_year: releaseYear,
+      }),
+      result_origin: "external",
+    };
+  });
+  return dedupeCatalogSearchResults(mapped).slice(0, limit);
+}
+
+async function searchMusicDeezer(queryInput = "", {
+  limitInput = PROFILE_WIDGET_CATALOG_SEARCH_LIMIT,
+  signal = null,
+} = {}) {
+  const query = String(queryInput || "").trim().replace(/\s+/g, " ");
+  const limit = clampInt(limitInput, 1, 20, PROFILE_WIDGET_CATALOG_SEARCH_LIMIT);
+  if (query.length < 2) return [];
+
+  const endpoint = new URL("https://api.deezer.com/search/track");
+  endpoint.searchParams.set("q", query);
+  endpoint.searchParams.set("limit", String(limit));
+
+  const response = await fetch(endpoint.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+    ...(signal ? { signal } : {}),
+  });
+  if (!response.ok) {
+    throw new Error(`Deezer request failed (${response.status})`);
+  }
+
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch (_) {
+    payload = {};
+  }
+  if (payload?.error) {
+    const errorMessage = String(payload?.error?.message || payload?.error || "deezer_request_failed").trim();
+    throw new Error(errorMessage || "deezer_request_failed");
+  }
+
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  const mapped = rows.map((entry) => {
+    const trackId = String(entry?.id || "").trim();
+    const trackTitle = normalizeProfileWidgetTitle(entry?.title || entry?.title_short || "");
+    const artistName = String(entry?.artist?.name || "").trim();
+    const displayTitle = normalizeProfileWidgetTitle(
+      artistName && trackTitle ? `${trackTitle} - ${artistName}` : trackTitle
+    );
+    if (!trackId || !displayTitle) return null;
+
+    const albumTitle = String(entry?.album?.title || "").trim();
+    const albumId = String(entry?.album?.id || "").trim();
+    const artistId = String(entry?.artist?.id || "").trim();
+    const artistUrl = normalizeCatalogExternalUrl(entry?.artist?.link || "");
+    const previewUrl = normalizeCatalogExternalUrl(entry?.preview || "");
+    const coverUrl = normalizeCatalogCoverUrl(
+      entry?.album?.cover_big
+      || entry?.album?.cover_medium
+      || entry?.album?.cover
+      || entry?.artist?.picture_medium
+      || entry?.artist?.picture
+      || ""
+    );
+
+    return {
+      source: "deezer",
+      source_id: `music:${trackId}`,
+      type: "music",
+      title: displayTitle,
+      cover_url: coverUrl,
+      release_year: null,
+      external_url: normalizeCatalogExternalUrl(entry?.link || ""),
+      metadata: normalizeProfileWidgetItemMetadata({
+        source: "deezer",
+        source_id: trackId,
+        catalog_type: "music",
+        track_title: trackTitle || null,
+        artist: artistName || null,
+        artist_id: artistId || null,
+        artist_url: artistUrl || null,
+        album: albumTitle || null,
+        album_id: albumId || null,
+        duration_seconds: Number(entry?.duration),
+        deezer_rank: Number(entry?.rank),
+        preview_url: previewUrl || null,
+      }),
+      result_origin: "external",
+    };
+  });
+  return dedupeCatalogSearchResults(mapped).slice(0, limit);
+}
+
+async function searchAnimeAniList(queryInput = "", {
+  limitInput = PROFILE_WIDGET_CATALOG_SEARCH_LIMIT,
+  signal = null,
+} = {}) {
+  const query = String(queryInput || "").trim().replace(/\s+/g, " ");
+  const limit = clampInt(limitInput, 1, 20, PROFILE_WIDGET_CATALOG_SEARCH_LIMIT);
+  if (query.length < 2) return [];
+
+  const graphQuery = `
+    query ($search: String!, $page: Int!, $perPage: Int!) {
+      Page(page: $page, perPage: $perPage) {
+        media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+          id
+          siteUrl
+          title { romaji english native userPreferred }
+          coverImage { large medium }
+          startDate { year }
+          seasonYear
+          format
+          status
+          averageScore
+          genres
+        }
+      }
+    }
+  `;
+  const payload = {
+    query: graphQuery,
+    variables: { search: query, page: 1, perPage: limit },
+  };
+
+  const response = await fetch("https://graphql.anilist.co", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+    ...(signal ? { signal } : {}),
+  });
+  if (!response.ok) {
+    throw new Error(`AniList request failed (${response.status})`);
+  }
+
+  let body = {};
+  try {
+    body = await response.json();
+  } catch (_) {
+    body = {};
+  }
+  if (Array.isArray(body?.errors) && body.errors.length) {
+    const firstError = String(body.errors[0]?.message || "AniList query failed").trim();
+    throw new Error(firstError);
+  }
+
+  const rows = Array.isArray(body?.data?.Page?.media) ? body.data.Page.media : [];
+  const mapped = rows.map((entry) => {
+    const id = String(entry?.id || "").trim();
+    const title = normalizeProfileWidgetTitle(
+      entry?.title?.english
+      || entry?.title?.romaji
+      || entry?.title?.userPreferred
+      || entry?.title?.native
+      || ""
+    );
+    if (!id || !title) return null;
+
+    const releaseYearRaw = Number(entry?.seasonYear);
+    const startYearRaw = Number(entry?.startDate?.year);
+    const releaseYear = Number.isFinite(releaseYearRaw)
+      ? clampInt(releaseYearRaw, 1900, 2100, 1900)
+      : (Number.isFinite(startYearRaw) ? clampInt(startYearRaw, 1900, 2100, 1900) : null);
+    const averageScoreRaw = Number(entry?.averageScore);
+    const rating = Number.isFinite(averageScoreRaw)
+      ? Math.max(0, Math.min(5, Number((averageScoreRaw / 20).toFixed(2))))
+      : null;
+    const genres = Array.isArray(entry?.genres)
+      ? entry.genres.map((g) => String(g || "").trim()).filter(Boolean).slice(0, 12)
+      : [];
+
+    return {
+      source: "anilist",
+      source_id: `anime:${id}`,
+      type: "anime",
+      title,
+      cover_url: normalizeCatalogCoverUrl(entry?.coverImage?.large || entry?.coverImage?.medium || ""),
+      release_year: releaseYear,
+      external_url: normalizeCatalogExternalUrl(entry?.siteUrl || `https://anilist.co/anime/${encodeURIComponent(id)}`),
+      metadata: normalizeProfileWidgetItemMetadata({
+        source: "anilist",
+        source_id: id,
+        catalog_type: "anime",
+        anilist_format: String(entry?.format || "").trim() || null,
+        anilist_status: String(entry?.status || "").trim() || null,
+        average_score: Number.isFinite(averageScoreRaw) ? Math.round(averageScoreRaw) : null,
+        rating,
+        release_year: releaseYear,
+        genres,
+      }),
+      result_origin: "external",
+    };
+  });
+  return dedupeCatalogSearchResults(mapped).slice(0, limit);
+}
+
 async function searchCatalogItems(catalogTypeInput, queryInput, limitInput = PROFILE_WIDGET_CATALOG_SEARCH_LIMIT, {
   signal = null,
 } = {}) {
@@ -45338,64 +45763,119 @@ async function searchCatalogItems(catalogTypeInput, queryInput, limitInput = PRO
     return profileWidgetCatalogSearchCache.get(cacheKey);
   }
 
-  const edgeFunctionName = "catalog-search";
-  const functionPath = `/functions/v1/${edgeFunctionName}`;
-  const authReady = await ensureSupabaseFunctionInvokeAuthReady({
-    edgeFunctionName,
-    functionPath,
-    requireUser: true,
-    logPrefix: "[profile-widgets auth]",
-    logEvent: "catalog_search.auth_state",
-    logChannel: "profile-widgets",
-    failEvent: "catalog_search.auth_missing",
-  });
-  if (!authReady.ok) {
-    throw authReady.error || new Error("Could not authenticate catalog search.");
-  }
-
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = String(sessionData?.session?.access_token || "").trim();
-  if (!accessToken) {
-    throw new Error("Missing auth token.");
-  }
-
-  const endpoint = new URL(`${SUPABASE_URL}/functions/v1/catalog-search`);
-  endpoint.searchParams.set("type", catalogType);
-  endpoint.searchParams.set("q", query);
-  endpoint.searchParams.set("limit", String(limit));
-
-  const response = await fetch(endpoint.toString(), {
-    method: "GET",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json",
-    },
-    cache: "no-store",
-    ...(signal ? { signal } : {}),
-  });
-
-  let payload = {};
   try {
-    payload = await response.json();
-  } catch (_) {
-    payload = {};
-  }
-  const payloadObj = payload && typeof payload === "object" && !Array.isArray(payload)
-    ? payload
-    : {};
+    const edgeFunctionName = "catalog-search";
+    const functionPath = `/functions/v1/${edgeFunctionName}`;
+    const authReady = await ensureSupabaseFunctionInvokeAuthReady({
+      edgeFunctionName,
+      functionPath,
+      requireUser: true,
+      logPrefix: "[profile-widgets auth]",
+      logEvent: "catalog_search.auth_state",
+      logChannel: "profile-widgets",
+      failEvent: "catalog_search.auth_missing",
+    });
+    if (!authReady.ok) {
+      throw authReady.error || new Error("Could not authenticate catalog search.");
+    }
 
-  if (!response.ok || payloadObj?.ok === false) {
-    const message = String(payloadObj?.message || payloadObj?.error || `Catalog search failed (${response.status})`).trim();
-    throw new Error(message);
-  }
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = String(sessionData?.session?.access_token || "").trim();
+    if (!accessToken) {
+      throw new Error("Missing auth token.");
+    }
 
-  const result = {
-    results: dedupeCatalogSearchResults(payloadObj?.data || payloadObj?.results || []),
-    onlineError: String(payloadObj?.online_error || "").trim(),
-  };
-  profileWidgetCatalogSearchCache.set(cacheKey, result);
-  return result;
+    const endpoint = new URL(`${SUPABASE_URL}/functions/v1/catalog-search`);
+    endpoint.searchParams.set("type", catalogType);
+    endpoint.searchParams.set("q", query);
+    endpoint.searchParams.set("limit", String(limit));
+
+    const response = await fetch(endpoint.toString(), {
+      method: "GET",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      ...(signal ? { signal } : {}),
+    });
+
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (_) {
+      payload = {};
+    }
+    const payloadObj = payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload
+      : {};
+
+    if (!response.ok || payloadObj?.ok === false) {
+      const message = String(payloadObj?.message || payloadObj?.error || `Catalog search failed (${response.status})`).trim();
+      throw new Error(message);
+    }
+
+    const result = {
+      results: dedupeCatalogSearchResults(payloadObj?.data || payloadObj?.results || []),
+      onlineError: String(payloadObj?.online_error || "").trim(),
+    };
+    profileWidgetCatalogSearchCache.set(cacheKey, result);
+    return result;
+  } catch (error) {
+    const aborted = error?.name === "AbortError" || String(error?.message || "").toLowerCase().includes("aborted");
+    if (aborted) throw error;
+    if (catalogType === "game") {
+      const fallbackRows = await searchGamesRAWG(query, {
+        limitInput: limit,
+        signal,
+      });
+      const fallbackResult = {
+        results: dedupeCatalogSearchResults(fallbackRows),
+        onlineError: "",
+      };
+      profileWidgetCatalogSearchCache.set(cacheKey, fallbackResult);
+      return fallbackResult;
+    }
+    if (catalogType === "movie" || catalogType === "series") {
+      const fallbackRows = await searchTitlesOMDb(query, {
+        catalogTypeInput: catalogType,
+        limitInput: limit,
+        signal,
+      });
+      const fallbackResult = {
+        results: dedupeCatalogSearchResults(fallbackRows),
+        onlineError: "",
+      };
+      profileWidgetCatalogSearchCache.set(cacheKey, fallbackResult);
+      return fallbackResult;
+    }
+    if (catalogType === "anime") {
+      const fallbackRows = await searchAnimeAniList(query, {
+        limitInput: limit,
+        signal,
+      });
+      const fallbackResult = {
+        results: dedupeCatalogSearchResults(fallbackRows),
+        onlineError: "",
+      };
+      profileWidgetCatalogSearchCache.set(cacheKey, fallbackResult);
+      return fallbackResult;
+    }
+    if (catalogType === "music") {
+      const fallbackRows = await searchMusicDeezer(query, {
+        limitInput: limit,
+        signal,
+      });
+      const fallbackResult = {
+        results: dedupeCatalogSearchResults(fallbackRows),
+        onlineError: "",
+      };
+      profileWidgetCatalogSearchCache.set(cacheKey, fallbackResult);
+      return fallbackResult;
+    }
+    throw error;
+  }
 }
 
 function collectProfileWidgetItemModalExtras() {
@@ -46458,15 +46938,11 @@ async function runProfileWidgetInlineSearchNow(widgetIdInput = "") {
   profileWidgetInlineSearchError = "";
 
   try {
-    let results = [];
-    if (catalogType === "game") {
-      results = await searchGamesRAWG(query, {
-        limitInput: PROFILE_WIDGET_CATALOG_SEARCH_LIMIT,
-        signal: controller?.signal || null,
-      });
-    }
+    const result = await searchCatalogItems(catalogType, query, PROFILE_WIDGET_CATALOG_SEARCH_LIMIT, {
+      signal: controller?.signal || null,
+    });
     if (seq !== profileWidgetInlineSearchSeq || !isProfileWidgetInlineSearchOpenFor(wid)) return;
-    profileWidgetInlineSearchResults = Array.isArray(results) ? results : [];
+    profileWidgetInlineSearchResults = Array.isArray(result?.results) ? result.results : [];
     profileWidgetInlineSearchError = "";
   } catch (error) {
     const aborted = error?.name === "AbortError" || String(error?.message || "").toLowerCase().includes("aborted");
@@ -46536,7 +47012,7 @@ function openProfileWidgetModal({ mode = "create", widget = null } = {}) {
   }
   if (modeInput) modeInput.value = normalizedMode;
   if (idInput) idInput.value = normalizedMode === "edit" ? String(widget?.id || "") : "";
-  if (typeInput) typeInput.value = normalizeProfileWidgetType(widget?.widget_type || "games");
+  if (typeInput) typeInput.value = normalizeProfileWidgetCreateType(widget?.widget_type || "games");
   if (titleInput) titleInput.value = normalizedMode === "edit" ? String(widget?.title || "") : "";
   if (visibilityInput) visibilityInput.value = normalizeProfileWidgetVisibility(widget?.visibility || "public");
   if (enabledInput) enabledInput.checked = normalizedMode === "edit" ? widget?.is_enabled !== false : true;
@@ -46757,7 +47233,7 @@ async function submitProfileWidgetModal() {
   if (userCardWidgetsMutating) return;
   const mode = String(document.getElementById("profileWidgetMode")?.value || "create").trim().toLowerCase();
   const widgetId = normId(document.getElementById("profileWidgetId")?.value || "");
-  const widgetType = normalizeProfileWidgetType(document.getElementById("profileWidgetType")?.value || "games");
+  const widgetType = normalizeProfileWidgetCreateType(document.getElementById("profileWidgetType")?.value || "games");
   const title = normalizeProfileWidgetTitle(document.getElementById("profileWidgetTitleInput")?.value || "");
   const visibility = normalizeProfileWidgetVisibility(document.getElementById("profileWidgetVisibility")?.value || "public");
   const isEnabled = !!document.getElementById("profileWidgetEnabled")?.checked;
@@ -47261,7 +47737,7 @@ function bindUserCardModalOnce() {
       applyUserCardModalPresentation("overlay");
       queueUserCardModalPosition();
     }
-    setUserCardActiveTab("shared");
+    setUserCardActiveTab("widgets");
     userCardInsightsLoading = true;
     userCardWidgetsLoading = true;
     renderUserCard(getCachedProfile(uid) || { id: uid, username: userCardCurrentUsername || "" }, { loading: true });
@@ -47345,7 +47821,8 @@ async function openUserCardModal(userId, seed = {}, opts = {}) {
   userCardInsightsLoading = true;
   userCardWidgetsError = "";
   userCardWidgetsLoading = true;
-  userCardActiveTab = "activity";
+  const initialTab = String(opts?.initialTab || "widgets").trim().toLowerCase();
+  userCardActiveTab = ["widgets", "activity", "media", "shared"].includes(initialTab) ? initialTab : "widgets";
   const wantsOverlay = String(opts?.presentation || "").trim().toLowerCase() === "overlay";
   const wantsPreview = String(opts?.layout || "").trim().toLowerCase() === "preview";
   applyUserCardModalPresentation(wantsOverlay ? "overlay" : "anchored");
@@ -55444,7 +55921,7 @@ function applyDesktopBehaviorSettingsToUi(settingsInput = null, { themeInput = n
   }
   if (hardwareAccelerationHint) {
     hardwareAccelerationHint.textContent = settings.hardwareAccelerationRequiresRestart
-      ? t("settings.desktop.hardware_acceleration_hint_restart", "Restart ALTARA to apply this hardware acceleration change.")
+      ? t("settings.desktop.hardware_acceleration_hint_restart", "Restart Altara to apply this hardware acceleration change.")
       : t("settings.desktop.hardware_acceleration_hint", "Uses the GPU to help render the desktop app. Can reduce CPU on some PCs.");
   }
   if (hint) {
@@ -55638,7 +56115,7 @@ function bindDesktopBehaviorSettingsUiOnce() {
       await requestAppAlert(
         t(
           "settings.desktop.hardware_acceleration_restart_alert",
-          "Restart ALTARA completely to apply the new hardware acceleration mode."
+          "Restart Altara completely to apply the new hardware acceleration mode."
         ),
         {
           title: t("settings.section.performance", "Performance"),
@@ -61533,7 +62010,7 @@ function renderDesktopUpdatingOverlay(stateInput = null) {
   if (title) {
     title.textContent = mode === "boot"
       ? t("desktop.boot.overlay.title", "Starting...")
-      : t("desktop.update.overlay.title", "ALTARA is updating...");
+      : t("desktop.update.overlay.title", "Altara is updating...");
   }
   if (text) {
     text.textContent = mode === "boot"
@@ -61595,7 +62072,7 @@ function renderDesktopInstallWelcomeTexts() {
   if (title) title.textContent = t("desktop.install_welcome.title", "Where friends stay close.");
   if (lineOne) lineOne.textContent = t("desktop.install_welcome.line1", "From late-night laughs to voice calls that feel real.");
   if (lineTwo) lineTwo.textContent = t("desktop.install_welcome.line2", "Keep your memories alive, one message at a time.");
-  if (btnContinue) btnContinue.textContent = t("desktop.install_welcome.cta", "Enter ALTARA");
+  if (btnContinue) btnContinue.textContent = t("desktop.install_welcome.cta", "Enter Altara");
 }
 
 function setDesktopInstallWelcomeVisible(yes, { markSeen = true, markSeenOnShow = true } = {}) {

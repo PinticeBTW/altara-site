@@ -1,9 +1,9 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="pt-PT">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ALTARA</title>
+  <title>altara</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="boot-hide-call-chrome">
@@ -406,6 +406,8 @@
                 <span id="dmProfileStatusDot" class="dmProfileStatusDot" data-status="offline"></span>
                 <span id="dmProfileStatusText" class="dmProfileStatusText">offline</span>
               </div>
+
+              <div id="dmProfileWidgetsPreview" class="dmProfileWidgetsPreview hidden" aria-hidden="true"></div>
 
               <div class="dmProfileSection">
                 <div class="dmProfileSection__title">About Me</div>
@@ -815,7 +817,7 @@
               <label class="appearanceSwitchRow" for="settingsVoiceAutoSensitivity">
                 <span class="appearanceSwitchText">
                   <b id="settingsVoiceAutoSensitivityLabel">Automatically Adjust Input Sensitivity</b>
-                  <small id="settingsVoiceAutoSensitivityHint">When enabled, ALTARA auto-tunes your mic detection threshold.</small>
+                  <small id="settingsVoiceAutoSensitivityHint">When enabled, Altara auto-tunes your mic detection threshold.</small>
                 </span>
                 <input id="settingsVoiceAutoSensitivity" type="checkbox" checked />
               </label>
@@ -1277,14 +1279,14 @@
               <label class="appearanceSwitchRow" for="settingsDesktopCloseToTray">
                 <span class="appearanceSwitchText">
                   <b id="settingsDesktopCloseToTrayLabel">Close button minimizes to tray</b>
-                  <small id="settingsDesktopCloseToTrayHint">When you click X, ALTARA keeps running in the system tray.</small>
+                  <small id="settingsDesktopCloseToTrayHint">When you click X, Altara keeps running in the system tray.</small>
                 </span>
                 <input id="settingsDesktopCloseToTray" type="checkbox" checked />
               </label>
               <label class="appearanceSwitchRow" for="settingsDesktopLaunchOnStartup">
                 <span class="appearanceSwitchText">
-                  <b id="settingsDesktopLaunchOnStartupLabel">Open ALTARA when the computer starts</b>
-                  <small id="settingsDesktopLaunchOnStartupHint">Start ALTARA automatically when you sign in to Windows.</small>
+                  <b id="settingsDesktopLaunchOnStartupLabel">Open Altara when the computer starts</b>
+                  <small id="settingsDesktopLaunchOnStartupHint">Start Altara automatically when you sign in to Windows.</small>
                 </span>
                 <input id="settingsDesktopLaunchOnStartup" type="checkbox" checked />
               </label>
@@ -1301,7 +1303,7 @@
               </label>
               <label class="appearanceSwitchRow" for="settingsPauseGifsWhenUnfocused">
                 <span class="appearanceSwitchText">
-                  <b id="settingsPauseGifsWhenUnfocusedLabel">Pause GIFs when ALTARA is in the background</b>
+                  <b id="settingsPauseGifsWhenUnfocusedLabel">Pause GIFs when Altara is in the background</b>
                   <small id="settingsPauseGifsWhenUnfocusedHint">Stops GIF playback while the window is not focused.</small>
                 </span>
                 <input id="settingsPauseGifsWhenUnfocused" type="checkbox" />
@@ -1443,16 +1445,16 @@
         </aside>
         <section class="userCardPanelsArea">
           <div id="userCardTabsGroup" class="userCardTabs" role="tablist" aria-label="Profile">
-            <button id="userCardTabActivity" class="userCardTab is-active" type="button" role="tab" aria-selected="true" data-user-card-tab="activity">Activity</button>
+            <button id="userCardTabWidgets" class="userCardTab is-active" type="button" role="tab" aria-selected="true" data-user-card-tab="widgets">Widgets</button>
+            <button id="userCardTabActivity" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="activity">Activity</button>
             <button id="userCardTabMedia" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="media">Media</button>
             <button id="userCardTabShared" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="shared">Connections</button>
-            <button id="userCardTabWidgets" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="widgets">Widgets</button>
           </div>
           <div class="userCardPanels">
-            <section id="userCardActivityPanel" class="userCardPanel is-active" data-user-card-panel="activity"></section>
+            <section id="userCardActivityPanel" class="userCardPanel" data-user-card-panel="activity" hidden></section>
             <section id="userCardMediaPanel" class="userCardPanel" data-user-card-panel="media" hidden></section>
             <section id="userCardSharedPanel" class="userCardPanel" data-user-card-panel="shared" hidden></section>
-            <section id="userCardWidgetsPanel" class="userCardPanel" data-user-card-panel="widgets" hidden></section>
+            <section id="userCardWidgetsPanel" class="userCardPanel is-active" data-user-card-panel="widgets"></section>
           </div>
         </div>
         </section>
@@ -1478,7 +1480,6 @@
             <option value="series">Series</option>
             <option value="music">Music</option>
             <option value="anime">Anime</option>
-            <option value="custom">Custom</option>
           </select>
         </div>
 
@@ -2537,7 +2538,7 @@
       <div class="desktopUpdatingOverlay__logo" aria-hidden="true">
         <img id="desktopUpdatingOverlayLogo" class="desktopUpdatingOverlay__logoImg" src="build/icon.jpg" alt="" loading="eager" />
       </div>
-      <div id="desktopUpdatingOverlayTitle" class="desktopUpdatingOverlay__title">Updating ALTARA...</div>
+      <div id="desktopUpdatingOverlayTitle" class="desktopUpdatingOverlay__title">Updating Altara...</div>
       <div id="desktopUpdatingOverlayText" class="desktopUpdatingOverlay__text">Applying update. Please wait a moment.</div>
       <div class="desktopUpdatingOverlay__loader" aria-hidden="true"></div>
     </div>
@@ -2553,7 +2554,7 @@
       <h1 id="desktopInstallWelcomeTitle" class="desktopInstallWelcomeOverlay__title">Where friends stay close.</h1>
       <p id="desktopInstallWelcomeLineOne" class="desktopInstallWelcomeOverlay__line">From late-night laughs to voice calls that feel real.</p>
       <p id="desktopInstallWelcomeLineTwo" class="desktopInstallWelcomeOverlay__line desktopInstallWelcomeOverlay__line--sub">Keep your memories alive, one message at a time.</p>
-      <button id="btnDesktopInstallWelcomeContinue" class="btn primary desktopInstallWelcomeOverlay__cta" type="button">Enter ALTARA</button>
+      <button id="btnDesktopInstallWelcomeContinue" class="btn primary desktopInstallWelcomeOverlay__cta" type="button">Enter Altara</button>
     </div>
   </div>
 
