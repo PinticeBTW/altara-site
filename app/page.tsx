@@ -1,4 +1,5 @@
 import Image from "next/image";
+import type { Metadata } from "next";
 
 import {
   DOWNLOAD_URL,
@@ -6,6 +7,37 @@ import {
   SiteNav,
   TRY_IN_BROWSER_URL,
 } from "./components/site-chrome";
+
+const description =
+  "ALTARA is a clean hangout app for friends, with voice, private messages, widgets, and simple group spaces without the noise.";
+
+export const metadata: Metadata = {
+  title: {
+    absolute: "ALTARA | Where friends stay close",
+  },
+  description,
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    url: "/",
+    title: "ALTARA | Where friends stay close",
+    description,
+    images: [
+      {
+        url: "/altara-app-preview-20260428.png",
+        width: 1478,
+        height: 885,
+        alt: "ALTARA app preview showing widgets, friends, calendar, calls, notes, and DMs",
+      },
+    ],
+  },
+  twitter: {
+    title: "ALTARA | Where friends stay close",
+    description,
+    images: ["/altara-app-preview-20260428.png"],
+  },
+};
 
 const featureCards = [
   {
@@ -130,7 +162,7 @@ export default function Home() {
               <span className="eyebrow">
                 <span className="dot" /> Free - 76MB - Windows, macOS, and Linux
               </span>
-              <h2>Get the gang together. Download Altara.</h2>
+              <h2>Get the gang together. Download ALTARA.</h2>
               <p>
                 Available on every platform you use. Sync across all of them and pick up where you
                 left off.

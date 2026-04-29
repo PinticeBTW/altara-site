@@ -1,4 +1,4 @@
-﻿import { supabase } from "./supabaseClient.js";
+import { supabase } from "./supabaseClient.js";
 import { $, setDebug, enhancePasswordVisibilityToggles } from "./ui.js";
 import { initAuthInstallWelcome } from "./authOnboarding.js";
 import { initAuthLanguage, onAuthLanguageChange, tAuth } from "./authI18n.js";
@@ -572,7 +572,7 @@ function showPendingConfirmationHintFromUrlOrStorage() {
   setAuthFeedback(
     tAuth(
       "login.confirmPending",
-      "Confirm your account from your email. After confirmation, Altara logs you in automatically."
+      "Confirm your account from your email. After confirmation, ALTARA logs you in automatically."
     ),
     "success",
   );

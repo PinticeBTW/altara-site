@@ -1,4 +1,4 @@
-﻿import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabaseClient.js";
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabaseClient.js";
 import { $, esc, escapeAttr as escAttr, setDebug, requireAuth, getMyProfile, logout, enhancePasswordVisibilityToggles } from "./ui.js";
 import {
   createCallChannel as createRealtimeCallChannel,
@@ -1714,7 +1714,7 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.voice.device_hint": "Choose your call input and output devices.",
     "settings.performance.reduce_motion": "Reduce interface animations",
     "settings.performance.reduce_motion_hint": "Cuts transitions and motion-heavy effects to keep the app lighter.",
-    "settings.performance.pause_gifs_unfocused": "Pause GIFs when Altara is in the background",
+    "settings.performance.pause_gifs_unfocused": "Pause GIFs when ALTARA is in the background",
     "settings.performance.pause_gifs_unfocused_hint": "Stops animated GIF playback while the window is not focused.",
     "settings.performance.gifs_hover": "Play GIFs only on hover",
     "settings.performance.gifs_hover_hint": "Animated GIFs stay paused until you hover them.",
@@ -1722,8 +1722,8 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.performance.gif_placeholder_paused": "Paused to save resources",
     "settings.desktop.hardware_acceleration": "Use hardware acceleration",
     "settings.desktop.hardware_acceleration_hint": "Uses the GPU to help render the desktop app. Can reduce CPU on some PCs.",
-    "settings.desktop.hardware_acceleration_hint_restart": "Restart Altara to apply this hardware acceleration change.",
-    "settings.desktop.hardware_acceleration_restart_alert": "Restart Altara completely to apply the new hardware acceleration mode.",
+    "settings.desktop.hardware_acceleration_hint_restart": "Restart ALTARA to apply this hardware acceleration change.",
+    "settings.desktop.hardware_acceleration_restart_alert": "Restart ALTARA completely to apply the new hardware acceleration mode.",
     "settings.voice.mic_volume": "Microphone Volume",
     "settings.voice.speaker_volume": "Speaker Volume",
     "settings.voice.mic_test_start": "Mic Test",
@@ -1755,9 +1755,9 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.voice.saved": "Voice settings saved.",
     "settings.section.desktop_behavior": "Desktop Behavior",
     "settings.desktop.close_to_tray": "Close button minimizes to tray",
-    "settings.desktop.close_to_tray_hint": "When you click X, Altara keeps running in the system tray.",
-    "settings.desktop.launch_on_startup": "Open Altara when the computer starts",
-    "settings.desktop.launch_on_startup_hint": "Start Altara automatically when you sign in to Windows.",
+    "settings.desktop.close_to_tray_hint": "When you click X, ALTARA keeps running in the system tray.",
+    "settings.desktop.launch_on_startup": "Open ALTARA when the computer starts",
+    "settings.desktop.launch_on_startup_hint": "Start ALTARA automatically when you sign in to Windows.",
     "settings.desktop.hint.desktop_only": "Desktop app only.",
     "settings.section.desktop_updates": "Desktop Updates",
     "settings.desktop.update.check": "Check for updates",
@@ -1779,12 +1779,12 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.desktop.update.status.error": "Update failed. Try again.",
     "desktop.boot.overlay.title": "Starting...",
     "desktop.boot.overlay.text": "Preparing your space.",
-    "desktop.update.overlay.title": "Altara is updating...",
+    "desktop.update.overlay.title": "ALTARA is updating...",
     "desktop.update.overlay.text": "We're installing the latest version. The app will reopen in a moment.",
     "desktop.install_welcome.title": "Where friends stay close.",
     "desktop.install_welcome.line1": "From late-night laughs to voice calls that feel real.",
     "desktop.install_welcome.line2": "Keep your memories alive, one message at a time.",
-    "desktop.install_welcome.cta": "Enter Altara",
+    "desktop.install_welcome.cta": "Enter ALTARA",
     "settings.section.call_keybinds": "Call Binds",
     "settings.section.app_keybinds": "App Binds",
     "settings.keybind.mic.label": "Toggle Microphone",
@@ -2448,7 +2448,7 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.voice.device_hint": "Escolhe os dispositivos de entrada e saida da chamada.",
     "settings.performance.reduce_motion": "Reduzir animacoes da interface",
     "settings.performance.reduce_motion_hint": "Corta transicoes e efeitos com muito movimento para deixar a app mais leve.",
-    "settings.performance.pause_gifs_unfocused": "Pausar GIFs quando o Altara estiver em segundo plano",
+    "settings.performance.pause_gifs_unfocused": "Pausar GIFs quando o ALTARA estiver em segundo plano",
     "settings.performance.pause_gifs_unfocused_hint": "Para a reproducao dos GIFs animados enquanto a janela nao estiver focada.",
     "settings.performance.gifs_hover": "Reproduzir GIFs so ao passar com o rato",
     "settings.performance.gifs_hover_hint": "Os GIFs animados ficam pausados ate passares com o rato por cima.",
@@ -2456,8 +2456,8 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.performance.gif_placeholder_paused": "Pausado para poupar recursos",
     "settings.desktop.hardware_acceleration": "Usar aceleracao por hardware",
     "settings.desktop.hardware_acceleration_hint": "Usa a GPU para ajudar a renderizar a app desktop. Pode baixar o CPU em alguns PCs.",
-    "settings.desktop.hardware_acceleration_hint_restart": "Reinicia o Altara para aplicar esta mudanca de aceleracao por hardware.",
-    "settings.desktop.hardware_acceleration_restart_alert": "Reinicia o Altara por completo para aplicar o novo modo de aceleracao por hardware.",
+    "settings.desktop.hardware_acceleration_hint_restart": "Reinicia o ALTARA para aplicar esta mudanca de aceleracao por hardware.",
+    "settings.desktop.hardware_acceleration_restart_alert": "Reinicia o ALTARA por completo para aplicar o novo modo de aceleracao por hardware.",
     "settings.voice.mic_volume": "Volume do microfone",
     "settings.voice.speaker_volume": "Volume dos fones",
     "settings.voice.mic_test_start": "Testar microfone",
@@ -2489,9 +2489,9 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.voice.saved": "Definicoes de voz guardadas.",
     "settings.section.desktop_behavior": "Comportamento desktop",
     "settings.desktop.close_to_tray": "Botao fechar minimiza para a bandeja",
-    "settings.desktop.close_to_tray_hint": "Quando clicas no X, o Altara continua a correr na bandeja do sistema.",
-    "settings.desktop.launch_on_startup": "Abrir Altara ao iniciar o computador",
-    "settings.desktop.launch_on_startup_hint": "Inicia o Altara automaticamente quando entras no Windows.",
+    "settings.desktop.close_to_tray_hint": "Quando clicas no X, o ALTARA continua a correr na bandeja do sistema.",
+    "settings.desktop.launch_on_startup": "Abrir ALTARA ao iniciar o computador",
+    "settings.desktop.launch_on_startup_hint": "Inicia o ALTARA automaticamente quando entras no Windows.",
     "settings.desktop.hint.desktop_only": "Disponivel apenas na app desktop.",
     "settings.section.desktop_updates": "Atualizacoes desktop",
     "settings.desktop.update.check": "Procurar atualizacoes",
@@ -2513,12 +2513,12 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.desktop.update.status.error": "Falha na update. Tenta novamente.",
     "desktop.boot.overlay.title": "A iniciar...",
     "desktop.boot.overlay.text": "A preparar o teu espaco.",
-    "desktop.update.overlay.title": "Altara esta a atualizar...",
+    "desktop.update.overlay.title": "ALTARA esta a atualizar...",
     "desktop.update.overlay.text": "Estamos a instalar a versao mais recente. A app vai reabrir em instantes.",
     "desktop.install_welcome.title": "Where friends stay close.",
     "desktop.install_welcome.line1": "Das risadas de madrugada as calls que parecem reais.",
     "desktop.install_welcome.line2": "Guarda memorias com os teus amigos, mensagem a mensagem.",
-    "desktop.install_welcome.cta": "Entrar no Altara",
+    "desktop.install_welcome.cta": "Entrar no ALTARA",
     "settings.section.call_keybinds": "Binds da call",
     "settings.section.app_keybinds": "Binds da app",
     "settings.keybind.mic.label": "Alternar microfone",
@@ -11688,11 +11688,11 @@ function applyLanguageToStaticUi() {
   const desktopCloseLabel = document.getElementById("settingsDesktopCloseToTrayLabel");
   if (desktopCloseLabel) desktopCloseLabel.textContent = t("settings.desktop.close_to_tray", "Close button minimizes to tray");
   const desktopCloseHint = document.getElementById("settingsDesktopCloseToTrayHint");
-  if (desktopCloseHint) desktopCloseHint.textContent = t("settings.desktop.close_to_tray_hint", "When you click X, Altara keeps running in the system tray.");
+  if (desktopCloseHint) desktopCloseHint.textContent = t("settings.desktop.close_to_tray_hint", "When you click X, ALTARA keeps running in the system tray.");
   const desktopStartupLabel = document.getElementById("settingsDesktopLaunchOnStartupLabel");
-  if (desktopStartupLabel) desktopStartupLabel.textContent = t("settings.desktop.launch_on_startup", "Open Altara when the computer starts");
+  if (desktopStartupLabel) desktopStartupLabel.textContent = t("settings.desktop.launch_on_startup", "Open ALTARA when the computer starts");
   const desktopStartupHint = document.getElementById("settingsDesktopLaunchOnStartupHint");
-  if (desktopStartupHint) desktopStartupHint.textContent = t("settings.desktop.launch_on_startup_hint", "Start Altara automatically when you sign in to Windows.");
+  if (desktopStartupHint) desktopStartupHint.textContent = t("settings.desktop.launch_on_startup_hint", "Start ALTARA automatically when you sign in to Windows.");
   const desktopBehaviorHint = document.getElementById("settingsDesktopBehaviorHint");
   if (desktopBehaviorHint) desktopBehaviorHint.textContent = t("settings.desktop.hint.desktop_only", "Desktop app only.");
   const secPerformance = document.getElementById("settingsSectionPerformance");
@@ -11702,7 +11702,7 @@ function applyLanguageToStaticUi() {
   const reduceMotionHint = document.getElementById("settingsReduceMotionHint");
   if (reduceMotionHint) reduceMotionHint.textContent = t("settings.performance.reduce_motion_hint", "Cuts transitions and motion-heavy effects to keep the app lighter.");
   const pauseGifsLabel = document.getElementById("settingsPauseGifsWhenUnfocusedLabel");
-  if (pauseGifsLabel) pauseGifsLabel.textContent = t("settings.performance.pause_gifs_unfocused", "Pause GIFs when Altara is in the background");
+  if (pauseGifsLabel) pauseGifsLabel.textContent = t("settings.performance.pause_gifs_unfocused", "Pause GIFs when ALTARA is in the background");
   const pauseGifsHint = document.getElementById("settingsPauseGifsWhenUnfocusedHint");
   if (pauseGifsHint) pauseGifsHint.textContent = t("settings.performance.pause_gifs_unfocused_hint", "Stops animated GIF playback while the window is not focused.");
   const hoverGifsLabel = document.getElementById("settingsGifsPlayOnHoverLabel");
@@ -18088,11 +18088,11 @@ function renderGroupsRail() {
       class="groupOrb groupOrb--app-home${isHomeOrbActive ? " is-active" : ""}"
       type="button"
       data-open-rail-home="1"
-      title="Altara Home"
-      aria-label="Altara Home"
+      title="ALTARA Home"
+      aria-label="ALTARA Home"
     >
       <span class="groupOrbAppLogo" aria-hidden="true">
-        <img class="groupOrbAppLogoImg" src="${escAttr(homeOrbIconSrc)}" alt="Altara" loading="eager" />
+        <img class="groupOrbAppLogoImg" src="${escAttr(homeOrbIconSrc)}" alt="ALTARA" loading="eager" />
       </span>
     </button>
   `;
@@ -23597,7 +23597,7 @@ function renderServerInviteModalState({ busy = false, statusText = "" } = {}) {
       ? `Updating link to ${settingsSummary}. The current visible link is outdated until the new one finishes generating.`
       : `Settings changed to ${settingsSummary}. Generating a fresh link now.`;
     else if (serverInviteLinkUrl) metaEl.textContent = isDesktopLink
-      ? `Invite link ready. ${settingsSummary}. Share this Altara link. It opens the app directly on computers with Altara installed.`
+      ? `Invite link ready. ${settingsSummary}. Share this ALTARA link. It opens the app directly on computers with ALTARA installed.`
       : isLocalHost
       ? `Invite link ready. ${settingsSummary}. On 127.0.0.1/localhost, only users who can open this address can join.`
       : `Invite link ready. ${settingsSummary}. Share this link in DM or anywhere else. Whoever opens it can join.`;
@@ -55444,7 +55444,7 @@ function applyDesktopBehaviorSettingsToUi(settingsInput = null, { themeInput = n
   }
   if (hardwareAccelerationHint) {
     hardwareAccelerationHint.textContent = settings.hardwareAccelerationRequiresRestart
-      ? t("settings.desktop.hardware_acceleration_hint_restart", "Restart Altara to apply this hardware acceleration change.")
+      ? t("settings.desktop.hardware_acceleration_hint_restart", "Restart ALTARA to apply this hardware acceleration change.")
       : t("settings.desktop.hardware_acceleration_hint", "Uses the GPU to help render the desktop app. Can reduce CPU on some PCs.");
   }
   if (hint) {
@@ -55638,7 +55638,7 @@ function bindDesktopBehaviorSettingsUiOnce() {
       await requestAppAlert(
         t(
           "settings.desktop.hardware_acceleration_restart_alert",
-          "Restart Altara completely to apply the new hardware acceleration mode."
+          "Restart ALTARA completely to apply the new hardware acceleration mode."
         ),
         {
           title: t("settings.section.performance", "Performance"),
@@ -61533,7 +61533,7 @@ function renderDesktopUpdatingOverlay(stateInput = null) {
   if (title) {
     title.textContent = mode === "boot"
       ? t("desktop.boot.overlay.title", "Starting...")
-      : t("desktop.update.overlay.title", "Altara is updating...");
+      : t("desktop.update.overlay.title", "ALTARA is updating...");
   }
   if (text) {
     text.textContent = mode === "boot"
@@ -61595,7 +61595,7 @@ function renderDesktopInstallWelcomeTexts() {
   if (title) title.textContent = t("desktop.install_welcome.title", "Where friends stay close.");
   if (lineOne) lineOne.textContent = t("desktop.install_welcome.line1", "From late-night laughs to voice calls that feel real.");
   if (lineTwo) lineTwo.textContent = t("desktop.install_welcome.line2", "Keep your memories alive, one message at a time.");
-  if (btnContinue) btnContinue.textContent = t("desktop.install_welcome.cta", "Enter Altara");
+  if (btnContinue) btnContinue.textContent = t("desktop.install_welcome.cta", "Enter ALTARA");
 }
 
 function setDesktopInstallWelcomeVisible(yes, { markSeen = true, markSeenOnShow = true } = {}) {

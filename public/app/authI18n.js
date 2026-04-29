@@ -1,4 +1,4 @@
-﻿const AUTH_LANG_STORAGE_KEY = "altara_app_language";
+const AUTH_LANG_STORAGE_KEY = "altara_app_language";
 const AUTH_LANG_DEFAULT = "en";
 const SUPPORTED_AUTH_LANGS = new Set(["en", "pt"]);
 
@@ -30,7 +30,7 @@ const AUTH_TEXT = {
       chipThree: "Friends first",
     },
     login: {
-      metaTitle: "Login - Altara",
+      metaTitle: "Login - ALTARA",
       badge: "WELCOME BACK",
       title: "Login",
       sub: "Sign in with your email and password.",
@@ -48,7 +48,7 @@ const AUTH_TEXT = {
       errorNetwork: "No connection. Check internet and try again.",
       errorTimeout: "Login timed out. Try again.",
       successProgress: "Signing in...",
-      dmE2eeRestoreWarning: "Signed in, but Altara could not restore your encrypted DM key on this device. Older direct messages may stay unavailable here.",
+      dmE2eeRestoreWarning: "Signed in, but ALTARA could not restore your encrypted DM key on this device. Older direct messages may stay unavailable here.",
       forgotPassword: "Forgot password?",
       forgotEmail: "Forgot email?",
       recoveryClose: "Close",
@@ -85,7 +85,7 @@ const AUTH_TEXT = {
       recoveryResetWeakPassword: "Use at least 6 characters.",
       recoveryResetMismatch: "Passwords do not match.",
       recoveryResetSuccess: "Password updated. You can now log in.",
-      confirmPending: "Confirm your account from your email. After confirmation, Altara logs you in automatically.",
+      confirmPending: "Confirm your account from your email. After confirmation, ALTARA logs you in automatically.",
       confirmPreparing: "Verifying account confirmation...",
       confirmAutoLogin: "Email confirmed. Signing you in...",
       confirmErrorGeneric: "Could not confirm your account right now. Try again.",
@@ -93,7 +93,7 @@ const AUTH_TEXT = {
       confirmErrorInvalid: "Invalid confirmation link. Request a new one.",
     },
     register: {
-      metaTitle: "Create account - Altara",
+      metaTitle: "Create account - ALTARA",
       badge: "CREATE ACCOUNT",
       title: "Create account",
       sub: "Username is required, just like Discord.",
@@ -145,7 +145,7 @@ const AUTH_TEXT = {
       chipThree: "Amigos primeiro",
     },
     login: {
-      metaTitle: "Login - Altara",
+      metaTitle: "Login - ALTARA",
       badge: "BEM VINDO",
       title: "Login",
       sub: "Entra com email e password para continuar.",
@@ -163,7 +163,7 @@ const AUTH_TEXT = {
       errorNetwork: "Sem ligacao. Verifica a internet e tenta outra vez.",
       errorTimeout: "Login demorou demasiado. Tenta outra vez.",
       successProgress: "A entrar...",
-      dmE2eeRestoreWarning: "Entraste, mas a Altara nao conseguiu restaurar a tua chave encriptada de DM neste dispositivo. As mensagens diretas antigas podem continuar indisponiveis aqui.",
+      dmE2eeRestoreWarning: "Entraste, mas a ALTARA nao conseguiu restaurar a tua chave encriptada de DM neste dispositivo. As mensagens diretas antigas podem continuar indisponiveis aqui.",
       forgotPassword: "Esqueci-me da password",
       forgotEmail: "Esqueci-me do email",
       recoveryClose: "Fechar",
@@ -200,7 +200,7 @@ const AUTH_TEXT = {
       recoveryResetWeakPassword: "Usa pelo menos 6 caracteres.",
       recoveryResetMismatch: "As passwords nao coincidem.",
       recoveryResetSuccess: "Password atualizada. Ja podes fazer login.",
-      confirmPending: "Confirma a tua conta pelo email. Depois da confirmacao, a Altara faz login automatico.",
+      confirmPending: "Confirma a tua conta pelo email. Depois da confirmacao, a ALTARA faz login automatico.",
       confirmPreparing: "A validar confirmacao da conta...",
       confirmAutoLogin: "Email confirmado. A entrar automaticamente...",
       confirmErrorGeneric: "Nao foi possivel confirmar a conta agora. Tenta outra vez.",
@@ -208,7 +208,7 @@ const AUTH_TEXT = {
       confirmErrorInvalid: "Link de confirmacao invalido. Pede um novo.",
     },
     register: {
-      metaTitle: "Criar conta - Altara",
+      metaTitle: "Criar conta - ALTARA",
       badge: "CRIAR CONTA",
       title: "Criar conta",
       sub: "Username e obrigatorio, como no Discord.",

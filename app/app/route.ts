@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
 
   if (requestUrl.pathname === "/app") {
-    return new Response("Opening Altara in your browser.", {
+    return new Response("Opening ALTARA in your browser.", {
       status: 307,
       headers: {
         Location: new URL("/app/", request.url).toString(),

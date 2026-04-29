@@ -25,7 +25,7 @@ export async function GET() {
       installerAsset?.browser_download_url ?? release.html_url ?? GITHUB_RELEASES_PAGE_URL,
     );
   } catch (error) {
-    console.error("Failed to resolve latest Altara release asset", error);
+    console.error("Failed to resolve latest ALTARA release asset", error);
     return redirectTo(GITHUB_RELEASES_PAGE_URL);
   }
 }
@@ -66,13 +66,13 @@ function pickWindowsInstaller(assets: GitHubReleaseAsset[]) {
   const uploadedAssets = assets.filter((asset) => asset.state === undefined || asset.state === "uploaded");
 
   return (
-    uploadedAssets.find((asset) => /^Altara\.Setup\..*\.exe$/i.test(asset.name)) ??
+    uploadedAssets.find((asset) => /^ALTARA\.Setup\..*\.exe$/i.test(asset.name)) ??
     uploadedAssets.find((asset) => /\.(exe|msi)$/i.test(asset.name))
   );
 }
 
 function redirectTo(destination: string) {
-  return new Response("Redirecting to the latest Altara installer.", {
+  return new Response("Redirecting to the latest ALTARA installer.", {
     status: 302,
     headers: {
       "Cache-Control": `public, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=3600`,

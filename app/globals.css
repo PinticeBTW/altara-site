@@ -2403,9 +2403,9 @@ p {
 }
 
 .member-portrait {
-  width: 88px;
-  height: 88px;
-  border-radius: 24px;
+  width: 112px;
+  height: 112px;
+  border-radius: 26px;
   background: var(--accent-1);
   display: grid;
   place-items: center;
@@ -2414,6 +2414,19 @@ p {
   font-weight: 700;
   color: #0b0a12;
   margin-bottom: 22px;
+}
+
+.member-portrait-photo {
+  background: var(--bg-soft);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.member-portrait-photo img {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .member-card h3 {

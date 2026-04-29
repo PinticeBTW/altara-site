@@ -21,44 +21,59 @@ export function CustomCursor() {
     let frame = 0;
     let previewFrame: HTMLElement | null = null;
 
+    const getPreviewFrame = () => {
+      if (!previewFrame?.isConnected) {
+        previewFrame = document.querySelector<HTMLElement>("[data-tilt-preview]");
+      }
+
+      return previewFrame;
+    };
+
     const resetPreviewTilt = () => {
-      if (!previewFrame) {
+      const target = getPreviewFrame();
+
+      if (!target) {
         return;
       }
 
-      previewFrame.style.transform = "";
-      previewFrame.style.setProperty("--glare-x", "92%");
-      previewFrame.style.setProperty("--glare-y", "10%");
-      previewFrame.style.setProperty("--spot-x", "92%");
-      previewFrame.style.setProperty("--spot-y", "10%");
-      previewFrame.style.setProperty("--spot-opacity", "0");
-      previewFrame.style.setProperty("--edge-left", "0.04");
-      previewFrame.style.setProperty("--edge-right", "0.08");
-      previewFrame.style.setProperty("--edge-top", "0.08");
-      previewFrame.style.setProperty("--edge-bottom", "0.04");
-      previewFrame.style.setProperty("--shade-left", "0.04");
-      previewFrame.style.setProperty("--shade-right", "0.03");
-      previewFrame.style.setProperty("--shade-top", "0.03");
-      previewFrame.style.setProperty("--shade-bottom", "0.04");
-      previewFrame.style.setProperty("--shadow-x", "52px");
-      previewFrame.style.setProperty("--shadow-y", "70px");
-      previewFrame.style.setProperty("--shadow-blur", "110px");
-      previewFrame.style.setProperty("--purple-shadow-x", "-18px");
-      previewFrame.style.setProperty("--purple-shadow-y", "26px");
-      previewFrame.style.setProperty("--depth-x", "0px");
-      previewFrame.style.setProperty("--depth-y", "0px");
-      previewFrame.classList.remove("is-tilting");
+      target.style.transform = "";
+      target.style.setProperty("--glare-x", "92%");
+      target.style.setProperty("--glare-y", "10%");
+      target.style.setProperty("--spot-x", "92%");
+      target.style.setProperty("--spot-y", "10%");
+      target.style.setProperty("--spot-opacity", "0");
+      target.style.setProperty("--edge-left", "0.04");
+      target.style.setProperty("--edge-right", "0.08");
+      target.style.setProperty("--edge-top", "0.08");
+      target.style.setProperty("--edge-bottom", "0.04");
+      target.style.setProperty("--shade-left", "0.04");
+      target.style.setProperty("--shade-right", "0.03");
+      target.style.setProperty("--shade-top", "0.03");
+      target.style.setProperty("--shade-bottom", "0.04");
+      target.style.setProperty("--shadow-x", "52px");
+      target.style.setProperty("--shadow-y", "70px");
+      target.style.setProperty("--shadow-blur", "110px");
+      target.style.setProperty("--purple-shadow-x", "-18px");
+      target.style.setProperty("--purple-shadow-y", "26px");
+      target.style.setProperty("--depth-x", "0px");
+      target.style.setProperty("--depth-y", "0px");
+      target.classList.remove("is-tilting");
     };
 
     const tiltPreview = (event: MouseEvent) => {
-      previewFrame ??= document.querySelector<HTMLElement>("[data-tilt-preview]");
+      const target = getPreviewFrame();
 
-      if (!previewFrame) {
+      if (!target) {
         return;
       }
 
-      const hitbox = previewFrame.closest<HTMLElement>(".demo") ?? previewFrame;
+      const hitbox = target.closest<HTMLElement>(".demo") ?? target;
       const rect = hitbox.getBoundingClientRect();
+
+      if (rect.width === 0 || rect.height === 0) {
+        return;
+      }
+
       const inside =
         event.clientX >= rect.left &&
         event.clientX <= rect.right &&
@@ -66,7 +81,7 @@ export function CustomCursor() {
         event.clientY <= rect.bottom;
 
       if (!inside) {
-        if (previewFrame.classList.contains("is-tilting")) {
+        if (target.classList.contains("is-tilting")) {
           resetPreviewTilt();
         }
 
@@ -105,34 +120,34 @@ export function CustomCursor() {
       const bottomShade = 0.03 + Math.max(0, -y) * 0.22;
       const spotOpacity = (leftSide ? 0.14 : 0.22) + cursorLift * (leftSide ? 0.16 : 0.24);
 
-      previewFrame.style.transform = `
+      target.style.transform = `
         rotateX(${rotateX.toFixed(2)}deg)
         rotateY(${rotateY.toFixed(2)}deg)
         rotateZ(${rotateZ.toFixed(2)}deg)
         translate3d(${shiftX.toFixed(1)}px, ${shiftY.toFixed(1)}px, ${depth.toFixed(1)}px)
         scale(${scale.toFixed(3)})
       `;
-      previewFrame.style.setProperty("--glare-x", `${((x + 1) * 50).toFixed(1)}%`);
-      previewFrame.style.setProperty("--glare-y", `${((y + 1) * 50).toFixed(1)}%`);
-      previewFrame.style.setProperty("--spot-x", `${((x + 1) * 50).toFixed(1)}%`);
-      previewFrame.style.setProperty("--spot-y", `${((y + 1) * 50).toFixed(1)}%`);
-      previewFrame.style.setProperty("--spot-opacity", spotOpacity.toFixed(3));
-      previewFrame.style.setProperty("--edge-left", leftLight.toFixed(3));
-      previewFrame.style.setProperty("--edge-right", rightLight.toFixed(3));
-      previewFrame.style.setProperty("--edge-top", topLight.toFixed(3));
-      previewFrame.style.setProperty("--edge-bottom", bottomLight.toFixed(3));
-      previewFrame.style.setProperty("--shade-left", leftShade.toFixed(3));
-      previewFrame.style.setProperty("--shade-right", rightShade.toFixed(3));
-      previewFrame.style.setProperty("--shade-top", topShade.toFixed(3));
-      previewFrame.style.setProperty("--shade-bottom", bottomShade.toFixed(3));
-      previewFrame.style.setProperty("--shadow-x", `${shadowX.toFixed(1)}px`);
-      previewFrame.style.setProperty("--shadow-y", `${shadowY.toFixed(1)}px`);
-      previewFrame.style.setProperty("--shadow-blur", `${(96 + cornerLift * 22).toFixed(1)}px`);
-      previewFrame.style.setProperty("--purple-shadow-x", `${purpleShadowX.toFixed(1)}px`);
-      previewFrame.style.setProperty("--purple-shadow-y", `${purpleShadowY.toFixed(1)}px`);
-      previewFrame.style.setProperty("--depth-x", `${(reactionX * 2).toFixed(1)}px`);
-      previewFrame.style.setProperty("--depth-y", `${(reactionY * 2).toFixed(1)}px`);
-      previewFrame.classList.add("is-tilting");
+      target.style.setProperty("--glare-x", `${((x + 1) * 50).toFixed(1)}%`);
+      target.style.setProperty("--glare-y", `${((y + 1) * 50).toFixed(1)}%`);
+      target.style.setProperty("--spot-x", `${((x + 1) * 50).toFixed(1)}%`);
+      target.style.setProperty("--spot-y", `${((y + 1) * 50).toFixed(1)}%`);
+      target.style.setProperty("--spot-opacity", spotOpacity.toFixed(3));
+      target.style.setProperty("--edge-left", leftLight.toFixed(3));
+      target.style.setProperty("--edge-right", rightLight.toFixed(3));
+      target.style.setProperty("--edge-top", topLight.toFixed(3));
+      target.style.setProperty("--edge-bottom", bottomLight.toFixed(3));
+      target.style.setProperty("--shade-left", leftShade.toFixed(3));
+      target.style.setProperty("--shade-right", rightShade.toFixed(3));
+      target.style.setProperty("--shade-top", topShade.toFixed(3));
+      target.style.setProperty("--shade-bottom", bottomShade.toFixed(3));
+      target.style.setProperty("--shadow-x", `${shadowX.toFixed(1)}px`);
+      target.style.setProperty("--shadow-y", `${shadowY.toFixed(1)}px`);
+      target.style.setProperty("--shadow-blur", `${(96 + cornerLift * 22).toFixed(1)}px`);
+      target.style.setProperty("--purple-shadow-x", `${purpleShadowX.toFixed(1)}px`);
+      target.style.setProperty("--purple-shadow-y", `${purpleShadowY.toFixed(1)}px`);
+      target.style.setProperty("--depth-x", `${(reactionX * 2).toFixed(1)}px`);
+      target.style.setProperty("--depth-y", `${(reactionY * 2).toFixed(1)}px`);
+      target.classList.add("is-tilting");
     };
 
     const onMove = (event: MouseEvent) => {

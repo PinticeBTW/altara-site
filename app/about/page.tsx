@@ -1,11 +1,42 @@
+import Image from "next/image";
 import Link from "next/link";
+import type { Metadata } from "next";
 import { DOWNLOAD_URL, SiteFooter, SiteNav } from "../components/site-chrome";
+
+const description =
+  "Learn why ALTARA started in February 2026 as a smaller, cleaner alternative to Discord for real friend groups, private spaces, and everyday voice chat.";
+
+export const metadata: Metadata = {
+  title: "About",
+  description,
+  alternates: {
+    canonical: "/about",
+  },
+  openGraph: {
+    url: "/about",
+    title: "About ALTARA",
+    description,
+    images: [
+      {
+        url: "/altara-app-preview-20260428.png",
+        width: 1478,
+        height: 885,
+        alt: "ALTARA app preview showing widgets, friends, calendar, calls, notes, and DMs",
+      },
+    ],
+  },
+  twitter: {
+    title: "About ALTARA",
+    description,
+    images: ["/altara-app-preview-20260428.png"],
+  },
+};
 
 const principles = [
   {
     id: "01",
-    title: "Friends first, not communities.",
-    body: "Altara is sized for groups you actually know. We will not add a discover feed, algorithm, or trending servers.",
+    title: "Friends first, communities included.",
+    body: "ALTARA is built for friend groups and the communities that grow around them. No infinite feed, no algorithmic noise, just spaces that feel human.",
   },
   {
     id: "02",
@@ -46,7 +77,7 @@ export default function AboutPage() {
                 </h1>
               </div>
               <p className="lead">
-                Altara is not a startup with a rocket-ship deck. It is <strong>one person, mostly</strong>, with help from friends building the chat app we wanted for our own group and now sharing it.
+                ALTARA is not a startup with a rocket-ship deck. It is <strong>one person, mostly</strong>, with help from friends building the chat app we wanted for our own group and now sharing it.
               </p>
             </div>
           </div>
@@ -58,16 +89,19 @@ export default function AboutPage() {
               <h3>Why we built it</h3>
               <div className="story-body">
                 <p>
-                  Our group has been on the same chat app for years. It got <em>louder, busier, full of strangers</em> and slowly turned into a feed instead of a hangout.
+                  Most of us had been living inside Discord for years. It worked, but it kept
+                  getting <em>louder, busier, full of strangers</em> and slowly turned into a feed
+                  instead of a hangout.
                 </p>
                 <p>
-                  So one weekend in 2025, between exams, we started prototyping something simpler.
-                  A chat app that <strong>only does the things friends actually do</strong>: talk,
-                  share music, watch stuff together, make polls, and jump in quick calls.
+                  ALTARA started in February 2026 because there did not seem to be a real
+                  alternative for the kind of space we wanted. Not a Discord clone, not another
+                  giant social app, just something a little more personal and a little different.
                 </p>
                 <p>
-                  Six months later it had a name, a logo, and enough friends using it that we
-                  opened it to other groups. That is Altara.
+                  From that first prototype, it became a name, a logo, and an app friends could
+                  actually use: voice, private messages, small spaces, widgets, and fewer things
+                  fighting for attention. That is ALTARA.
                 </p>
               </div>
             </div>
@@ -90,35 +124,59 @@ export default function AboutPage() {
 
             <div className="team-grid">
               <article className="member-card solo">
-                <div className="member-portrait">T</div>
-                <h3>Tomas Nunes</h3>
+                <div className="member-portrait member-portrait-photo">
+                  <Image
+                    src="/tomas-nunes-card.jpg"
+                    alt="Tomás Nunes, founder of ALTARA"
+                    width={112}
+                    height={112}
+                    sizes="112px"
+                    priority={false}
+                    style={{
+                      objectFit: "cover",
+                    }}
+                  />
+                </div>
+                <h3>Tomás Nunes</h3>
                 <div className="role">@pintice · founder, designer, dev</div>
                 <p className="bio">
-                  Builds Altara on weekends and weeknights. Cares too much about cursor feel,
-                  typography, and motion curves.
+                  I play games, run RPGs, and spend way too much time in calls. I wanted a chat app
+                  that felt better for friends and gaming nights, so yeah... I built ALTARA.
                 </p>
                 <div className="links">
-                  <a href="#" aria-label="Twitter">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  <a
+                    href="https://www.instagram.com/pintice__/"
+                    aria-label="Instagram"
+                    title="Instagram"
+                    target="_blank"
+                    rel="me noopener noreferrer"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="3" width="18" height="18" rx="5" />
+                      <circle cx="12" cy="12" r="4" />
+                      <circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none" />
                     </svg>
                   </a>
-                  <a href="#" aria-label="GitHub">
+                  <a
+                    href="https://www.youtube.com/@NID-boys"
+                    aria-label="NID Boys on YouTube"
+                    title="NID Boys on YouTube"
+                    target="_blank"
+                    rel="me noopener noreferrer"
+                  >
                     <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.5 11.5 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                      <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.6V8.4L15.8 12z" />
                     </svg>
                   </a>
-                  <a href="#" aria-label="Site">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M2 12h20M12 2a14.5 14.5 0 0 1 0 20 14.5 14.5 0 0 1 0-20" />
+                  <a
+                    href="https://www.youtube.com/@pintice"
+                    aria-label="pintice on YouTube"
+                    title="pintice on YouTube"
+                    target="_blank"
+                    rel="me noopener noreferrer"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.6V8.4L15.8 12z" />
                     </svg>
                   </a>
                 </div>
@@ -194,7 +252,7 @@ export default function AboutPage() {
                   rel="noopener noreferrer"
                   className="btn btn-primary"
                 >
-                  Download Altara
+                  Download ALTARA
                 </a>
                 <Link href="/features" className="btn btn-secondary">
                   See features

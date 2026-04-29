@@ -105,10 +105,10 @@ export function SiteFooter() {
           ))}
         </div>
 
-        <div className="footer-wordmark">altara</div>
+        <div className="footer-wordmark">ALTARA</div>
         <div className="footer-bottom">
-          <span>© 2026 Altara. Made by friends, for friends.</span>
-          <span>v1.0 · pintice</span>
+          <span>&copy; 2026 ALTARA. Made by friends, for friends.</span>
+          <span>v1.0 &middot; pintice</span>
         </div>
       </div>
     </footer>

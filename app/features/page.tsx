@@ -1,9 +1,40 @@
+import type { Metadata } from "next";
+
 import {
   DOWNLOAD_URL,
   SiteFooter,
   SiteNav,
   TRY_IN_BROWSER_URL,
 } from "../components/site-chrome";
+
+const description =
+  "Explore ALTARA features: a widgets dashboard, private DMs, voice calls, browser access, file sharing, and cross-platform downloads.";
+
+export const metadata: Metadata = {
+  title: "Features",
+  description,
+  alternates: {
+    canonical: "/features",
+  },
+  openGraph: {
+    url: "/features",
+    title: "ALTARA Features",
+    description,
+    images: [
+      {
+        url: "/altara-app-preview-20260428.png",
+        width: 1478,
+        height: 885,
+        alt: "ALTARA app preview showing widgets, friends, calendar, calls, notes, and DMs",
+      },
+    ],
+  },
+  twitter: {
+    title: "ALTARA Features",
+    description,
+    images: ["/altara-app-preview-20260428.png"],
+  },
+};
 
 const specItems = [
   { title: "ALTARA+ supported", description: "ALTARA+ helps fund development while the core app stays focused." },
@@ -237,7 +268,7 @@ export default function FeaturesPage() {
               <h2>
                 Get the gang together.
                 <br />
-                Download Altara.
+                Download ALTARA.
               </h2>
               <p>
                 Available on every platform you use. Sync across all of them and pick up where you
