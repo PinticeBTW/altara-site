@@ -45553,6 +45553,110 @@ async function searchTitlesOMDb(queryInput = "", {
   return dedupeCatalogSearchResults(mapped).slice(0, limit);
 }
 
+function fetchDeezerJsonp(endpoint, {
+  signal = null,
+  timeoutMs = 12000,
+} = {}) {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    throw new Error("jsonp_unavailable");
+  }
+
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+
+    const callbackName = `__altaraDeezerJsonp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const script = document.createElement("script");
+    const requestUrl = new URL(endpoint.toString());
+    let settled = false;
+    let timeoutId = 0;
+
+    const clearCallbackLater = () => {
+      const noop = function noopDeezerJsonpCallback() {};
+      try {
+        window[callbackName] = noop;
+        setTimeout(() => {
+          try {
+            if (window[callbackName] === noop) delete window[callbackName];
+          } catch (_) {
+            window[callbackName] = undefined;
+          }
+        }, 30000);
+      } catch (_) {}
+    };
+
+    const cleanup = ({ keepCallback = false } = {}) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = 0;
+      try { script.remove(); } catch (_) {}
+      try { signal?.removeEventListener?.("abort", onAbort); } catch (_) {}
+      if (keepCallback) {
+        clearCallbackLater();
+      } else {
+        try { delete window[callbackName]; } catch (_) { window[callbackName] = undefined; }
+      }
+    };
+
+    const resolveOnce = (payload) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(payload);
+    };
+
+    const rejectOnce = (error, { keepCallback = true } = {}) => {
+      if (settled) return;
+      settled = true;
+      cleanup({ keepCallback });
+      reject(error);
+    };
+
+    function onAbort() {
+      rejectOnce(new DOMException("Aborted", "AbortError"));
+    }
+
+    window[callbackName] = resolveOnce;
+    requestUrl.searchParams.set("output", "jsonp");
+    requestUrl.searchParams.set("callback", callbackName);
+    script.async = true;
+    script.src = requestUrl.toString();
+    script.onerror = () => rejectOnce(new Error("deezer_jsonp_failed"));
+
+    timeoutId = setTimeout(() => {
+      rejectOnce(new Error("deezer_jsonp_timeout"));
+    }, Math.max(1000, Number(timeoutMs) || 12000));
+
+    try { signal?.addEventListener?.("abort", onAbort, { once: true }); } catch (_) {}
+    (document.head || document.documentElement).appendChild(script);
+  });
+}
+
+async function fetchDeezerSearchPayload(endpoint, {
+  signal = null,
+} = {}) {
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    return fetchDeezerJsonp(endpoint, { signal });
+  }
+
+  const response = await fetch(endpoint.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+    ...(signal ? { signal } : {}),
+  });
+  if (!response.ok) {
+    throw new Error(`Deezer request failed (${response.status})`);
+  }
+
+  try {
+    return await response.json();
+  } catch (_) {
+    return {};
+  }
+}
+
 async function searchMusicDeezer(queryInput = "", {
   limitInput = PROFILE_WIDGET_CATALOG_SEARCH_LIMIT,
   signal = null,
@@ -45565,22 +45669,7 @@ async function searchMusicDeezer(queryInput = "", {
   endpoint.searchParams.set("q", query);
   endpoint.searchParams.set("limit", String(limit));
 
-  const response = await fetch(endpoint.toString(), {
-    method: "GET",
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-    ...(signal ? { signal } : {}),
-  });
-  if (!response.ok) {
-    throw new Error(`Deezer request failed (${response.status})`);
-  }
-
-  let payload = {};
-  try {
-    payload = await response.json();
-  } catch (_) {
-    payload = {};
-  }
+  const payload = await fetchDeezerSearchPayload(endpoint, { signal });
   if (payload?.error) {
     const errorMessage = String(payload?.error?.message || payload?.error || "deezer_request_failed").trim();
     throw new Error(errorMessage || "deezer_request_failed");
