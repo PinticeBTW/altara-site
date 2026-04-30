@@ -6713,6 +6713,32 @@ function syncRightSidebarForCall(callActive) {
   setRightSidebarCollapsed(restoreCollapsed, { persist: false });
 }
 
+function syncActiveNowPanelForCall(active = false) {
+  if (!active) return;
+  const activeNowEl = document.getElementById("activeNow");
+  const offlineListEl = document.getElementById("offlineList");
+  const onlineCountEl = document.getElementById("onlineCount");
+  const labels = Array.from(document.querySelectorAll(".rightBody .rightSectionLabel"));
+
+  if (activeNowEl) {
+    activeNowEl.innerHTML = "";
+    activeNowEl.style.display = "none";
+    activeNowEl.setAttribute("aria-hidden", "true");
+  }
+  if (offlineListEl) {
+    offlineListEl.innerHTML = "";
+    offlineListEl.style.display = "none";
+    offlineListEl.setAttribute("aria-hidden", "true");
+  }
+  if (onlineCountEl) {
+    onlineCountEl.textContent = "0";
+    onlineCountEl.style.display = "none";
+  }
+  labels.forEach((el) => {
+    el.style.display = "none";
+  });
+}
+
 function setRightSidebarInteractionModeForConversation({
   serverMode = false,
   forceHidden = false,
@@ -79378,6 +79404,7 @@ function refreshCallUI() {
   const publicGroupStageActive = !!(isGroupCallUi && !callActive && hasRemoteActivePresence);
   const publicGroupPreviewOnly = !!publicGroupStageActive;
   const callUiVisible = canRenderCallUiInCurrentView && (callActive || publicGroupStageActive);
+  syncActiveNowPanelForCall(callActive || publicGroupStageActive);
   const rawPrimaryGroupRemote = isGroupCallUi
     ? resolveGroupCallPrimaryRemoteMember(stageConvId)
     : null;
