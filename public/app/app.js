@@ -8617,6 +8617,10 @@ function setAvatar(el, url, userId = "") {
   if (!el) return;
   const normalizedUserId = normId(userId || el.getAttribute?.("data-avatar-user-id") || "");
   let resolvedUrl = resolveProfileAvatarUrl(url, "");
+  const currentUrl = resolveProfileAvatarUrl(
+    el.querySelector?.("img.profileAvatarMedia, img")?.getAttribute?.("src") || "",
+    ""
+  );
 
   if (el.id === "meAvatar") {
     const meId = normId(state.user?.id || "");
@@ -8637,6 +8641,10 @@ function setAvatar(el, url, userId = "") {
     }
   }
 
+  if (!resolvedUrl && currentUrl) {
+    queueManagedGifPlaybackSync(el);
+    return;
+  }
   if (!resolvedUrl) el.innerHTML = "";
   else el.innerHTML = buildAvatarMediaHtml(resolvedUrl, {
     userId: normId(userId || el.getAttribute?.("data-avatar-user-id") || ""),
@@ -8649,6 +8657,22 @@ function setAvatar(el, url, userId = "") {
     ensureMeStatusDot();
   }
   queueManagedGifPlaybackSync(el);
+}
+
+function resolveAvatarFallbackInitial(userId = "", fallbackChar = "", alt = "") {
+  const direct = String(fallbackChar || "").trim();
+  if (direct) return direct.charAt(0).toUpperCase() || "?";
+  const uid = normId(userId || "");
+  const cached = uid ? getCachedProfile(uid) : null;
+  const meId = normId(state.user?.id || "");
+  const seed = (
+    (uid && meId && uid === meId ? (state.me?.display_name || state.me?.username) : "")
+    || cached?.display_name
+    || cached?.username
+    || String(alt || "").trim()
+    || "?"
+  );
+  return String(seed || "?").trim().charAt(0).toUpperCase() || "?";
 }
 
 function rowUser(u, rightHtml = "", userIdParaDot = null, opts = {}) {
@@ -8868,21 +8892,46 @@ function buildAvatarMediaHtml(url, {
     : "";
   const mediaAttrs = shouldManageGif ? ' data-managed-gif-media="1"' : "";
   const managedGifAttrs = shouldManageGif ? buildManagedGifMediaHtmlAttrs() : "";
-  const fallbackSeed = String(fallbackChar || alt || "?").trim();
-  const fallbackInitial = (fallbackSeed.charAt(0).toUpperCase() || "?");
+  const fallbackInitial = resolveAvatarFallbackInitial(userId, fallbackChar, alt);
   const onErrorAttr = ' onerror="window.__altaraHandleAvatarImageError && window.__altaraHandleAvatarImageError(this)"';
   const onLoadAttr = ' onload="window.__altaraHandleAvatarImageLoad && window.__altaraHandleAvatarImageLoad(this)"';
-  return `<span class="profileAvatarMediaClip" data-avatar-fallback="${escAttr(fallbackInitial)}"${rootAttrs}><img class="profileAvatarMedia" src="${esc(safeUrl)}" alt="${escAttr(alt)}"${loadingAttr}${styleAttr}${mediaAttrs}${managedGifAttrs}${onErrorAttr}${onLoadAttr} /></span>`;
+  return `<span class="profileAvatarMediaClip" data-avatar-fallback="${escAttr(fallbackInitial)}"${rootAttrs}><img class="profileAvatarMedia" src="${esc(safeUrl)}" data-avatar-src="${escAttr(safeUrl)}" alt="${escAttr(alt)}"${loadingAttr}${styleAttr}${mediaAttrs}${managedGifAttrs}${onErrorAttr}${onLoadAttr} /></span>`;
+}
+
+function buildAvatarRetryUrl(url = "", attempt = 1) {
+  const raw = String(url || "").trim();
+  if (!raw || raw.startsWith("data:image/") || raw.startsWith("blob:")) return raw;
+  try {
+    const u = new URL(raw, window.location.href);
+    u.searchParams.set("_altara_avatar_retry", String(attempt));
+    return u.href;
+  } catch (_) {
+    const joiner = raw.includes("?") ? "&" : "?";
+    return `${raw}${joiner}_altara_avatar_retry=${encodeURIComponent(String(attempt))}`;
+  }
 }
 
 function handleAvatarImageError(imageEl) {
   if (!(imageEl instanceof HTMLImageElement)) return;
+  const originalUrl = String(imageEl.dataset.avatarSrc || imageEl.getAttribute("src") || "").trim();
+  const attempts = Number.parseInt(String(imageEl.dataset.avatarRetry || "0"), 10) || 0;
+  if (originalUrl && attempts < 2 && !originalUrl.startsWith("data:image/") && !originalUrl.startsWith("blob:")) {
+    const nextAttempt = attempts + 1;
+    imageEl.dataset.avatarRetry = String(nextAttempt);
+    setTimeout(() => {
+      if (!(imageEl instanceof HTMLImageElement) || !imageEl.isConnected) return;
+      imageEl.src = buildAvatarRetryUrl(originalUrl, nextAttempt);
+    }, nextAttempt * 250);
+    return;
+  }
   const clip = imageEl.closest(".profileAvatarMediaClip");
   if (clip) clip.classList.add("is-error");
+  imageEl.style.display = "none";
 }
 
 function handleAvatarImageLoad(imageEl) {
   if (!(imageEl instanceof HTMLImageElement)) return;
+  imageEl.dataset.avatarRetry = "0";
   const clip = imageEl.closest(".profileAvatarMediaClip");
   if (clip) clip.classList.remove("is-error");
   imageEl.style.removeProperty("display");
@@ -34963,6 +35012,9 @@ let dmChannel = null;
 let dmReactionsChannel = null;
 let globalDmMessageChannel = null;
 let globalDmMessageRestartTimer = null;
+const dmMessageConversationAccessCacheByConversation = new Map();
+const dmMessageConversationAccessLookupInFlightByConversation = new Map();
+const DM_MESSAGE_CONVERSATION_ACCESS_CACHE_MS = 60 * 1000;
 let dmMessagesCache = [];
 let dmMessageIds = new Set();
 const dmActivityByUserId = new Map();
@@ -52951,6 +53003,10 @@ const SERVER_VOICE_TRANSPORT_KIND = "livekit";
 const SERVER_VOICE_LIVEKIT_JOIN_ENABLED = true;
 const PRIVATE_CALL_LIVEKIT_ENABLED = true;
 const PRIVATE_CALL_LIVEKIT_ROOM_PREFIX = "private_";
+const GROUP_DM_CALL_LIVEKIT_ENABLED = true;
+const GROUP_DM_CALL_LIVEKIT_ROOM_PREFIX = "groupdm_";
+const GROUP_DM_LIVEKIT_JOIN_TIMEOUT_MS = 16000;
+const GROUP_DM_CALL_FULL_STATUS_TEXT = "This group call is full. Limit: 10 people.";
 let serverVoiceTransportController = null;
 let serverVoiceTransportConversationId = "";
 let serverVoiceScreenshareLayer = null;
@@ -52958,9 +53014,12 @@ let serverVoiceScreenshareConversationId = "";
 let serverVoiceCameraLayer = null;
 let serverVoiceCameraConversationId = "";
 let privateCallLiveKitConversationId = "";
+let groupDmCallLiveKitConversationId = "";
 let privateCallLiveKitJoinAttemptCounter = 0;
+let groupDmCallLiveKitJoinAttemptCounter = 0;
 let privateCallLastFailureDiagnostics = null;
 let pendingPrivateCallLiveKitInvite = null;
+let groupDmCallLiveKitJoinInFlight = false;
 const PRIVATE_CALL_RING_TIMEOUT_MS = 30 * 1000;
 const PRIVATE_CALL_STATES = Object.freeze({
   IDLE: "idle",
@@ -57534,8 +57593,9 @@ function roundStageLayoutMetric(value, decimals = 2) {
 function resolveStageLayoutCallType(conversationId = null) {
   const convId = normId(conversationId || callConversationId || activeDmId || state.activeDm?.conversationId || "");
   if (!convId) return "";
-  if (shouldUseServerVoiceLiveKitTransport(convId)) return "server_voice";
+  if (isGroupDmLiveKitTransportConversation(convId)) return "group_dm";
   if (isPrivateDmLiveKitTransportConversation(convId)) return "private_dm";
+  if (shouldUseServerVoiceLiveKitTransport(convId)) return "server_voice";
   return "";
 }
 
@@ -64703,7 +64763,9 @@ function clearExtraCallStageMembers() {
     el.remove();
   });
   grid.style.setProperty("--call-grid-cols", "2");
+  grid.style.setProperty("--call-grid-rows", "1");
   grid.setAttribute("data-tile-count", "0");
+  grid.setAttribute("data-grid-rows", "1");
   grid.setAttribute("data-last-fill", "0");
   grid.setAttribute("data-odd-last", "0");
   grid.setAttribute("aria-label", "Participantes");
@@ -64713,9 +64775,92 @@ function clearExtraCallStageMembers() {
 function getCallStageGridCols(totalTiles) {
   const count = Math.max(1, Number(totalTiles) || 1);
   if (count <= 1) return 1;
+  if (count <= 3) return count;
   if (count <= 4) return 2;
   if (count <= 9) return 3;
   return 4;
+}
+
+function getCallStageGridRows(totalTiles, cols) {
+  const count = Math.max(1, Number(totalTiles) || 1);
+  const safeCols = Math.max(1, Number(cols) || 1);
+  return Math.max(1, Math.ceil(count / safeCols));
+}
+
+function isCallStageGridTileVisible(tile) {
+  if (!tile) return false;
+  if (tile.hidden) return false;
+  if (String(tile.style?.display || "").trim().toLowerCase() === "none") return false;
+  return true;
+}
+
+function syncCallStageGridLayoutAttrs(grid = null, viewport = null) {
+  const gridEl = grid || document.getElementById("callStageGrid");
+  if (!gridEl) return;
+  const viewportEl = viewport || document.querySelector("#callStage .callStageViewport");
+  const totalTiles = Math.max(
+    1,
+    Array.from(gridEl.querySelectorAll(".stageGridTile")).filter(isCallStageGridTileVisible).length,
+  );
+  const cols = getCallStageGridCols(totalTiles);
+  const rows = getCallStageGridRows(totalTiles, cols);
+  gridEl.style.setProperty("--call-grid-cols", String(cols));
+  gridEl.style.setProperty("--call-grid-rows", String(rows));
+  const rect = gridEl.getBoundingClientRect?.() || null;
+  const style = window.getComputedStyle ? window.getComputedStyle(gridEl) : null;
+  const gap = Number.parseFloat(style?.columnGap || style?.gap || "10") || 10;
+  const rowGap = Number.parseFloat(style?.rowGap || style?.gap || "10") || gap;
+  const paddingX = (Number.parseFloat(style?.paddingLeft || "0") || 0) + (Number.parseFloat(style?.paddingRight || "0") || 0);
+  const paddingY = (Number.parseFloat(style?.paddingTop || "0") || 0) + (Number.parseFloat(style?.paddingBottom || "0") || 0);
+  const gridWidth = Math.max(0, Number(rect?.width || 0) - paddingX - (gap * Math.max(0, cols - 1)));
+  const gridHeight = Math.max(0, Number(rect?.height || 0) - paddingY - (rowGap * Math.max(0, rows - 1)));
+  const cellWidth = gridWidth > 0 ? (gridWidth / cols) : 0;
+  const rowHeight = gridHeight > 0 ? (gridHeight / rows) : 0;
+  const ratioWidth = 16 / 9;
+  const tileWidth = Math.floor(Math.min(
+    cellWidth || 640,
+    rowHeight ? rowHeight * ratioWidth : (cellWidth || 640),
+  ));
+  if (tileWidth > 0) {
+    gridEl.style.setProperty("--call-grid-tile-width", `${Math.max(220, tileWidth)}px`);
+  } else {
+    gridEl.style.removeProperty("--call-grid-tile-width");
+  }
+  gridEl.setAttribute("data-tile-count", String(totalTiles));
+  gridEl.setAttribute("data-grid-rows", String(Math.min(rows, 5)));
+  const rem = totalTiles % cols;
+  let lastFillMode = "0";
+  if (cols === 2 && totalTiles > cols && rem === 1) {
+    lastFillMode = "1";
+  } else if (cols === 3 && totalTiles > cols && rem === 2) {
+    lastFillMode = "2";
+  }
+  gridEl.setAttribute("data-last-fill", lastFillMode);
+  gridEl.setAttribute("data-odd-last", lastFillMode === "1" ? "1" : "0");
+  gridEl.setAttribute("aria-label", `Participantes (${totalTiles})`);
+  viewportEl?.setAttribute("data-stage-tile-count", String(totalTiles));
+}
+
+function syncCallFocusStageLayoutAttrs(viewport = null) {
+  const viewportEl = viewport || document.querySelector("#callStage .callStageViewport");
+  if (!viewportEl) return;
+  const rect = viewportEl.getBoundingClientRect?.() || null;
+  const width = Number(rect?.width || 0);
+  const height = Number(rect?.height || 0);
+  if (!(width > 0 && height > 0)) {
+    viewportEl.style.removeProperty("--call-focus-tile-width");
+    return;
+  }
+  const stage = document.getElementById("callStage");
+  const reserveBottom = stage?.classList.contains("is-private-call-ui") ? 82 : 8;
+  const availableWidth = Math.max(0, width - 16);
+  const availableHeight = Math.max(0, height - reserveBottom - 16);
+  const tileWidth = Math.floor(Math.min(availableWidth, availableHeight * (16 / 9)));
+  if (tileWidth > 0) {
+    viewportEl.style.setProperty("--call-focus-tile-width", `${Math.max(280, tileWidth)}px`);
+  } else {
+    viewportEl.style.removeProperty("--call-focus-tile-width");
+  }
 }
 
 function getEffectiveGroupCallActiveUserIds(conversationId) {
@@ -64723,7 +64868,7 @@ function getEffectiveGroupCallActiveUserIds(conversationId) {
   if (!convId) return [];
   const meId = normId(state.user?.id || "");
   const sameConversation = normId(callConversationId || "") === convId;
-  const useLiveKitTransport = isServerVoiceConversationById(convId) && shouldUseServerVoiceLiveKitTransport(convId);
+  const useLiveKitTransport = shouldUseServerVoiceLiveKitTransport(convId);
   const localCallContext = !!(
     sameConversation && (
       inCall ||
@@ -66416,24 +66561,7 @@ function renderGroupCallStageMembers() {
     gridSelfAux.disabled = true;
   }
 
-  const totalTiles = Math.max(
-    1,
-    grid.querySelectorAll("[data-call-grid-entry='1'], [data-call-extra='1']").length,
-  );
-  const cols = getCallStageGridCols(totalTiles);
-  grid.style.setProperty("--call-grid-cols", String(cols));
-  grid.setAttribute("data-tile-count", String(totalTiles));
-  const rem = totalTiles % cols;
-  let lastFillMode = "0";
-  if (cols === 2 && totalTiles > cols && rem === 1) {
-    lastFillMode = "1";
-  } else if (cols === 3 && totalTiles > cols && rem === 2) {
-    lastFillMode = "2";
-  }
-  grid.setAttribute("data-last-fill", lastFillMode);
-  grid.setAttribute("data-odd-last", lastFillMode === "1" ? "1" : "0");
-  grid.setAttribute("aria-label", `Participantes (${totalTiles})`);
-  if (stageViewport) stageViewport.setAttribute("data-stage-tile-count", String(totalTiles));
+  syncCallStageGridLayoutAttrs(grid, stageViewport);
 }
 
 function setLocalSharePreviewStream(stream) {
@@ -70020,6 +70148,7 @@ async function disconnectMinimalServerVoiceTransport({
     serverVoiceTransportConversationId = "";
   }
   clearPrivateCallLiveKitState(convId, { clearPendingInvite: false });
+  clearGroupDmCallLiveKitState(convId);
   return !!activeController;
 }
 
@@ -70070,6 +70199,7 @@ function resetMinimalServerVoiceUiState(conversationId = null, {
     serverVoiceTransportConversationId = "";
   }
   clearPrivateCallLiveKitState(convId, { clearPendingInvite: true });
+  clearGroupDmCallLiveKitState(convId);
 
   pendingOffer = null;
   pendingGroupRingInfo = null;
@@ -70148,6 +70278,7 @@ function cleanupPeer() {
     });
     resetMinimalServerVoiceUiState(cleanupConvId, { clearStatus: false });
     clearPrivateCallLiveKitState(cleanupConvId, { clearPendingInvite: true });
+    clearGroupDmCallLiveKitState(cleanupConvId);
     return;
   }
   const cleanupMeId = normId(state.user?.id || "");
@@ -70273,6 +70404,7 @@ function cleanupPeer() {
     clearServerVoiceActiveJoinAttempt(cleanupConvId);
   }
   clearPrivateCallLiveKitState(cleanupConvId, { clearPendingInvite: true });
+  clearGroupDmCallLiveKitState(cleanupConvId);
   closeGroupMemberMenu();
   resetCallEventState();
 }
@@ -70426,6 +70558,7 @@ function hasActiveCallSignalContext() {
     pendingCallInfo ||
     ringTimeout ||
     groupCallMode ||
+    groupDmCallLiveKitJoinInFlight ||
     pendingGroupRingInfo ||
     pendingGroupRingAutoJoin ||
     (callPc && callPc.connectionState !== "closed" && callPc.connectionState !== "failed")
@@ -71505,6 +71638,54 @@ function logPrivateCallDebug(event, details = {}, { level = "log" } = {}) {
   } catch (_) {}
 }
 
+function logGroupCallDebug(event, details = {}, { level = "log" } = {}) {
+  const eventName = String(event || "").trim();
+  if (!eventName) return;
+  const payload = details && typeof details === "object" && !Array.isArray(details)
+    ? { ...details }
+    : { value: details ?? null };
+  const logLevel = String(level || "log").trim().toLowerCase();
+  const method = logLevel === "error" ? "error" : (logLevel === "warn" ? "warn" : "log");
+  try {
+    console[method]("[group-call]", JSON.stringify({
+      at: new Date().toISOString(),
+      event: eventName,
+      ...payload,
+    }));
+  } catch (_) {}
+}
+
+function parseGroupCallErrorPayload(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return null;
+  const parsed = safeParseServerVoiceJson(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  return parsed;
+}
+
+function buildGroupCallTokenRequestUrl() {
+  const base = String(SUPABASE_URL || "").trim().replace(/\/+$/, "");
+  if (!base) return "/functions/v1/livekit-token";
+  return `${base}/functions/v1/livekit-token`;
+}
+
+function isGroupDmJoinDeniedFull({
+  responseStatus = null,
+  responseBody = null,
+  message = "",
+} = {}) {
+  const status = normalizePrivateCallResponseStatus(responseStatus);
+  const payload = parseGroupCallErrorPayload(responseBody);
+  const errorCode = String(payload?.error || payload?.code || "").trim().toLowerCase();
+  const reasonCode = String(payload?.reason || "").trim().toLowerCase();
+  const payloadMessage = String(payload?.message || "").trim().toLowerCase();
+  const summary = `${String(message || "").trim().toLowerCase()} ${payloadMessage}`.trim();
+  if (status !== 409) return false;
+  if (errorCode === "channel_full") return true;
+  if (reasonCode === "technical_cap" || reasonCode === "manual_limit") return true;
+  return summary.includes("participant cap") || summary.includes("call is full");
+}
+
 function normalizePrivateCallResponseStatus(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
@@ -71710,10 +71891,45 @@ function isPrivateDmLiveKitTransportConversation(conversationId = null) {
   return !!(activeLiveKitConvId && activeLiveKitConvId === convId);
 }
 
+function shouldRouteGroupDmCallViaLiveKit(conversationId = null) {
+  if (!GROUP_DM_CALL_LIVEKIT_ENABLED) return false;
+  const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
+  if (!convId || isServerVoiceConversationById(convId)) return false;
+  const meta = getActiveConversationMeta(convId) || getConversationMeta(convId) || {};
+  const kind = String(meta?.kind || "").trim().toLowerCase();
+  if (kind === "group") return true;
+  if (isGroupConversationMeta(meta)) return true;
+  const activeConvId = normId(activeDmId || state.activeDm?.conversationId || "");
+  if (activeConvId && activeConvId === convId) {
+    const activeKind = String(state.activeDm?.kind || "").trim().toLowerCase();
+    if (activeKind === "group") return true;
+  }
+  return false;
+}
+
+function isGroupDmLiveKitTransportConversation(conversationId = null) {
+  const convId = normId(conversationId || callConversationId || activeDmId || state.activeDm?.conversationId || "");
+  if (!convId) return false;
+  if (!shouldRouteGroupDmCallViaLiveKit(convId)) return false;
+  const activeLiveKitConvId = normId(groupDmCallLiveKitConversationId || "");
+  return !!(activeLiveKitConvId && activeLiveKitConvId === convId);
+}
+
+function getGroupDmLiveKitRoomName(conversationId = null) {
+  const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
+  return convId ? `${GROUP_DM_CALL_LIVEKIT_ROOM_PREFIX}${convId}` : "";
+}
+
 function nextPrivateCallLiveKitJoinAttemptId(conversationId = null) {
   privateCallLiveKitJoinAttemptCounter += 1;
   const convId = normId(conversationId || "private");
   return `${convId || "private"}:join:${Date.now()}:${privateCallLiveKitJoinAttemptCounter}`;
+}
+
+function nextGroupDmCallLiveKitJoinAttemptId(conversationId = null) {
+  groupDmCallLiveKitJoinAttemptCounter += 1;
+  const convId = normId(conversationId || "group");
+  return `${convId || "group"}:join:${Date.now()}:${groupDmCallLiveKitJoinAttemptCounter}`;
 }
 
 function normalizePrivateCallLifecycleState(value = "", fallback = PRIVATE_CALL_STATES.IDLE) {
@@ -71803,11 +72019,20 @@ function clearPrivateCallLiveKitState(conversationId = null, { clearPendingInvit
   }
 }
 
+function clearGroupDmCallLiveKitState(conversationId = null) {
+  const convId = normId(conversationId || "");
+  if (!convId || normId(groupDmCallLiveKitConversationId || "") === convId) {
+    groupDmCallLiveKitConversationId = "";
+    groupDmCallLiveKitJoinInFlight = false;
+  }
+}
+
 function shouldUseServerVoiceLiveKitTransport(conversationId = null) {
   if (!SERVER_VOICE_LIVEKIT_JOIN_ENABLED) return false;
   const convId = normId(conversationId || callConversationId || activeDmId || state.activeDm?.conversationId || "");
   if (!convId || SERVER_VOICE_TRANSPORT_KIND !== "livekit") return false;
   if (isServerVoiceConversationById(convId)) return true;
+  if (isGroupDmLiveKitTransportConversation(convId)) return true;
   return isPrivateDmLiveKitTransportConversation(convId);
 }
 
@@ -73341,6 +73566,7 @@ async function reconnectServerVoiceAudio(conversationId = null, {
 } = {}) {
   const convId = normId(conversationId || callConversationId || activeDmId || state.activeDm?.conversationId || "");
   if (!convId || !shouldUseServerVoiceLiveKitTransport(convId)) return;
+  const isGroupDmLiveKitReconnect = isGroupDmLiveKitTransportConversation(convId);
   logServerVoiceDebug("room.reconnect_requested", {
     conversationId: convId,
     reason: String(reason || "").trim() || "manual_reconnect",
@@ -73354,6 +73580,13 @@ async function reconnectServerVoiceAudio(conversationId = null, {
     reasonCode: `cleanup.transport_disconnect.${String(reason || "").trim() || "manual_reconnect"}`,
     triggeredBy: "reconnectServerVoiceAudio",
   });
+  if (isGroupDmLiveKitReconnect || shouldRouteGroupDmCallViaLiveKit(convId)) {
+    await startGroupDmLiveKitCall(convId, {
+      joinExistingOnly: true,
+      triggerReason: String(reason || "").trim() || "manual_reconnect",
+    });
+    return;
+  }
   await startServerVoiceLiveKitCall(convId, { joinExistingOnly: true });
 }
 
@@ -75773,6 +76006,23 @@ async function teardownActiveCallRealtimeChannel() {
   }
 }
 
+function isGroupDmLiveKitRealtimeControlSignal(payload = {}) {
+  const signalType = String(payload?.signal || "").trim().toLowerCase();
+  if (!signalType) return false;
+  return (
+    signalType === "group_ring"
+    || signalType === "group_ring_cancel"
+    || signalType === "group_ring_accept"
+    || signalType === "group_ring_decline"
+    || signalType === "group_join_request"
+    || signalType === "group_join_accept"
+    || signalType === "group_presence_join"
+    || signalType === "group_presence_ping"
+    || signalType === "group_presence_leave"
+    || signalType === "group_presence_probe"
+  );
+}
+
 async function sendCallSignal(kind, payload = {}, toUserId = null, conversationIdOverride = null) {
   if (!state.user) return;
 
@@ -75788,7 +76038,11 @@ async function sendCallSignal(kind, payload = {}, toUserId = null, conversationI
     normId(payload?.conversation_id || "")
   );
   if (!convId) return;
-  if (shouldUseServerVoiceLiveKitTransport(convId)) {
+  const allowGroupDmLiveKitControlSignal = !!(
+    isGroupDmLiveKitTransportConversation(convId)
+    && isGroupDmLiveKitRealtimeControlSignal(payload)
+  );
+  if (shouldUseServerVoiceLiveKitTransport(convId) && !allowGroupDmLiveKitControlSignal) {
     if (isPrivateDmLiveKitTransportConversation(convId)) {
       logPrivateCallDebug("private_call.legacy_path_bypassed", {
         conversationId: convId,
@@ -79079,11 +79333,13 @@ function refreshCallUI() {
   const stageMeta = getActiveConversationMeta(stageConvId) || getConversationMeta(stageConvId) || {};
   const isServerVoiceCallUi = isServerVoiceConversationMeta(stageMeta);
   const privateLiveKitCallUi = isPrivateDmLiveKitTransportConversation(stageConvId);
+  const groupDmLiveKitCallUi = isGroupDmLiveKitTransportConversation(stageConvId);
   const serverVoiceLiveKitActive = !!(
     (isServerVoiceCallUi && shouldUseServerVoiceLiveKitTransport(stageConvId))
     || privateLiveKitCallUi
+    || groupDmLiveKitCallUi
   );
-  const serverVoiceAudioOnlyMode = !!(isServerVoiceCallUi || privateLiveKitCallUi);
+  const serverVoiceAudioOnlyMode = !!(isServerVoiceCallUi || privateLiveKitCallUi || groupDmLiveKitCallUi);
   const serverVoiceScreenshareEnabled = !!serverVoiceLiveKitActive;
   const serverVoiceActiveScreenshare = serverVoiceScreenshareEnabled
     ? getServerVoiceActiveScreenshare(stageConvId)
@@ -79100,6 +79356,7 @@ function refreshCallUI() {
   const isGroupCallUi = !!(
     groupCallMode ||
     isCallCapableGroupConversationMeta(stageMeta) ||
+    groupDmLiveKitCallUi ||
     privateLiveKitCallUi
   );
   const isPrivateCallUi = !!(!isServerVoiceCallUi && (!isGroupCallUi || privateLiveKitCallUi));
@@ -79498,6 +79755,7 @@ function refreshCallUI() {
   applyCallTileColorToEl(gridSelf, state.user?.id, meTileColor);
   applyCallTileColorToEl(gridSelfAux, state.user?.id, meTileColor);
   renderGroupCallStageMembers();
+  applyCallTileColorToEl(stageViewport, mainUserId, mainTileColor);
   applyCallTileColorToEl(stagePlaceholder, mainUserId, mainTileColor);
   applyUserNameColorToEl(stageLabel, mainUserId, mainNameColor);
   applyUserNameColorToEl(remoteTileLabel, effectiveRemoteUserId, remoteNameColor);
@@ -79690,8 +79948,10 @@ function refreshCallUI() {
   syncRemoteShareWatchPromptTiles(stageConvId, { isGroupCallUi });
   syncRemoteShareLoadingTiles(stageConvId, { isGroupCallUi });
 
-  stage?.classList.toggle("layout-grid", stageLayoutMode === "grid");
   const stageGrid = document.getElementById("callStageGrid");
+  syncCallStageGridLayoutAttrs(stageGrid, stageViewport);
+  syncCallFocusStageLayoutAttrs(stageViewport);
+  stage?.classList.toggle("layout-grid", stageLayoutMode === "grid");
   if (stageGrid) {
     const showGrid = stageLayoutMode === "grid";
     stageGrid.hidden = !showGrid;
@@ -79712,6 +79972,17 @@ function refreshCallUI() {
     bar.hidden = !showBar;
     bar.classList.toggle("is-open", showBar);
     bar.setAttribute("aria-hidden", showBar ? "false" : "true");
+  }
+
+  if (showStage && stageGrid) {
+    syncCallStageGridLayoutAttrs(stageGrid, stageViewport);
+    syncCallFocusStageLayoutAttrs(stageViewport);
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        syncCallStageGridLayoutAttrs(stageGrid, stageViewport);
+        syncCallFocusStageLayoutAttrs(stageViewport);
+      });
+    }
   }
 
   renderServerVoiceAudioFallback(stageConvId, {
@@ -80435,10 +80706,13 @@ async function pulseGroupCallPresenceHeartbeat() {
   if (!groupCallMode) return;
   const convId = normId(callConversationId || activeDmId || "");
   if (!convId) return;
-  if (shouldUseServerVoiceLiveKitTransport(convId)) return;
+  const useLiveKitTransport = shouldUseServerVoiceLiveKitTransport(convId);
+  const isGroupDmLiveKitCall = isGroupDmLiveKitTransportConversation(convId);
+  if (useLiveKitTransport && !isGroupDmLiveKitCall) return;
   const isCallContextActive = !!(
     inCall ||
     ringTimeout ||
+    groupDmCallLiveKitJoinInFlight ||
     isServerVoiceTransportSessionActive(convId) ||
     (callPc && callPc.connectionState !== "closed" && callPc.connectionState !== "failed")
   );
@@ -80451,7 +80725,7 @@ async function pulseGroupCallPresenceHeartbeat() {
     }
     const changed = pruneStaleGroupCallActiveMembers();
     await sendGroupCallPresenceSignal(convId, "group_presence_ping");
-    if (!shouldUseServerVoiceLiveKitTransport(convId)) {
+    if (!useLiveKitTransport) {
       void syncRelayAudioPeers(convId);
     }
     if (isServerVoiceConversationById(convId) && !shouldUseServerVoiceLiveKitTransport(convId)) {
@@ -80467,7 +80741,7 @@ async function pulseGroupCallPresenceHeartbeat() {
 
 function startGroupCallPresenceHeartbeat() {
   const convId = normId(callConversationId || activeDmId || "");
-  if (shouldUseServerVoiceLiveKitTransport(convId)) return;
+  if (shouldUseServerVoiceLiveKitTransport(convId) && !isGroupDmLiveKitTransportConversation(convId)) return;
   if (groupCallPresenceHeartbeatTimer) return;
   if (isServerVoiceConversationById(convId) && !shouldUseServerVoiceLiveKitTransport(convId)) {
     startServerVoiceConsistencyMonitor(convId);
@@ -80598,6 +80872,7 @@ async function sendGroupRingSignals(conversationId, targetUserIds = [], { manual
   const payload = {
     signal: "group_ring",
     group_call: true,
+    transport: shouldRouteGroupDmCallViaLiveKit(convId) ? "livekit" : undefined,
     manual: !!manual,
     from_label: state.me?.display_name || state.me?.username || t("call.someone", "someone"),
     from_avatar: state.me?.avatar_url || null,
@@ -80617,6 +80892,7 @@ async function sendGroupJoinRequestSignals(conversationId, targetUserIds = []) {
   const payload = {
     signal: "group_join_request",
     group_call: true,
+    transport: shouldRouteGroupDmCallViaLiveKit(convId) ? "livekit" : undefined,
     from_label: state.me?.display_name || state.me?.username || t("call.someone", "someone"),
     from_avatar: state.me?.avatar_url || null,
   };
@@ -80635,6 +80911,7 @@ async function sendGroupRingCancelSignals(conversationId, targetUserIds = []) {
   await Promise.allSettled(targets.map((uid) => sendCallSignal("ice", {
     signal: "group_ring_cancel",
     group_call: true,
+    transport: shouldRouteGroupDmCallViaLiveKit(convId) ? "livekit" : undefined,
     reason: "manual",
   }, uid, convId)));
 }
@@ -80776,6 +81053,610 @@ function syncPrivateCallActiveMembersFromSnapshot(conversationId, snapshot = nul
       label: peerIdentity?.label || t("call.member", "member"),
       avatar: peerIdentity?.avatar || null,
     });
+  }
+}
+
+function syncGroupDmCallLiveKitActiveMembersFromSnapshot(conversationId, snapshot = null) {
+  const convId = normId(conversationId || "");
+  if (!convId) return;
+  const meId = normId(state.user?.id || "");
+  const sourceSnapshot = snapshot && typeof snapshot === "object"
+    ? snapshot
+    : (getServerVoiceTransportSnapshot(convId) || null);
+  const inChannelIds = getServerVoiceTransportInChannelIdsFromSnapshot(convId, sourceSnapshot);
+  const nextIds = normalizeUuidArray([
+    ...inChannelIds,
+    meId,
+  ]);
+  setGroupCallActiveMembers(nextIds, convId);
+  nextIds.forEach((uid) => {
+    if (!uid) return;
+    const identity = uid === meId
+      ? {
+          label: state.me?.display_name || state.me?.username || t("call.you", "You"),
+          avatar: state.me?.avatar_url || null,
+        }
+      : getGroupMemberIdentity(convId, uid);
+    addGroupCallActiveMember(uid, {
+      label: identity?.label || t("call.member", "member"),
+      avatar: identity?.avatar || null,
+    });
+  });
+  if (inCall && groupCallMode && normId(callConversationId || "") === convId) {
+    if (hasActiveGroupCallRemoteParticipant(convId)) clearGroupCallSoloTimeout();
+    else armGroupCallSoloTimeout();
+  }
+}
+
+async function fetchGroupDmCallLiveKitJoinPayload(conversationId, {
+  joinAttemptId = "",
+} = {}) {
+  const convId = normId(conversationId || "");
+  if (!convId) throw new Error("Missing group conversation.");
+  const meId = normId(state.user?.id || "");
+  const requestPayload = {
+    conversationId: convId,
+    callKind: "group_dm",
+    callScope: "group_dm",
+    callType: "group_dm",
+  };
+  const requestEndpointUrl = buildGroupCallTokenRequestUrl();
+  const expectedRoomName = getGroupDmLiveKitRoomName(convId);
+  const throwGroupTokenRequestError = ({
+    message = "",
+    responseStatus = null,
+    responseBody = null,
+    cause = null,
+  } = {}) => {
+    const status = normalizePrivateCallResponseStatus(responseStatus);
+    const body = normalizePrivateCallResponseBody(responseBody);
+    const errorMessage = String(message || cause?.message || "group_dm_livekit_token_failed").trim()
+      || "group_dm_livekit_token_failed";
+    const payloadObj = parseGroupCallErrorPayload(body);
+    const responseCode = String(payloadObj?.code || payloadObj?.error || "").trim().toUpperCase();
+    const responseReason = String(payloadObj?.reason || "").trim().toLowerCase();
+    const deniedFull = isGroupDmJoinDeniedFull({
+      responseStatus: status,
+      responseBody: body,
+      message: errorMessage,
+    });
+    const error = new Error(errorMessage);
+    error.responseStatus = status;
+    error.responseBody = body;
+    error.groupDmCallStage = deniedFull ? "join_denied_full" : "token_request";
+    error.groupDmJoinDeniedFull = deniedFull;
+    error.groupDmTokenRequestDiagnostics = {
+      endpointUrl: requestEndpointUrl,
+      requestPayload,
+      responseStatus: status,
+      responseBody: body,
+      responseCode: responseCode || null,
+      responseReason: responseReason || null,
+      conversationId: convId,
+      callKind: "group_dm",
+    };
+    logGroupCallDebug("group_call.token_request_failed", {
+      endpointUrl: requestEndpointUrl,
+      requestPayload,
+      status,
+      body,
+      conversationId: convId || null,
+      callKind: "group_dm",
+      errorMessage: errorMessage || null,
+      responseCode: responseCode || null,
+      responseReason: responseReason || null,
+      joinAttemptId: String(joinAttemptId || "").trim() || null,
+    }, { level: "warn" });
+    if (deniedFull) {
+      error.groupDmUiMessage = GROUP_DM_CALL_FULL_STATUS_TEXT;
+      logGroupCallDebug("group_call.join_denied_full", {
+        conversationId: convId || null,
+        currentUserId: meId || null,
+        joinAttemptId: String(joinAttemptId || "").trim() || null,
+        responseStatus: status,
+        responseBody: body,
+        reason: errorMessage || null,
+      }, { level: "warn" });
+    } else if (responseCode === "FORBIDDEN" || responseReason === "not_conversation_member") {
+      logGroupCallDebug("group_call.join_denied_not_member", {
+        conversationId: convId || null,
+        currentUserId: meId || null,
+        status,
+        body,
+        reason: responseReason || responseCode || errorMessage || null,
+      }, { level: "warn" });
+    } else if (responseCode === "INVALID_CONVERSATION" || responseReason === "conversation_not_found" || status === 404) {
+      logGroupCallDebug("group_call.join_denied_invalid_conversation", {
+        conversationId: convId || null,
+        currentUserId: meId || null,
+        status,
+        body,
+        reason: responseReason || responseCode || errorMessage || null,
+      }, { level: "warn" });
+    }
+    error.roomName = expectedRoomName;
+    error.conversationId = convId;
+    if (cause) error.cause = cause;
+    throw error;
+  };
+
+  const edgeFunctionName = "livekit-token";
+  const functionPath = `/functions/v1/${edgeFunctionName}`;
+  const authReady = await ensureSupabaseFunctionInvokeAuthReady({
+    edgeFunctionName,
+    functionPath,
+    requireUser: true,
+    logPrefix: "[group-dm-call auth]",
+    logEvent: "livekit_token.auth_state",
+    logChannel: "group-dm-call",
+    failEvent: "livekit_token.auth_missing",
+  });
+  if (!authReady.ok) {
+    throwGroupTokenRequestError({
+      message: authReady.error?.message || "group_dm_livekit_auth_unavailable",
+      responseBody: authReady.error || null,
+      cause: authReady.error || null,
+    });
+  }
+
+  logGroupCallDebug("group_call.token_requested", {
+    conversationId: convId || null,
+    currentUserId: meId || null,
+    joinAttemptId: String(joinAttemptId || "").trim() || null,
+    roomName: expectedRoomName || null,
+    endpointUrl: requestEndpointUrl,
+    requestPayload,
+  });
+  const { data, error } = await awaitWithTimeout(
+    supabase.functions.invoke(edgeFunctionName, {
+      body: requestPayload,
+    }),
+    GROUP_DM_LIVEKIT_JOIN_TIMEOUT_MS,
+    "group_dm_livekit_token_request"
+  );
+  if (error) {
+    throwGroupTokenRequestError({
+      message: error?.message || "group_dm_livekit_token_request_failed",
+      responseStatus: error?.context?.status ?? error?.status ?? error?.code ?? null,
+      responseBody: error?.context?.body ?? error?.details ?? error ?? null,
+      cause: error,
+    });
+  }
+  if (!data || data.ok === false) {
+    throwGroupTokenRequestError({
+      message: String(data?.message || data?.reason || data?.error || "group_dm_livekit_token_failed"),
+      responseStatus: data?.status ?? null,
+      responseBody: data || null,
+    });
+  }
+
+  const roomName = String(data?.roomName || "").trim();
+  const url = String(data?.url || "").trim();
+  const token = String(data?.token || "").trim();
+  if (!roomName || !url || !token) {
+    throwGroupTokenRequestError({
+      message: "group_dm_livekit_join_payload_invalid",
+      responseStatus: 200,
+      responseBody: data || null,
+    });
+  }
+  if (roomName !== expectedRoomName) {
+    throwGroupTokenRequestError({
+      message: "group_dm_livekit_room_mismatch",
+      responseStatus: 200,
+      responseBody: data || null,
+    });
+  }
+  const diagnostics = inspectServerVoiceLiveKitJoinPayload(data, {
+    expectedConversationId: convId,
+    expectedRoomName,
+    expectedMediaMode: "audio_only",
+  });
+  if (!diagnostics.urlValid || !diagnostics.tokenParsed || diagnostics.tokenExpired === true) {
+    throwGroupTokenRequestError({
+      message: "group_dm_livekit_join_payload_invalid",
+      responseStatus: 200,
+      responseBody: diagnostics || null,
+    });
+  }
+  if (diagnostics.roomGrantMatches === false || diagnostics.tokenConversationMatches === false) {
+    throwGroupTokenRequestError({
+      message: "group_dm_livekit_token_grant_mismatch",
+      responseStatus: 200,
+      responseBody: diagnostics || null,
+    });
+  }
+  logGroupCallDebug("group_call.token_received", {
+    conversationId: convId || null,
+    currentUserId: meId || null,
+    joinAttemptId: String(joinAttemptId || "").trim() || null,
+    roomName: roomName || null,
+    endpointUrl: requestEndpointUrl,
+    requestPayload,
+    currentCount: Number(data?.currentCount || 0) || 0,
+    technicalParticipantCap: Number(data?.technicalParticipantCap || 0) || null,
+  });
+  return {
+    ...data,
+    conversationId: normId(data?.conversationId || convId),
+    mediaMode: "audio_only",
+    roomName,
+    url,
+    token,
+  };
+}
+
+async function startGroupDmLiveKitCall(conversationId, {
+  joinExistingOnly = false,
+  triggerReason = "manual_join",
+  ringTargets = null,
+} = {}) {
+  if (!state.user?.id) return false;
+  const convId = normId(conversationId || activeDmId || "");
+  if (!convId || !shouldRouteGroupDmCallViaLiveKit(convId)) return false;
+  const meId = normId(state.user?.id || "");
+  logGroupCallDebug("group_call.join_started", {
+    conversationId: convId || null,
+    currentUserId: meId || null,
+    joinExistingOnly: !!joinExistingOnly,
+    triggerReason: String(triggerReason || "").trim() || "manual_join",
+  });
+  const groupLabel = normalizeConversationLabel(
+    (getActiveConversationMeta(convId) || getConversationMeta(convId) || {}).displayName
+      || state.activeDm?.displayName
+      || "Group DM",
+    "Group DM"
+  );
+
+  const existingCallConv = normId(callConversationId || "");
+  const existingTransportConv = normId(serverVoiceTransportConversationId || "");
+  const existingTransportActive = !!(
+    existingTransportConv
+    && (serverVoiceTransportController || getServerVoiceTransportSnapshot(existingTransportConv))
+  );
+  if (existingTransportActive && existingTransportConv === convId && (inCall || groupDmCallLiveKitJoinInFlight)) {
+    setCallStatus(t("call.already_in_group", "You are already in this call."), true);
+    refreshCallUI();
+    return true;
+  }
+  if (existingTransportActive && existingTransportConv !== convId) {
+    setCallStatus(t("call.already_in_call", "You are already in another call."), true);
+    return false;
+  }
+  const callAlreadyActiveElsewhere = !!(
+    (inCall || (callPc && callPc.connectionState !== "closed" && callPc.connectionState !== "failed") || ringTimeout)
+    && existingCallConv
+    && existingCallConv !== convId
+  );
+  if (callAlreadyActiveElsewhere) {
+    setCallStatus(t("call.already_in_call", "You are already in another call."), true);
+    return false;
+  }
+  if (existingTransportConv === convId && (serverVoiceTransportController || getServerVoiceTransportSnapshot(convId))) {
+    await disconnectMinimalServerVoiceTransport({
+      conversationId: convId,
+      reason: "group_dm_fresh_join_reset",
+    });
+  }
+
+  resetCallAudioToSafeDefaults({ resetPerUserVolumes: true });
+
+  let targetIds = Array.isArray(ringTargets)
+    ? normalizeUuidArray(ringTargets)
+    : await getGroupConversationMemberIds(convId, { includeSelf: false, force: true });
+  targetIds = targetIds.filter((uid) => uid && uid !== meId);
+  const totalParticipants = normalizeUuidArray([meId, ...targetIds]).length;
+  if (totalParticipants > GROUP_DM_MAX_MEMBERS) {
+    setCallStatus(GROUP_DM_CALL_FULL_STATUS_TEXT, true);
+    logGroupCallDebug("group_call.join_denied_full", {
+      conversationId: convId || null,
+      currentUserId: meId || null,
+      reason: "group_member_count_limit",
+      limit: GROUP_DM_MAX_MEMBERS,
+      resolvedParticipants: totalParticipants,
+    }, { level: "warn" });
+    return false;
+  }
+  if (!targetIds.length && !joinExistingOnly) {
+    alert("Este Group DM nao tem membros para chamar.");
+    return false;
+  }
+
+  const useSessionBackend = shouldUseGroupCallSessionBackendForConversation(convId);
+  if (useSessionBackend) {
+    await refreshGroupDmCallState(convId, { rerender: false });
+  }
+  let joinability = getGroupCallJoinability(convId);
+  let shouldJoinExisting = !!(
+    joinExistingOnly
+    || joinability.joinablePublicCall
+    || joinability.hasRemoteSession
+    || joinability.hasOpenCallEvent
+  );
+  let sessionCallId = "";
+  let createdNewSession = false;
+  if (useSessionBackend) {
+    if (shouldJoinExisting) {
+      sessionCallId = await joinGroupDmCallSession(convId, { allowStart: false });
+      if (!sessionCallId && !joinExistingOnly) {
+        const startResult = await startOrJoinGroupDmCallSession(convId);
+        sessionCallId = startResult.callId;
+        createdNewSession = !!startResult.createdNew;
+        shouldJoinExisting = !createdNewSession;
+      }
+    } else {
+      const startResult = await startOrJoinGroupDmCallSession(convId);
+      sessionCallId = startResult.callId;
+      createdNewSession = !!startResult.createdNew;
+      if (!createdNewSession && sessionCallId) shouldJoinExisting = true;
+    }
+    if (groupDmCallBackendAvailable === true && !sessionCallId) {
+      setCallButtons("idle");
+      setCallStatus(joinExistingOnly ? "Esta chamada ja terminou." : "Falhou ao criar a sessao da chamada.", true);
+      await refreshGroupDmCallState(convId, { rerender: true });
+      refreshCallUI();
+      return false;
+    }
+    await refreshGroupDmCallState(convId, { rerender: false });
+    joinability = getGroupCallJoinability(convId);
+  }
+
+  const joinAttemptId = nextGroupDmCallLiveKitJoinAttemptId(convId);
+  const controllerId = createServerVoiceTransportControllerId(convId);
+  let joinFailureStage = "preflight";
+  let controller = null;
+
+  groupDmCallLiveKitJoinInFlight = true;
+  groupDmCallLiveKitConversationId = convId;
+  groupCallMode = true;
+  groupCallMemberIds = targetIds.slice();
+  callConversationId = convId;
+  callOtherUserId = null;
+  callMediaPeerUserId = null;
+  callOtherAvatar = null;
+  callOtherLabel = groupLabel;
+  pendingGroupRingInfo = null;
+  pendingGroupRingAutoJoin = null;
+  groupCallOfferTargetUserId = null;
+  setGroupCallActiveMembers([meId], convId);
+  stageOpen = true;
+  stageLayoutMode = "grid";
+  setCallButtons("ringing");
+  setCallStatus(shouldJoinExisting ? "A entrar na chamada de grupo..." : "A iniciar chamada de grupo...", true);
+
+  try {
+    await promoteConversationToActiveCallRealtimeChannel(convId, {
+      phase: shouldJoinExisting ? "group-livekit-join-existing" : "group-livekit-start",
+      groupCall: true,
+      groupLiveKit: true,
+      mediaMode: "audio_only",
+    });
+  } catch (_) {}
+
+  if (!shouldJoinExisting) {
+    resetCallEventState();
+    rememberCallEventContext({
+      conversationId: convId,
+      peerUserId: null,
+      initiatorUserId: state.user.id,
+      startedAtMs: Date.now(),
+    });
+    tryLogCallStartEvent("ringing");
+    await sendGroupRingSignals(convId, targetIds, { manual: false });
+    playSfx("ring");
+  } else {
+    const sessionState = getCachedGroupDmCallState(convId) || await refreshGroupDmCallState(convId, { rerender: false });
+    const sessionTargets = normalizeUuidArray([
+      joinability.targetUserId,
+      ...(sessionState?.connectedUserIds || []),
+      ...getEffectiveGroupCallActiveUserIds(convId),
+    ]).filter((uid) => uid && uid !== meId);
+    if (sessionTargets.length) {
+      void sendGroupJoinRequestSignals(convId, sessionTargets).catch((e) => {
+        console.warn("group dm livekit join request signal failed", e);
+      });
+    }
+  }
+
+  try {
+    joinFailureStage = "token_request";
+    const joinPayload = await fetchGroupDmCallLiveKitJoinPayload(convId, { joinAttemptId });
+    if (normId(groupDmCallLiveKitConversationId || "") !== convId) {
+      groupDmCallLiveKitJoinInFlight = false;
+      return false;
+    }
+
+    controller = createServerVoiceLiveKitController({
+      conversationId: convId,
+      localUserId: meId,
+      roomName: joinPayload.roomName || "",
+      url: joinPayload.url || "",
+      token: joinPayload.token || "",
+      mediaMode: "audio_only",
+      controllerId,
+      joinAttemptId,
+      logger: () => {},
+      onSnapshot: (snapshot) => {
+        if (normId(serverVoiceTransportConversationId || "") !== convId) return;
+        if (serverVoiceTransportController !== controller) return;
+        setServerVoiceTransportSnapshot(convId, snapshot);
+        syncGroupDmCallLiveKitActiveMembersFromSnapshot(convId, snapshot);
+        refreshCallUI();
+      },
+      onError: (error) => {
+        if (normId(serverVoiceTransportConversationId || "") !== convId) return;
+        if (serverVoiceTransportController !== controller) return;
+        setServerVoiceTransportSnapshot(convId, controller.getSnapshot());
+        setCallStatus(String(error?.message || "Group call disconnected.").trim() || "Group call disconnected.", true);
+        refreshCallUI();
+      },
+      onRemoteAudioTrackSubscribed: ({ participant, publication, mediaTrack }) => {
+        if (normId(serverVoiceTransportConversationId || "") !== convId) return;
+        if (serverVoiceTransportController !== controller) return;
+        const uid = normId(participant?.identity || "");
+        if (!uid || !mediaTrack) return;
+        unsuppressGroupDmConnectedUser(convId, uid);
+        const identity = getGroupMemberIdentity(convId, uid);
+        addGroupCallActiveMember(uid, {
+          label: identity?.label || t("call.member", "member"),
+          avatar: identity?.avatar || null,
+        });
+        logGroupCallDebug("group_call.participant_joined", {
+          conversationId: convId || null,
+          currentUserId: meId || null,
+          participantUserId: uid || null,
+          trackSid: String(publication?.trackSid || "").trim() || null,
+        });
+        attachRemoteAudioTrack(mediaTrack, null, {
+          ownerUserId: uid,
+          source: "livekit",
+          trackSid: String(publication?.trackSid || "").trim() || null,
+          trackSource: String(publication?.source || mediaTrack?.source || "").trim(),
+        });
+        if (hasActiveGroupCallRemoteParticipant(convId)) clearGroupCallSoloTimeout();
+        scheduleGroupDmCallStateRefresh(convId, 60);
+      },
+      onRemoteAudioTrackUnsubscribed: ({ participant, mediaTrack }) => {
+        if (normId(serverVoiceTransportConversationId || "") !== convId) return;
+        if (serverVoiceTransportController !== controller) return;
+        const uid = normId(participant?.identity || "");
+        const trackId = normId(mediaTrack?.id || "");
+        if (trackId) removeRemoteAudioTrackEl(trackId, { reason: "group_dm_livekit_remote_unsubscribed" });
+        if (uid) {
+          logGroupCallDebug("group_call.participant_left", {
+            conversationId: convId || null,
+            currentUserId: meId || null,
+            participantUserId: uid || null,
+            trackId: trackId || null,
+          });
+        }
+        if (uid) scheduleGroupDmCallStateRefresh(convId, 80);
+      },
+    });
+
+    bindServerVoiceScreenshareLayer(convId, controller);
+    bindServerVoiceCameraLayer(convId, controller);
+    serverVoiceTransportController = controller;
+    serverVoiceTransportConversationId = convId;
+    setServerVoiceTransportSnapshot(convId, controller.getSnapshot());
+    syncGroupDmCallLiveKitActiveMembersFromSnapshot(convId, controller.getSnapshot());
+    refreshCallUI();
+
+    joinFailureStage = "room_connect";
+    await controller.connect();
+    if (normId(groupDmCallLiveKitConversationId || "") !== convId || serverVoiceTransportController !== controller) {
+      try {
+        await controller.disconnect({ reason: "group_dm_stale_join_after_connect" });
+      } catch (_) {}
+      groupDmCallLiveKitJoinInFlight = false;
+      return false;
+    }
+    setServerVoiceTransportSnapshot(convId, controller.getSnapshot());
+    syncGroupDmCallLiveKitActiveMembersFromSnapshot(convId, controller.getSnapshot());
+    logGroupCallDebug("group_call.room_connected", {
+      conversationId: convId || null,
+      currentUserId: meId || null,
+      roomName: String(joinPayload?.roomName || "").trim() || null,
+      joinAttemptId: String(joinAttemptId || "").trim() || null,
+    });
+
+    joinFailureStage = "local_track_create";
+    setCallStatus("A preparar microfone...", true);
+    refreshCallUI();
+    const stream = await getLocalAudioStream();
+    const micTrack = getBestLocalMicTrack() || stream?.getAudioTracks?.()[0] || null;
+    if (!micTrack) throw new Error("Microphone unavailable.");
+    localMicTrack = micTrack;
+    try { localMicTrack.contentHint = "speech"; } catch (_) {}
+    registerCallSpeakingMeter(localMicTrack, meId, { local: true });
+    localMicTrack.enabled = !micMuted;
+    applyMicMute();
+
+    joinFailureStage = "local_track_publish";
+    await controller.publishMicrophone(localMicTrack, {
+      micMuted: !!micMuted,
+      deafened: !!deafened,
+      inputDeviceId: String(voiceInputDeviceId || "").trim() || "default",
+      outputDeviceId: String(voiceOutputDeviceId || "").trim() || "default",
+    });
+    if (normId(groupDmCallLiveKitConversationId || "") !== convId || serverVoiceTransportController !== controller) {
+      try {
+        await controller.disconnect({ reason: "group_dm_stale_join_after_publish" });
+      } catch (_) {}
+      groupDmCallLiveKitJoinInFlight = false;
+      return false;
+    }
+
+    setServerVoiceTransportSnapshot(convId, controller.getSnapshot());
+    syncGroupDmCallLiveKitActiveMembersFromSnapshot(convId, controller.getSnapshot());
+    updateActiveServerVoiceTransportLocalControls(convId);
+    inCall = true;
+    groupDmCallLiveKitJoinInFlight = false;
+    callEventConnectedAtMs = Date.now();
+    if (!callEventStartLogged) tryLogCallStartEvent("in_call");
+    setCallParticipantAudioState(convId, meId, {
+      micMuted: !!micMuted,
+      deafened: !!deafened,
+      seenAt: Date.now(),
+    });
+    stopSfx("ring");
+    stopSfx("incoming");
+    playUiCue("call_join");
+    setCallButtons("inCall");
+    setCallStatus("Connected to group call.", true);
+    startGroupCallPresenceHeartbeat();
+    await touchGroupDmCallParticipant(convId);
+    await sendGroupCallPresenceSignal(convId, "group_presence_join");
+    scheduleGroupPresenceJoinRetries(convId);
+    armGroupCallSoloTimeout();
+    void refreshGroupDmCallState(convId, { rerender: true });
+    refreshCallUI();
+    return true;
+  } catch (error) {
+    groupDmCallLiveKitJoinInFlight = false;
+    console.warn("group dm livekit join failed", error);
+    if (String(joinFailureStage || "").trim().toLowerCase() === "token_request") {
+      const diag = error?.groupDmTokenRequestDiagnostics || {};
+      logGroupCallDebug("group_call.token_request_failed", {
+        conversationId: convId || null,
+        currentUserId: meId || null,
+        callKind: "group_dm",
+        endpointUrl: String(diag?.endpointUrl || "").trim() || buildGroupCallTokenRequestUrl(),
+        requestPayload: diag?.requestPayload && typeof diag.requestPayload === "object"
+          ? diag.requestPayload
+          : { conversationId: convId, callKind: "group_dm", callScope: "group_dm", callType: "group_dm" },
+        status: normalizePrivateCallResponseStatus(diag?.responseStatus ?? error?.responseStatus ?? error?.status ?? null),
+        body: normalizePrivateCallResponseBody(diag?.responseBody ?? error?.responseBody ?? error?.details ?? null),
+        errorMessage: String(error?.message || "").trim() || null,
+      }, { level: "warn" });
+    }
+    if (error?.groupDmJoinDeniedFull) {
+      setCallStatus(GROUP_DM_CALL_FULL_STATUS_TEXT, true);
+    }
+    if (useSessionBackend) {
+      try { await leaveGroupDmCallSession(convId); } catch (_) {}
+    }
+    if (!shouldJoinExisting && targetIds.length) {
+      try { await sendGroupRingCancelSignals(convId, targetIds); } catch (_) {}
+    }
+    await stopMinimalServerVoiceSession({
+      conversationId: convId,
+      reason: `group_dm_join_failed.${joinFailureStage}`,
+      controller,
+      clearStatus: false,
+      teardownRealtime: true,
+    });
+    clearGroupDmCallLiveKitState(convId);
+    setCallButtons("idle");
+    if (!error?.groupDmJoinDeniedFull) {
+      if (String(joinFailureStage || "").trim().toLowerCase() === "token_request") {
+        setCallStatus("Failed to join group call. Token request failed.", true);
+      } else {
+      setCallStatus(`Falhou ao entrar na chamada de grupo (${joinFailureStage}).`, true);
+      }
+    }
+    refreshCallUI();
+    return false;
   }
 }
 
@@ -82067,6 +82948,10 @@ async function startGroupCall(conversationId, { joinExistingOnly = false } = {})
     await startServerVoiceLiveKitCall(convId, { joinExistingOnly });
     return;
   }
+  if (!isServerVoiceCall && shouldRouteGroupDmCallViaLiveKit(convId)) {
+    await startGroupDmLiveKitCall(convId, { joinExistingOnly, triggerReason: "start_group_call" });
+    return;
+  }
   const useSessionBackend = shouldUseGroupCallSessionBackendForConversation(convId);
 
   const existingCallConv = normId(callConversationId || "");
@@ -82419,6 +83304,32 @@ async function acceptPendingGroupRing() {
     await refreshGroupDmCallState(convId, { rerender: true });
     refreshCallUI();
     return false;
+  }
+
+  if (shouldRouteGroupDmCallViaLiveKit(convId)) {
+    pendingGroupRingInfo = null;
+    pendingGroupRingAutoJoin = null;
+    stopSfx("incoming");
+    clearTimers();
+    showOverlay(false);
+    await sendCallSignal("ice", {
+      signal: "group_ring_accept",
+      group_call: true,
+      transport: "livekit",
+      from_label: state.me?.display_name || state.me?.username || t("call.someone", "someone"),
+      from_avatar: state.me?.avatar_url || null,
+      join_existing_call: true,
+    }, fromUserId, convId);
+    if (normId(activeDmId || "") !== convId) {
+      await openConversationById(convId, {
+        kind: "group",
+        isGroup: true,
+      });
+    }
+    return await startGroupDmLiveKitCall(convId, {
+      joinExistingOnly: true,
+      triggerReason: "incoming_group_ring_accept",
+    });
   }
 
   pendingGroupRingInfo = null;
@@ -84377,9 +85288,14 @@ async function onCallSignal(sig) {
       await sendCallSignal("ice", {
         signal: "group_join_accept",
         group_call: true,
+        transport: shouldRouteGroupDmCallViaLiveKit(convId) ? "livekit" : undefined,
         from_label: state.me?.display_name || state.me?.username || t("call.someone", "someone"),
         from_avatar: state.me?.avatar_url || null,
       }, fromUserId, convId);
+      if (shouldRouteGroupDmCallViaLiveKit(convId)) {
+        refreshCallUI();
+        return;
+      }
       if (localCallContextActive && getCurrentBroadcastVideoTrack()) {
         void syncRelayVideoBroadcastTargets(convId);
         setTimeout(() => {
@@ -84401,6 +85317,10 @@ async function onCallSignal(sig) {
       scheduleGroupDmCallStateRefresh(convId, 60);
       ensureSelfInGroupCallActiveMembers();
       addGroupCallActiveMember(fromUserId, { label: fromLabel, avatar: fromAvatar });
+      if (shouldRouteGroupDmCallViaLiveKit(convId)) {
+        refreshCallUI();
+        return;
+      }
       const activeOfferTargetId = normId(groupCallOfferTargetUserId || "");
       if (activeOfferTargetId && activeOfferTargetId === fromUserId) return;
       if (activeOfferTargetId && activeOfferTargetId !== fromUserId) {
@@ -84510,6 +85430,7 @@ async function onCallSignal(sig) {
           await sendCallSignal("ice", {
             signal: "group_ring_accept",
             group_call: true,
+            transport: shouldRouteGroupDmCallViaLiveKit(convId) ? "livekit" : undefined,
             from_label: state.me?.display_name || state.me?.username || t("call.someone", "someone"),
             from_avatar: state.me?.avatar_url || null,
             join_existing_call: true,
@@ -84623,6 +85544,10 @@ async function onCallSignal(sig) {
       scheduleGroupDmCallStateRefresh(convId, 60);
       ensureSelfInGroupCallActiveMembers();
       addGroupCallActiveMember(fromUserId, { label: fromLabel, avatar: fromAvatar });
+      if (shouldRouteGroupDmCallViaLiveKit(convId)) {
+        refreshCallUI();
+        return;
+      }
       const activeOfferTargetId = normId(groupCallOfferTargetUserId || "");
       if (activeOfferTargetId && activeOfferTargetId === fromUserId) return;
       if (activeOfferTargetId && activeOfferTargetId !== fromUserId) {
@@ -85616,6 +86541,7 @@ async function onGlobalConversationMembershipInserted(row) {
   if (!row || !state.user?.id) return;
   const convId = normId(row.conversation_id);
   if (!convId) return;
+  clearDmMessageConversationAccessCache(convId);
   serverConversationMemberIdsByConversationId.delete(convId);
 
   const activeServerCtx = getActiveServerContext();
@@ -85670,6 +86596,7 @@ async function onGlobalConversationMembershipDeleted(row) {
   if (!row || !state.user?.id) return;
   const convId = normId(row.conversation_id);
   if (!convId) return;
+  clearDmMessageConversationAccessCache(convId);
   serverConversationMemberIdsByConversationId.delete(convId);
 
   const activeServerCtx = getActiveServerContext();
@@ -86725,6 +87652,119 @@ async function getConversationKindForNotificationRouting(conversationId) {
   return "";
 }
 
+function clearDmMessageConversationAccessCache(conversationId = null) {
+  const convId = normId(conversationId || "");
+  if (!convId) {
+    dmMessageConversationAccessCacheByConversation.clear();
+    dmMessageConversationAccessLookupInFlightByConversation.clear();
+    return;
+  }
+  dmMessageConversationAccessCacheByConversation.delete(convId);
+  dmMessageConversationAccessLookupInFlightByConversation.delete(convId);
+}
+
+function hasLocalDmMessageConversationAccessHint(conversationId) {
+  const convId = normId(conversationId || "");
+  const meId = normId(state.user?.id || "");
+  if (!convId || !meId) return false;
+
+  if (normId(activeDmId || state.activeDm?.conversationId || "") === convId) return true;
+  if ((state.dmContacts || []).some((row) => normId(row?.conversation_id || row?.conversationId || "") === convId)) return true;
+  if ((state.groupDms || []).some((row) => normId(row?.conversationId || "") === convId)) return true;
+
+  const meta = getConversationMeta(convId) || {};
+  const metaMemberIds = normalizeUuidArray(meta?.memberIds);
+  if (metaMemberIds.includes(meId)) return true;
+
+  const serverCtx = findServerChannelContextByConversationId(convId);
+  const serverId = normId(serverCtx?.serverId || meta?.serverId || "");
+  if (!serverId) return false;
+  const serverMembers = Array.isArray(serverMemberListByServerId.get(serverId))
+    ? (serverMemberListByServerId.get(serverId) || [])
+    : [];
+  return serverMembers.some((row) => normId(row?.userId || row?.id || "") === meId);
+}
+
+async function canCurrentUserAccessMessageConversation(conversationId, { force = false } = {}) {
+  const convId = normId(conversationId || "");
+  const meId = normId(state.user?.id || "");
+  if (!convId || !meId) return false;
+
+  if (hasLocalDmMessageConversationAccessHint(convId)) {
+    dmMessageConversationAccessCacheByConversation.set(convId, {
+      allowed: true,
+      checkedAt: Date.now(),
+    });
+    return true;
+  }
+
+  if (!force) {
+    const cached = dmMessageConversationAccessCacheByConversation.get(convId) || null;
+    if (cached) {
+      const age = Date.now() - Number(cached.checkedAt || 0);
+      if (age >= 0 && age <= DM_MESSAGE_CONVERSATION_ACCESS_CACHE_MS) {
+        return !!cached.allowed;
+      }
+    }
+  }
+
+  const inFlight = dmMessageConversationAccessLookupInFlightByConversation.get(convId);
+  if (inFlight) return inFlight;
+
+  const lookupPromise = (async () => {
+    let allowed = false;
+
+    try {
+      const { data: membershipRow, error: membershipError } = await supabase
+        .from("conversation_members")
+        .select("user_id")
+        .eq("conversation_id", convId)
+        .eq("user_id", meId)
+        .maybeSingle();
+
+      if (!membershipError && normId(membershipRow?.user_id || "") === meId) {
+        allowed = true;
+      }
+
+      if (!allowed) {
+        const { data: serverChannelRow, error: serverChannelError } = await supabase
+          .from("server_channels")
+          .select("server_id")
+          .eq("conversation_id", convId)
+          .maybeSingle();
+
+        const serverId = serverChannelError ? "" : normId(serverChannelRow?.server_id || "");
+        if (serverId) {
+          const { data: serverMemberRow, error: serverMemberError } = await supabase
+            .from("server_members")
+            .select("user_id")
+            .eq("server_id", serverId)
+            .eq("user_id", meId)
+            .maybeSingle();
+          if (!serverMemberError && normId(serverMemberRow?.user_id || "") === meId) {
+            allowed = true;
+          }
+        }
+      }
+    } catch (_) {
+      allowed = false;
+    }
+
+    dmMessageConversationAccessCacheByConversation.set(convId, {
+      allowed: !!allowed,
+      checkedAt: Date.now(),
+    });
+    return !!allowed;
+  })();
+
+  dmMessageConversationAccessLookupInFlightByConversation.set(convId, lookupPromise);
+  try {
+    return await lookupPromise;
+  } finally {
+    dmMessageConversationAccessLookupInFlightByConversation.delete(convId);
+  }
+}
+
 function cacheResolvedConversationPeerUserId(conversationId, userId = "") {
   const convId = normId(conversationId || "");
   const uid = normId(userId || "");
@@ -87067,6 +88107,10 @@ async function onGlobalDmMessageInserted(row) {
 
   const convId = normId(row.conversation_id);
   if (!convId) return;
+  const hasConversationAccess = await canCurrentUserAccessMessageConversation(convId);
+  if (!hasConversationAccess) {
+    return;
+  }
   const myId = normId(state.user.id);
   const fromId = normId(row.user_id);
   if (fromId && fromId === myId) {
@@ -87141,6 +88185,7 @@ async function onGlobalDmMessageInserted(row) {
 
 function startGlobalDmMessageListener() {
   if (!state.user?.id) return;
+  clearDmMessageConversationAccessCache();
   if (globalDmMessageRestartTimer) {
     clearTimeout(globalDmMessageRestartTimer);
     globalDmMessageRestartTimer = null;
@@ -88746,6 +89791,10 @@ function bindCallUIButtons() {
   });
 
   document.addEventListener("fullscreenchange", refreshCallUI);
+  window.addEventListener("resize", () => {
+    syncCallStageGridLayoutAttrs();
+    syncCallFocusStageLayoutAttrs();
+  });
 
   dmStageResizeGrip?.addEventListener("pointerdown", (ev) => {
     if (!ev.isPrimary) return;
@@ -90132,6 +91181,32 @@ function updatePresenceRender() {
   const searchInputEl = document.getElementById("searchInput");
   const dmMain = document.getElementById("dmMain");
   const dmVisible = !!dmMain && dmMain.style.display !== "none";
+  const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
+  const activeCallConversationId = normId(callConversationId || "");
+  const callPcActive = !!(
+    callPc
+    && callPc.connectionState !== "closed"
+    && callPc.connectionState !== "failed"
+  );
+  const activeServerVoiceTransport = !!(
+    activeConversationId
+    && isServerVoiceTransportSessionActive(activeConversationId)
+  );
+  const shouldHideActiveNowInCall = !!(
+    activeConversationId
+    && (
+      activeServerVoiceTransport
+      || (
+        activeCallConversationId === activeConversationId
+        && (
+          inCall
+          || groupCallMode
+          || groupDmCallLiveKitJoinInFlight
+          || callPcActive
+        )
+      )
+    )
+  );
   const serverCtx = dmVisible ? getActiveServerContext() : null;
 
   if (serverCtx) {
@@ -90167,13 +91242,23 @@ function updatePresenceRender() {
 
   if (!activeNowEl && !offlineListEl && !dmListEl) return;
 
+  if (activeNowEl) {
+    if (shouldHideActiveNowInCall) {
+      activeNowEl.innerHTML = "";
+      activeNowEl.style.display = "none";
+      if (onlineCountEl) onlineCountEl.textContent = "0";
+    } else {
+      activeNowEl.style.display = "";
+    }
+  }
+
   renderPresenceUI({
     list: presenceList,
     me: getMePresencePayload(),
     friends: state.friends || [],
     dmListEl,
     offlineListEl: null,
-    activeNowEl,
+    activeNowEl: shouldHideActiveNowInCall ? null : activeNowEl,
     onlineCountEl,
     searchValue: searchInputEl?.value || "",
     onUserClick: async (u) => {
@@ -90185,7 +91270,6 @@ function updatePresenceRender() {
   });
 
   const usersInActiveCall = new Set();
-  const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
   if (activeConversationId) {
     if (isServerVoiceConversationById(activeConversationId)) {
       getServerVoiceChannelOccupantIds(activeConversationId, {
@@ -90204,7 +91288,7 @@ function updatePresenceRender() {
   }
 
   // Enforce: Active Now only shows online/idle/dnd entries.
-  if (activeNowEl) {
+  if (activeNowEl && !shouldHideActiveNowInCall) {
     const rows = Array.from(activeNowEl.querySelectorAll(".presenceRow"));
     rows.forEach((row) => {
       const rowUserId = normId(row.getAttribute("data-presence-user") || "");

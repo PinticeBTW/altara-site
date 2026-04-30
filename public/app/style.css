@@ -11410,7 +11410,24 @@ input[type="range"] {
   overflow: hidden;
   background: #070b11;
   min-height: 0;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: auto;
+  container-type: size;
+}
+
+.callStageViewport:fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  margin: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  aspect-ratio: auto !important;
+  border-radius: 0 !important;
+}
+
+.callStageViewport:fullscreen::backdrop {
+  background: #000;
 }
 
 .serverVoiceScreensharePanel {
@@ -11649,48 +11666,49 @@ input[type="range"] {
 .callStageGrid {
   position: absolute;
   inset: 0;
-  padding: 10px;
+  padding: 8px 8px 70px;
   --call-grid-gap: 10px;
+  --discord-call-tile-width: var(--call-grid-tile-width, clamp(340px, 42cqw, 560px));
+  --discord-call-tile-width-one: var(--call-grid-tile-width, clamp(440px, 62cqw, 780px));
   display: none;
-  grid-template-columns: repeat(var(--call-grid-cols, 2), minmax(0, 1fr));
-  grid-auto-rows: auto;
+  flex-wrap: wrap;
   gap: var(--call-grid-gap);
+  justify-content: center;
   align-content: center;
-  align-items: start;
-  justify-items: stretch;
+  align-items: center;
   overflow: hidden;
   z-index: 2;
 }
 
-/* Keep 2-person layout rectangular (Discord-like), never square-stretched. */
+/* Keep voice/avatar tiles in Discord-like 16:9 cards; screenshare keeps its own media ratio. */
 .callStageGrid[data-tile-count="2"] {
   grid-auto-rows: auto;
   align-content: center;
 }
 
 .callStageGrid[data-tile-count="2"] .stageGridTile {
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--call-stage-primary-aspect-ratio, 16 / 9);
   height: auto;
-  align-self: start;
+  align-self: center;
 }
 
 .callStageGrid[data-odd-last="1"] .stageGridTile:last-child {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 
 .callStageGrid[data-last-fill="1"] .stageGridTile:last-child {
-  grid-column: 1 / -1;
-  width: calc((100% - var(--call-grid-gap)) / 2);
+  grid-column: auto;
+  width: min(100%, var(--discord-call-tile-width));
   max-width: 100%;
   justify-self: center;
 }
 
 .callStageGrid[data-last-fill="2"] .stageGridTile:last-child {
-  grid-column: 2 / -1;
+  grid-column: auto;
 }
 
 .callStage.layout-grid .callStageGrid {
-  display: grid;
+  display: flex;
 }
 
 .callStage.is-solo-group #gridRemote,
@@ -11714,7 +11732,9 @@ input[type="range"] {
 }
 
 .callStage.layout-grid .callStageViewport {
-  background: #000;
+  background:
+    radial-gradient(700px 360px at 50% 0%, var(--call-tile-bg-glow, rgba(255, 255, 255, 0.045)), transparent 68%),
+    linear-gradient(180deg, var(--call-tile-bg-start, #1f232b), var(--call-tile-bg-end, #0f1114));
 }
 
 .stageGridTile {
@@ -11738,6 +11758,20 @@ input[type="range"] {
   min-height: 0;
   isolation: isolate;
   contain: layout paint;
+}
+
+.callStageGrid .stageGridTile {
+  flex: 0 1 var(--discord-call-tile-width);
+  width: min(100%, var(--discord-call-tile-width));
+  max-width: var(--discord-call-tile-width);
+  align-self: center;
+  justify-self: center;
+}
+
+.callStageGrid[data-tile-count="1"] .stageGridTile {
+  flex-basis: var(--discord-call-tile-width-one);
+  width: min(100%, var(--discord-call-tile-width-one));
+  max-width: var(--discord-call-tile-width-one);
 }
 
 .stageGridTile:hover {
@@ -11917,6 +11951,30 @@ input[type="range"] {
 .callStage.focus-member.has-video-remote .callVideo.is-on {
   opacity: 1;
   pointer-events: auto;
+}
+
+.callStage:not(.layout-grid) .callVideo,
+.callStage:not(.layout-grid) .callLocalPreview,
+.callStage:not(.layout-grid) .callStagePlaceholder {
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: min(calc(100% - 16px), var(--call-focus-tile-width, 900px));
+  height: auto;
+  aspect-ratio: var(--call-stage-primary-aspect-ratio, 16 / 9);
+  border-radius: 18px;
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+}
+
+.callStage.is-private-call-ui:not(.layout-grid) .callVideo,
+.callStage.is-private-call-ui:not(.layout-grid) .callLocalPreview,
+.callStage.is-private-call-ui:not(.layout-grid) .callStagePlaceholder {
+  top: calc((100% - 82px) / 2);
+}
+
+.callStage:not(.layout-grid).is-watch-gated .callVideo.is-on {
+  transform: translate(-50%, -50%) scale(1.02);
 }
 
 .callLocalPreview {
@@ -15952,6 +16010,10 @@ body::after {
   background: linear-gradient(160deg, rgba(105, 174, 255, 0.24), rgba(6, 13, 20, 0.68));
 }
 
+.profileAvatarMediaClip.is-error .profileAvatarMedia {
+  display: none !important;
+}
+
 .profileAvatarMediaClip.is-error::after {
   content: attr(data-avatar-fallback);
   position: absolute;
@@ -17617,10 +17679,11 @@ select:focus {
   min-height: 0;
   width: calc(100% - 20px);
   height: auto;
+  max-width: none;
   max-height: 100%;
-  aspect-ratio: 16 / 9;
-  align-self: center;
-  justify-self: center;
+  aspect-ratio: auto;
+  align-self: stretch;
+  justify-self: stretch;
 }
 
 .callStage.is-docked-in-dm .callStageParticipants {
@@ -18495,13 +18558,11 @@ body.theme-density-comfortable .padded {
 
 .callStageViewport {
   margin: 0 12px 12px;
-  border-color: rgba(255, 255, 255, 0.08);
-  background: #0f1114 !important;
+  border-color: transparent;
+  background: transparent !important;
   isolation: isolate;
   contain: layout paint;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(0, 0, 0, 0.32);
+  box-shadow: none;
 }
 
 .callStageGrid[hidden] {
@@ -19637,8 +19698,8 @@ body.desktop-titlebar-overlay .midNavBtn__icon {
 }
 
 #dmMain.is-server-voice-call-layout .callStage.is-docked-in-dm .callStageViewport {
-  background: #05070c !important;
-  border-color: rgba(230, 236, 245, 0.12) !important;
+  background: transparent !important;
+  border-color: transparent !important;
   margin-top: 0 !important;
 }
 
@@ -19650,13 +19711,13 @@ body.desktop-titlebar-overlay .midNavBtn__icon {
     0 0 26px rgba(95, 255, 172, 0.18) !important;
 }
 
-/* With exactly 2 participants, match viewport ratio to two 16:9 tiles side-by-side (grid mode only). */
+/* Voice/avatar stage keeps Discord-like 16:9 cards; the viewport itself can use all available space. */
 #dmMain.is-server-voice-call-layout .callStage.is-docked-in-dm.layout-grid .callStageViewport[data-stage-tile-count="2"] {
-  aspect-ratio: 32 / 9 !important;
+  aspect-ratio: auto !important;
 }
 
 #dmMain.is-server-voice-call-layout .callStage.is-docked-in-dm .callStageGrid {
-  padding: 2px !important;
+  padding: 8px 8px 70px !important;
 }
 
 #dmMain.is-server-voice-call-layout .callStage.is-docked-in-dm .stageGridTile {
@@ -21091,24 +21152,35 @@ body.authPage.auth-install-welcome-open {
   grid-row: 2;
   margin: 0 14px;
   width: calc(100% - 28px);
-  height: auto;
+  height: 100%;
+  max-width: none;
   min-height: 0;
-  max-height: none;
+  max-height: 100%;
   align-self: stretch;
   justify-self: stretch;
   aspect-ratio: auto;
   border-radius: 24px;
-  border: 1px solid rgba(242, 243, 245, 0.08);
-  background: var(--private-call-bg) !important;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
-    0 16px 42px rgba(0, 0, 0, 0.34);
+  border: 0;
+  background: transparent !important;
+  box-shadow: none;
 }
 
 .callStage.is-private-call-ui.is-docked-in-dm .callStageViewport {
   margin: 0 12px;
   width: calc(100% - 24px);
+  max-width: none;
   border-radius: 22px;
+}
+
+.callStage.is-docked-in-dm .callStageViewport:fullscreen,
+.callStage.is-private-call-ui .callStageViewport:fullscreen {
+  margin: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  aspect-ratio: auto !important;
+  border-radius: 0 !important;
 }
 
 .callStage.is-private-call-ui .callStagePlaceholder {
@@ -21119,7 +21191,8 @@ body.authPage.auth-install-welcome-open {
   gap: 14px;
   padding: 28px;
   background:
-    linear-gradient(180deg, rgba(35, 37, 44, 0.98), rgba(18, 19, 24, 0.98));
+    radial-gradient(640px 320px at 50% 0%, var(--call-tile-bg-glow, rgba(255, 255, 255, 0.045)), transparent 68%),
+    linear-gradient(180deg, var(--call-tile-bg-start, var(--private-call-tile)), var(--call-tile-bg-end, var(--private-call-bg)));
 }
 
 .callStage.is-private-call-ui .callStagePlaceholder > #callStageAvatar,
@@ -21148,15 +21221,47 @@ body.authPage.auth-install-welcome-open {
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
 }
 
+.callStage.is-private-call-ui:not(.layout-grid) .callStagePlaceholder {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0;
+  padding: 0;
+}
+
+.callStage.is-private-call-ui:not(.layout-grid) .callStagePlaceholder > #callStageAvatar,
+.callStage.is-private-call-ui:not(.layout-grid) .callStagePlaceholder > #callStageAvatar.avatarBig {
+  width: clamp(84px, 16%, 136px);
+  height: clamp(84px, 16%, 136px);
+  min-width: 84px;
+  min-height: 84px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+.callStage.is-private-call-ui:not(.layout-grid) .callStageLabel {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  max-width: calc(100% - 28px);
+  padding: 4px 8px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.42);
+  color: #eef2ff;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  text-shadow: none;
+}
+
 .callStage.is-private-call-ui .callStageGrid {
-  padding: 12px;
-  --call-grid-gap: 12px;
+  padding: 8px 8px 76px;
+  --call-grid-gap: 10px;
   align-content: center;
   align-items: center;
 }
 
 .callStage.is-private-call-ui .callStageGrid[data-tile-count="2"] {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-content: center;
 }
 
 .callStage.is-private-call-ui .stageGridTile,
@@ -21404,11 +21509,12 @@ body:has(.callStage.is-private-call-ui.is-open:not([hidden])) .callBar.is-privat
   .callStage.is-private-call-ui.is-docked-in-dm .callStageViewport {
     margin: 0 8px;
     width: calc(100% - 16px);
+    max-width: none;
     border-radius: 18px;
   }
 
   .callStage.is-private-call-ui .callStageGrid[data-tile-count="2"] {
-    grid-template-columns: 1fr;
+    --discord-call-tile-width: min(100%, 380px);
   }
 
   .callStage.is-private-call-ui .callStageControls {
