@@ -6713,29 +6713,69 @@ function syncRightSidebarForCall(callActive) {
   setRightSidebarCollapsed(restoreCollapsed, { persist: false });
 }
 
+function syncCallStageLayoutState(stageOpen = false) {
+  const shell = getSidebarShellEl();
+  const active = !!stageOpen;
+  if (shell) {
+    shell.setAttribute("data-call-stage-open", active ? "true" : "false");
+  }
+  document.body?.setAttribute?.("data-call-stage-open", active ? "true" : "false");
+}
+
 function syncActiveNowPanelForCall(active = false) {
-  if (!active) return;
+  const activeNowVisible = !active;
   const activeNowEl = document.getElementById("activeNow");
   const offlineListEl = document.getElementById("offlineList");
   const onlineCountEl = document.getElementById("onlineCount");
   const labels = Array.from(document.querySelectorAll(".rightBody .rightSectionLabel"));
+  const prevDisplayAttr = "data-call-stage-prev-display";
+  const prevAriaAttr = "data-call-stage-prev-aria-hidden";
+  const toggleHiddenState = (el, hidden, { withAria = false } = {}) => {
+    if (!el) return;
+    if (hidden) {
+      if (!el.hasAttribute(prevDisplayAttr)) {
+        el.setAttribute(prevDisplayAttr, String(el.style.display || ""));
+      }
+      if (withAria && !el.hasAttribute(prevAriaAttr)) {
+        el.setAttribute(
+          prevAriaAttr,
+          el.hasAttribute("aria-hidden") ? String(el.getAttribute("aria-hidden") || "") : "__missing__"
+        );
+      }
+      el.style.display = "none";
+      if (withAria) el.setAttribute("aria-hidden", "true");
+      return;
+    }
+    if (el.hasAttribute(prevDisplayAttr)) {
+      const prevDisplay = String(el.getAttribute(prevDisplayAttr) || "");
+      el.style.display = prevDisplay;
+      el.removeAttribute(prevDisplayAttr);
+    } else {
+      el.style.display = "";
+    }
+    if (!withAria) return;
+    if (el.hasAttribute(prevAriaAttr)) {
+      const prevAria = String(el.getAttribute(prevAriaAttr) || "__missing__");
+      if (prevAria === "__missing__") el.removeAttribute("aria-hidden");
+      else el.setAttribute("aria-hidden", prevAria);
+      el.removeAttribute(prevAriaAttr);
+      return;
+    }
+    el.removeAttribute("aria-hidden");
+  };
 
-  if (activeNowEl) {
-    activeNowEl.innerHTML = "";
-    activeNowEl.style.display = "none";
-    activeNowEl.setAttribute("aria-hidden", "true");
-  }
-  if (offlineListEl) {
-    offlineListEl.innerHTML = "";
-    offlineListEl.style.display = "none";
-    offlineListEl.setAttribute("aria-hidden", "true");
-  }
+  if (activeNowEl && !activeNowVisible) activeNowEl.innerHTML = "";
+  toggleHiddenState(activeNowEl, !activeNowVisible, { withAria: true });
+
+  if (offlineListEl && !activeNowVisible) offlineListEl.innerHTML = "";
+  toggleHiddenState(offlineListEl, !activeNowVisible, { withAria: true });
+
   if (onlineCountEl) {
-    onlineCountEl.textContent = "0";
-    onlineCountEl.style.display = "none";
+    if (!activeNowVisible) onlineCountEl.textContent = "0";
+    toggleHiddenState(onlineCountEl, !activeNowVisible);
   }
   labels.forEach((el) => {
-    el.style.display = "none";
+    toggleHiddenState(el, !activeNowVisible);
   });
 }
 
@@ -79404,7 +79444,9 @@ function refreshCallUI() {
   const publicGroupStageActive = !!(isGroupCallUi && !callActive && hasRemoteActivePresence);
   const publicGroupPreviewOnly = !!publicGroupStageActive;
   const callUiVisible = canRenderCallUiInCurrentView && (callActive || publicGroupStageActive);
-  syncActiveNowPanelForCall(callActive || publicGroupStageActive);
+  const callStageLayoutOpen = !!(callUiVisible && (stageOpen || callActive || publicGroupStageActive));
+  syncCallStageLayoutState(callStageLayoutOpen);
+  syncActiveNowPanelForCall(callStageLayoutOpen);
   const rawPrimaryGroupRemote = isGroupCallUi
     ? resolveGroupCallPrimaryRemoteMember(stageConvId)
     : null;
