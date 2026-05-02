@@ -7881,22 +7881,10 @@ function scheduleRightSidebarOverlayClose(delay = 170) {
 function refreshRightSidebarOverlayState() {
   const shell = getSidebarShellEl();
   if (!shell) return;
-  if (shell.classList.contains("right-no-peek")) {
-    clearRightSidebarOverlayCloseTimer();
-    shell.classList.remove("right-overlay-open");
-    return;
-  }
-  if (!shell.classList.contains("right-collapsed")) {
-    clearRightSidebarOverlayCloseTimer();
-    shell.classList.remove("right-overlay-open");
-    return;
-  }
-  if (rightSidebarPeekHover || rightSidebarPanelHover) {
-    clearRightSidebarOverlayCloseTimer();
-    shell.classList.add("right-overlay-open");
-    return;
-  }
-  scheduleRightSidebarOverlayClose(170);
+  rightSidebarPeekHover = false;
+  rightSidebarPanelHover = false;
+  clearRightSidebarOverlayCloseTimer();
+  shell.classList.remove("right-overlay-open");
 }
 
 function setRightSidebarCollapsed(next, { persist = true } = {}) {
@@ -7904,14 +7892,10 @@ function setRightSidebarCollapsed(next, { persist = true } = {}) {
   if (!shell) return;
   const collapsed = !!next;
   shell.classList.toggle("right-collapsed", collapsed);
-  if (!collapsed) {
-    rightSidebarPeekHover = false;
-    rightSidebarPanelHover = false;
-    clearRightSidebarOverlayCloseTimer();
-    shell.classList.remove("right-overlay-open");
-  } else {
-    refreshRightSidebarOverlayState();
-  }
+  rightSidebarPeekHover = false;
+  rightSidebarPanelHover = false;
+  clearRightSidebarOverlayCloseTimer();
+  shell.classList.remove("right-overlay-open");
 
   const handle = document.getElementById("rightSidebarResizer");
   if (handle) {
@@ -7919,7 +7903,7 @@ function setRightSidebarCollapsed(next, { persist = true } = {}) {
     handle.tabIndex = collapsed ? -1 : 0;
   }
   const peek = document.getElementById("rightSidebarPeekZone");
-  if (peek) peek.setAttribute("aria-hidden", collapsed ? "false" : "true");
+  if (peek) peek.setAttribute("aria-hidden", "true");
 
   if (persist) writeRightSidebarCollapsedPreference(collapsed);
 
@@ -7937,34 +7921,13 @@ function setRightSidebarCollapsed(next, { persist = true } = {}) {
 function bindRightSidebarOverlayOnce() {
   if (rightSidebarOverlayBound) return;
   const shell = getSidebarShellEl();
-  const sidebar = document.querySelector(".panel.right");
-  const peek = document.getElementById("rightSidebarPeekZone");
-  if (!shell || !sidebar || !peek) return;
+  if (!shell) return;
   rightSidebarOverlayBound = true;
-
-  peek.addEventListener("mouseenter", () => {
-    rightSidebarPeekHover = true;
-    refreshRightSidebarOverlayState();
-  });
-  peek.addEventListener("mouseleave", () => {
-    rightSidebarPeekHover = false;
-    refreshRightSidebarOverlayState();
-  });
-
-  sidebar.addEventListener("mouseenter", () => {
-    rightSidebarPanelHover = true;
-    refreshRightSidebarOverlayState();
-  });
-  sidebar.addEventListener("mouseleave", () => {
-    rightSidebarPanelHover = false;
-    refreshRightSidebarOverlayState();
-  });
 
   document.addEventListener("pointerdown", (e) => {
     if (!isRightSidebarCollapsed()) return;
     const t = eventTargetElement(e);
     if (!t) return;
-    if (t.closest(".panel.right") || t.closest("#rightSidebarPeekZone")) return;
     rightSidebarPeekHover = false;
     rightSidebarPanelHover = false;
     clearRightSidebarOverlayCloseTimer();

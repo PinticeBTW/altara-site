@@ -423,11 +423,12 @@ body.is-resizing-sidebar * {
 }
 
 .right-collapsed .rightSidebarPeekZone {
-  display: block;
+  display: none;
+  pointer-events: none;
 }
 
 .right-collapsed .rightSidebarPeekZone:hover::before {
-  opacity: 0.9;
+  opacity: 0;
 }
 
 .right-no-peek.right-collapsed .rightSidebarPeekZone {
@@ -454,9 +455,9 @@ body.is-resizing-sidebar * {
 }
 
 .right-collapsed.right-overlay-open .panel.right {
-  transform: translateX(0);
-  opacity: 1;
-  pointer-events: auto;
+  transform: none;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .app.right-collapsed,
@@ -28647,4 +28648,58 @@ body.theme-resolved-light:not(.authPage) #userCardName.userNameCustom,
 body.theme-resolved-light:not(.authPage) #dmTitle.userNameCustom,
 body.theme-resolved-light:not(.authPage) #meName.userNameCustom {
   color: var(--user-name-color) !important;
+}
+
+/* Active Now disabled: no hover reveal, no invisible hitbox, no reserved gutter. */
+.app.right-collapsed .rightSidebarPeekZone,
+.appGrid.right-collapsed .rightSidebarPeekZone,
+.app.right-collapsed .rightSidebarResizer,
+.appGrid.right-collapsed .rightSidebarResizer,
+.app.right-collapsed .panel.right,
+.appGrid.right-collapsed .panel.right,
+.app.right-collapsed .right,
+.appGrid.right-collapsed .right,
+.app.right-collapsed .rightCol,
+.appGrid.right-collapsed .rightCol {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.app.right-collapsed .panel.right,
+.appGrid.right-collapsed .panel.right {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transform: none !important;
+}
+
+.app.right-collapsed:not(.left-collapsed),
+.appGrid.right-collapsed:not(.left-collapsed),
+body:not(.authPage) .app.right-collapsed:not(.left-collapsed),
+body:not(.authPage) .appGrid.right-collapsed:not(.left-collapsed) {
+  grid-template-columns: clamp(360px, var(--left-sidebar-width), 420px) minmax(0, 1fr) !important;
+}
+
+.app.left-collapsed.right-collapsed,
+.appGrid.left-collapsed.right-collapsed,
+body:not(.authPage) .app.left-collapsed.right-collapsed,
+body:not(.authPage) .appGrid.left-collapsed.right-collapsed {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+@media (max-width: 1280px) {
+  .app.right-collapsed:not(.left-collapsed),
+  .appGrid.right-collapsed:not(.left-collapsed),
+  body:not(.authPage) .app.right-collapsed:not(.left-collapsed),
+  body:not(.authPage) .appGrid.right-collapsed:not(.left-collapsed) {
+    grid-template-columns: clamp(340px, var(--left-sidebar-width), 390px) minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .app.right-collapsed:not(.left-collapsed),
+  .appGrid.right-collapsed:not(.left-collapsed),
+  body:not(.authPage) .app.right-collapsed:not(.left-collapsed),
+  body:not(.authPage) .appGrid.right-collapsed:not(.left-collapsed) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
 }
