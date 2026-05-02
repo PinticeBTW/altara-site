@@ -42,7 +42,10 @@ function matchSearch(u, q) {
 }
 
 function buildPresenceAvatarHtml(u) {
-  const url = String(u?.avatar_url || "").trim();
+  const resolver = typeof window !== "undefined" ? window.__altaraResolveUserAvatarUrl : null;
+  const url = typeof resolver === "function"
+    ? String(resolver(u?.id || "", u?.avatar_url || "", u) || "").trim()
+    : String(u?.avatar_url || "").trim();
   if (!url) return "";
   const helper = typeof window !== "undefined" ? window.__altaraBuildAvatarMediaHtml : null;
   if (typeof helper === "function") {
@@ -52,6 +55,11 @@ function buildPresenceAvatarHtml(u) {
     });
   }
   return `<img src="${esc(url)}" alt="avatar" />`;
+}
+
+function presenceInitial(u) {
+  const raw = String(u?.display_name || u?.username || "U").trim();
+  return (raw.charAt(0) || "U").toUpperCase();
 }
 
 function queuePresenceGifPlaybackSync(root) {
@@ -64,11 +72,12 @@ function cardUser(u, right = "") {
   const nameColor = normalizeNameColor(u.name_color);
   const nameClass = nameColor ? " userNameCustom" : "";
   const nameStyle = nameColor ? ` style="--user-name-color:${esc(nameColor)}"` : "";
+  const avatarHtml = buildPresenceAvatarHtml(u) || `<span class="presenceAvatarFallback">${esc(presenceInitial(u))}</span>`;
   return `
-    <div class="presenceRow" data-presence-user="${esc(u.id)}">
+    <div class="presenceRow presenceRow--${esc(st)}" data-presence-user="${esc(u.id)}">
       <div class="presenceLeft">
         <div class="avatar presenceAvatar">
-          ${buildPresenceAvatarHtml(u)}
+          ${avatarHtml}
           <span class="statusDot" data-status="${esc(st)}"></span>
         </div>
         <div class="presenceText">

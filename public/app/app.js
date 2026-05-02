@@ -1516,11 +1516,20 @@ const THEME_DEFAULT_COLOR_TWEAKS = Object.freeze({
 });
 const THEME_EDITOR_DRAFT_STORAGE_KEY = "altara_theme_editor_draft_v1";
 const THEME_CUSTOM_PRESETS_STORAGE_KEY = "altara_theme_custom_presets_v1";
+const APPEARANCE_STORAGE_KEY = "altara.appearance.v1";
+const APPEARANCE_DEFAULT_THEME = "default";
+const APPEARANCE_DEFAULT_ACCENT = "#e8cfae";
+const APPEARANCE_THEME_VALUES = Object.freeze(["default", "white", "system"]);
+const APPEARANCE_WHITE_EASTER_EGG_SOUND_URL = "./sfx/flashbang-soft.mp3";
 const THEME_EXPORT_FILENAME_PREFIX = "altara-theme";
 let themeEditorCommittedSettings = null;
 let themeRuntimeWarnings = [];
 let themeCustomPresetsCache = {};
 let themeSystemModeSyncBound = false;
+let appearanceSettingsCache = null;
+let appearanceSettingsCacheUserId = "";
+let appearanceControlsBound = false;
+let appearanceWhiteThemeConfirmInFlight = false;
 const APP_LANG_STORAGE_KEY = "altara_app_language";
 const DESKTOP_INSTALL_WELCOME_STORAGE_KEY = "altara_desktop_install_welcome_seen_v2_global";
 const APP_LANG_DEFAULT = "en";
@@ -1791,8 +1800,8 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.keybind.mic.hint": "Mute or unmute your microphone anytime.",
     "settings.keybind.deafen.label": "Toggle Headphones",
     "settings.keybind.deafen.hint": "Mute or unmute incoming audio anytime.",
-    "settings.keybind.app.alt_s.label": "Toggle Sidebars / DM Profile",
-    "settings.keybind.app.alt_s.hint": "Context shortcut: in DMs it toggles profile, elsewhere it toggles side panels.",
+    "settings.keybind.app.alt_s.label": "Toggle Left Sidebar / DM Profile",
+    "settings.keybind.app.alt_s.hint": "Context shortcut: in DMs it toggles profile, elsewhere it toggles the left sidebar.",
     "settings.keybind.app.alt_s.value": "Alt + S",
     "settings.keybind.app.zoom.label": "UI Zoom",
     "settings.keybind.app.zoom.hint": "Hold Alt and use the mouse wheel to zoom the interface.",
@@ -1811,8 +1820,13 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.keybind.capture.invalid": "That key cannot be used as a bind.",
     "settings.keybind.capture.in_use": "That shortcut is already used by another call action.",
     "settings.keybind.none": "Not set",
-    "settings.theme.save": "Save colors",
-    "settings.theme.hint": "These colors are saved to your account.",
+    "settings.theme.save": "Save changes",
+    "settings.theme.hint": "Theme and accent preview immediately and sync with your account when saved.",
+    "settings.theme.saved_account": "Appearance saved to your account.",
+    "settings.appearance.white_confirm.title": "Are you sure?",
+    "settings.appearance.white_confirm.body": "Light mode may cause emotional damage.",
+    "settings.appearance.white_confirm.ok": "Yes, flashbang me",
+    "settings.appearance.white_confirm.cancel": "No, take me back to the darkness",
     "settings.language.label": "Language",
     "settings.time_format.label": "Message time format",
     "settings.time_format.hint": "Choose 24h or 12h AM/PM (US style).",
@@ -2525,8 +2539,8 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.keybind.mic.hint": "Liga ou desliga o teu microfone em qualquer momento.",
     "settings.keybind.deafen.label": "Alternar fones",
     "settings.keybind.deafen.hint": "Silencia ou reativa o audio recebido em qualquer momento.",
-    "settings.keybind.app.alt_s.label": "Alternar paineis / Perfil DM",
-    "settings.keybind.app.alt_s.hint": "Atalho contextual: nas DMs alterna o perfil, no resto alterna os paineis laterais.",
+    "settings.keybind.app.alt_s.label": "Alternar sidebar esquerda / Perfil DM",
+    "settings.keybind.app.alt_s.hint": "Atalho contextual: nas DMs alterna o perfil, no resto alterna a sidebar esquerda.",
     "settings.keybind.app.alt_s.value": "Alt + S",
     "settings.keybind.app.zoom.label": "Zoom da interface",
     "settings.keybind.app.zoom.hint": "Segura Alt e usa a roda do rato para aproximar/afastar a interface.",
@@ -2545,8 +2559,13 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.keybind.capture.invalid": "Essa tecla nao pode ser usada como bind.",
     "settings.keybind.capture.in_use": "Esse atalho ja esta a ser usado por outra acao da call.",
     "settings.keybind.none": "Nao definido",
-    "settings.theme.save": "Guardar cores",
-    "settings.theme.hint": "Estas cores ficam guardadas na tua conta.",
+    "settings.theme.save": "Guardar alterações",
+    "settings.theme.hint": "O tema e a cor de destaque aparecem logo e sincronizam com a tua conta quando guardas.",
+    "settings.theme.saved_account": "Aparência guardada na tua conta.",
+    "settings.appearance.white_confirm.title": "Tens a certeza?",
+    "settings.appearance.white_confirm.body": "O modo claro pode causar danos emocionais.",
+    "settings.appearance.white_confirm.ok": "Sim, flashbang-me",
+    "settings.appearance.white_confirm.cancel": "Não, leva-me de volta à escuridão",
     "settings.language.label": "Idioma",
     "settings.time_format.label": "Formato do horario das mensagens",
     "settings.time_format.hint": "Escolhe 24h ou 12h AM/PM (estilo americano).",
@@ -4287,7 +4306,7 @@ function getRenderedMeAvatarUrl() {
 function getRenderedMeBannerUrl() {
   if (typeof document === "undefined") return "";
   const src = String(document.querySelector("#meProfileCard .profileBannerMedia")?.getAttribute("src") || "").trim();
-  return normalizeBannerUrl(src);
+  return resolveProfileBannerUrl(src, null, "");
 }
 
 function cacheProfileRow(row) {
@@ -5003,6 +5022,13 @@ function normalizeThemeSettings(raw) {
     THEME_DEFAULT_OPTIONS.gifs_play_on_hover
   );
   normalized.presence_status = readPresenceStatusValue(normalized.presence_status);
+  normalized.appearance_theme = normalizeAppearanceThemeChoice(
+    source.appearance_theme || source.appearanceTheme || inferAppearanceThemeChoiceFromThemeObject(source),
+    APPEARANCE_DEFAULT_THEME
+  );
+  normalized.appearance_accent = normalizeThemeOptionalColor(
+    source.appearance_accent || source.appearanceAccent || source.accent
+  ) || APPEARANCE_DEFAULT_ACCENT;
   normalized.background_unified = true;
   if (normalizedBannerCrop) normalized.banner_crop = normalizedBannerCrop;
   if (normalizedAvatarCrop) normalized.avatar_crop = normalizedAvatarCrop;
@@ -5136,6 +5162,7 @@ function applyThemeSettings(themeInput) {
     if (computed.theme?.density === "compact") body.classList.add("ui-compact");
     if (computed.theme?.show_grid === false) body.classList.add("ui-no-grid");
   }
+  applyAltaraAppearanceRuntime(computed.theme, computed.vars);
   const warningEl = document.getElementById("themeAutoAdjustHint");
   if (warningEl) {
     if (themeRuntimeWarnings.length) {
@@ -5202,6 +5229,7 @@ function getThemeFormEls() {
     uiZoomValue: document.getElementById("themeUiZoomValue"),
     uiZoomLabel: document.getElementById("themeUiZoomLabel"),
     uiZoomHint: document.getElementById("themeUiZoomHint"),
+    reduceMotion: document.getElementById("themeReduceMotion"),
     profileCardBanner: document.getElementById("themeProfileCardBanner"),
     dndMuteNotifications: document.getElementById("settingsDndMuteNotifications"),
     language: document.getElementById("themeLanguage"),
@@ -5584,6 +5612,12 @@ function readThemeFromForm() {
         state.me?.theme_settings?.profile_card_banner,
         THEME_DEFAULT_OPTIONS.profile_card_banner
       ),
+    reduce_motion: els.reduceMotion
+      ? !!els.reduceMotion.checked
+      : normalizeThemeBool(
+        state.me?.theme_settings?.reduce_motion,
+        THEME_DEFAULT_OPTIONS.reduce_motion
+      ),
     banner_url: normalizeBannerUrl(state.me?.banner_url || state.me?.theme_settings?.banner_url || ""),
     background_secondary: normalizeThemeOptionalColor(colorFromInput(els.bgSecondary, mixHex(bgColor, "#000000", 0.24))),
     surface_secondary: normalizeThemeOptionalColor(colorFromInput(els.surfaceSecondary, mixHex(bgColor, "#ffffff", 0.08))),
@@ -5695,6 +5729,12 @@ function writeThemeToForm(themeInput) {
       THEME_DEFAULT_OPTIONS.profile_card_banner
     );
   }
+  if (els.reduceMotion) {
+    els.reduceMotion.checked = normalizeThemeBool(
+      theme.reduce_motion,
+      THEME_DEFAULT_OPTIONS.reduce_motion
+    );
+  }
   if (els.dndMuteNotifications) {
     els.dndMuteNotifications.checked = normalizeThemeBool(
       theme.dnd_mute_notifications,
@@ -5709,6 +5749,7 @@ function writeThemeToForm(themeInput) {
   writeThemeGradientToInput(els.textColor, theme.text_deep, theme.text_angle);
   syncThemeOptionLabels(els);
   syncThemeColorInputsUi();
+  syncAppearanceVisualControls(theme);
   renderThemeLivePreview(theme);
 }
 
@@ -5747,9 +5788,10 @@ function shouldMuteNotificationSoundsNow() {
 }
 
 function previewThemeFromForm() {
-  const theme = readThemeFromForm();
-  applyThemeSettings(theme);
+  const theme = readAppearanceControls();
+  applyAppearanceSettings(theme);
   writeThemeEditorDraftToStorage(theme);
+  syncAppearanceVisualControls(theme);
 }
 
 function onThemePresetChange() {
@@ -5758,7 +5800,11 @@ function onThemePresetChange() {
   const preset = String(els.preset.value || "").toLowerCase();
   if (Object.prototype.hasOwnProperty.call(THEME_PRESETS, preset) && preset !== "custom") {
     const current = readThemeFromForm();
+    const presetBase = preset === THEME_DEFAULT_PRESET
+      ? getDefaultAppearanceSettings()
+      : { preset };
     const next = normalizeThemeSettings({
+      ...presetBase,
       preset,
       mode: current.mode,
       visual_style: current.visual_style,
@@ -5777,6 +5823,7 @@ function onThemePresetChange() {
       app_language: current.app_language,
       time_format: current.time_format,
       dnd_mute_notifications: current.dnd_mute_notifications,
+      reduce_motion: current.reduce_motion,
       profile_card_banner: current.profile_card_banner,
       banner_url: current.banner_url,
     });
@@ -5803,8 +5850,9 @@ function onThemeLanguageChange() {
   const langSelect = document.getElementById("themeLanguage");
   const nextLang = normalizeAppLanguage(langSelect?.value, appLanguage || readStoredAppLanguage());
   setAppLanguage(nextLang, { persist: true, rerender: true, syncForm: true });
-  const theme = readThemeFromForm();
-  void persistThemeSettings(theme, { showSuccess: false, showError: false });
+  const theme = readAppearanceControls();
+  applyAppearanceSettings(theme);
+  writeThemeEditorDraftToStorage(theme);
 }
 
 function onThemeTimeFormatChange() {
@@ -5824,7 +5872,8 @@ function onThemeTimeFormatChange() {
   });
 
   renderMessagesFromCache({ keepBottom: true });
-  void persistThemeSettings(state.me.theme_settings, { showSuccess: false, showError: false });
+  applyAppearanceSettings(theme);
+  writeThemeEditorDraftToStorage(theme);
 }
 
 function getFallbackThemeSettings() {
@@ -5837,8 +5886,992 @@ function getFallbackThemeSettings() {
   });
 }
 
+function getDefaultAppearanceSettingsLegacy() {
+  return normalizeThemeSettings({
+    ...getFallbackThemeSettings(),
+    preset: THEME_DEFAULT_PRESET,
+    mode: "dark",
+    visual_style: "soft",
+    density: "normal",
+    layout_mood: "calm",
+    background: "#101010",
+    background_secondary: "#151515",
+    surface: "#181818",
+    surface_secondary: "#202020",
+    accent: "#e8cfae",
+    accent_secondary: "#cda97b",
+    row_color: "#171717",
+    text_color: "#f2f0ec",
+    button_primary: "#e8cfae",
+    button_secondary: "#202020",
+    input_color: "#111111",
+    border_color: "#2c2c2c",
+    hover_color: "#202020",
+    active_color: "#2a241c",
+    message_sent: "#30281d",
+    message_received: "#1b1b1b",
+    link_color: "#f0d3aa",
+    reduce_motion: false,
+  });
+}
+
+function stripProfileMetaFromAppearanceTheme(themeInput) {
+  const theme = normalizeThemeSettings(themeInput || getDefaultAppearanceSettings());
+  const {
+    banner_url,
+    banner_crop,
+    avatar_crop,
+    presence_status,
+    dnd_mute_notifications,
+    pause_gifs_when_unfocused,
+    gifs_play_on_hover,
+    ...appearanceTheme
+  } = theme;
+  return normalizeThemeSettings(appearanceTheme);
+}
+
+function getProfileThemeMetaForAppearance() {
+  const source = state.me?.theme_settings && typeof state.me.theme_settings === "object"
+    ? state.me.theme_settings
+    : {};
+  const meta = {};
+  const bannerUrl = normalizeBannerUrl(source.banner_url || state.me?.banner_url || "");
+  if (bannerUrl) meta.banner_url = bannerUrl;
+  if (source.banner_crop) meta.banner_crop = source.banner_crop;
+  if (source.avatar_crop) meta.avatar_crop = source.avatar_crop;
+  const presence = readPresenceStatusValue(source.presence_status);
+  if (presence) meta.presence_status = presence;
+  [
+    "dnd_mute_notifications",
+    "pause_gifs_when_unfocused",
+    "gifs_play_on_hover",
+    "app_language",
+    "time_format",
+    "profile_card_banner",
+    "reduce_motion",
+    "left_sidebar_width",
+  ].forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(source, key)) meta[key] = source[key];
+  });
+  return meta;
+}
+
+function mergeAppearanceWithProfileThemeLegacy(themeInput) {
+  const appearanceTheme = normalizeThemeSettings(themeInput || getDefaultAppearanceSettings());
+  return normalizeThemeSettings({
+    ...appearanceTheme,
+    ...getProfileThemeMetaForAppearance(),
+  });
+}
+
+function appearanceDensityLabel(themeInput) {
+  const density = String(normalizeThemeSettings(themeInput).density || "normal").toLowerCase();
+  if (density === "comfortable") return "cozy";
+  if (density === "compact") return "compact";
+  return "balanced";
+}
+
+function appearanceRoundnessToRadiusPx(roundnessInput) {
+  const roundness = clampInt(roundnessInput, 0, 100, THEME_DEFAULT_OPTIONS.roundness);
+  return Math.round(6 + (roundness * 0.18));
+}
+
+function appearanceRadiusPxToRoundness(radiusInput) {
+  const radius = Number(radiusInput);
+  if (!Number.isFinite(radius)) return THEME_DEFAULT_OPTIONS.roundness;
+  if (radius > 40) return clampInt(radius, 0, 100, THEME_DEFAULT_OPTIONS.roundness);
+  return clampInt(Math.round(((radius - 6) / 18) * 100), 0, 100, THEME_DEFAULT_OPTIONS.roundness);
+}
+
+function normalizeAppearanceDensityValue(value, fallback = THEME_DEFAULT_OPTIONS.density) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "cozy") return "comfortable";
+  if (raw === "balanced") return "normal";
+  if (raw === "comfortable" || raw === "normal" || raw === "compact") return raw;
+  return fallback;
+}
+
+function getAppearanceCustomTokens(themeInput) {
+  const source = themeInput && typeof themeInput === "object" && !Array.isArray(themeInput)
+    ? themeInput
+    : {};
+  const tokenKeys = [
+    "background", "background_secondary", "surface", "surface_secondary",
+    "accent", "accent_secondary", "row_color", "text_color",
+    "button_primary", "button_secondary", "input_color", "border_color",
+    "hover_color", "active_color", "message_sent", "message_received",
+    "link_color", "success_color", "warning_color", "danger_color", "info_color",
+  ];
+  const tokens = {};
+  tokenKeys.forEach((key) => {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) return;
+    const value = normalizeThemeOptionalColor(source[key]);
+    if (value) tokens[key] = value;
+  });
+  return tokens;
+}
+
+function normalizeAppearancePayloadToTheme(parsed) {
+  const base = getDefaultAppearanceSettings();
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return base;
+
+  const source = parsed.theme && typeof parsed.theme === "object" && !Array.isArray(parsed.theme)
+    ? parsed.theme
+    : parsed;
+  const next = {
+    ...base,
+    ...source,
+  };
+
+  if (typeof parsed.preset !== "undefined") {
+    const preset = String(parsed.preset || "").trim().toLowerCase();
+    if (preset === "custom" || Object.prototype.hasOwnProperty.call(THEME_PRESETS, preset)) {
+      next.preset = preset;
+    }
+  }
+  const accent = normalizeThemeOptionalColor(parsed.accent);
+  if (accent) next.accent = accent;
+  if (typeof parsed.density !== "undefined") {
+    next.density = normalizeAppearanceDensityValue(parsed.density, next.density);
+  }
+  if (typeof parsed.fontSize !== "undefined") {
+    const fontSize = Number(parsed.fontSize);
+    if (Number.isFinite(fontSize)) next.font_scale = clampInt(Math.round((fontSize / 16) * 100), 85, 135, next.font_scale);
+  }
+  if (typeof parsed.messageSpacing !== "undefined") {
+    const spacing = Number(parsed.messageSpacing);
+    if (Number.isFinite(spacing)) next.spacing_scale = clampInt(Math.round(spacing * 100), 70, 140, next.spacing_scale);
+  }
+  if (typeof parsed.radius !== "undefined") {
+    next.roundness = appearanceRadiusPxToRoundness(parsed.radius);
+  }
+  if (typeof parsed.reduceMotion !== "undefined") {
+    next.reduce_motion = !!parsed.reduceMotion;
+  }
+  if (parsed.customTokens && typeof parsed.customTokens === "object" && !Array.isArray(parsed.customTokens)) {
+    Object.assign(next, getAppearanceCustomTokens(parsed.customTokens));
+  }
+  return stripProfileMetaFromAppearanceTheme(next);
+}
+
+function makeAppearanceStoragePayload(themeInput) {
+  const theme = stripProfileMetaFromAppearanceTheme(themeInput || getDefaultAppearanceSettings());
+  return {
+    version: 1,
+    preset: theme.preset || THEME_DEFAULT_PRESET,
+    accent: normalizeHexColor(theme.accent, "#e8cfae"),
+    density: appearanceDensityLabel(theme),
+    fontSize: Math.round(16 * (clampInt(theme.font_scale, 85, 135, THEME_DEFAULT_OPTIONS.font_scale) / 100)),
+    messageSpacing: Number((clampInt(theme.spacing_scale, 70, 140, THEME_DEFAULT_OPTIONS.spacing_scale) / 100).toFixed(2)),
+    radius: appearanceRoundnessToRadiusPx(theme.roundness),
+    reduceMotion: normalizeThemeBool(theme.reduce_motion, THEME_DEFAULT_OPTIONS.reduce_motion),
+    customTokens: getAppearanceCustomTokens(theme),
+    theme,
+  };
+}
+
+function loadAppearanceSettingsLegacy({ force = false } = {}) {
+  if (appearanceSettingsCache && !force) return appearanceSettingsCache;
+  try {
+    const cacheKey = getAppearanceCacheStorageKey();
+    const raw = cacheKey ? localStorage.getItem(cacheKey) : "";
+    if (!raw) {
+      appearanceSettingsCache = getDefaultAppearanceSettings();
+      return appearanceSettingsCache;
+    }
+    appearanceSettingsCache = normalizeAppearancePayloadToTheme(JSON.parse(raw));
+    return appearanceSettingsCache;
+  } catch (err) {
+    console.warn("Could not load local appearance settings:", err);
+    appearanceSettingsCache = getDefaultAppearanceSettings();
+    return appearanceSettingsCache;
+  }
+}
+
+function saveAppearanceSettingsLegacy(themeInput) {
+  const theme = stripProfileMetaFromAppearanceTheme(themeInput || getDefaultAppearanceSettings());
+  try {
+    const cacheKey = getAppearanceCacheStorageKey();
+    if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(makeAppearanceStoragePayload(theme)));
+  } catch (err) {
+    console.warn("Could not save local appearance settings:", err);
+  }
+  appearanceSettingsCache = theme;
+  return theme;
+}
+
+function applyAltaraAppearanceRuntimeLegacy(themeInput, cssVars = {}) {
+  const root = document.documentElement;
+  if (!root) return;
+  const theme = normalizeThemeSettings(themeInput || getDefaultAppearanceSettings());
+  const getVar = (name, fallback) => String(cssVars?.[name] || fallback || "").trim();
+  root.style.setProperty("--altara-accent", getVar("--accent", theme.accent || "#e8cfae"));
+  root.style.setProperty("--altara-radius", `${appearanceRoundnessToRadiusPx(theme.roundness)}px`);
+  root.style.setProperty("--altara-font-scale", String(clampInt(theme.font_scale, 85, 135, THEME_DEFAULT_OPTIONS.font_scale) / 100));
+  root.style.setProperty("--altara-message-spacing", String(clampInt(theme.spacing_scale, 70, 140, THEME_DEFAULT_OPTIONS.spacing_scale) / 100));
+  root.style.setProperty("--altara-density", appearanceDensityLabel(theme));
+  root.style.setProperty("--altara-bg", getVar("--bg-main", theme.background || "#101010"));
+  root.style.setProperty("--altara-surface", getVar("--surface-1", theme.surface || "#181818"));
+  root.style.setProperty("--altara-border", getVar("--stroke", theme.border_color || "rgba(255,255,255,0.08)"));
+  root.style.setProperty("--altara-text", getVar("--text-main", theme.text_color || "#f2f0ec"));
+  root.style.setProperty("--altara-muted", getVar("--text-muted", "rgba(242,240,236,0.58)"));
+
+  const preset = String(theme.preset || THEME_DEFAULT_PRESET).toLowerCase();
+  const presetClass = preset === "midnight"
+    ? "theme-midnight"
+    : preset === "high-contrast"
+      ? "theme-high-contrast"
+      : preset === "custom"
+        ? "theme-custom"
+        : (preset === "zen-dark" || preset === "frost-glass" ? "theme-soft" : "theme-default");
+  const densityClass = `density-${appearanceDensityLabel(theme)}`;
+  const reduceMotion = normalizeThemeBool(theme.reduce_motion, THEME_DEFAULT_OPTIONS.reduce_motion);
+  [root, document.body].filter(Boolean).forEach((node) => {
+    node.classList.remove("theme-default", "theme-midnight", "theme-soft", "theme-high-contrast", "theme-custom");
+    node.classList.remove("density-cozy", "density-balanced", "density-compact");
+    node.classList.toggle("reduce-motion", reduceMotion);
+    node.classList.add(presetClass, densityClass);
+  });
+}
+
+function applyAppearanceSettingsLegacy(themeInput, { syncForm = false, markCommitted = false } = {}) {
+  const appearanceTheme = stripProfileMetaFromAppearanceTheme(themeInput || loadAppearanceSettings());
+  appearanceSettingsCache = appearanceTheme;
+  const runtimeTheme = mergeAppearanceWithProfileTheme(appearanceTheme);
+  state.me = state.me || {};
+  state.me.theme_settings = runtimeTheme;
+  applyThemeSettings(runtimeTheme);
+  if (syncForm) writeThemeToForm(runtimeTheme);
+  if (markCommitted) setThemeEditorCommitted(runtimeTheme);
+  return runtimeTheme;
+}
+
+function readAppearanceControlsLegacy() {
+  return stripProfileMetaFromAppearanceTheme(readThemeFromForm());
+}
+
+function updateAppearanceControlsLegacy(themeInput) {
+  writeThemeToForm(mergeAppearanceWithProfileTheme(themeInput || loadAppearanceSettings()));
+}
+
+function syncAppearanceVisualControlsLegacy(themeInput) {
+  const theme = normalizeThemeSettings(themeInput || getActiveThemeSettings());
+  const preset = String(theme.preset || THEME_DEFAULT_PRESET).toLowerCase();
+  const mode = String(theme.mode || THEME_DEFAULT_OPTIONS.mode).toLowerCase();
+  document.querySelectorAll("[data-appearance-preset]").forEach((node) => {
+    if (!(node instanceof HTMLElement)) return;
+    const nodePreset = String(node.dataset.appearancePreset || "").trim().toLowerCase();
+    const nodeMode = String(node.dataset.appearanceMode || "").trim().toLowerCase();
+    const selected = nodePreset === "custom"
+      ? preset === "custom"
+      : (nodePreset === preset && (!nodeMode || nodeMode === mode));
+    node.classList.toggle("is-selected", selected);
+    node.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+  const activeAccent = normalizeHexColor(theme.accent, "#e8cfae").toLowerCase();
+  document.querySelectorAll("[data-appearance-accent]").forEach((node) => {
+    if (!(node instanceof HTMLElement)) return;
+    const value = String(node.dataset.appearanceAccent || "").trim().toLowerCase();
+    const selected = value !== "custom" && normalizeHexColor(value, "").toLowerCase() === activeAccent;
+    node.classList.toggle("is-selected", selected);
+    if (value !== "custom") node.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+  const activeDensity = String(theme.density || THEME_DEFAULT_OPTIONS.density).toLowerCase();
+  document.querySelectorAll("[data-appearance-density]").forEach((node) => {
+    if (!(node instanceof HTMLElement)) return;
+    const selected = String(node.dataset.appearanceDensity || "").trim().toLowerCase() === activeDensity;
+    node.classList.toggle("is-selected", selected);
+    node.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+}
+
+function bindAppearanceControlsLegacy() {
+  if (appearanceControlsBound) return;
+  appearanceControlsBound = true;
+
+  document.querySelectorAll("[data-appearance-preset]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const els = getThemeFormEls();
+      const preset = String(node.dataset.appearancePreset || "").trim().toLowerCase();
+      const mode = String(node.dataset.appearanceMode || "").trim().toLowerCase();
+      if (els.preset && (preset === "custom" || Object.prototype.hasOwnProperty.call(THEME_PRESETS, preset))) {
+        els.preset.value = Array.from(els.preset.options || []).some((opt) => opt.value === preset) ? preset : "custom";
+      }
+      if (els.mode && mode) els.mode.value = mode;
+      if (preset === "custom") {
+        previewThemeFromForm();
+        document.querySelector(".appearanceAdvancedTokens")?.setAttribute("open", "");
+      } else {
+        onThemePresetChange();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-appearance-accent]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const value = String(node.dataset.appearanceAccent || "").trim();
+      const els = getThemeFormEls();
+      if (value.toLowerCase() === "custom") {
+        const advanced = document.querySelector(".appearanceAdvancedTokens");
+        if (advanced instanceof HTMLDetailsElement) advanced.open = true;
+        els.accent?.focus?.();
+        return;
+      }
+      const accent = normalizeThemeOptionalColor(value);
+      if (!accent || !(els.accent instanceof HTMLInputElement)) return;
+      els.accent.value = accent;
+      onThemeColorInput();
+    });
+  });
+
+  document.querySelectorAll("[data-appearance-density]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const density = normalizeAppearanceDensityValue(node.dataset.appearanceDensity, THEME_DEFAULT_OPTIONS.density);
+      const els = getThemeFormEls();
+      if (els.density) els.density.value = density;
+      onThemeOptionInput();
+    });
+  });
+}
+
+function resetAppearanceSettingsLegacy() {
+  const theme = getDefaultAppearanceSettings();
+  updateAppearanceControls(theme);
+  applyAppearanceSettings(theme);
+  writeThemeEditorDraftToStorage(theme);
+  syncSidebarWidthControls(theme.left_sidebar_width);
+  setAppLanguage(theme.app_language, { persist: true, rerender: true, syncForm: false });
+  return theme;
+}
+
+function getDefaultAppearanceSettings() {
+  return {
+    theme: APPEARANCE_DEFAULT_THEME,
+    accent: APPEARANCE_DEFAULT_ACCENT,
+  };
+}
+
+function normalizeAppearanceThemeChoice(value, fallback = APPEARANCE_DEFAULT_THEME) {
+  const raw = String(value || "").trim().toLowerCase();
+  return APPEARANCE_THEME_VALUES.includes(raw) ? raw : fallback;
+}
+
+function inferAppearanceThemeChoiceFromThemeObject(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return APPEARANCE_DEFAULT_THEME;
+  const mode = String(raw.mode || raw.effective_mode || "").trim().toLowerCase();
+  const preset = String(raw.preset || raw.preset_id || "").trim().toLowerCase();
+  if (mode === "auto" || preset === "system") return "system";
+  if (mode === "light" || preset === "white" || preset === "clean-light") return "white";
+  return "default";
+}
+
+function normalizeAppearanceSettings(raw) {
+  const defaults = getDefaultAppearanceSettings();
+  let source = raw;
+  if (typeof source === "string") {
+    try {
+      source = JSON.parse(source);
+    } catch (_) {
+      source = {};
+    }
+  }
+  if (!source || typeof source !== "object" || Array.isArray(source)) return defaults;
+
+  const oldThemeObject = source.theme && typeof source.theme === "object" && !Array.isArray(source.theme)
+    ? source.theme
+    : null;
+  const explicitTheme = typeof source.theme === "string"
+    ? source.theme
+    : (typeof source.appearance_theme === "string"
+      ? source.appearance_theme
+      : (typeof source.appearanceTheme === "string" ? source.appearanceTheme : ""));
+  const inferredTheme = explicitTheme || inferAppearanceThemeChoiceFromThemeObject(oldThemeObject || source);
+  const accent = normalizeThemeOptionalColor(
+    source.appearance_accent ||
+    source.appearanceAccent ||
+    source.accent ||
+    source.accent_color ||
+    oldThemeObject?.accent ||
+    source.themeAccent ||
+    ""
+  ) || defaults.accent;
+
+  return {
+    theme: normalizeAppearanceThemeChoice(inferredTheme, defaults.theme),
+    accent,
+  };
+}
+
+function isAppearanceSystemLight() {
+  return !isSystemPrefersDark();
+}
+
+function resolveAppearanceThemeChoice(settingsInput) {
+  const settings = normalizeAppearanceSettings(settingsInput || appearanceSettingsCache || getDefaultAppearanceSettings());
+  if (settings.theme !== "system") return settings.theme;
+  return isAppearanceSystemLight() ? "white" : "default";
+}
+
+function buildAppearanceThemeSettings(settingsInput) {
+  const settings = normalizeAppearanceSettings(settingsInput);
+  const resolvedTheme = resolveAppearanceThemeChoice(settings);
+  const accent = normalizeThemeOptionalColor(settings.accent) || APPEARANCE_DEFAULT_ACCENT;
+  const common = {
+    ...THEME_DEFAULT_OPTIONS,
+    accent,
+    accent_secondary: mixHex(accent, resolvedTheme === "white" ? "#7d6a52" : "#ffffff", resolvedTheme === "white" ? 0.22 : 0.18),
+    button_primary: accent,
+    link_color: accent,
+    color_intensity: 100,
+    roundness: THEME_DEFAULT_OPTIONS.roundness,
+    spacing_scale: 100,
+    font_scale: 100,
+    reduce_motion: false,
+    profile_card_banner: true,
+  };
+
+  if (resolvedTheme === "white") {
+    const theme = normalizeThemeSettings({
+      ...common,
+      preset: "clean-light",
+      mode: "light",
+      visual_style: "soft",
+      density: "normal",
+      layout_mood: "calm",
+      background: "#f4f1ea",
+      background_secondary: "#ebe6dc",
+      surface: "#fffaf4",
+      surface_secondary: "#f0eadf",
+      row_color: "#f7f1e8",
+      text_color: "#211f1a",
+      button_secondary: "#eee7dc",
+      input_color: "#fffaf4",
+      border_color: "#d8cfc1",
+      hover_color: "#eee5d8",
+      active_color: mixHex("#f4f1ea", accent, 0.2),
+      message_sent: mixHex("#f4f1ea", accent, 0.24),
+      message_received: "#fbf6ee",
+      success_color: "#4d9c67",
+      warning_color: "#a57930",
+      danger_color: "#bd5f5d",
+      info_color: "#5f8fa6",
+    });
+    theme.appearance_theme = settings.theme;
+    theme.appearance_accent = accent;
+    return theme;
+  }
+
+  const theme = normalizeThemeSettings({
+    ...common,
+    preset: THEME_DEFAULT_PRESET,
+    mode: "dark",
+    visual_style: "soft",
+    density: "normal",
+    layout_mood: "calm",
+    background: "#101010",
+    background_secondary: "#151515",
+    surface: "#181818",
+    surface_secondary: "#202020",
+    row_color: "#171717",
+    text_color: "#f2f0ec",
+    button_secondary: "#202020",
+    input_color: "#111111",
+    border_color: "#2c2c2c",
+    hover_color: "#202020",
+    active_color: mixHex("#101010", accent, 0.18),
+    message_sent: mixHex("#161616", accent, 0.22),
+    message_received: "#1b1b1b",
+    success_color: "#69b87b",
+    warning_color: "#d4aa55",
+    danger_color: "#d36c68",
+    info_color: "#6fbcb3",
+  });
+  theme.appearance_theme = settings.theme;
+  theme.appearance_accent = accent;
+  return theme;
+}
+
+function mergeAppearanceWithProfileTheme(settingsInput) {
+  return normalizeThemeSettings({
+    ...buildAppearanceThemeSettings(settingsInput),
+    ...getProfileThemeMetaForAppearance(),
+  });
+}
+
+function getAppearanceCacheUserId() {
+  return normId(state.user?.id || state.me?.id || "");
+}
+
+function getAppearanceCacheStorageKey(userIdInput = "") {
+  const uid = normId(userIdInput || getAppearanceCacheUserId());
+  return uid ? `${APPEARANCE_STORAGE_KEY}:${uid}` : "";
+}
+
+function readCachedAppearanceSettingsForUser(userIdInput = "") {
+  const key = getAppearanceCacheStorageKey(userIdInput);
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? normalizeAppearanceSettings(JSON.parse(raw)) : null;
+  } catch (err) {
+    console.warn("Could not load cached account appearance settings:", err);
+    return null;
+  }
+}
+
+function writeCachedAppearanceSettingsForUser(settingsInput, userIdInput = "") {
+  const key = getAppearanceCacheStorageKey(userIdInput);
+  if (!key) return;
+  const settings = normalizeAppearanceSettings(settingsInput);
+  try {
+    localStorage.setItem(key, JSON.stringify(settings));
+  } catch (err) {
+    console.warn("Could not save cached account appearance settings:", err);
+  }
+}
+
+function loadAppearanceSettings({ force = false } = {}) {
+  const userId = getAppearanceCacheUserId();
+  if (appearanceSettingsCache && !force && appearanceSettingsCacheUserId === userId) return appearanceSettingsCache;
+
+  if (state.me?.theme_settings && typeof state.me.theme_settings === "object" && !Array.isArray(state.me.theme_settings)) {
+    appearanceSettingsCache = normalizeAppearanceSettings(state.me.theme_settings);
+    appearanceSettingsCacheUserId = userId;
+    writeCachedAppearanceSettingsForUser(appearanceSettingsCache, userId);
+    return appearanceSettingsCache;
+  }
+
+  appearanceSettingsCache = readCachedAppearanceSettingsForUser(userId) || getDefaultAppearanceSettings();
+  appearanceSettingsCacheUserId = userId;
+  return appearanceSettingsCache;
+}
+
+function saveAppearanceSettings(settingsInput) {
+  const settings = normalizeAppearanceSettings(settingsInput || appearanceSettingsCache || getDefaultAppearanceSettings());
+  const userId = getAppearanceCacheUserId();
+  appearanceSettingsCache = settings;
+  appearanceSettingsCacheUserId = userId;
+  writeCachedAppearanceSettingsForUser(settings, userId);
+  return settings;
+}
+
+function getAppearanceRuntimePalette(settingsInput) {
+  const settings = normalizeAppearanceSettings(settingsInput || appearanceSettingsCache || getDefaultAppearanceSettings());
+  const resolved = resolveAppearanceThemeChoice(settings);
+  const isWhite = resolved === "white";
+  const accent = normalizeThemeOptionalColor(settings.accent) || APPEARANCE_DEFAULT_ACCENT;
+  const accentStrong = isWhite
+    ? mixHex(accent, "#3d3326", 0.42)
+    : mixHex(accent, "#ffffff", 0.14);
+
+  if (isWhite) {
+    return {
+      settings,
+      resolved,
+      isWhite,
+      accent,
+      accentStrong,
+      bg: "#f5f1e8",
+      bgDeep: "#e4dac8",
+      bgSoft: "#eee8dd",
+      surface: "#fffdf8",
+      surface0: "rgba(255, 253, 248, 0.92)",
+      surfaceElevated: "#f8f3ea",
+      surfacePanel: "#f3ede4",
+      row: "rgba(24, 21, 18, 0.045)",
+      rowStrong: "#efe7db",
+      hover: "#ece4d8",
+      active: "rgba(218, 184, 141, 0.22)",
+      input: "#f3ede4",
+      inputFocus: mixHex("#f3ede4", accent, 0.12),
+      border: "rgba(32, 28, 22, 0.14)",
+      borderStrong: "rgba(32, 28, 22, 0.22)",
+      text: "#181512",
+      textSoft: "#8c8174",
+      textMuted: "#675f55",
+      link: accentStrong,
+      shadow: "rgba(61, 48, 34, 0.16)",
+      overlay: "rgba(245, 241, 232, 0.72)",
+    };
+  }
+
+  return {
+    settings,
+    resolved,
+    isWhite,
+    accent,
+    accentStrong,
+    bg: "#101010",
+    bgDeep: "#080808",
+    bgSoft: "#151515",
+    surface: "#181818",
+    surface0: "rgba(24, 24, 24, 0.94)",
+    surfaceElevated: "#202020",
+    surfacePanel: "#1c1c1c",
+    row: "rgba(255, 255, 255, 0.035)",
+    rowStrong: "#181818",
+    hover: "rgba(255, 255, 255, 0.055)",
+    active: rgbaFromHex(accent, 0.12),
+    input: "#111111",
+    inputFocus: mixHex("#111111", accent, 0.1),
+    border: "rgba(255, 255, 255, 0.075)",
+    borderStrong: "rgba(255, 255, 255, 0.115)",
+    text: "#f2f0ec",
+    textSoft: "rgba(242, 240, 236, 0.64)",
+    textMuted: "rgba(242, 240, 236, 0.44)",
+    link: accentStrong,
+    shadow: "rgba(0, 0, 0, 0.46)",
+    overlay: "rgba(0, 0, 0, 0.68)",
+  };
+}
+
+function setAppearanceRuntimeVar(root, name, value) {
+  if (!root || !name) return;
+  root.style.setProperty(name, String(value || ""));
+}
+
+function exposeAppearanceDebugHelper() {
+  if (typeof window === "undefined") return;
+  window.__ALTARA_APPEARANCE_DEBUG__ = () => {
+    const root = document.documentElement;
+    const styles = getComputedStyle(root);
+    let saved = null;
+    const userId = getAppearanceCacheUserId();
+    const scopedStorageKey = getAppearanceCacheStorageKey(userId);
+    try {
+      saved = scopedStorageKey
+        ? normalizeAppearanceSettings(JSON.parse(localStorage.getItem(scopedStorageKey) || "null"))
+        : getDefaultAppearanceSettings();
+    } catch (_) {
+      saved = getDefaultAppearanceSettings();
+    }
+    const active = normalizeAppearanceSettings(appearanceSettingsCache || saved);
+    return {
+      storageKey: APPEARANCE_STORAGE_KEY,
+      scopedStorageKey,
+      cacheUserId: appearanceSettingsCacheUserId,
+      saved,
+      active,
+      selectedTheme: active.theme,
+      resolvedTheme: resolveAppearanceThemeChoice(active),
+      rootClasses: Array.from(root.classList),
+      bodyClasses: Array.from(document.body?.classList || []),
+      variables: {
+        "--altara-bg": styles.getPropertyValue("--altara-bg").trim(),
+        "--altara-surface": styles.getPropertyValue("--altara-surface").trim(),
+        "--altara-surface-elevated": styles.getPropertyValue("--altara-surface-elevated").trim(),
+        "--altara-border": styles.getPropertyValue("--altara-border").trim(),
+        "--altara-text": styles.getPropertyValue("--altara-text").trim(),
+        "--altara-text-muted": styles.getPropertyValue("--altara-text-muted").trim(),
+        "--altara-accent": styles.getPropertyValue("--altara-accent").trim(),
+        "--bg-main": styles.getPropertyValue("--bg-main").trim(),
+        "--surface-1": styles.getPropertyValue("--surface-1").trim(),
+        "--ui-shell-bg": styles.getPropertyValue("--ui-shell-bg").trim(),
+      },
+      bodyVariables: (() => {
+        const bodyStyles = getComputedStyle(document.body);
+        return {
+          "--altara-bg": bodyStyles.getPropertyValue("--altara-bg").trim(),
+          "--altara-surface": bodyStyles.getPropertyValue("--altara-surface").trim(),
+          "--altara-text": bodyStyles.getPropertyValue("--altara-text").trim(),
+          "--altara-text-muted": bodyStyles.getPropertyValue("--altara-text-muted").trim(),
+          "--altara-border": bodyStyles.getPropertyValue("--altara-border").trim(),
+          "--altara-accent": bodyStyles.getPropertyValue("--altara-accent").trim(),
+          "--bg-main": bodyStyles.getPropertyValue("--bg-main").trim(),
+          "--ui-shell-bg": bodyStyles.getPropertyValue("--ui-shell-bg").trim(),
+        };
+      })(),
+      appVariables: (() => {
+        const appEl = document.querySelector(".app");
+        if (!(appEl instanceof HTMLElement)) return null;
+        const appStyles = getComputedStyle(appEl);
+        return {
+          "--altara-bg": appStyles.getPropertyValue("--altara-bg").trim(),
+          "--altara-surface": appStyles.getPropertyValue("--altara-surface").trim(),
+          "--altara-text": appStyles.getPropertyValue("--altara-text").trim(),
+          "--altara-text-muted": appStyles.getPropertyValue("--altara-text-muted").trim(),
+          "--altara-border": appStyles.getPropertyValue("--altara-border").trim(),
+          "--altara-accent": appStyles.getPropertyValue("--altara-accent").trim(),
+          "--bg-main": appStyles.getPropertyValue("--bg-main").trim(),
+          "--ui-shell-bg": appStyles.getPropertyValue("--ui-shell-bg").trim(),
+        };
+      })(),
+    };
+  };
+}
+
+function applyAltaraAppearanceRuntime(themeInput, cssVars = {}) {
+  const root = document.documentElement;
+  if (!root) return;
+  const palette = getAppearanceRuntimePalette(appearanceSettingsCache || loadAppearanceSettings());
+  const { settings, resolved, accent, accentStrong, isWhite } = palette;
+
+  const runtimeVars = {
+    "--altara-bg": palette.bg,
+    "--altara-bg-soft": palette.bgSoft,
+    "--altara-surface": palette.surface,
+    "--altara-surface-elevated": palette.surfaceElevated,
+    "--altara-surface-panel": palette.surfacePanel,
+    "--altara-border": palette.border,
+    "--altara-border-strong": palette.borderStrong,
+    "--altara-text": palette.text,
+    "--altara-text-muted": palette.textMuted,
+    "--altara-text-soft": palette.textSoft,
+    "--altara-input": palette.input,
+    "--altara-hover": palette.hover,
+    "--altara-active": palette.active,
+    "--altara-accent": accent,
+    "--altara-accent-strong": accentStrong,
+    "--altara-accent-soft": rgbaFromHex(accent, isWhite ? 0.14 : 0.11),
+    "--altara-accent-border": rgbaFromHex(accent, isWhite ? 0.34 : 0.28),
+
+    "--bg-main": palette.bg,
+    "--bg-deep": palette.bgDeep,
+    "--surface-0": palette.surface0,
+    "--surface-1": palette.surface,
+    "--surface-2": palette.surfaceElevated,
+    "--surface-row": palette.row,
+    "--surface-row-hover": palette.active,
+    "--stroke": palette.border,
+    "--stroke-strong": palette.borderStrong,
+    "--text-main": palette.text,
+    "--text-soft": isWhite ? palette.textMuted : palette.textSoft,
+    "--text-muted": palette.textMuted,
+    "--color-link": palette.link,
+    "--accent": accent,
+    "--accent-strong": accentStrong,
+    "--accent-soft": rgbaFromHex(accent, isWhite ? 0.16 : 0.14),
+    "--focus-ring": rgbaFromHex(accent, isWhite ? 0.28 : 0.34),
+    "--selection-bg": rgbaFromHex(accent, isWhite ? 0.36 : 0.58),
+
+    "--ui-shell-bg": palette.bg,
+    "--ui-top-bg": palette.bg,
+    "--ui-card-bg": palette.surface,
+    "--ui-panel-soft-bg": palette.bgSoft,
+    "--ui-row-bg": palette.row,
+    "--ui-row-strong-bg": palette.rowStrong,
+    "--ui-input-bg": palette.input,
+    "--ui-input-focus-bg": palette.inputFocus,
+    "--ui-btn-bg": palette.surfaceElevated,
+    "--ui-btn-border": palette.border,
+    "--ui-btn-hover-bg": palette.hover,
+    "--ui-btn-hover-border": palette.borderStrong,
+    "--ui-primary-bg": rgbaFromHex(accent, isWhite ? 0.14 : 0.16),
+    "--ui-primary-border": rgbaFromHex(accent, isWhite ? 0.34 : 0.28),
+    "--ui-primary-hover-bg": rgbaFromHex(accent, isWhite ? 0.22 : 0.24),
+    "--ui-primary-hover-border": rgbaFromHex(accent, isWhite ? 0.46 : 0.38),
+    "--ui-danger-bg": isWhite ? "rgba(189, 95, 93, 0.1)" : "rgba(211, 108, 104, 0.14)",
+    "--ui-danger-border": isWhite ? "rgba(189, 95, 93, 0.26)" : "rgba(211, 108, 104, 0.24)",
+    "--ui-danger-hover-bg": isWhite ? "rgba(189, 95, 93, 0.16)" : "rgba(211, 108, 104, 0.22)",
+    "--ui-danger-hover-border": isWhite ? "rgba(189, 95, 93, 0.38)" : "rgba(211, 108, 104, 0.36)",
+    "--ui-debug-bg": palette.surfacePanel,
+    "--left-sidebar-bg": palette.bg,
+    "--left-sidebar-top-bg": palette.bg,
+  };
+
+  [root, document.body, document.querySelector(".app")].filter(Boolean).forEach((target) => {
+    Object.entries(runtimeVars).forEach(([name, value]) => setAppearanceRuntimeVar(target, name, value));
+  });
+
+  const nodes = [root, document.body].filter(Boolean);
+  nodes.forEach((node) => {
+    node.classList.remove(
+      "theme-default",
+      "theme-midnight",
+      "theme-soft",
+      "theme-high-contrast",
+      "theme-custom",
+      "theme-white",
+      "theme-system",
+      "theme-resolved-dark",
+      "theme-resolved-light",
+      "density-cozy",
+      "density-balanced",
+      "density-compact",
+      "reduce-motion"
+    );
+    node.classList.add(settings.theme === "system" ? "theme-system" : `theme-${settings.theme}`);
+    node.classList.add(isWhite ? "theme-resolved-light" : "theme-resolved-dark");
+  });
+
+  const settingsOverlay = document.getElementById("profileOverlay");
+  if (settingsOverlay?.classList?.contains("settingsOverlay")) {
+    settingsOverlay.style.setProperty("--settings-bg", palette.bg);
+    settingsOverlay.style.setProperty("--settings-panel", palette.bgSoft);
+    settingsOverlay.style.setProperty("--settings-surface", palette.surface);
+    settingsOverlay.style.setProperty("--settings-surface-2", palette.surfacePanel);
+    settingsOverlay.style.setProperty("--settings-row", isWhite ? "rgba(33, 31, 26, 0.045)" : "rgba(255, 255, 255, 0.035)");
+    settingsOverlay.style.setProperty("--settings-row-hover", rgbaFromHex(accent, isWhite ? 0.12 : 0.07));
+    settingsOverlay.style.setProperty("--settings-border", palette.border);
+    settingsOverlay.style.setProperty("--settings-border-strong", palette.borderStrong);
+    settingsOverlay.style.setProperty("--settings-text", palette.text);
+    settingsOverlay.style.setProperty("--settings-soft", palette.textSoft);
+    settingsOverlay.style.setProperty("--settings-muted", palette.textMuted);
+    settingsOverlay.style.setProperty("--settings-accent", accent);
+    settingsOverlay.style.setProperty("--settings-accent-soft", rgbaFromHex(accent, isWhite ? 0.16 : 0.11));
+    settingsOverlay.style.setProperty("--settings-accent-border", rgbaFromHex(accent, isWhite ? 0.38 : 0.28));
+  }
+
+  exposeAppearanceDebugHelper();
+}
+
+function applyAppearanceSettings(settingsInput, { syncForm = false, markCommitted = false } = {}) {
+  const settings = normalizeAppearanceSettings(settingsInput || loadAppearanceSettings());
+  appearanceSettingsCache = settings;
+  appearanceSettingsCacheUserId = getAppearanceCacheUserId();
+  const runtimeTheme = mergeAppearanceWithProfileTheme(settings);
+  state.me = state.me || {};
+  state.me.theme_settings = runtimeTheme;
+  applyThemeSettings(runtimeTheme);
+  syncAppearanceVisualControls(settings);
+  if (syncForm) updateAppearanceControls(settings);
+  if (markCommitted) setThemeEditorCommitted(runtimeTheme);
+  return runtimeTheme;
+}
+
+function readAppearanceControls() {
+  return normalizeAppearanceSettings(appearanceSettingsCache || loadAppearanceSettings());
+}
+
+function updateAppearanceControls(settingsInput) {
+  syncAppearanceVisualControls(settingsInput || appearanceSettingsCache || loadAppearanceSettings());
+}
+
+function syncAppearanceVisualControls(settingsInput) {
+  const settings = normalizeAppearanceSettings(settingsInput || appearanceSettingsCache || loadAppearanceSettings());
+  document.querySelectorAll("[data-appearance-theme]").forEach((node) => {
+    if (!(node instanceof HTMLElement)) return;
+    const selected = normalizeAppearanceThemeChoice(node.dataset.appearanceTheme) === settings.theme;
+    node.classList.toggle("is-selected", selected);
+    node.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+
+  const activeAccent = normalizeHexColor(settings.accent, APPEARANCE_DEFAULT_ACCENT).toLowerCase();
+  document.querySelectorAll("[data-appearance-accent]").forEach((node) => {
+    if (!(node instanceof HTMLElement)) return;
+    const value = normalizeHexColor(node.dataset.appearanceAccent, "").toLowerCase();
+    const selected = !!value && value === activeAccent;
+    node.classList.toggle("is-selected", selected);
+    node.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+}
+
+function prefersReducedAppearanceFlash() {
+  try {
+    return !!prefersReducedMotionUi?.()
+      || !!document.body?.classList?.contains("motion-reduced")
+      || !!document.body?.classList?.contains("reduce-motion")
+      || !!document.documentElement?.classList?.contains("reduce-motion")
+      || !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  } catch (_) {
+    return false;
+  }
+}
+
+function triggerAppearanceWhiteFlash() {
+  if (prefersReducedAppearanceFlash()) return;
+  const body = document.body;
+  if (!body) return;
+  let overlay = document.getElementById("appearanceWhiteFlashOverlay");
+  if (!(overlay instanceof HTMLElement)) {
+    overlay = document.createElement("div");
+    overlay.id = "appearanceWhiteFlashOverlay";
+    overlay.className = "appearanceWhiteFlashOverlay";
+    overlay.setAttribute("aria-hidden", "true");
+    body.appendChild(overlay);
+  }
+  overlay.classList.remove("is-active");
+  void overlay.offsetWidth;
+  overlay.classList.add("is-active");
+  window.setTimeout(() => {
+    overlay?.classList?.remove("is-active");
+  }, 720);
+}
+
+function playAppearanceWhiteEasterEggSound() {
+  try {
+    if (!APPEARANCE_WHITE_EASTER_EGG_SOUND_URL) return;
+    const audio = new Audio(APPEARANCE_WHITE_EASTER_EGG_SOUND_URL);
+    audio.volume = 0.3;
+    audio.loop = false;
+    const result = audio.play();
+    if (result && typeof result.catch === "function") {
+      result.catch(() => {});
+    }
+  } catch (_) {}
+}
+
+async function confirmAppearanceWhiteThemeSelection(triggerEl = null) {
+  if (appearanceWhiteThemeConfirmInFlight) return false;
+  appearanceWhiteThemeConfirmInFlight = true;
+  const modal = ensureAppConfirmModal?.();
+  modal?.classList?.add("appConfirmModal--whiteThemeEasterEgg");
+  let confirmed = false;
+  try {
+    confirmed = await requestAppConfirm(
+      t("settings.appearance.white_confirm.body", "Light mode may cause emotional damage."),
+      {
+        title: t("settings.appearance.white_confirm.title", "Are you sure?"),
+        okText: t("settings.appearance.white_confirm.ok", "Yes, flashbang me"),
+        cancelText: t("settings.appearance.white_confirm.cancel", "No, take me back to the darkness"),
+      }
+    );
+  } finally {
+    appearanceWhiteThemeConfirmInFlight = false;
+    modal?.classList?.remove("appConfirmModal--whiteThemeEasterEgg");
+    if (triggerEl instanceof HTMLElement) {
+      window.requestAnimationFrame(() => {
+        try { triggerEl.focus(); } catch (_) {}
+      });
+    }
+  }
+  return !!confirmed;
+}
+
+function bindAppearanceControls() {
+  if (appearanceControlsBound) return;
+  appearanceControlsBound = true;
+
+  document.querySelectorAll("[data-appearance-theme]").forEach((node) => {
+    node.addEventListener("click", async () => {
+      const current = normalizeAppearanceSettings(appearanceSettingsCache || loadAppearanceSettings());
+      const theme = normalizeAppearanceThemeChoice(node.dataset.appearanceTheme, current.theme);
+      if (theme === "white" && current.theme !== "white") {
+        const confirmed = await confirmAppearanceWhiteThemeSelection(node);
+        if (!confirmed) {
+          syncAppearanceVisualControls(current);
+          return;
+        }
+        playAppearanceWhiteEasterEggSound();
+        triggerAppearanceWhiteFlash();
+      }
+      const next = {
+        ...current,
+        theme,
+      };
+      applyAppearanceSettings(next);
+    });
+  });
+
+  document.querySelectorAll("[data-appearance-accent]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const accent = normalizeThemeOptionalColor(node.dataset.appearanceAccent);
+      if (!accent) return;
+      const current = normalizeAppearanceSettings(appearanceSettingsCache || loadAppearanceSettings());
+      applyAppearanceSettings({ ...current, accent });
+    });
+  });
+}
+
+function resetAppearanceSettings() {
+  const settings = getDefaultAppearanceSettings();
+  const runtimeTheme = applyAppearanceSettings(settings);
+  clearThemeEditorDraftFromStorage();
+  return runtimeTheme;
+}
+
 function getActiveThemeSettings() {
-  return normalizeThemeSettings(state.me?.theme_settings || getFallbackThemeSettings());
+  return mergeAppearanceWithProfileTheme(appearanceSettingsCache || loadAppearanceSettings());
 }
 
 function bindThemeSystemModeSyncOnce() {
@@ -5847,12 +6880,12 @@ function bindThemeSystemModeSyncOnce() {
   const media = window.matchMedia?.("(prefers-color-scheme: dark)");
   if (!media) return;
   const handle = () => {
-    const active = getActiveThemeSettings();
-    if (String(active.mode || "").toLowerCase() !== "auto") return;
-    applyThemeSettings(active);
+    const activeAppearance = normalizeAppearanceSettings(appearanceSettingsCache || loadAppearanceSettings());
+    if (activeAppearance.theme !== "system") return;
+    const active = applyAppearanceSettings(activeAppearance);
     const overlay = document.getElementById("profileOverlay");
     if (overlay && !overlay.classList.contains("hidden")) {
-      writeThemeToForm(active);
+      syncAppearanceVisualControls(activeAppearance);
     }
   };
   if (typeof media.addEventListener === "function") {
@@ -6003,10 +7036,10 @@ function deleteSelectedCustomThemePreset() {
 }
 
 function cancelThemeFormChanges() {
-  const fallback = themeEditorCommittedSettings || getActiveThemeSettings();
-  const theme = normalizeThemeSettings(fallback);
+  const settings = loadAppearanceSettings({ force: true });
+  const theme = mergeAppearanceWithProfileTheme(settings);
   writeThemeToForm(theme);
-  applyThemeSettings(theme);
+  applyAppearanceSettings(settings);
   applyDesktopBehaviorSettingsToUi(desktopBehaviorSettingsCache);
   syncSidebarWidthControls(theme.left_sidebar_width);
   clearThemeEditorDraftFromStorage();
@@ -6142,12 +7175,15 @@ async function persistThemeSettings(themeInput, { showSuccess = false, showError
 }
 
 async function saveThemeSettings() {
-  const theme = readThemeFromForm();
-  const saved = await persistThemeSettings(theme, { showSuccess: true, showError: true });
-  if (saved) {
-    setThemeEditorCommitted(theme);
-    clearThemeEditorDraftFromStorage();
-  }
+  const settings = readAppearanceControls();
+  const runtimeTheme = mergeAppearanceWithProfileTheme(settings);
+  const saved = await persistThemeSettings(runtimeTheme, { showSuccess: false, showError: true });
+  if (!saved) return;
+  const savedSettings = saveAppearanceSettings(settings);
+  applyAppearanceSettings(savedSettings);
+  setThemeEditorCommitted(runtimeTheme);
+  clearThemeEditorDraftFromStorage();
+  alert(t("settings.theme.saved_account", "Appearance saved to your account."));
 }
 
 function queueSidebarWidthPersist(widthInput) {
@@ -6157,7 +7193,10 @@ function queueSidebarWidthPersist(widthInput) {
   leftSidebarWidthPersistTimer = setTimeout(() => {
     leftSidebarWidthPersistTimer = null;
     const theme = normalizeThemeSettings({ ...getActiveThemeSettings(), left_sidebar_width: width });
-    void persistThemeSettings(theme, { showSuccess: false, showError: false });
+    state.me = state.me || {};
+    state.me.theme_settings = theme;
+    applyThemeSettings(theme);
+    setThemeEditorCommitted(theme);
   }, 260);
 }
 
@@ -6932,50 +7971,14 @@ function bindRightSidebarOverlayOnce() {
     closeRightSidebarOverlay();
   });
 
-  document.addEventListener("keydown", (e) => {
-    if (tryHandleDmProfileAltSShortcut(e)) return;
-    if (e.__altaraDmProfileAltSHandled) return;
-    if (callKeybindCaptureAction || appKeybindCaptureAction) return;
-    if (!doesKeyboardEventMatchAppKeybindAction("togglePanels", e)) return;
-    if (isTextInputFocused()) return;
-    const dmMain = document.getElementById("dmMain");
-    const dmVisible = !!dmMain && dmMain.style.display !== "none";
-    if (dmVisible && !isServerConversationUiOpen()) return;
-    e.preventDefault();
-    const nextCollapsed = !isRightSidebarCollapsed();
-    if (isServerConversationUiOpen()) {
-      if (rightSidebarForceHiddenForServerVoiceStage) {
-        setRightSidebarCollapsed(true, { persist: false });
-        return;
-      }
-      rightSidebarCollapsedServerMode = nextCollapsed;
-      setRightSidebarCollapsed(nextCollapsed, { persist: false });
-      return;
-    }
-    setRightSidebarCollapsed(nextCollapsed, { persist: true });
-  });
-
   setRightSidebarCollapsed(readRightSidebarCollapsedPreference(), { persist: false });
 }
 
 function resetThemeFormToDefault() {
-  const theme = normalizeThemeSettings({
-    ...getFallbackThemeSettings(),
-    app_language: appLanguage || readStoredAppLanguage() || APP_LANG_DEFAULT,
-  });
-  writeThemeToForm(theme);
-  applyThemeSettings(theme);
-  writeThemeEditorDraftToStorage(theme);
-  syncSidebarWidthControls(theme.left_sidebar_width);
-  setAppLanguage(theme.app_language, { persist: true, rerender: true, syncForm: false });
+  resetAppearanceSettings();
 }
 
-applyThemeSettings({
-  preset: THEME_DEFAULT_PRESET,
-  ...THEME_PRESETS[THEME_DEFAULT_PRESET],
-  ...THEME_DEFAULT_OPTIONS,
-  ...THEME_DEFAULT_COLOR_TWEAKS,
-});
+applyAppearanceSettings(loadAppearanceSettings());
 bindThemeSystemModeSyncOnce();
 
 /* ========================= GIF CONFIG ========================= */
@@ -8700,7 +9703,6 @@ function setAvatar(el, url, userId = "") {
       );
     }
     if (!resolvedUrl) {
-      // Keep current media instead of blanking the profile card avatar.
       ensureMeStatusDot();
       queueManagedGifPlaybackSync(el);
       return;
@@ -8739,6 +9741,11 @@ function resolveAvatarFallbackInitial(userId = "", fallbackChar = "", alt = "") 
     || "?"
   );
   return String(seed || "?").trim().charAt(0).toUpperCase() || "?";
+}
+
+function getAvatarFallbackHtml(userId = "", fallbackChar = "", alt = "", className = "profileAvatarFallback") {
+  const initial = resolveAvatarFallbackInitial(userId, fallbackChar, alt);
+  return `<span class="${escAttr(className)}">${esc(initial)}</span>`;
 }
 
 function rowUser(u, rightHtml = "", userIdParaDot = null, opts = {}) {
@@ -11503,9 +12510,11 @@ async function runSelectedOwnerModerationAction(actionTypeInput) {
 
 async function listMyModerationActionsRpc(limit = 25) {
   try {
-    const { data, error } = await supabase.rpc("list_my_moderation_actions", {
-      p_limit: Math.max(1, Number(limit) || 25),
-    });
+    const { data, error } = await rpcWithTimeout(
+      "list_my_moderation_actions",
+      { p_limit: Math.max(1, Number(limit) || 25) },
+      RPC_SOFT_TIMEOUT_MS
+    );
     if (error) return { rows: [], error };
     return {
       rows: (Array.isArray(data) ? data : [])
@@ -11518,9 +12527,13 @@ async function listMyModerationActionsRpc(limit = 25) {
   }
 }
 
-async function getMyModerationStateRpc() {
+async function getMyModerationStateRpc(timeoutMs = RPC_SOFT_TIMEOUT_MS) {
   try {
-    const { data, error } = await supabase.rpc("get_my_moderation_state");
+    const { data, error } = await rpcWithTimeout(
+      "get_my_moderation_state",
+      {},
+      timeoutMs
+    );
     if (error) return { state: normalizeUserModerationStateRow({}), error };
     return {
       state: normalizeMyModerationStatePayload(data),
@@ -11572,9 +12585,9 @@ function scheduleModerationInboxRefresh(delayMs = 120, { render = true } = {}) {
   }, safeDelay);
 }
 
-async function refreshMyModerationState({ enforceBan = false } = {}) {
+async function refreshMyModerationState({ enforceBan = false, timeoutMs = RPC_SOFT_TIMEOUT_MS } = {}) {
   if (!state.user?.id) return normalizeUserModerationStateRow({});
-  const result = await getMyModerationStateRpc();
+  const result = await getMyModerationStateRpc(timeoutMs);
   if (result?.error) {
     if (isModerationSqlMissingError(result.error)) {
       return syncMyModerationState({ user_id: state.user.id, is_banned: false, metadata: {} });
@@ -11913,9 +12926,9 @@ function applyLanguageToStaticUi() {
   }
   void renderVoiceVideoSettingsUi();
   const btnSaveTheme = document.getElementById("btnSaveTheme");
-  if (btnSaveTheme) btnSaveTheme.textContent = t("settings.theme.save", "Save colors");
+  if (btnSaveTheme) btnSaveTheme.textContent = t("settings.theme.save", "Save changes");
   const themeHint = document.getElementById("settingsThemeHint");
-  if (themeHint) themeHint.textContent = t("settings.theme.hint", "These colors are saved to your account.");
+  if (themeHint) themeHint.textContent = t("settings.theme.hint", "Theme and accent preview immediately and sync with your account when saved.");
   const langLabel = document.getElementById("themeLanguageLabel");
   if (langLabel) langLabel.textContent = t("settings.language.label", "Language");
   const timeFormatLabel = document.getElementById("themeTimeFormatLabel");
@@ -12169,12 +13182,7 @@ function setAppLanguage(lang, { persist = true, rerender = true, syncForm = true
 function syncSettingsOverlayDockMode(tabId = settingsActiveTab) {
   const overlay = document.getElementById("profileOverlay");
   if (!overlay) return;
-  const isAppearance = String(tabId || "").trim().toLowerCase() === "appearance";
-  const canDock = window.innerWidth >= 1120;
-  const dockAppearance = isAppearance && canDock;
-  overlay.classList.toggle("settingsOverlay--appearance-live", dockAppearance);
-  const btnFullMode = document.getElementById("btnSettingsFullMode");
-  if (btnFullMode) btnFullMode.hidden = !dockAppearance;
+  overlay.classList.remove("settingsOverlay--appearance-live");
 }
 
 function setSettingsTab(tabId = "account") {
@@ -12269,7 +13277,9 @@ function closeProfileOverlay() {
   if (!p) return;
   stopVoiceMicTest({ clearError: true });
   if (themeEditorCommittedSettings) {
-    applyThemeSettings(themeEditorCommittedSettings);
+    state.me = state.me || {};
+    state.me.theme_settings = normalizeThemeSettings(themeEditorCommittedSettings);
+    applyAppearanceSettings(normalizeAppearanceSettings(themeEditorCommittedSettings));
   }
   clearThemeEditorDraftFromStorage();
   settingsSecurityUnlocked = false;
@@ -12279,8 +13289,6 @@ function closeProfileOverlay() {
   p.classList.add("hidden");
   p.setAttribute("aria-hidden", "true");
   p.classList.remove("settingsOverlay--appearance-live");
-  const btnFullMode = document.getElementById("btnSettingsFullMode");
-  if (btnFullMode) btnFullMode.hidden = true;
   if (callKeybindCaptureAction) {
     callKeybindCaptureAction = "";
     callKeybindCapturePressedTokens.clear();
@@ -12330,9 +13338,6 @@ function bindProfileOverlayOnce() {
   profileBound = true;
 
   document.getElementById("btnCloseProfile")?.addEventListener("click", closeProfileOverlay);
-  document.getElementById("btnSettingsFullMode")?.addEventListener("click", () => {
-    setSettingsTab("account");
-  });
 
   document.getElementById("profileOverlay")?.addEventListener("click", (e) => {
     if (e.target?.dataset?.close) closeProfileOverlay();
@@ -12459,6 +13464,7 @@ function bindProfileOverlayOnce() {
     syncProfileBioFieldUi();
   });
   bindCustomThemeColorPickerOnce();
+  bindAppearanceControls();
   bindProfileEscapeGuardOnce();
 
   document.getElementById("avatarEditorClose")?.addEventListener("click", hideAvatarEditor);
@@ -12499,10 +13505,12 @@ function bindProfileOverlayOnce() {
     await openUserCardModal(uid, {
       username: state.me?.username || "",
       display_name: state.me?.display_name || state.me?.username || "",
-      avatar_url: state.me?.avatar_url || "",
+      avatar_url: getCurrentMeAvatarUrl() || state.me?.avatar_url || "",
       banner_url: state.me?.banner_url || state.me?.theme_settings?.banner_url || "",
+      pronouns: state.me?.pronouns || "",
       name_color: state.me?.name_color || "",
       call_tile_color: state.me?.call_tile_color || "",
+      theme_settings: state.me?.theme_settings || null,
     }, {
       presentation: "overlay",
       kind: "self",
@@ -12637,6 +13645,7 @@ function bindProfileOverlayOnce() {
     "themeVisualStyle",
     "themeDensity",
     "themeLayoutMood",
+    "themeReduceMotion",
   ].forEach((id) => {
     document.getElementById(id)?.addEventListener("change", onThemeOptionInput);
   });
@@ -13041,14 +14050,14 @@ async function loadProfileOverlay() {
   if (nameColorInput) nameColorInput.value = normalizeNameColor(me.name_color) || "#f1f2f5";
   const callTileColorInput = document.getElementById("callTileColor");
   if (callTileColorInput) callTileColorInput.value = normalizeCallTileColor(me.call_tile_color) || "#1b2230";
-  const savedTheme = normalizeThemeSettings(meSnapshot?.theme_settings || me.theme_settings);
+  const savedAppearance = loadAppearanceSettings({ force: true });
+  const savedTheme = getActiveThemeSettings();
   setThemeEditorCommitted(savedTheme);
   renderThemeCustomPresetSelect();
-  const draftTheme = readThemeEditorDraftFromStorage();
-  const theme = draftTheme ? normalizeThemeSettings({ ...savedTheme, ...draftTheme, preset: "custom" }) : savedTheme;
-  writeThemeToForm(theme);
-  syncNotificationBehaviorSettingsUi(savedTheme);
-  applyThemeSettings(theme);
+  clearThemeEditorDraftFromStorage();
+  writeThemeToForm(savedTheme);
+  syncNotificationBehaviorSettingsUi(meSnapshot?.theme_settings || me.theme_settings || savedTheme);
+  applyAppearanceSettings(savedAppearance);
   applyDesktopBehaviorSettingsToUi(desktopBehaviorSettingsCache);
   setAppLanguage(savedTheme.app_language, { persist: true, rerender: false, syncForm: true });
 
@@ -13176,7 +14185,7 @@ async function saveProfile() {
   state.me.status = resolveMyPresenceStatus(state.me);
   setMyStatus(state.me.status);
   cacheProfileRow(state.me);
-  applyThemeSettings(normalizeThemeSettings(state.me?.theme_settings));
+  applyAppearanceSettings(loadAppearanceSettings({ force: true }));
   applyMeHeaderNameStyle();
   $("meName").textContent = state.me.display_name || state.me.username;
   $("meTag").textContent = "@" + state.me.username;
@@ -24025,7 +25034,11 @@ async function consumeInitialDesktopDeepLinkIfPresent() {
   const bridge = getDesktopBridge();
   if (!bridge || typeof bridge.getPendingDeepLink !== "function") return false;
   try {
-    const payload = await Promise.resolve(bridge.getPendingDeepLink());
+    const payload = await awaitWithTimeout(
+      Promise.resolve(bridge.getPendingDeepLink()),
+      2500,
+      "desktop pending deep link"
+    );
     const rawUrl = String(payload?.url || payload || "").trim();
     if (!rawUrl) return false;
 
@@ -37780,7 +38793,75 @@ function queueManagedGifPlaybackSync(root = document) {
   });
 }
 
+function getPotentialGifImageLiveUrl(img) {
+  if (!(img instanceof HTMLImageElement)) return "";
+  const candidates = [
+    img.getAttribute("data-gif-url"),
+    img.dataset?.gifLiveSrc,
+    img.dataset?.avatarSrc,
+    img.getAttribute("src"),
+    img.currentSrc,
+    img.src,
+  ];
+  for (const candidate of candidates) {
+    const url = String(candidate || "").trim();
+    if (url && isGifLikeUrl(url)) return url;
+  }
+  return "";
+}
+
+function clearAutoManagedGifImageRoot(img) {
+  if (!(img instanceof HTMLImageElement)) return;
+  if (img.getAttribute("data-managed-gif-auto") !== "1") return;
+  img.removeAttribute("data-managed-gif-root");
+  img.removeAttribute("data-managed-gif-auto");
+  img.removeAttribute("data-managed-gif-media");
+  img.removeAttribute("data-gif-url");
+  img.removeAttribute("data-gif-live-src");
+  img.removeAttribute("data-gif-playback");
+  img.removeAttribute("data-gif-paused-label");
+  img.classList.remove("is-gif-paused");
+  img.title = "";
+}
+
+function ensureStandaloneManagedGifImageRoot(img) {
+  if (!(img instanceof HTMLImageElement)) return false;
+  const existingRoot = img.closest("[data-managed-gif-root]");
+  if (existingRoot && existingRoot !== img) return false;
+
+  const liveUrl = getPotentialGifImageLiveUrl(img);
+  const autoManaged = img.getAttribute("data-managed-gif-auto") === "1";
+  if (!liveUrl) {
+    if (autoManaged) clearAutoManagedGifImageRoot(img);
+    return false;
+  }
+
+  if (existingRoot === img && !autoManaged) {
+    if (!img.getAttribute("data-gif-url")) img.setAttribute("data-gif-url", liveUrl);
+    img.setAttribute("data-managed-gif-media", "1");
+    img.dataset.gifLiveSrc = liveUrl;
+    return true;
+  }
+
+  img.setAttribute("data-managed-gif-root", "image");
+  img.setAttribute("data-managed-gif-auto", "1");
+  img.setAttribute("data-managed-gif-media", "1");
+  img.setAttribute("data-gif-url", liveUrl);
+  img.dataset.gifLiveSrc = liveUrl;
+  return true;
+}
+
+function registerStandaloneManagedGifImages(root = document) {
+  const visit = (node) => {
+    if (node instanceof HTMLImageElement) ensureStandaloneManagedGifImageRoot(node);
+  };
+  visit(root);
+  const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+  scope.querySelectorAll?.("img").forEach(visit);
+}
+
 function getManagedGifRoots(root = document) {
+  registerStandaloneManagedGifImages(root);
   const seen = new Set();
   const out = [];
   const push = (node) => {
@@ -37847,6 +38928,127 @@ function cacheManagedGifStillFrame(liveUrl = "", stillFrame = "") {
   }
 }
 
+function buildManagedGifStaticUrlCandidates(liveUrl = "") {
+  const raw = String(liveUrl || "").trim();
+  if (!raw || !isGifLikeUrl(raw)) return [];
+  const out = [];
+  const push = (value = "") => {
+    const next = String(value || "").trim();
+    if (!next || next === raw || isGifLikeUrl(next) || out.includes(next)) return;
+    out.push(next);
+  };
+
+  try {
+    const url = new URL(raw, window.location.href);
+    const host = String(url.hostname || "").toLowerCase();
+    const path = String(url.pathname || "");
+    if (/\.gif$/i.test(path)) {
+      const pngUrl = new URL(url.href);
+      pngUrl.pathname = pngUrl.pathname.replace(/\.gif$/i, ".png");
+      push(pngUrl.href);
+
+      const jpgUrl = new URL(url.href);
+      jpgUrl.pathname = jpgUrl.pathname.replace(/\.gif$/i, ".jpg");
+      push(jpgUrl.href);
+    }
+    if (host.includes("giphy.com") && /\/giphy\.gif$/i.test(path)) {
+      const stillUrl = new URL(url.href);
+      stillUrl.pathname = stillUrl.pathname.replace(/\/giphy\.gif$/i, "/giphy_s.gif");
+      push(stillUrl.href.replace(/giphy_s\.gif/i, "giphy_s.png"));
+    }
+    if (host.includes("tenor.com") && /\/tenor\.gif$/i.test(path)) {
+      const pngUrl = new URL(url.href);
+      pngUrl.pathname = pngUrl.pathname.replace(/\/tenor\.gif$/i, "/tenor.png");
+      push(pngUrl.href);
+    }
+  } catch (_) {}
+
+  return out.slice(0, 4);
+}
+
+function probeManagedGifStaticImageUrl(url = "") {
+  const candidate = String(url || "").trim();
+  if (!candidate) return Promise.resolve("");
+  return new Promise((resolve) => {
+    const img = new Image();
+    let settled = false;
+    const done = (value = "") => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    img.onload = () => done(candidate);
+    img.onerror = () => done("");
+    try { img.referrerPolicy = "no-referrer"; } catch (_) {}
+    window.setTimeout(() => done(""), 2200);
+    img.src = candidate;
+  });
+}
+
+async function captureManagedGifStillFrameFromBlob(liveUrl = "") {
+  if (!liveUrl || typeof fetch !== "function" || typeof createImageBitmap !== "function") return "";
+  try {
+    const response = await fetch(liveUrl, {
+      mode: "cors",
+      credentials: "omit",
+      cache: "force-cache",
+    });
+    if (!response?.ok) return "";
+    const blob = await response.blob();
+    if (!blob || !String(blob.type || "").toLowerCase().startsWith("image/")) return "";
+    const bitmap = await createImageBitmap(blob);
+    const width = Math.max(1, Number(bitmap.width || 0));
+    const height = Math.max(1, Number(bitmap.height || 0));
+    if (!width || !height) {
+      try { bitmap.close?.(); } catch (_) {}
+      return "";
+    }
+    const maxSide = 1200;
+    const scale = Math.min(1, maxSide / Math.max(width, height));
+    const outWidth = Math.max(1, Math.round(width * scale));
+    const outHeight = Math.max(1, Math.round(height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = outWidth;
+    canvas.height = outHeight;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) {
+      try { bitmap.close?.(); } catch (_) {}
+      return "";
+    }
+    ctx.drawImage(bitmap, 0, 0, outWidth, outHeight);
+    try { bitmap.close?.(); } catch (_) {}
+    return canvas.toDataURL("image/png");
+  } catch (_) {
+    return "";
+  }
+}
+
+function scheduleManagedGifStillFrameCapture(root, img, liveUrl = "") {
+  const key = String(liveUrl || "").trim();
+  if (!key || managedGifStillFrameCache.has(key) || managedGifStillFrameCaptureInFlight.has(key)) return;
+
+  const run = (async () => {
+    for (const candidate of buildManagedGifStaticUrlCandidates(key)) {
+      const loaded = await probeManagedGifStaticImageUrl(candidate);
+      if (loaded) return loaded;
+    }
+    return captureManagedGifStillFrameFromBlob(key);
+  })();
+
+  managedGifStillFrameCaptureInFlight.set(key, run);
+  run.then((stillFrame) => {
+    if (!stillFrame) return;
+    cacheManagedGifStillFrame(key, stillFrame);
+    if (root instanceof HTMLElement && root.isConnected) {
+      queueManagedGifPlaybackSync(root);
+    } else if (img instanceof HTMLImageElement && img.isConnected) {
+      queueManagedGifPlaybackSync(img);
+    }
+  }).catch(() => {}).finally(() => {
+    managedGifStillFrameCaptureInFlight.delete(key);
+  });
+}
+
 function captureManagedGifStillFrame(img, liveUrl = "") {
   if (!(img instanceof HTMLImageElement)) return "";
   if (liveUrl && managedGifStillFrameCache.has(liveUrl)) {
@@ -37887,7 +39089,10 @@ function resolveManagedGifPausedSrc(root, img) {
   }
 
   const stillFrame = captureManagedGifStillFrame(img, liveUrl);
-  if (!stillFrame) return "";
+  if (!stillFrame) {
+    scheduleManagedGifStillFrameCapture(root, img, liveUrl);
+    return "";
+  }
   return stillFrame;
 }
 
@@ -37912,6 +39117,7 @@ function setMessageGifPlaybackState(wrap, shouldPlay) {
   if (shouldPlay) {
     wrap.classList.remove("is-gif-paused");
     wrap.removeAttribute("data-gif-playback");
+    wrap.removeAttribute("data-gif-paused-label");
     img.title = "";
     if (img.src !== liveUrl) img.src = liveUrl;
     return;
@@ -37919,9 +39125,12 @@ function setMessageGifPlaybackState(wrap, shouldPlay) {
 
   wrap.classList.add("is-gif-paused");
   wrap.setAttribute("data-gif-playback", "paused");
-  img.title = getManagedGifPausedLabel();
+  const pausedLabel = getManagedGifPausedLabel();
+  wrap.setAttribute("data-gif-paused-label", pausedLabel);
+  img.title = pausedLabel;
   const pausedSrc = resolveManagedGifPausedSrc(wrap, img);
   if (pausedSrc && img.src !== pausedSrc) img.src = pausedSrc;
+  else if (!pausedSrc && img.src !== liveUrl) img.src = liveUrl;
 }
 
 function syncMessageGifPlaybackState(wrap) {
@@ -38013,6 +39222,10 @@ function bindManagedGifPlaybackObserverOnce() {
     for (const mutation of mutations) {
       if (mutation.type === "attributes") {
         const target = mutation.target;
+        if (target instanceof HTMLImageElement) {
+          schedule(target);
+          continue;
+        }
         if (target instanceof HTMLElement && target.hasAttribute("data-managed-gif-root")) {
           schedule(target);
         }
@@ -38021,7 +39234,11 @@ function bindManagedGifPlaybackObserverOnce() {
 
       for (const node of mutation.addedNodes) {
         if (!(node instanceof HTMLElement)) continue;
-        if (node.hasAttribute("data-managed-gif-root") || node.querySelector?.("[data-managed-gif-root]")) {
+        if (
+          node instanceof HTMLImageElement
+          || node.hasAttribute("data-managed-gif-root")
+          || node.querySelector?.("img,[data-managed-gif-root]")
+        ) {
           schedule(node);
           return;
         }
@@ -38033,7 +39250,7 @@ function bindManagedGifPlaybackObserverOnce() {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["data-managed-gif-root", "data-gif-url"],
+    attributeFilter: ["src", "data-managed-gif-root", "data-gif-url"],
   });
 }
 
@@ -44500,7 +45717,7 @@ function getUserCardRelationMeta(userId) {
   const selfId = normId(state.user?.id || "");
   if (!uid) return { label: "", tone: "" };
   if (uid === selfId) {
-    return { label: t("call.you", "You"), tone: "self", since: "", isSelf: true, kind: "self" };
+    return { label: "", tone: "self", since: "", isSelf: true, kind: "self" };
   }
   if (isUserBlockedLocally(uid)) {
     return { label: t("relationship.blocked", "Blocked"), tone: "pending", since: "", isSelf: false, kind: "blocked" };
@@ -44570,7 +45787,7 @@ function getUserCardMessageActionMeta(userId, username = "") {
   const uname = String(username || "").trim();
   const selfId = normId(state.user?.id || "");
   if (!uid || uid === selfId) {
-    return { label: t("call.you", "You"), disabled: true, action: "none", requestId: "" };
+    return { label: "", disabled: true, action: "none", requestId: "" };
   }
   if (isUserBlockedLocally(uid)) {
     return { label: t("relationship.blocked", "Blocked"), disabled: true, action: "blocked", requestId: "" };
@@ -46733,7 +47950,7 @@ function renderUserCard(profile = {}, { loading = false } = {}) {
   const canonicalName = profile?.display_name || profile?.username || "User";
   const username = profile?.username || userCardCurrentUsername || "";
   const bio = String(profile?.bio || "").trim();
-  const avatarUrl = profile?.avatar_url || "";
+  const avatarUrl = resolveProfileAvatarUrl(profile?.avatar_url || profile?.avatarUrl || "", "");
   const status = getPresenceStatusForUser(id);
   const statusLabel = status === "dnd"
     ? "ocupado"
@@ -46780,6 +47997,8 @@ function renderUserCard(profile = {}, { loading = false } = {}) {
   const widgetsTabEl = document.getElementById("userCardTabWidgets");
   const dmBtn = document.getElementById("btnUserCardDm");
   const profileBtn = document.getElementById("btnUserCardOpenProfile");
+  const modalEl = document.getElementById("userCardModal");
+  const isPreviewLayout = !!modalEl?.classList.contains("userCardModal--preview");
 
   if (avatarEl) {
     avatarEl.innerHTML = avatarUrl
@@ -46824,34 +48043,36 @@ function renderUserCard(profile = {}, { loading = false } = {}) {
     else nameEl.style.removeProperty("--user-name-color");
   }
   if (handleEl) {
+    const separator = " \u00b7 ";
+    let handleText = username ? `@${username}` : "@user";
     if (hasFriendNickname) {
       const canonicalLower = String(canonicalName || "").trim().toLowerCase();
       const usernameLower = String(username || "").trim().toLowerCase();
       const showCanonical = !!(canonicalLower && canonicalLower !== usernameLower);
-      if (showCanonical && username) handleEl.textContent = `${canonicalName} â€¢ @${username}`;
-      else if (showCanonical) handleEl.textContent = canonicalName;
-      else handleEl.textContent = username ? `@${username}` : "@user";
       handleEl.classList.add("is-nickname");
+      if (showCanonical && username) handleText = `${canonicalName}${separator}@${username}`;
+      else if (showCanonical) handleText = canonicalName;
     } else {
-      handleEl.textContent = username ? `@${username}` : "@user";
       handleEl.classList.remove("is-nickname");
     }
+    handleEl.textContent = (!isPreviewLayout && pronouns) ? `${handleText}${separator}${pronouns}` : handleText;
   }
   if (statusEl) {
-    statusEl.textContent = statusLabel;
-    statusEl.setAttribute("data-status", status);
+    statusEl.textContent = "";
+    statusEl.removeAttribute("data-status");
     statusEl.hidden = true;
+    statusEl.style.display = "none";
   }
   if (relationEl) {
-    const showRelation = !!relation?.label;
+    const showRelation = !isSelf && !!relation?.label;
     relationEl.hidden = !showRelation;
     relationEl.textContent = showRelation ? relation.label : "";
     if (showRelation) relationEl.setAttribute("data-tone", relation.tone || "friend");
     else relationEl.removeAttribute("data-tone");
   }
   if (pronounsEl) {
-    pronounsEl.hidden = !pronouns;
-    pronounsEl.textContent = pronouns || "";
+    pronounsEl.hidden = !isPreviewLayout || !pronouns;
+    pronounsEl.textContent = isPreviewLayout ? (pronouns || "") : "";
   }
   if (bioEl) bioEl.textContent = bio || (loading ? t("app.loading", "Loading...") : t("dm.no_bio", "No bio."));
 
@@ -46871,7 +48092,6 @@ function renderUserCard(profile = {}, { loading = false } = {}) {
         : t("usercard.friend_since", "Friends since");
       factParts.push(buildUserCardFactHtml(relationSinceLabel, formatUserCardDate(relation.since)));
     }
-    if (pronouns) factParts.push(buildUserCardFactHtml(t("usercard.pronouns", "Pronouns"), pronouns));
     if (currentServerMembership?.joinedAt) {
       const joinedIso = new Date(currentServerMembership.joinedAt).toISOString();
       factParts.push(buildUserCardFactHtml(
@@ -46921,13 +48141,16 @@ function renderUserCard(profile = {}, { loading = false } = {}) {
   setUserCardActiveTab(userCardActiveTab || "activity");
 
   if (dmBtn) {
-    dmBtn.disabled = !!messageAction?.disabled;
+    const showDmButton = !isSelf && String(messageAction?.action || "none") !== "none";
+    dmBtn.hidden = !showDmButton;
+    dmBtn.style.display = showDmButton ? "" : "none";
+    dmBtn.disabled = !showDmButton || !!messageAction?.disabled;
     dmBtn.textContent = String(messageAction?.label || (isSelf ? t("usercard.you", "You") : t("usercard.message", "Message")));
     dmBtn.setAttribute("data-user-card-dm-action", String(messageAction?.action || "none"));
     dmBtn.setAttribute("data-user-card-dm-request-id", String(messageAction?.requestId || ""));
   }
   if (profileBtn) {
-    profileBtn.textContent = t("usercard.profile", "Profile");
+    profileBtn.textContent = isSelf ? t("profile.edit", "Edit Profile") : t("usercard.profile", "Profile");
   }
 }
 
@@ -48013,10 +49236,12 @@ async function openUserCardModal(userId, seed = {}, opts = {}) {
     display_name: seed?.display_name || friend?.display_name || cached?.display_name || "",
     avatar_url: seed?.avatar_url || friend?.avatar_url || cached?.avatar_url || "",
     bio: typeof cached?.bio === "string" ? cached.bio : "",
+    pronouns: seed?.pronouns || friend?.pronouns || cached?.pronouns || "",
     created_at: seed?.created_at || cached?.created_at || null,
     name_color: seed?.name_color || friend?.name_color || cached?.name_color || null,
     call_tile_color: seed?.call_tile_color || friend?.call_tile_color || cached?.call_tile_color || null,
     banner_url: seed?.banner_url || friend?.banner_url || cached?.banner_url || cached?.theme_settings?.banner_url || "",
+    theme_settings: seed?.theme_settings || cached?.theme_settings || null,
   };
 
   cacheProfileRow(initial);
@@ -52901,6 +54126,7 @@ const DESKTOP_BEHAVIOR_SETTINGS_CACHE_KEY = "altara_desktop_behavior_cache_v2";
 let desktopGifPlaybackLifecycleBound = false;
 let managedGifPlaybackObserverBound = false;
 const managedGifStillFrameCache = new Map();
+const managedGifStillFrameCaptureInFlight = new Map();
 let desktopBehaviorSettingsCache = readStoredDesktopBehaviorSettingsCache() || {
   closeToTrayOnClose: true,
   launchOnStartup: true,
@@ -56064,6 +57290,9 @@ function persistDesktopBehaviorSettingsCache(settingsInput = null) {
       hardwareAccelerationCurrent: settings.hardwareAccelerationCurrent !== false,
       hardwareAccelerationRequiresRestart: !!settings.hardwareAccelerationRequiresRestart,
       hardwareAcceleration: !!settings.hardwareAcceleration,
+      reducedMotion: !!settings.reducedMotion,
+      pauseGifsWhenUnfocused: !!settings.pauseGifsWhenUnfocused,
+      gifsPlayOnHover: !!settings.gifsPlayOnHover,
     }));
   } catch (_) {}
 }
@@ -61925,7 +63154,11 @@ async function initRtcConfigFromDesktop() {
   const bridge = getDesktopBridge();
   if (!bridge || typeof bridge.getRtcConfig !== "function") return;
   try {
-    const remoteConfig = await bridge.getRtcConfig();
+    const remoteConfig = await awaitWithTimeout(
+      bridge.getRtcConfig(),
+      3500,
+      "desktop rtc config"
+    );
     const next = normalizeRtcConfigInput(remoteConfig);
     RTC_CONFIG = next;
     const hasTurn = next.iceServers.some((server) => {
@@ -87564,7 +88797,7 @@ function applyRealtimeProfileUpdate(profileRow) {
       setAvatar(document.getElementById("meAvatar"), getCurrentMeAvatarUrl(), state.user?.id || "");
     }
     if (typeof profilePatch.theme_settings !== "undefined") {
-      applyThemeSettings(normalizeThemeSettings(state.me.theme_settings));
+      applyAppearanceSettings(loadAppearanceSettings({ force: true }));
       syncNotificationBehaviorSettingsUi(state.me.theme_settings);
       applyDesktopBehaviorSettingsToUi(desktopBehaviorSettingsCache);
     }
@@ -90871,8 +92104,8 @@ async function uploadBannerBlob(blob, user, ext, contentTypeOverride = "", crop 
     if (!resolvedBannerUrl) settingsBanner.style.background = `linear-gradient(135deg, ${left}, ${right} 78%)`;
   }
 
-  writeThemeToForm(normalizeThemeSettings(state.me.theme_settings));
-  applyThemeSettings(normalizeThemeSettings(state.me.theme_settings));
+  const activeTheme = applyAppearanceSettings(appearanceSettingsCache || loadAppearanceSettings());
+  writeThemeToForm(activeTheme);
   applyMeHeaderBannerStyle();
   refreshDmProfilePanel();
   refreshOpenUserCard();
@@ -90968,9 +92201,10 @@ function ensureMeStatusMenu() {
   if (!menu) {
     menu = document.createElement("div");
     menu.id = "meStatusMenu";
-    menu.className = "msgMenu msgMenu--submenu";
+    menu.className = "msgMenu msgMenu--submenu meStatusMenu";
     document.body.appendChild(menu);
   }
+  menu.classList.add("meStatusMenu");
   if (meStatusMenuBound) return menu;
   meStatusMenuBound = true;
 
@@ -91002,13 +92236,426 @@ function ensureMeStatusMenu() {
   return menu;
 }
 
-function openMeStatusMenuAt(point) {
+let meProfilePopoutBound = false;
+let meProfilePopoutWidgetsRequestSeq = 0;
+
+function isMeProfilePopoutDebugEnabled() {
+  try {
+    return typeof isProfileMediaDebugEnabled === "function" && isProfileMediaDebugEnabled();
+  } catch (_) {
+    return false;
+  }
+}
+
+function logMeProfilePopoutDebug(eventName = "", details = {}) {
+  if (!isMeProfilePopoutDebugEnabled()) return;
+  console.info("[user-popout]", String(eventName || "user_popout.event"), details || {});
+}
+
+function getMeProfilePopoutStatusLabel(statusInput = "") {
+  const status = normalizePresenceStatus(statusInput || getMyStatus());
+  if (status === "idle") return t("status.option.idle", "Away");
+  if (status === "dnd") return t("status.option.dnd", "Do Not Disturb");
+  if (status === "invisible") return t("status.option.invisible", "Invisible");
+  return t("status.option.online", "Online");
+}
+
+function ensureMeProfilePopout() {
+  let popout = document.getElementById("meProfilePopout");
+  if (!popout) {
+    popout = document.createElement("div");
+    popout.id = "meProfilePopout";
+    popout.className = "meProfilePopout";
+    popout.setAttribute("aria-hidden", "true");
+    document.body.appendChild(popout);
+  }
+  return popout;
+}
+
+function getMeProfilePopoutAvatarHtml(profile = null) {
+  const uid = normId(profile?.id || state.user?.id || "");
+  const avatarUrl = getCurrentMeAvatarUrl();
+  if (avatarUrl) {
+    return buildAvatarMediaHtml(avatarUrl, {
+      userId: uid,
+      profile: profile || state.me || null,
+      alt: "avatar",
+      controlledGif: true,
+    });
+  }
+  const renderedFallback = document.querySelector("#meAvatar .meAvatarFallback, #meAvatar .profileAvatarFallback");
+  if (renderedFallback) return renderedFallback.outerHTML;
+  const seed = profile?.display_name || profile?.username || state.me?.display_name || state.me?.username || "User";
+  return getAvatarFallbackHtml(uid, seed, "avatar", "meProfilePopout__avatarFallback");
+}
+
+function buildMeProfilePopoutWidgetPreviewHtml(userId = "", { loading = false } = {}) {
+  const widgets = getCachedProfileWidgetsForUser(userId).slice(0, 3);
+  const previews = [];
+  for (const widget of widgets) {
+    const title = normalizeProfileWidgetTitle(widget?.title || "") || t("profile.widgets.card.title", "Widget");
+    const items = Array.isArray(widget?.items) ? widget.items : [];
+    const firstItem = getProfileWidgetFeaturedItem(widget) || items.find((item) => normalizeProfileWidgetTitle(item?.title || "")) || null;
+    const coverUrl = normalizeCatalogCoverUrl(firstItem?.cover_url || "");
+    previews.push({
+      title: firstItem ? normalizeProfileWidgetTitle(firstItem.title) : title,
+      meta: firstItem ? title : t("profile.widgets.preview", "Profile widget"),
+      type: getProfileWidgetTypeLabel(widget?.widget_type || "") || t("profile.widgets.card.title", "Widget"),
+      coverUrl,
+    });
+    if (previews.length >= 2) break;
+  }
+
+  if (!previews.length) {
+    const message = loading
+      ? t("profile.widgets.loading.title", "Loading widgets...")
+      : t("profile.widgets.empty.preview", "Open the full profile to explore widgets.");
+    return `
+      <div class="meProfilePopout__emptyPreview">
+        <div class="meProfilePopout__emptyTitle">${esc(message)}</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="meProfilePopout__widgetList">
+      ${previews.map((item) => {
+        const initial = String(item.title || "?").trim().charAt(0).toUpperCase() || "?";
+        const mediaHtml = item.coverUrl
+          ? `<img src="${escAttr(item.coverUrl)}" alt="" loading="lazy" decoding="async" draggable="false" />`
+          : esc(initial);
+        return `
+          <button class="meProfilePopout__widgetCard" type="button" data-me-popout-act="view-full">
+            <span class="meProfilePopout__widgetMedia" aria-hidden="true">${mediaHtml}</span>
+            <span class="meProfilePopout__widgetBody">
+              <span class="meProfilePopout__widgetType">${esc(item.type)}</span>
+              <span class="meProfilePopout__widgetName">${esc(item.title)}</span>
+              <span class="meProfilePopout__widgetMeta">${esc(item.meta)}</span>
+            </span>
+          </button>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function buildMeProfilePopoutHtml() {
+  const profile = getCurrentMeProfileSnapshot();
+  const uid = normId(profile?.id || state.user?.id || "");
+  const hasWidgetCache = userCardWidgetsCache.has(uid);
+  const displayName = profile?.display_name || profile?.username || "User";
+  const username = profile?.username || "";
+  const pronouns = normalizePronouns(profile?.pronouns || "");
+  const handleText = username ? `@${username}` : "@user";
+  const handleLine = pronouns ? `${handleText} · ${pronouns}` : handleText;
+  const bio = String(profile?.bio || "").trim();
+  const status = resolveMyPresenceStatus(profile);
+  const statusLabel = getMeProfilePopoutStatusLabel(status);
+
+  return `
+    <div class="meProfilePopout__scroll">
+      <div class="meProfilePopout__banner" aria-hidden="true">
+        <span class="meProfilePopout__bannerSheen"></span>
+      </div>
+      <div class="meProfilePopout__profile">
+        <div class="meProfilePopout__head">
+          <button class="meProfilePopout__avatar" type="button" data-me-popout-act="view-full" aria-label="${escAttr(t("dm.view_full_profile", "View Full Profile"))}">
+            ${getMeProfilePopoutAvatarHtml(profile)}
+            <span class="statusDot userCardAvatarStatusDot" data-status-dot="${escAttr(uid)}" data-status="${escAttr(status || "offline")}" aria-label="${escAttr(statusLabel)}"></span>
+          </button>
+          <button class="meProfilePopout__identity" type="button" data-me-popout-act="view-full" aria-label="${escAttr(t("dm.view_full_profile", "View Full Profile"))}">
+            <div class="meProfilePopout__name">${esc(displayName)}</div>
+            <div class="meProfilePopout__handle">${esc(handleLine)}</div>
+          </button>
+        </div>
+        <div class="meProfilePopout__body">
+          <div class="meProfilePopout__statusLine">
+            <button class="meProfilePopout__statusText" type="button" data-me-popout-act="status" aria-label="${escAttr(t("settings.section.status", "Status"))}: ${escAttr(statusLabel)}">
+              <span class="dotMini" data-status-mini="${escAttr(status)}"></span>
+              <span data-me-popout-status-label="1">${esc(statusLabel)}</span>
+            </button>
+            <button class="meProfilePopout__statusAction" type="button" data-me-popout-act="status">${esc(t("settings.section.status", "Status"))}</button>
+          </div>
+          <section class="meProfilePopout__about">
+            <div class="meProfilePopout__sectionLabel">${esc(t("profile.about", "About"))}</div>
+            <div class="meProfilePopout__bio">${esc(bio || t("dm.no_bio", "No bio."))}</div>
+          </section>
+          <section class="meProfilePopout__widgets">
+            <div class="meProfilePopout__sectionTop">
+              <div class="meProfilePopout__sectionLabel">${esc(t("profile.widgets.title", "Widgets"))}</div>
+            </div>
+            <div data-me-popout-widgets-preview>
+              ${buildMeProfilePopoutWidgetPreviewHtml(uid, { loading: !hasWidgetCache })}
+            </div>
+          </section>
+        </div>
+      </div>
+      <div class="meProfilePopout__actions">
+        <button class="meProfilePopout__action" type="button" data-me-popout-act="edit">${esc(t("profile.edit", "Edit Profile"))}</button>
+        <button class="meProfilePopout__action" type="button" data-me-popout-act="settings">${esc(t("settings.title", "Settings"))}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderMeProfilePopoutWidgetsPreview({ loading = false } = {}) {
+  const popout = document.getElementById("meProfilePopout");
+  if (!popout || !popout.classList.contains("is-open")) return;
+  const uid = normId(state.user?.id || "");
+  const host = popout.querySelector("[data-me-popout-widgets-preview]");
+  if (!uid || !host) return;
+  host.innerHTML = buildMeProfilePopoutWidgetPreviewHtml(uid, { loading });
+}
+
+async function refreshMeProfilePopoutWidgetsPreview({ force = true } = {}) {
+  const uid = normId(state.user?.id || "");
+  if (!uid) return;
+  const requestId = ++meProfilePopoutWidgetsRequestSeq;
+  const hasCachedWidgets = getCachedProfileWidgetsForUser(uid).length > 0;
+  renderMeProfilePopoutWidgetsPreview({ loading: !hasCachedWidgets });
+  try {
+    await fetchProfileWidgetsForUser(uid, { force: !!force });
+  } catch (_) {
+    // Keep the compact popout quiet; the full profile owns detailed widget errors.
+  }
+  if (requestId !== meProfilePopoutWidgetsRequestSeq) return;
+  const popout = document.getElementById("meProfilePopout");
+  if (!popout || !popout.classList.contains("is-open")) return;
+  renderMeProfilePopoutWidgetsPreview({ loading: false });
+  positionMeProfilePopout();
+}
+
+function applyMeProfilePopoutBannerStyle(profileInput = null) {
+  const bannerEl = document.querySelector("#meProfilePopout .meProfilePopout__banner");
+  if (!bannerEl) return;
+  const profile = profileInput || getCurrentMeProfileSnapshot();
+  const theme = normalizeThemeSettings(profile?.theme_settings || {});
+  const base = normalizeHexColor(
+    theme.surface_secondary || theme.surface || profile?.call_tile_color || "#24211d",
+    "#24211d"
+  );
+  const start = mixHex(base, "#24211d", 0.36);
+  const end = mixHex(base, "#101010", 0.78);
+  const glow = rgbaFromHex(base, 0.16);
+  const bannerUrl = getCurrentMeBannerUrl(theme);
+  applyBannerStyle(bannerEl, bannerUrl, start, end, glow, {
+    userId: profile?.id || state.user?.id || "",
+    profile,
+    overlay: "linear-gradient(180deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.38))",
+  });
+}
+
+function positionMeProfilePopout() {
+  const popout = document.getElementById("meProfilePopout");
+  const dock = document.getElementById("meProfileCard");
+  if (!popout || !dock || !popout.classList.contains("is-open")) return;
+  const rect = dock.getBoundingClientRect();
+  const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  const margin = 12;
+  const dockWidth = Math.round(rect.width || 0);
+  const width = Math.min(316, Math.max(220, dockWidth || 260), Math.max(220, vw - (margin * 2)));
+  const left = Math.max(margin, Math.min(Math.round(rect.left || margin), Math.max(margin, vw - width - margin)));
+  const availableAboveDock = Math.max(260, Math.round((rect.top || vh) - margin - 8));
+  const maxHeight = Math.max(260, Math.min(452, availableAboveDock, vh - (margin * 2)));
+  popout.style.setProperty("--me-popout-left", `${left}px`);
+  popout.style.setProperty("--me-popout-width", `${width}px`);
+  popout.style.setProperty("--me-popout-max-height", `${maxHeight}px`);
+
+  const measuredHeight = Math.min(popout.getBoundingClientRect().height || maxHeight, maxHeight);
+  const preferredBottom = Math.round(vh - (rect.top || 0) + 8);
+  const maxBottom = Math.max(margin, vh - measuredHeight - margin);
+  const bottom = Math.max(margin, Math.min(preferredBottom, maxBottom));
+  popout.style.setProperty("--me-popout-bottom", `${bottom}px`);
+}
+
+function closeMeProfilePopout() {
+  const popout = document.getElementById("meProfilePopout");
+  if (!popout) return;
+  popout.classList.remove("is-open");
+  popout.setAttribute("aria-hidden", "true");
+}
+
+function getMeUserCardSeed() {
+  const profile = getCurrentMeProfileSnapshot();
+  return {
+    id: profile?.id || state.user?.id || "",
+    username: profile?.username || state.me?.username || "",
+    display_name: profile?.display_name || state.me?.display_name || state.me?.username || "",
+    avatar_url: profile?.avatar_url || state.me?.avatar_url || "",
+    banner_url: profile?.banner_url || profile?.theme_settings?.banner_url || state.me?.banner_url || "",
+    pronouns: profile?.pronouns || state.me?.pronouns || "",
+    bio: profile?.bio || state.me?.bio || "",
+    name_color: profile?.name_color || state.me?.name_color || "",
+    call_tile_color: profile?.call_tile_color || state.me?.call_tile_color || "",
+    theme_settings: profile?.theme_settings || state.me?.theme_settings || null,
+    created_at: profile?.created_at || state.me?.created_at || null,
+  };
+}
+
+async function openMeFullProfileFromPopout() {
+  const uid = normId(state.user?.id || "");
+  if (!uid) return;
+  logMeProfilePopoutDebug("user_popout.view_full_profile_clicked", { userId: uid });
+  closeMeProfilePopout();
+  await openUserCardModal(uid, getMeUserCardSeed(), {
+    presentation: "overlay",
+    kind: "self",
+    initialTab: "widgets",
+  });
+  setUserCardActiveTab("widgets");
+}
+
+function openMeProfilePopout() {
+  const uid = normId(state.user?.id || "");
+  if (!uid) return;
+  closeMessageMenu();
+  closeDmListMenus();
+  closeMeStatusMenu();
+  const popout = ensureMeProfilePopout();
+  popout.innerHTML = buildMeProfilePopoutHtml();
+  popout.classList.add("is-open");
+  popout.setAttribute("aria-hidden", "false");
+  queueManagedGifPlaybackSync(popout);
+  applyMeProfilePopoutBannerStyle();
+  positionMeProfilePopout();
+  void refreshMeProfilePopoutWidgetsPreview({ force: true });
+  logMeProfilePopoutDebug("user_popout.opened", { userId: uid });
+}
+
+function bindMeProfilePopoutDockOnce() {
+  if (meProfilePopoutBound) return;
+  meProfilePopoutBound = true;
+  const dock = document.getElementById("meProfileCard");
+  const statusBtn = document.getElementById("meStatusBtn");
+  const controls = document.querySelectorAll("#btnHeaderMicToggle, #btnHeaderDeafenToggle, #btnHeaderSettings");
+
+  controls.forEach((control) => {
+    control.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  });
+
+  statusBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openMeStatusMenuForElement(statusBtn, { placement: "above" });
+  });
+
+  statusBtn?.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openMeStatusMenuForElement(statusBtn, { placement: "above" });
+  });
+
+  statusBtn?.addEventListener("keydown", (e) => {
+    if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openMeStatusMenuForElement(statusBtn, { placement: "above" });
+  });
+
+  dock?.addEventListener("click", (e) => {
+    const target = eventTargetElement(e);
+    if (target?.closest?.(".meControls, #btnHeaderMicToggle, #btnHeaderDeafenToggle, #btnHeaderSettings, #meStatusBtn")) return;
+    e.preventDefault();
+    logMeProfilePopoutDebug("user_dock.clicked", { targetId: target?.id || "", targetClass: String(target?.className || "") });
+    openMeProfilePopout();
+  });
+
+  const popout = ensureMeProfilePopout();
+  popout.addEventListener("click", (e) => {
+    const target = eventTargetElement(e);
+    const actionBtn = target?.closest?.("[data-me-popout-act]");
+    if (!actionBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const action = String(actionBtn.getAttribute("data-me-popout-act") || "").trim();
+    if (action === "view-full") {
+      void openMeFullProfileFromPopout();
+      return;
+    }
+    if (action === "status") {
+      openMeStatusMenuForElement(actionBtn, { placement: "side" });
+      return;
+    }
+    if (action === "edit" || action === "settings") {
+      closeMeProfilePopout();
+      openProfileOverlay();
+    }
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    const target = eventTargetElement(e);
+    if (!target) return;
+    const currentPopout = document.getElementById("meProfilePopout");
+    if (!currentPopout || !currentPopout.classList.contains("is-open")) return;
+    if (target.closest("#meProfilePopout")) return;
+    if (target.closest("#meProfileCard")) return;
+    closeMeProfilePopout();
+  });
+  window.addEventListener("resize", positionMeProfilePopout);
+  window.addEventListener("scroll", positionMeProfilePopout, true);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMeProfilePopout();
+  });
+}
+
+function positionMeStatusMenuNearAnchor(menu, anchorRect, {
+  width = 236,
+  minHeight = 218,
+  placement = "side",
+} = {}) {
+  if (!menu || !anchorRect) return;
+  const margin = 8;
+  const menuWidth = Math.max(180, width);
+
+  const place = () => {
+    const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    const renderedHeight = menu.offsetHeight;
+    const menuHeight = Math.max(minHeight, renderedHeight || minHeight);
+    let left = Math.round(anchorRect.left || margin);
+    let top = Math.round(anchorRect.bottom || margin) + margin;
+
+    if (placement === "above") {
+      left = Math.round(anchorRect.left || margin);
+      top = Math.round((anchorRect.top || margin) - menuHeight - margin);
+    } else {
+      const rightLeft = Math.round((anchorRect.right || 0) + margin);
+      const leftLeft = Math.round((anchorRect.left || 0) - menuWidth - margin);
+      left = rightLeft + menuWidth <= vw - margin ? rightLeft : leftLeft;
+      top = Math.round((anchorRect.top || margin) - 6);
+    }
+
+    if (left + menuWidth > vw - margin) left = Math.max(margin, vw - menuWidth - margin);
+    if (left < margin) left = margin;
+    if (top + menuHeight > vh - margin) top = Math.max(margin, vh - menuHeight - margin);
+    if (top < margin) top = margin;
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  };
+
+  place();
+  requestAnimationFrame(place);
+}
+
+function openMeStatusMenuForElement(anchorEl, options = {}) {
+  const rect = anchorEl?.getBoundingClientRect?.();
+  if (!rect) return;
+  openMeStatusMenuAt(
+    { x: Math.round(rect.left || 0), y: Math.round(rect.bottom || 0) },
+    { ...options, anchorRect: rect }
+  );
+}
+
+function openMeStatusMenuAt(point, options = {}) {
   if (!point) return;
   closeMessageMenu();
   closeDmListMenus();
   const menu = ensureMeStatusMenu();
   const currentStatus = resolveMyPresenceStatus(state.me);
-  const options = [
+  const statusOptions = [
     ["online", t("status.option.online", "Online")],
     ["idle", t("status.option.idle", "Away")],
     ["dnd", t("status.option.dnd", "Do Not Disturb")],
@@ -91016,14 +92663,39 @@ function openMeStatusMenuAt(point) {
   ];
 
   menu.innerHTML = [
-    `<div class="msgMenu__meta">${esc(t("settings.section.status", "Status"))}</div>`,
-    ...options.map(([value, label]) => {
+    `<div class="msgMenu__meta meStatusMenu__meta">${esc(t("settings.section.status", "Status"))}</div>`,
+    ...statusOptions.map(([value, label]) => {
       const isOn = currentStatus === value;
-      return `<button class="msgMenu__item msgMenu__item--check" data-me-status="${escAttr(value)}"><span>${esc(label)}</span><span class="msgMenu__check${isOn ? " is-on" : ""}"></span></button>`;
+      return `
+        <button
+          class="msgMenu__item meStatusMenu__item${isOn ? " is-active" : ""}"
+          type="button"
+          role="menuitemradio"
+          aria-checked="${isOn ? "true" : "false"}"
+          data-me-status="${escAttr(value)}"
+          data-status="${escAttr(value)}"
+        >
+          <span class="meStatusMenu__main">
+            <span class="meStatusMenu__dot" data-status="${escAttr(value)}" aria-hidden="true"></span>
+            <span class="meStatusMenu__label">${esc(label)}</span>
+          </span>
+          <span class="meStatusMenu__indicator" aria-hidden="true"></span>
+        </button>
+      `;
     }),
   ].join("");
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", t("settings.section.status", "Status"));
   menu.classList.add("is-open");
-  positionMenuAtPoint(menu, point, { width: 224, minHeight: 188 });
+  if (options?.anchorRect) {
+    positionMeStatusMenuNearAnchor(menu, options.anchorRect, {
+      width: 236,
+      minHeight: 218,
+      placement: options.placement || "side",
+    });
+  } else {
+    positionMenuAtPoint(menu, point, { width: 236, minHeight: 218 });
+  }
 }
 
 async function persistMyPresenceStatusToAccount(statusInput) {
@@ -91098,7 +92770,7 @@ function getMePresencePayload() {
     id: state.user?.id,
     username: state.me?.username || "user",
     display_name: state.me?.display_name || state.me?.username || "User",
-    avatar_url: state.me?.avatar_url || null,
+    avatar_url: getCurrentMeAvatarUrl() || null,
     name_color: normalizeNameColor(state.me?.name_color),
     call_tile_color: normalizeCallTileColor(state.me?.call_tile_color),
     status: resolveMyPresenceStatus(state.me),
@@ -91119,8 +92791,17 @@ function applyMeStatusDot(status) {
   const dot = document.querySelector('[data-status-dot-me="1"]');
   if (dot) dot.setAttribute("data-status", resolved);
 
-  const mini = document.querySelector("[data-status-mini]");
-  if (mini) mini.setAttribute("data-status-mini", resolved);
+  document.querySelectorAll("[data-status-mini]").forEach((mini) => {
+    mini.setAttribute("data-status-mini", resolved);
+  });
+
+  document.querySelectorAll("[data-me-popout-status-label]").forEach((el) => {
+    el.textContent = getMeProfilePopoutStatusLabel(resolved);
+  });
+
+  document.querySelectorAll(".meProfilePopout__statusText[data-me-popout-act='status']").forEach((el) => {
+    el.setAttribute("aria-label", `${t("settings.section.status", "Status")}: ${getMeProfilePopoutStatusLabel(resolved)}`);
+  });
 
   const label = document.getElementById("meStatusLabel");
   if (label) {
@@ -91129,6 +92810,14 @@ function applyMeStatusDot(status) {
     else if (resolved === "invisible") label.textContent = "invisivel";
     else if (resolved === "offline") label.textContent = "offline";
     else label.textContent = "online";
+  }
+
+  const dockStatusBtn = document.getElementById("meStatusBtn");
+  if (dockStatusBtn) {
+    dockStatusBtn.setAttribute(
+      "aria-label",
+      `${t("settings.section.status", "Status")}: ${getMeProfilePopoutStatusLabel(resolved)}`
+    );
   }
 }
 
@@ -91453,7 +93142,9 @@ async function startPresence() {
     return;
   }
   setAppLanguage(readStoredAppLanguage(), { persist: false, rerender: false, syncForm: false });
-  const initialModerationState = await refreshMyModerationState();
+  const initialModerationState = await refreshMyModerationState({
+    timeoutMs: PROFILE_BOOT_TIMEOUT_MS,
+  });
   if (await enforceModerationAccessGate(initialModerationState)) {
     setDesktopBootOverlayVisible(false);
     return;
@@ -91463,6 +93154,11 @@ async function startPresence() {
   void refreshRtcTurnCredentials({ force: false });
   bindUiZoomWheelShortcutOnce();
   const meAvatarEl = $("meAvatar");
+  try {
+    bindMeProfilePopoutDockOnce();
+  } catch (error) {
+    console.error("me profile dock binding failed", error);
+  }
   meAvatarEl?.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     openMeStatusMenuAt({ x: e.clientX, y: e.clientY });
@@ -91479,7 +93175,7 @@ async function startPresence() {
     }
     if (e.key !== "Enter" && e.key !== " ") return;
     e.preventDefault();
-    openProfileOverlay();
+    openMeProfilePopout();
   });
 
   $("btnHeaderSettings")?.addEventListener("click", openProfileOverlay);
@@ -91513,8 +93209,7 @@ async function startPresence() {
     state.me.status = resolveMyPresenceStatus(state.me);
     setMyStatus(state.me.status);
     cacheProfileRow(state.me);
-    const theme = normalizeThemeSettings(state.me.theme_settings);
-    applyThemeSettings(theme);
+    const theme = applyAppearanceSettings(loadAppearanceSettings({ force: true }));
     applyDesktopBehaviorSettingsToUi(desktopBehaviorSettingsCache);
     setAppLanguage(theme.app_language, { persist: true, rerender: false, syncForm: false });
     $("meName").textContent = state.me.display_name || state.me.username;
@@ -91531,12 +93226,7 @@ async function startPresence() {
       status: fallbackStatus,
     };
     setMyStatus(fallbackStatus);
-    applyThemeSettings({
-      preset: THEME_DEFAULT_PRESET,
-      ...THEME_PRESETS[THEME_DEFAULT_PRESET],
-      ...THEME_DEFAULT_OPTIONS,
-      ...THEME_DEFAULT_COLOR_TWEAKS,
-    });
+    applyAppearanceSettings(loadAppearanceSettings());
     setAppLanguage(readStoredAppLanguage(), { persist: true, rerender: false, syncForm: false });
     $("meName").textContent = "Sem profile";
     applyMeHeaderNameStyle();

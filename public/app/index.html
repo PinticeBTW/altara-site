@@ -9,6 +9,132 @@
 <body class="boot-hide-call-chrome">
   <script>
     (() => {
+      const APPEARANCE_STORAGE_KEY = "altara.appearance.v1";
+      const DEFAULT_ACCENT = "#e8cfae";
+      const normalizeHex = (value, fallback = DEFAULT_ACCENT) => {
+        const raw = String(value || "").trim();
+        const full = /^#([0-9a-f]{6})$/i.exec(raw);
+        if (full) return raw.toLowerCase();
+        const short = /^#([0-9a-f]{3})$/i.exec(raw);
+        if (!short) return fallback;
+        return (`#${short[1][0]}${short[1][0]}${short[1][1]}${short[1][1]}${short[1][2]}${short[1][2]}`).toLowerCase();
+      };
+      const rgbaFromHex = (hex, alpha) => {
+        const safe = normalizeHex(hex);
+        const n = Number.parseInt(safe.slice(1), 16);
+        return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+      };
+      const mixHex = (a, b, weight = 0.5) => {
+        const left = Number.parseInt(normalizeHex(a).slice(1), 16);
+        const right = Number.parseInt(normalizeHex(b).slice(1), 16);
+        const mix = (shift) => Math.round((((left >> shift) & 255) * (1 - weight)) + (((right >> shift) & 255) * weight));
+        return `#${[mix(16), mix(8), mix(0)].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+      };
+      const readStoredAppearanceUserId = () => {
+        const stores = [];
+        try { stores.push(localStorage); } catch (_) {}
+        try { stores.push(sessionStorage); } catch (_) {}
+        for (const store of stores) {
+          try {
+            for (let i = 0; i < store.length; i += 1) {
+              const key = String(store.key(i) || "");
+              if (!key.toLowerCase().includes("-auth-token")) continue;
+              const parsed = JSON.parse(store.getItem(key) || "null");
+              const uid = String(
+                parsed?.user?.id ||
+                parsed?.currentSession?.user?.id ||
+                parsed?.session?.user?.id ||
+                ""
+              ).trim();
+              if (/^[0-9a-f-]{32,}$/i.test(uid)) return uid;
+            }
+          } catch (_) {}
+        }
+        return "";
+      };
+      const readAppearance = () => {
+        try {
+          const uid = readStoredAppearanceUserId();
+          const raw = uid ? localStorage.getItem(`${APPEARANCE_STORAGE_KEY}:${uid}`) : "";
+          const parsed = JSON.parse(raw || "null") || {};
+          const rawTheme = String(parsed.theme || parsed.preset || "default").trim().toLowerCase();
+          const theme = ["default", "white", "system"].includes(rawTheme) ? rawTheme : "default";
+          return { theme, accent: normalizeHex(parsed.accent || parsed.accent_color || parsed.accentColor) };
+        } catch (_) {
+          return { theme: "default", accent: DEFAULT_ACCENT };
+        }
+      };
+      const applyEarlyAppearance = () => {
+        const settings = readAppearance();
+        const prefersDark = (() => {
+          try { return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches; } catch (_) { return true; }
+        })();
+        const resolved = settings.theme === "system" ? (prefersDark ? "default" : "white") : settings.theme;
+        const isWhite = resolved === "white";
+        const accent = settings.accent;
+        const accentStrong = isWhite ? mixHex(accent, "#3d3326", 0.42) : mixHex(accent, "#ffffff", 0.14);
+        const vars = isWhite ? {
+          "--altara-bg": "#f5f1e8",
+          "--altara-bg-soft": "#eee8dd",
+          "--altara-surface": "#fffdf8",
+          "--altara-surface-elevated": "#f8f3ea",
+          "--altara-surface-panel": "#f3ede4",
+          "--altara-surface-muted": "#efe7db",
+          "--altara-border": "rgba(32, 28, 22, 0.14)",
+          "--altara-border-strong": "rgba(32, 28, 22, 0.22)",
+          "--altara-text": "#181512",
+          "--altara-text-muted": "#675f55",
+          "--altara-text-soft": "#8c8174",
+          "--altara-input": "#f3ede4",
+          "--altara-hover": "rgba(32, 28, 22, 0.06)",
+          "--altara-active": "rgba(218, 184, 141, 0.22)",
+          "--bg-main": "#f5f1e8",
+          "--bg-deep": "#e4dac8",
+          "--surface-0": "rgba(255, 253, 248, 0.92)",
+          "--surface-1": "#fffdf8",
+          "--surface-2": "#f8f3ea",
+          "--surface-row": "rgba(24, 21, 18, 0.045)",
+          "--surface-row-hover": "rgba(218, 184, 141, 0.22)",
+          "--stroke": "rgba(32, 28, 22, 0.14)",
+          "--stroke-strong": "rgba(32, 28, 22, 0.22)",
+          "--text-main": "#181512",
+          "--text-soft": "#675f55",
+          "--text-muted": "#675f55",
+          "--ui-shell-bg": "#f5f1e8",
+          "--ui-top-bg": "#f5f1e8",
+          "--ui-card-bg": "#fffdf8",
+          "--ui-panel-soft-bg": "#eee8dd",
+          "--ui-row-bg": "rgba(24, 21, 18, 0.045)",
+          "--ui-row-strong-bg": "#efe7db",
+          "--ui-input-bg": "#f3ede4",
+          "--ui-input-focus-bg": "#f0e6d7",
+          "--ui-btn-bg": "#f8f3ea",
+          "--ui-btn-border": "rgba(32, 28, 22, 0.14)",
+          "--ui-btn-hover-bg": "#ece4d8",
+          "--ui-btn-hover-border": "rgba(32, 28, 22, 0.22)",
+          "--left-sidebar-bg": "#f5f1e8",
+          "--left-sidebar-top-bg": "#f5f1e8"
+        } : {};
+        Object.assign(vars, {
+          "--altara-accent": accent,
+          "--altara-accent-strong": accentStrong,
+          "--altara-accent-soft": rgbaFromHex(accent, isWhite ? 0.14 : 0.11),
+          "--altara-accent-border": rgbaFromHex(accent, isWhite ? 0.34 : 0.28),
+          "--accent": accent,
+          "--accent-strong": accentStrong,
+          "--accent-soft": rgbaFromHex(accent, isWhite ? 0.16 : 0.14),
+          "--focus-ring": rgbaFromHex(accent, isWhite ? 0.28 : 0.34),
+          "--selection-bg": rgbaFromHex(accent, isWhite ? 0.36 : 0.58)
+        });
+        [document.documentElement, document.body].forEach((node) => {
+          if (!node) return;
+          node.classList.remove("theme-default", "theme-white", "theme-system", "theme-resolved-dark", "theme-resolved-light");
+          node.classList.add(settings.theme === "system" ? "theme-system" : `theme-${settings.theme}`);
+          node.classList.add(isWhite ? "theme-resolved-light" : "theme-resolved-dark");
+          Object.entries(vars).forEach(([name, value]) => node.style.setProperty(name, value));
+        });
+      };
+      applyEarlyAppearance();
       try {
         const bridge = window?.altaraDesktop;
         const isDesktop = !!bridge && bridge.isDesktopApp === true;
@@ -594,7 +720,6 @@
             <div id="settingsSubtitle" class="settingsSubtitle">Manage your profile and status.</div>
           </div>
           <div class="settingsMainTopActions">
-            <button id="btnSettingsFullMode" class="btn ghost settingsMainTopBack" type="button" hidden>All settings</button>
             <button id="btnCloseProfile" class="btn ghost settingsCloseBtn" type="button" aria-label="Close settings">&times;</button>
           </div>
         </div>
@@ -888,322 +1013,70 @@
           </div>
 
           <div class="settingsPanel" data-settings-panel="appearance">
-            <div class="settingsCardSection">
-              <div id="settingsSectionTheme" class="settingsSectionTitle">Theme</div>
-              <div class="themeGrid">
-                <div class="field">
-                  <label for="themePreset">Preset</label>
-                  <select id="themePreset" class="input">
-                    <option value="default-altara">Default ALTARA</option>
-                    <option value="midnight">Midnight</option>
-                    <option value="neon">Neon</option>
-                    <option value="clean-light">Clean Light</option>
-                    <option value="purple-dream">Purple Dream</option>
-                    <option value="zen-dark">Zen Dark</option>
-                    <option value="frost-glass">Frost Glass</option>
-                    <option value="discord-ish">Discord-ish</option>
-                    <option value="amoled">AMOLED</option>
-                    <option value="high-contrast">High Contrast</option>
-                    <option value="custom">Custom</option>
-                  </select>
-                </div>
-                <div class="themePresetInline">
-                  <label for="themeCustomPresetName">My theme preset</label>
-                  <div class="themePresetInline__row">
-                    <input id="themeCustomPresetName" class="input" type="text" maxlength="48" placeholder="Preset name..." />
-                    <button id="btnThemeSavePreset" class="btn ghost" type="button">Save</button>
-                  </div>
-                </div>
-                <div class="themePresetInline">
-                  <label for="themeCustomPresetSelect">Saved presets</label>
-                  <div class="themePresetInline__row">
-                    <select id="themeCustomPresetSelect" class="input">
-                      <option value="">None</option>
-                    </select>
-                    <button id="btnThemeApplyCustomPreset" class="btn ghost" type="button">Load</button>
-                    <button id="btnThemeDeleteCustomPreset" class="btn ghost" type="button">Delete</button>
-                  </div>
-                </div>
-
-                <div class="themeColorSections">
-                  <div class="themeColorSection">
-                    <div class="themeColorSectionTitle">Core (Background)</div>
-                    <div class="themeColorGrid themeColorGrid--core">
-                      <label class="themeColorField">
-                        <span>Background</span>
-                        <input id="themeBgColor" class="themeColorInput" type="text" value="#131417" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Accent</span>
-                        <input id="themeAccentColor" class="themeColorInput" type="text" value="#8ea0ff" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Secondary Accent</span>
-                        <input id="themeSecondaryAccentColor" class="themeColorInput" type="text" value="#62d1ff" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Background Secondary</span>
-                        <input id="themeBgSecondaryColor" class="themeColorInput" type="text" value="#1b1f27" />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div class="themeColorSection">
-                    <div class="themeColorSectionTitle">Interface States</div>
-                    <div class="themeColorGrid themeColorGrid--extended">
-                      <label class="themeColorField">
-                        <span>Primary Button</span>
-                        <input id="themeButtonPrimaryColor" class="themeColorInput" type="text" value="#8ea0ff" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Secondary Button</span>
-                        <input id="themeButtonSecondaryColor" class="themeColorInput" type="text" value="#283043" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Input</span>
-                        <input id="themeInputColor" class="themeColorInput" type="text" value="#111722" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Border</span>
-                        <input id="themeBorderColor" class="themeColorInput" type="text" value="#4a5063" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Hover</span>
-                        <input id="themeHoverColor" class="themeColorInput" type="text" value="#2a3348" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Active</span>
-                        <input id="themeActiveColor" class="themeColorInput" type="text" value="#3d4b68" />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div class="themeColorSection">
-                    <div class="themeColorSectionTitle">Messages & Links</div>
-                    <div class="themeColorGrid themeColorGrid--extended">
-                      <label class="themeColorField">
-                        <span>Message Sent</span>
-                        <input id="themeMessageSentColor" class="themeColorInput" type="text" value="#3f5076" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Message Received</span>
-                        <input id="themeMessageReceivedColor" class="themeColorInput" type="text" value="#202635" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Links</span>
-                        <input id="themeLinkColor" class="themeColorInput" type="text" value="#9ec3ff" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Success</span>
-                        <input id="themeSuccessColor" class="themeColorInput" type="text" value="#49d17f" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Warning</span>
-                        <input id="themeWarningColor" class="themeColorInput" type="text" value="#f5c354" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Error</span>
-                        <input id="themeDangerColor" class="themeColorInput" type="text" value="#f26f6f" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Info</span>
-                        <input id="themeInfoColor" class="themeColorInput" type="text" value="#62d1ff" />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div class="themeColorSection">
-                    <div class="themeColorSectionTitle">Advanced Surfaces</div>
-                    <div class="themeColorGrid themeColorGrid--extended">
-                      <label class="themeColorField">
-                        <span>Surface Secondary</span>
-                        <input id="themeSurfaceSecondaryColor" class="themeColorInput" type="text" value="#1f2430" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Rows</span>
-                        <input id="themeRowColor" class="themeColorInput" type="text" value="#121318" />
-                      </label>
-                      <label class="themeColorField">
-                        <span>Text</span>
-                        <input id="themeTextColor" class="themeColorInput" type="text" value="#f1f2f5" />
-                      </label>
-                    </div>
-                  </div>
-                </div>
-                <small class="themeGradientHint">Tip: Background now controls Surface + Sidebar + Shell + Top Bar (including gradient).</small>
-                <div class="themeLivePreviewBlock">
-                  <div id="settingsThemeLivePreview" class="themeLivePreview" aria-hidden="true">
-                    <div class="themeLivePreview__frame">
-                      <div class="themeLivePreview__sidebar">
-                        <div class="themeLivePreview__sidebarTop"></div>
-                        <div class="themeLivePreview__sidebarList">
-                          <span class="themeLivePreview__dot themeLivePreview__dot--active"></span>
-                          <span class="themeLivePreview__dot"></span>
-                          <span class="themeLivePreview__dot"></span>
-                        </div>
-                      </div>
-                      <div class="themeLivePreview__main">
-                        <div class="themeLivePreview__topbar">
-                          <span class="themeLivePreview__topPill"></span>
-                          <span class="themeLivePreview__topPill"></span>
-                        </div>
-                        <div class="themeLivePreview__content">
-                          <span class="themeLivePreview__row themeLivePreview__row--accent"></span>
-                          <span class="themeLivePreview__row"></span>
-                          <span class="themeLivePreview__row"></span>
-                          <div class="themeLivePreview__composer">
-                            <span class="themeLivePreview__composerLine"></span>
-                            <span class="themeLivePreview__composerSend"></span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <small class="themeLivePreviewHint">Live preview updates instantly while you edit.</small>
-                </div>
-                <input id="themeSurfaceColor" type="hidden" value="#131417" />
-                <input id="themeLeftSidebarColor" type="hidden" value="#131417" />
-                <input id="themeShellColor" type="hidden" value="#131417" />
-                <input id="themeTopbarColor" type="hidden" value="#131417" />
-                <input id="themeColorIntensity" type="hidden" value="100" />
-              </div>
-              <div class="themeActions">
-                <button id="btnSaveTheme" class="btn primary" type="button">Apply</button>
-                <button id="btnCancelTheme" class="btn ghost" type="button">Cancel</button>
-                <button id="btnResetTheme" class="btn ghost" type="button">Reset</button>
-                <button id="btnThemeExport" class="btn ghost" type="button">Export JSON</button>
-                <button id="btnThemeImport" class="btn ghost" type="button">Import JSON</button>
-              </div>
-              <input id="themeImportFile" type="file" accept="application/json,.json" hidden />
-              <div id="settingsThemeHint" class="hint">These colors are saved to your account.</div>
-              <div id="themeAutoAdjustHint" class="hint hidden"></div>
-            </div>
-
-            <div class="settingsCardSection">
-              <div id="settingsSectionMore" class="settingsSectionTitle">More Personalization</div>
-
-              <div class="themeAppearanceMetaGrid">
-                <div class="field">
-                  <label for="themeMode">Mode</label>
-                  <select id="themeMode" class="input">
-                    <option value="dark">Dark</option>
-                    <option value="light">Light</option>
-                    <option value="auto">Auto (system)</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="themeVisualStyle">Visual Style</label>
-                  <select id="themeVisualStyle" class="input">
-                    <option value="minimal">Minimal</option>
-                    <option value="soft">Soft</option>
-                    <option value="glass">Glass</option>
-                    <option value="solid">Solid</option>
-                    <option value="gaming">Gaming</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="themeDensity">Density</label>
-                  <select id="themeDensity" class="input">
-                    <option value="compact">Compact</option>
-                    <option value="normal">Normal</option>
-                    <option value="comfortable">Comfortable</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="themeLayoutMood">Layout Mood</label>
-                  <select id="themeLayoutMood" class="input">
-                    <option value="calm">Calm</option>
-                    <option value="gaming">Gaming</option>
-                  </select>
+            <div class="appearancePage">
+              <div class="appearancePageHeader">
+                <div>
+                  <div class="appearancePageEyebrow">Appearance</div>
+                  <h2>Appearance</h2>
+                  <p>Customize how ALTARA looks and feels.</p>
                 </div>
               </div>
 
-              <div class="field">
-                <label id="themeLanguageLabel" for="themeLanguage">Language</label>
-                <select id="themeLanguage" class="input">
-                  <option value="en">English</option>
-                  <option value="pt">Português</option>
-                </select>
+              <div class="settingsCardSection appearanceSection appearanceSection--themes">
+                <div class="appearanceSectionHeader">
+                  <div>
+                    <div id="settingsSectionTheme" class="settingsSectionTitle">Theme</div>
+                    <div class="settingsHint">Pick the overall theme for ALTARA.</div>
+                  </div>
+                </div>
+
+                <div class="appearanceThemeCards appearanceThemeCards--simple">
+                  <button class="appearanceThemeCard is-selected" type="button" data-appearance-theme="default" aria-pressed="true">
+                    <div class="appearanceThemeThumb appearanceThemeThumb--dark">
+                      <span></span><span></span><span></span>
+                    </div>
+                    <b>Default</b>
+                    <small>ALTARA dark</small>
+                  </button>
+                  <button class="appearanceThemeCard" type="button" data-appearance-theme="white" aria-pressed="false">
+                    <div class="appearanceThemeThumb appearanceThemeThumb--white">
+                      <span></span><span></span><span></span>
+                    </div>
+                    <b>White</b>
+                    <small>Soft light</small>
+                  </button>
+                  <button class="appearanceThemeCard" type="button" data-appearance-theme="system" aria-pressed="false">
+                    <div class="appearanceThemeThumb appearanceThemeThumb--system">
+                      <span></span><span></span><span></span>
+                    </div>
+                    <b>System</b>
+                    <small>Follow device</small>
+                  </button>
+                </div>
               </div>
 
-              <div class="field">
-                <label id="themeTimeFormatLabel" for="themeTimeFormat">Message time format</label>
-                <select id="themeTimeFormat" class="input">
-                  <option value="24h">24-hour (23:59)</option>
-                  <option value="12h">12-hour (11:59 PM)</option>
-                </select>
-                <div id="themeTimeFormatHint" class="hint">Choose 24h or 12h AM/PM (US style).</div>
+              <div class="settingsCardSection appearanceSection appearanceSection--accent">
+                <div class="appearanceSectionHeader">
+                  <div>
+                    <div class="settingsSectionTitle">Accent</div>
+                    <div class="settingsHint">Choose a calm highlight color for selected states, focus rings, and key actions.</div>
+                  </div>
+                </div>
+                <div class="appearanceAccentSwatches">
+                  <button class="appearanceSwatch is-selected" type="button" style="--swatch: #e8cfae" data-appearance-accent="#e8cfae" aria-label="Champagne accent" aria-pressed="true"></button>
+                  <button class="appearanceSwatch" type="button" style="--swatch: #d36c68" data-appearance-accent="#d36c68" aria-label="Muted red accent" aria-pressed="false"></button>
+                  <button class="appearanceSwatch" type="button" style="--swatch: #79b77c" data-appearance-accent="#79b77c" aria-label="Muted green accent" aria-pressed="false"></button>
+                  <button class="appearanceSwatch" type="button" style="--swatch: #6fbcb3" data-appearance-accent="#6fbcb3" aria-label="Muted teal accent" aria-pressed="false"></button>
+                  <button class="appearanceSwatch" type="button" style="--swatch: #9274bb" data-appearance-accent="#9274bb" aria-label="Muted violet accent" aria-pressed="false"></button>
+                </div>
               </div>
 
-              <label class="appearanceSwitchRow" for="themeProfileCardBanner">
-                <span class="appearanceSwitchText">
-                  <b>Profile Card Banner</b>
-                  <small>Show your profile banner behind the card in the left sidebar.</small>
-                </span>
-                <input id="themeProfileCardBanner" type="checkbox" checked />
-              </label>
-
-              <div class="appearanceControls">
-                <label class="appearanceRangeRow" for="themeRoundness">
-                  <span class="appearanceLabel">UI Roundness</span>
-                  <span id="themeRoundnessValue" class="appearanceValue">58%</span>
-                </label>
-                <input id="themeRoundness" type="range" min="0" max="100" step="1" value="58" />
-
-                <label class="appearanceRangeRow" for="themeBlurStrength">
-                  <span class="appearanceLabel">Blur Intensity</span>
-                  <span id="themeBlurStrengthValue" class="appearanceValue">12px</span>
-                </label>
-                <input id="themeBlurStrength" type="range" min="0" max="40" step="1" value="12" />
-
-                <label class="appearanceRangeRow" for="themePanelAlpha">
-                  <span class="appearanceLabel">Panel Opacity</span>
-                  <span id="themePanelAlphaValue" class="appearanceValue">94%</span>
-                </label>
-                <input id="themePanelAlpha" type="range" min="45" max="100" step="1" value="94" />
-
-                <label class="appearanceRangeRow" for="themeBorderThickness">
-                  <span class="appearanceLabel">Border Thickness</span>
-                  <span id="themeBorderThicknessValue" class="appearanceValue">1px</span>
-                </label>
-                <input id="themeBorderThickness" type="range" min="0" max="4" step="1" value="1" />
-
-                <label class="appearanceRangeRow" for="themeShadowStrength">
-                  <span class="appearanceLabel">Shadow Strength</span>
-                  <span id="themeShadowStrengthValue" class="appearanceValue">55%</span>
-                </label>
-                <input id="themeShadowStrength" type="range" min="0" max="100" step="1" value="55" />
-
-                <label class="appearanceRangeRow" for="themeSpacingScale">
-                  <span class="appearanceLabel">Spacing Scale</span>
-                  <span id="themeSpacingScaleValue" class="appearanceValue">100%</span>
-                </label>
-                <input id="themeSpacingScale" type="range" min="70" max="140" step="1" value="100" />
-
-                <label class="appearanceRangeRow" for="themeFontScale">
-                  <span class="appearanceLabel">Font Scale</span>
-                  <span id="themeFontScaleValue" class="appearanceValue">100%</span>
-                </label>
-                <input id="themeFontScale" type="range" min="85" max="135" step="1" value="100" />
-
-                <label class="appearanceRangeRow" for="themeUiScale">
-                  <span class="appearanceLabel">UI Scale</span>
-                  <span id="themeUiScaleValue" class="appearanceValue">100%</span>
-                </label>
-                <input id="themeUiScale" type="range" min="70" max="150" step="1" value="100" />
-
-                <label class="appearanceRangeRow" for="themeLeftSidebarWidth">
-                  <span class="appearanceLabel">Left Sidebar Width</span>
-                  <span id="themeLeftSidebarWidthValue" class="appearanceValue">340px</span>
-                </label>
-                <input id="themeLeftSidebarWidth" type="range" min="300" max="420" step="1" value="340" />
-
-                <label class="appearanceRangeRow" for="themeUiZoom">
-                  <span id="themeUiZoomLabel" class="appearanceLabel">UI Zoom</span>
-                  <span id="themeUiZoomValue" class="appearanceValue">100%</span>
-                </label>
-                <input id="themeUiZoom" type="range" min="70" max="200" step="1" value="100" />
-                <small id="themeUiZoomHint" class="appearanceHint">Tip: configure your zoom shortcut in Binds.</small>
+              <div class="settingsCardSection appearanceSection appearanceSection--actions">
+                <div class="themeActions">
+                  <button id="btnSaveTheme" class="btn primary" type="button">Save changes</button>
+                  <button id="btnResetTheme" class="btn ghost" type="button">Reset to Default</button>
+                </div>
+                <div id="settingsThemeHint" class="hint">Theme and accent preview immediately and sync with your account when saved.</div>
               </div>
             </div>
           </div>
@@ -1240,8 +1113,8 @@
               <div class="settingsKeybindList">
                 <div class="settingsKeybindRow">
                   <div class="settingsKeybindMeta">
-                    <b id="settingsAppKeybindAltSLabel">Toggle Sidebars / DM Profile</b>
-                    <small id="settingsAppKeybindAltSHint">Context shortcut: in DMs it toggles profile, elsewhere it toggles side panels.</small>
+                    <b id="settingsAppKeybindAltSLabel">Toggle Left Sidebar / DM Profile</b>
+                    <small id="settingsAppKeybindAltSHint">Context shortcut: in DMs it toggles profile, elsewhere it toggles the left sidebar.</small>
                   </div>
                   <div class="settingsKeybindActions">
                     <button id="btnSettingsAppKeybindTogglePanels" class="btn ghost settingsKeybindBtn" type="button">Alt + S</button>
@@ -1426,6 +1299,7 @@
               <div class="userCardIdentityMeta">
                 <div class="userCardBadgeRow">
                   <div id="userCardRelation" class="userCardRelation" hidden></div>
+                  <div id="userCardStatus" class="userCardStatus" hidden></div>
                 </div>
                 <div id="userCardName" class="userCardName">...</div>
                 <div id="userCardHandle" class="userCardHandle">@...</div>
@@ -1456,7 +1330,6 @@
             <section id="userCardSharedPanel" class="userCardPanel" data-user-card-panel="shared" hidden></section>
             <section id="userCardWidgetsPanel" class="userCardPanel is-active" data-user-card-panel="widgets"></section>
           </div>
-        </div>
         </section>
       </div>
     </div>
