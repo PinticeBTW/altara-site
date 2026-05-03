@@ -710,7 +710,7 @@ function buildDesktopInboxAvatarHtml({
   const url = String(avatarUrl || "").trim();
   return `
     <span class="desktopInboxItem__avatar" aria-hidden="true">
-      ${url ? buildAvatarMediaHtml(url, { alt: "", loading: "lazy" }) : `<span class="desktopInboxItem__avatarFallback">${esc(initial)}</span>`}
+      ${url ? buildAvatarMediaHtml(url, { alt: "", loading: "lazy", deferAnimatedStorage: true }) : `<span class="desktopInboxItem__avatarFallback">${esc(initial)}</span>`}
     </span>
   `;
 }
@@ -4342,7 +4342,8 @@ function getRenderedMeAvatarUrl() {
 
 function getRenderedMeBannerUrl() {
   if (typeof document === "undefined") return "";
-  const src = String(document.querySelector("#meProfileCard .profileBannerMedia")?.getAttribute("src") || "").trim();
+  const img = document.querySelector("#meProfileCard .profileBannerMedia");
+  const src = String(img?.getAttribute("src") || img?.getAttribute("data-media-src") || "").trim();
   return resolveProfileBannerUrl(src, null, "");
 }
 
@@ -8041,6 +8042,33 @@ const DM_ATTACHMENT_UPLOAD_MODE_COMPRESSED = "compressed";
 const DM_ATTACHMENT_UPLOAD_MODE_ORIGINAL = "original";
 const DM_IMAGE_COMPRESS_MAX_DIMENSION = 2560;
 const DM_IMAGE_COMPRESS_QUALITY = 0.84;
+const DM_IMAGE_PREVIEW_MAX_DIMENSION = 960;
+const DM_IMAGE_PREVIEW_FALLBACK_DIMENSION = 720;
+const DM_IMAGE_PREVIEW_MIN_DIMENSION = 640;
+const DM_IMAGE_PREVIEW_QUALITY = 0.78;
+const DM_IMAGE_PREVIEW_TARGET_BYTES = 200 * 1024;
+const DM_GIF_POSTER_PREVIEW_MAX_DIMENSION = 720;
+const DM_GIF_POSTER_PREVIEW_QUALITY = 0.72;
+const STATIC_AVATAR_UPLOAD_MAX_DIMENSION = 768;
+const STATIC_AVATAR_UPLOAD_QUALITY = 0.86;
+const STATIC_BANNER_UPLOAD_MAX_DIMENSION = 1600;
+const STATIC_BANNER_UPLOAD_QUALITY = 0.86;
+const DM_HEAVY_IMAGE_PREVIEW_BYTES = 800 * 1024;
+const DM_HEAVY_GIF_PREVIEW_BYTES = 500 * 1024;
+const LAZY_MEDIA_IMAGE_ROOT_MARGIN = "320px 0px";
+let lazyMediaImageObserver = null;
+let mediaEgressDebugObserverBound = false;
+const mediaEgressDebugEvents = [];
+const mediaEgressDebugElementValues = new WeakMap();
+const mediaEgressDebugWarningKeys = new Set();
+const MEDIA_EGRESS_DEBUG_MAX_EVENTS = 1200;
+let mediaDomWatchObserver = null;
+const mediaDomWatchEvents = [];
+const MEDIA_DOM_WATCH_MAX_EVENTS = 800;
+const mediaDomWatchPatchState = {
+  installed: false,
+  originals: null,
+};
 const DM_VIDEO_COMPRESS_MAX_DIMENSION = 1920;
 const DM_VIDEO_COMPRESS_MAX_FPS = 30;
 const DM_VIDEO_COMPRESS_MAX_DURATION_SEC = 12 * 60;
@@ -8151,6 +8179,125 @@ function resolveCompressedImageOutput(file) {
     return { mime: "image/jpeg", ext: "jpg", quality: DM_IMAGE_COMPRESS_QUALITY };
   }
   return { mime: "image/webp", ext: "webp", quality: DM_IMAGE_COMPRESS_QUALITY };
+}
+
+function fileLooksSvgLike(file) {
+  const mime = String(file?.type || "").trim().toLowerCase();
+  if (mime === "image/svg+xml") return true;
+  const name = String(file?.name || "").trim().toLowerCase();
+  return !!name && name.endsWith(".svg");
+}
+
+function resolveCanvasImageOutput(file, {
+  preferJpeg = false,
+  quality = DM_IMAGE_PREVIEW_QUALITY,
+} = {}) {
+  const mime = String(file?.type || "").trim().toLowerCase();
+  if (preferJpeg || mime === "image/jpeg" || mime === "image/jpg") {
+    return { mime: "image/jpeg", ext: "jpg", quality };
+  }
+  return { mime: "image/webp", ext: "webp", quality };
+}
+
+async function renderImageFileVariant(file, {
+  maxDimension = DM_IMAGE_PREVIEW_MAX_DIMENSION,
+  quality = DM_IMAGE_PREVIEW_QUALITY,
+  preferJpeg = false,
+  force = false,
+} = {}) {
+  if (!file || typeof file !== "object" || fileLooksSvgLike(file)) return null;
+  try {
+    const img = await loadImageFromFile(file);
+    const sourceWidth = Math.max(1, Math.round(Number(img?.naturalWidth || img?.width || 0)));
+    const sourceHeight = Math.max(1, Math.round(Number(img?.naturalHeight || img?.height || 0)));
+    if (!sourceWidth || !sourceHeight) return null;
+
+    const target = fitMediaWithinMaxDimension(sourceWidth, sourceHeight, maxDimension);
+    const resized = target.width !== sourceWidth || target.height !== sourceHeight;
+    if (!force && !resized) return null;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = target.width;
+    canvas.height = target.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, target.width, target.height);
+
+    const output = resolveCanvasImageOutput(file, { preferJpeg, quality });
+    let blob = await canvasToBlobAsync(canvas, output.mime, output.quality);
+    let ext = output.ext;
+    let mime = output.mime;
+    if ((!blob || !blob.size) && output.mime !== "image/jpeg") {
+      mime = "image/jpeg";
+      ext = "jpg";
+      blob = await canvasToBlobAsync(canvas, mime, Math.min(0.86, output.quality));
+    }
+    if (!blob || !blob.size) return null;
+
+    const nextFile = createUploadFileFromBlob(blob, file, ext, mime);
+    return {
+      file: nextFile,
+      width: target.width,
+      height: target.height,
+      sourceWidth,
+      sourceHeight,
+      size: Number(nextFile.size || blob.size || 0),
+      mime,
+      resized,
+    };
+  } catch (err) {
+    console.warn("image variant generation failed:", err);
+    return null;
+  }
+}
+
+async function createDmImagePreviewFileForUpload(file) {
+  if (!file || typeof file !== "object") return null;
+  const isGif = fileLooksGifLike(file);
+  if (fileLooksSvgLike(file)) return null;
+  const attempts = isGif
+    ? [{ maxDimension: DM_GIF_POSTER_PREVIEW_MAX_DIMENSION, quality: DM_GIF_POSTER_PREVIEW_QUALITY }]
+    : [
+      { maxDimension: DM_IMAGE_PREVIEW_MAX_DIMENSION, quality: DM_IMAGE_PREVIEW_QUALITY },
+      { maxDimension: DM_IMAGE_PREVIEW_FALLBACK_DIMENSION, quality: 0.68 },
+      { maxDimension: DM_IMAGE_PREVIEW_MIN_DIMENSION, quality: 0.58 },
+    ];
+
+  let best = null;
+  for (const attempt of attempts) {
+    const variant = await renderImageFileVariant(file, {
+      ...attempt,
+      preferJpeg: false,
+      force: true,
+    });
+    if (!variant?.file) continue;
+    best = !best || Number(variant.size || 0) < Number(best.size || 0) ? variant : best;
+    if (Number(variant.size || 0) > 0 && Number(variant.size || 0) <= DM_IMAGE_PREVIEW_TARGET_BYTES) break;
+  }
+  if (!best?.file) return null;
+  return {
+    ...best,
+    isAnimated: isGif,
+  };
+}
+
+async function maybeResizeStaticImageFileForUpload(file, {
+  maxDimension = STATIC_AVATAR_UPLOAD_MAX_DIMENSION,
+  quality = STATIC_AVATAR_UPLOAD_QUALITY,
+} = {}) {
+  if (!file || typeof file !== "object" || fileLooksGifLike(file) || fileLooksSvgLike(file)) return file;
+  const variant = await renderImageFileVariant(file, {
+    maxDimension,
+    quality,
+    preferJpeg: String(file.type || "").trim().toLowerCase().includes("jpeg"),
+    force: true,
+  });
+  if (!variant?.file) return file;
+  const smaller = Number(variant.file.size || 0) > 0
+    && Number(variant.file.size || 0) < Number(file.size || 0);
+  return smaller ? variant.file : file;
 }
 
 async function maybeCompressImageFileForDmUpload(file) {
@@ -8405,11 +8552,12 @@ async function prepareDmAttachmentFileForUpload(entry) {
 }
 
 function sanitizeAttachmentPayload(raw) {
-  const url = String(raw?.url || raw?.public_url || "").trim();
+  const originalUrl = String(raw?.originalUrl || raw?.original_url || raw?.url || raw?.public_url || "").trim();
+  const url = String(raw?.url || raw?.public_url || originalUrl || "").trim();
   if (!url) return null;
 
-  const name = String(raw?.name || raw?.filename || "ficheiro").trim() || "ficheiro";
-  const mime = String(raw?.mime || raw?.contentType || "").trim().toLowerCase();
+  const name = String(raw?.name || raw?.fileName || raw?.file_name || raw?.filename || "ficheiro").trim() || "ficheiro";
+  const mime = String(raw?.mime || raw?.mimeType || raw?.mime_type || raw?.contentType || "").trim().toLowerCase();
   const sizeNum = Number(raw?.size);
   const size = Number.isFinite(sizeNum) && sizeNum >= 0 ? Math.round(sizeNum) : null;
   const kindRaw = String(raw?.kind || "").trim().toLowerCase();
@@ -8417,8 +8565,34 @@ function sanitizeAttachmentPayload(raw) {
     ? kindRaw
     : getAttachmentKindFromMime(mime, name);
   const spoiler = !!raw?.spoiler && (kind === "image" || kind === "video");
+  const previewUrl = String(raw?.previewUrl || raw?.preview_url || raw?.thumbnailUrl || raw?.thumbnail_url || "").trim();
+  const previewSizeNum = Number(raw?.previewSize ?? raw?.preview_size);
+  const previewSize = Number.isFinite(previewSizeNum) && previewSizeNum >= 0 ? Math.round(previewSizeNum) : null;
+  const widthNum = Number(raw?.width);
+  const heightNum = Number(raw?.height);
+  const width = Number.isFinite(widthNum) && widthNum > 0 ? Math.round(widthNum) : null;
+  const height = Number.isFinite(heightNum) && heightNum > 0 ? Math.round(heightNum) : null;
+  const isAnimated = !!(raw?.isAnimated ?? raw?.is_animated);
 
-  return { type: "attachment", url, name: name.slice(0, 180), mime, size, kind, spoiler };
+  const out = {
+    type: "attachment",
+    url,
+    originalUrl: originalUrl || url,
+    name: name.slice(0, 180),
+    fileName: name.slice(0, 180),
+    mime,
+    mimeType: mime,
+    size,
+    kind,
+    spoiler,
+  };
+  if (previewUrl && (previewUrl !== url || previewUrl.startsWith("blob:"))) out.previewUrl = previewUrl;
+  if (previewSize !== null) out.previewSize = previewSize;
+  if (width !== null) out.width = width;
+  if (height !== null) out.height = height;
+  if (isAnimated) out.isAnimated = true;
+
+  return out;
 }
 
 function sanitizeAttachmentCollectionPayload(raw) {
@@ -8470,6 +8644,21 @@ function isGifLikeUrl(rawUrl = "") {
   return cleanUrl.endsWith(".gif");
 }
 
+function isImageLikeUrl(rawUrl = "") {
+  const url = String(rawUrl || "").trim().toLowerCase();
+  if (!url) return false;
+  const cleanUrl = url.split("#")[0].split("?")[0];
+  return /\.(png|jpe?g|webp|gif|avif|bmp|svg)$/i.test(cleanUrl);
+}
+
+function isLikelySupabaseStorageMediaUrl(rawUrl = "") {
+  const url = String(rawUrl || "").trim().toLowerCase();
+  return !!url && (
+    url.includes("/storage/v1/object/")
+    || url.includes(".supabase.co/storage/")
+  );
+}
+
 function extractParsedAttachments(parsed) {
   if (!parsed || typeof parsed !== "object") return [];
   if (parsed.type === "attachment") {
@@ -8514,13 +8703,18 @@ function safeParseMessageContent(content) {
   if (s.startsWith("{") && s.endsWith("}")) {
     try {
       const obj = JSON.parse(s);
-      if (obj && obj.type === "gif" && typeof obj.url === "string") return { type: "gif", url: obj.url };
+      if (obj && obj.type === "gif" && typeof obj.url === "string") {
+        const attachment = sanitizeAttachmentPayload(obj.attachment || obj.file || obj.media || null);
+        return attachment
+          ? { type: "gif", url: obj.url, attachment }
+          : { type: "gif", url: obj.url };
+      }
       if (obj && obj.type === "text" && typeof obj.text === "string") return { type: "text", text: obj.text };
       if (obj && obj.type === "attachment") {
         const attachment = sanitizeAttachmentPayload(obj);
         if (attachment) {
           if (!attachment.spoiler && isGifLikeAttachment(attachment)) {
-            return { type: "gif", url: attachment.url };
+            return { type: "gif", url: attachment.url, attachment };
           }
           return attachment;
         }
@@ -8530,7 +8724,7 @@ function safeParseMessageContent(content) {
         if (attachments) {
           const items = Array.isArray(attachments.items) ? attachments.items : [];
           if (items.length === 1 && !items[0]?.spoiler && isGifLikeAttachment(items[0])) {
-            return { type: "gif", url: items[0].url };
+            return { type: "gif", url: items[0].url, attachment: items[0] };
           }
           return attachments;
         }
@@ -8540,7 +8734,7 @@ function safeParseMessageContent(content) {
         if (attachments) {
           const items = Array.isArray(attachments.items) ? attachments.items : [];
           if (items.length === 1 && !items[0]?.spoiler && isGifLikeAttachment(items[0])) {
-            return { type: "gif", url: items[0].url };
+            return { type: "gif", url: items[0].url, attachment: items[0] };
           }
           return attachments;
         }
@@ -10031,6 +10225,7 @@ function buildAvatarMediaHtml(url, {
   alt = "avatar",
   loading = "",
   controlledGif = true,
+  deferAnimatedStorage = false,
   fallbackChar = "",
 } = {}) {
   const safeUrl = String(url || "").trim();
@@ -10042,13 +10237,16 @@ function buildAvatarMediaHtml(url, {
   const style = buildMediaCropInlineStyle(resolvedCrop, "avatar");
   const styleAttr = style ? ` style="${escAttr(style)}"` : "";
   const loadingAttr = loading ? ` loading="${escAttr(loading)}"` : "";
+  const fallbackInitial = resolveAvatarFallbackInitial(userId, fallbackChar, alt);
+  if (deferAnimatedStorage && isLikelySupabaseStorageMediaUrl(safeUrl) && isGifLikeUrl(safeUrl)) {
+    return `<span class="profileAvatarMediaClip profileAvatarMediaClip--fallback" data-avatar-fallback="${escAttr(fallbackInitial)}" data-avatar-deferred="animated-storage"><span class="msg__avatarFallback">${esc(fallbackInitial)}</span></span>`;
+  }
   const shouldManageGif = controlledGif !== false && isGifLikeUrl(safeUrl);
   const rootAttrs = shouldManageGif
     ? ` data-managed-gif-root="avatar" data-gif-url="${escAttr(safeUrl)}"`
     : "";
   const mediaAttrs = shouldManageGif ? ' data-managed-gif-media="1"' : "";
   const managedGifAttrs = shouldManageGif ? buildManagedGifMediaHtmlAttrs() : "";
-  const fallbackInitial = resolveAvatarFallbackInitial(userId, fallbackChar, alt);
   const onErrorAttr = ' onerror="window.__altaraHandleAvatarImageError && window.__altaraHandleAvatarImageError(this)"';
   const onLoadAttr = ' onload="window.__altaraHandleAvatarImageLoad && window.__altaraHandleAvatarImageLoad(this)"';
   return `<span class="profileAvatarMediaClip" data-avatar-fallback="${escAttr(fallbackInitial)}"${rootAttrs}><img class="profileAvatarMedia" src="${esc(safeUrl)}" data-avatar-src="${escAttr(safeUrl)}" alt="${escAttr(alt)}"${loadingAttr}${styleAttr}${mediaAttrs}${managedGifAttrs}${onErrorAttr}${onLoadAttr} /></span>`;
@@ -10138,7 +10336,11 @@ function applyBannerStyle(el, bannerUrl = "", fallbackStart = "", fallbackEnd = 
       mediaEl.removeAttribute("crossorigin");
       mediaEl.removeAttribute("referrerpolicy");
     }
-    mediaEl.src = url;
+    if (String(mediaEl.getAttribute("data-media-src") || "") !== url) {
+      mediaEl.removeAttribute("src");
+      mediaEl.removeAttribute("data-media-loaded");
+    }
+    mediaEl.setAttribute("data-media-src", url);
     const mediaStyle = buildMediaCropInlineStyle(crop);
     if (mediaStyle) mediaEl.style.cssText = mediaStyle;
     else mediaEl.removeAttribute("style");
@@ -10159,6 +10361,7 @@ function applyBannerStyle(el, bannerUrl = "", fallbackStart = "", fallbackEnd = 
     if (fallbackStart) el.style.setProperty("--dm-profile-banner-start", fallbackStart);
     if (fallbackEnd) el.style.setProperty("--dm-profile-banner-end", fallbackEnd);
     if (fallbackGlow) el.style.setProperty("--dm-profile-banner-glow", fallbackGlow);
+    bindLazyMediaImages(el);
     queueManagedGifPlaybackSync(el);
     return;
   }
@@ -11529,7 +11732,7 @@ function renderBlockedUsersSettingsRows(rows = []) {
       <div class="settingsBlockedRow" data-blocked-row="${escAttr(uid)}">
         <div class="settingsBlockedIdentity">
           <div class="settingsBlockedAvatar" aria-hidden="true">
-            ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { userId: uid, alt: "" }) : `<span>${esc(initial)}</span>`}
+            ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { userId: uid, alt: "", deferAnimatedStorage: true }) : `<span>${esc(initial)}</span>`}
           </div>
           <div class="settingsBlockedMeta">
             <b>${esc(displayName)}</b>
@@ -11918,7 +12121,7 @@ function buildOwnerReportAvatarHtml(summary, fallbackLabel = "") {
   const avatarUrl = String(summary?.avatarUrl || "").trim();
   const label = getOwnerReportUserLabel(summary, fallbackLabel);
   if (avatarUrl) {
-    return buildAvatarMediaHtml(avatarUrl, { userId: uid || label, alt: label || "avatar" });
+    return buildAvatarMediaHtml(avatarUrl, { userId: uid || label, alt: label || "avatar", deferAnimatedStorage: true });
   }
   return `<span>${esc((label[0] || "?").toUpperCase())}</span>`;
 }
@@ -19298,7 +19501,7 @@ function renderGroupsRail() {
     const unreadCount = Math.max(1, Number(entry?.unread || 0));
     const unreadAttrs = ` data-dm-unread="${escAttr(String(Math.min(999, unreadCount)))}" data-notify-text="${escAttr(unreadCount > 1 ? `${unreadCount} novas mensagens` : "Nova mensagem")}"`;
     const avatar = entry?.avatarUrl
-      ? buildAvatarMediaHtml(entry.avatarUrl, { userId: uid, alt: label, loading: "lazy" })
+      ? buildAvatarMediaHtml(entry.avatarUrl, { userId: uid, alt: label, loading: "lazy", deferAnimatedStorage: true })
       : `<span class="groupOrbFallback">${esc(initial)}</span>`;
     return `
       <button
@@ -20145,11 +20348,15 @@ async function uploadServerIconFile(file, { serverId = "" } = {}) {
     throw new Error("Icon do server demasiado grande (max 8MB).");
   }
 
-  const ext = (String(file.name || "").split(".").pop() || "png").toLowerCase();
-  const { ext: safeExt, mime } = resolveAvatarMimeAndExt(ext, file.type || "");
+  const uploadFile = await maybeResizeStaticImageFileForUpload(file, {
+    maxDimension: STATIC_AVATAR_UPLOAD_MAX_DIMENSION,
+    quality: STATIC_AVATAR_UPLOAD_QUALITY,
+  });
+  const ext = (String(uploadFile.name || file.name || "").split(".").pop() || "png").toLowerCase();
+  const { ext: safeExt, mime } = resolveAvatarMimeAndExt(ext, uploadFile.type || file.type || "");
   const serverTag = normId(serverId) || "draft";
   const path = `${state.user.id}/server_${serverTag}_${Date.now()}.${safeExt}`;
-  const upload = await supabase.storage.from("avatars").upload(path, file, {
+  const upload = await supabase.storage.from("avatars").upload(path, uploadFile, {
     upsert: true,
     contentType: mime,
     cacheControl: "31536000",
@@ -21205,7 +21412,7 @@ function renderServerInviteFriendsList() {
       <div class="serverInviteFriendRow">
         <div class="serverInviteFriendIdentity">
           <span class="serverInviteFriendAvatar">
-            ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { userId: uid, alt: "avatar" }) : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(displayName, "U"))}</span>`}
+            ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { userId: uid, alt: "avatar", deferAnimatedStorage: true }) : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(displayName, "U"))}</span>`}
           </span>
           <span class="serverInviteFriendText">
             <span class="serverInviteFriendName">${esc(displayName)}</span>
@@ -22527,7 +22734,7 @@ function renderServerChannelCreatePrivateAccessUi() {
       if (roleTag !== "member") metaParts.push(roleTag);
       if (isMe) metaParts.push("You");
       const avatarHtml = String(member?.avatarUrl || "").trim()
-        ? buildAvatarMediaHtml(member.avatarUrl, { userId: uid, alt: "" })
+        ? buildAvatarMediaHtml(member.avatarUrl, { userId: uid, alt: "", deferAnimatedStorage: true })
         : esc(initials);
       return `
         <label class="serverChannelCreateAccessRow${isMe ? " is-locked" : ""}">
@@ -25652,7 +25859,7 @@ function renderServerSettingsRolesUi() {
           ${isBusy ? "disabled" : ""}
         />
         <span class="serverSettingsRoleMemberAvatar">
-          ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { userId, alt: "avatar" }) : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(displayName, "U"))}</span>`}
+          ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { userId, alt: "avatar", deferAnimatedStorage: true }) : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(displayName, "U"))}</span>`}
         </span>
         <span class="serverSettingsRoleMemberText">
           <span class="serverSettingsRoleMemberName">${esc(displayName)}${member?.isMe ? " (You)" : ""}</span>
@@ -28881,7 +29088,7 @@ function buildServerVoiceMemberRowsHtml(conversationId, serverMembers = []) {
   if (!activeMembers.length) return "";
   return activeMembers.map((member) => {
     const avatarHtml = member.avatarUrl
-      ? buildAvatarMediaHtml(member.avatarUrl, { userId: member.userId, alt: "avatar" })
+      ? buildAvatarMediaHtml(member.avatarUrl, { userId: member.userId, alt: "avatar", deferAnimatedStorage: true })
       : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(member.displayName, "U"))}</span>`;
     const audioBadgesHtml = buildCallAudioStateBadgesHtml(member.userId, conversationId);
     const transportStatusLabel = "";
@@ -30131,7 +30338,7 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
         data-server-right-is-me="${m?.isMe ? "1" : "0"}"
       >
         <div class="serverMemberRow__avatar">
-          ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { userId: uid, alt: "avatar" }) : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(displayName, "U"))}</span>`}
+          ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { userId: uid, alt: "avatar", deferAnimatedStorage: true }) : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(displayName, "U"))}</span>`}
           <span class="statusDot" data-status-dot="${escAttr(uid)}" data-status="${escAttr(m.presenceStatus || "offline")}"></span>
         </div>
         <div class="serverMemberRow__text">
@@ -30783,7 +30990,7 @@ function renderPartyPicker() {
       const uid = normId(f?.other_user_id || f?.id);
       const selected = partyPickerSelectedIds.has(uid);
       const avatar = f?.avatar_url
-        ? buildAvatarMediaHtml(f.avatar_url, { userId: uid, alt: f?.display_name || f?.username || "avatar" })
+        ? buildAvatarMediaHtml(f.avatar_url, { userId: uid, alt: f?.display_name || f?.username || "avatar", deferAnimatedStorage: true })
         : `<span class="partyPickAvatarFallback">${esc(String(f?.display_name || f?.username || "?").trim().charAt(0).toUpperCase() || "?")}</span>`;
       return `
         <button
@@ -31041,11 +31248,15 @@ async function uploadGroupAvatarFile(file, { conversationId = "" } = {}) {
     throw new Error("Foto do grupo demasiado grande (max 8MB).");
   }
 
-  const ext = (String(file.name || "").split(".").pop() || "png").toLowerCase();
-  const { ext: safeExt, mime } = resolveAvatarMimeAndExt(ext, file.type || "");
+  const uploadFile = await maybeResizeStaticImageFileForUpload(file, {
+    maxDimension: STATIC_AVATAR_UPLOAD_MAX_DIMENSION,
+    quality: STATIC_AVATAR_UPLOAD_QUALITY,
+  });
+  const ext = (String(uploadFile.name || file.name || "").split(".").pop() || "png").toLowerCase();
+  const { ext: safeExt, mime } = resolveAvatarMimeAndExt(ext, uploadFile.type || file.type || "");
   const convTag = normId(conversationId) || "draft";
   const path = `${state.user.id}/group_${convTag}_${Date.now()}.${safeExt}`;
-  const upload = await supabase.storage.from("avatars").upload(path, file, {
+  const upload = await supabase.storage.from("avatars").upload(path, uploadFile, {
     upsert: true,
     contentType: mime,
     cacheControl: "31536000",
@@ -31197,7 +31408,7 @@ function renderDmGroupCreatePicker() {
     listEl.innerHTML = friends.map((f) => {
       const selected = dmCreateGroupSelectedIds.has(f.userId);
       const avatar = f.avatarUrl
-        ? buildAvatarMediaHtml(f.avatarUrl, { userId: f.userId, alt: f.displayName })
+        ? buildAvatarMediaHtml(f.avatarUrl, { userId: f.userId, alt: f.displayName, deferAnimatedStorage: true })
         : `<span class="partyPickAvatarFallback">${esc(String(f.displayName || f.username || "?").trim().charAt(0).toUpperCase() || "?")}</span>`;
       return `
         <button
@@ -36124,7 +36335,7 @@ async function loadDmList(options = {}) {
       data-dm-avatar="${escAttr(f.avatar_url || "")}"
     >
       <div class="avatar">
-        ${f.avatar_url ? buildAvatarMediaHtml(f.avatar_url, { userId: uid || "", alt: "avatar" }) : ""}
+        ${f.avatar_url ? buildAvatarMediaHtml(f.avatar_url, { userId: uid || "", alt: "avatar", deferAnimatedStorage: true }) : ""}
         <span class="statusDot" data-status-dot="${escAttr(uid || "")}" data-status="offline"></span>
       </div>
       <div class="dm-text">
@@ -36162,7 +36373,7 @@ async function loadDmList(options = {}) {
       data-dm-avatar="${escAttr(avatarUrl)}"
     >
       <div class="avatar">
-        ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { alt: "group avatar", loading: "lazy" }) : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(displayName, "G"))}</span>`}
+        ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { alt: "group avatar", loading: "lazy", deferAnimatedStorage: true }) : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(displayName, "G"))}</span>`}
       </div>
       <div class="dm-text">
         <div class="dm-name">${esc(displayName)}</div>
@@ -38599,12 +38810,17 @@ function buildOptimisticAttachmentPreviewPayloads(entries = []) {
     try { url = URL.createObjectURL(file); } catch (_) { url = ""; }
     if (!url) return null;
     objectUrls.push(url);
+    const kind = String(entry?.kind || getAttachmentKindFromMime(file?.type || "", file?.name || "")).trim().toLowerCase();
+    const useLocalPreview = kind === "image" && !fileLooksGifLike(file);
     return sanitizeAttachmentPayload({
       url,
+      originalUrl: url,
+      previewUrl: useLocalPreview ? url : "",
       name: sanitizeFileName(file?.name || "file.bin", "file.bin"),
       mime: String(file?.type || "application/octet-stream").trim() || "application/octet-stream",
       size: Number(file?.size || 0),
-      kind: String(entry?.kind || getAttachmentKindFromMime(file?.type || "", file?.name || "")).trim().toLowerCase(),
+      kind,
+      isAnimated: kind === "image" && fileLooksGifLike(file),
       spoiler: !!entry?.spoiler,
     });
   }).filter(Boolean);
@@ -39128,9 +39344,18 @@ function queueManagedGifPlaybackSync(root = document) {
 
 function getPotentialGifImageLiveUrl(img) {
   if (!(img instanceof HTMLImageElement)) return "";
+  if (
+    shouldBlockAutomaticChatMediaImageLoad(img)
+    && img.dataset.mediaLoaded !== "1"
+    && !String(img.getAttribute("src") || "").trim()
+  ) {
+    return "";
+  }
   const candidates = [
     img.getAttribute("data-gif-url"),
     img.dataset?.gifLiveSrc,
+    img.dataset?.mediaSrc,
+    img.getAttribute("data-media-src"),
     img.dataset?.avatarSrc,
     img.getAttribute("src"),
     img.currentSrc,
@@ -39240,6 +39465,739 @@ function shouldApplyManagedGifPerformanceRules(root) {
 
 function buildManagedGifMediaHtmlAttrs() {
   return ' decoding="async" crossorigin="anonymous" referrerpolicy="no-referrer"';
+}
+
+function normalizeMediaEgressUrl(rawUrl = "") {
+  return String(rawUrl || "").trim();
+}
+
+function rememberMediaEgressElementValue(el, key = "") {
+  if (!el || !key) return true;
+  let values = mediaEgressDebugElementValues.get(el);
+  if (!values) {
+    values = new Set();
+    mediaEgressDebugElementValues.set(el, values);
+  }
+  if (values.has(key)) return false;
+  values.add(key);
+  return true;
+}
+
+function inferMediaEgressSource(el) {
+  if (!(el instanceof HTMLElement)) return "unknown";
+  const explicit = String(el.getAttribute("data-media-source") || "").trim();
+  if (explicit) return explicit;
+  const messageArea = String(el.closest("[data-message-area]")?.getAttribute?.("data-message-area") || "").trim();
+  if (messageArea) {
+    if (el.closest(".msgInviteCard,.dmServerInviteCard")) return messageArea === "server-message" ? "server-invite" : "server-invite";
+    if (el.closest(".msg__attachment,.msg__gifWrap,.msg__gifDeferred")) return messageArea;
+  }
+  if (el.closest(".serverMemberRow,.serverSettingsRoleMemberRow,.serverChannelCreateAccessRow,.serverVoiceMember")) return "member-list-avatar";
+  if (el.classList.contains("profileAvatarMedia") || el.closest(".msg__avatar,.memberAvatar,.friendAvatar,.dmAvatar")) return "avatar";
+  if (el.classList.contains("profileBannerMedia") || el.closest(".profileBanner,.dmProfileBanner,.userCardBanner")) return "profile-banner";
+  if (el.closest("#gifModal")) return "gif-picker";
+  if (el.closest("#dmPinsPanel,.dmPinRow")) return isServerConversationContext(activeDmId) ? "server-pin" : "pin";
+  if (el.closest(".msgInviteCard,.dmServerInviteCard")) return isServerConversationContext(getClosestMediaDomConversationId(el)) ? "server-invite" : "server-invite";
+  if (el.closest("#dmProfilePanel,.userCardModal,.userCard")) {
+    const ctxKind = String(userCardCurrentContext?.kind || "").trim().toLowerCase();
+    return ctxKind === "server" ? "server-profile-preview" : "profile-preview";
+  }
+  if (el.closest(".msg__attachment,.msg__gifWrap,.msg__gifDeferred")) return isServerConversationContext(getClosestMediaDomConversationId(el)) ? "server-message" : "chat-message";
+  if (el.closest(".serverIcon,.groupOrb,.serverNavItem,.dmServerInviteIcon")) return "server-icon";
+  return "unknown";
+}
+
+function inferMediaEgressReason(el, automatic = true) {
+  if (el instanceof HTMLElement) {
+    const explicit = String(el.getAttribute("data-media-load-reason") || "").trim();
+    if (explicit) return explicit;
+    if (el.closest(".msg__attachmentMedia--deferred,.msg__gifDeferred")) {
+      return automatic ? "deferred-preview" : "user-clicked-load-preview";
+    }
+  }
+  const source = inferMediaEgressSource(el);
+  if (source === "avatar") return "core-avatar";
+  if (source === "server-icon") return "core-icon";
+  if (source === "gif-picker") return "gif-picker-open";
+  if (source === "server-invite") return "invite-preview";
+  return automatic ? "lazy-visible" : "user-triggered";
+}
+
+function isChatMessageMediaDebugSource(source = "") {
+  const src = String(source || "").trim();
+  return src === "chat-message"
+    || src === "pin"
+    || src === "server-invite"
+    || src === "server-message"
+    || src === "server-pin";
+}
+
+function isAutomaticChatMediaEgressProblem(url = "", {
+  source = "",
+  automatic = true,
+  kind = "src",
+} = {}) {
+  if (!automatic) return false;
+  if (!isChatMessageMediaDebugSource(source)) return false;
+  const kindValue = String(kind || "").trim();
+  if (kindValue !== "src" && kindValue !== "background-image") return false;
+  return isLikelySupabaseStorageMediaUrl(url);
+}
+
+function shouldEmitMediaEgressDevWarnings() {
+  try {
+    if (typeof window !== "undefined" && window.__ALTARA_MEDIA_EGRESS_WARNINGS__ === true) return true;
+  } catch (_) {}
+  try {
+    const raw = String(localStorage.getItem("altara_media_egress_debug") || "").trim().toLowerCase();
+    if (raw === "1" || raw === "true" || raw === "on") return true;
+  } catch (_) {}
+  try {
+    const protocol = String(window.location?.protocol || "").toLowerCase();
+    const host = String(window.location?.hostname || "").toLowerCase();
+    return protocol === "file:" || host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch (_) {
+    return false;
+  }
+}
+
+function maybeWarnAutomaticChatMediaEgress(event) {
+  if (!event?.problem || !shouldEmitMediaEgressDevWarnings()) return;
+  const key = `${event.kind}|${event.source}|${event.url}`;
+  if (mediaEgressDebugWarningKeys.has(key)) return;
+  mediaEgressDebugWarningKeys.add(key);
+  try {
+    console.warn("[ALTARA media egress] Automatic Supabase chat media load", event);
+  } catch (_) {}
+}
+
+function getMediaDomUrlKind(url = "") {
+  const raw = String(url || "").trim().toLowerCase().split("#")[0].split("?")[0];
+  if (/\.(gif)$/.test(raw)) return "gif";
+  if (/\.(png|jpe?g|webp|avif|bmp|svg)$/.test(raw)) return "image";
+  if (/\.(mp4|webm|mov|m4v|ogv|avi|mkv)$/.test(raw)) return "video";
+  if (/\.(mp3|wav|ogg|m4a|aac|flac|opus)$/.test(raw)) return "audio";
+  return "";
+}
+
+function isMediaDomUrlLikeMedia(url = "") {
+  return !!getMediaDomUrlKind(url);
+}
+
+function getClosestMediaDomMessageId(el) {
+  const msg = el?.closest?.("[data-msg-id], .msg[data-msg-id]");
+  return String(msg?.getAttribute?.("data-msg-id") || "").trim();
+}
+
+function getClosestMediaDomConversationId(el) {
+  const explicit = String(
+    el?.closest?.("[data-conversation-id]")?.getAttribute?.("data-conversation-id")
+    || el?.closest?.("[data-conv-id]")?.getAttribute?.("data-conv-id")
+    || ""
+  ).trim();
+  return explicit || normId(activeDmId || state.activeDm?.conversationId || "");
+}
+
+function isInsideChatTranscript(el) {
+  return !!(
+    el instanceof Element
+    && (
+      el.closest("#dmMessages")
+      || el.closest(".msg[data-msg-id]")
+      || el.closest("[data-msg-id]")
+    )
+  );
+}
+
+function getUsefulMediaDomContainers(el) {
+  if (!(el instanceof Element)) return "";
+  const selectors = [
+    "#dmMessages",
+    ".msg",
+    ".msg__attachment",
+    ".msg__gifDeferred",
+    ".msgInviteCard",
+    "#dmPinsPanel",
+    ".dmPinRow",
+    "#dmProfilePanel",
+    "#userCardModal",
+    "#gifModal",
+    ".profileAvatarMediaClip",
+    ".serverIcon",
+    ".groupOrb",
+    ".dmProfileWidgetPreviewCard",
+  ];
+  return selectors
+    .filter((selector) => !!el.closest(selector))
+    .join(" ");
+}
+
+function guessMediaDomSourceArea(el) {
+  if (!(el instanceof Element)) return "unknown";
+  const messageArea = String(el.closest("[data-message-area]")?.getAttribute?.("data-message-area") || "").trim();
+  if (el.closest("#dmMessages .msg__avatar,.msg__avatar,.profileAvatarMediaClip")) return "avatar";
+  if (el.closest("#dmMessages .msgInviteCard,.dmServerInviteCard")) return messageArea === "server-message" ? "server-invite" : "server-invite";
+  if (el.closest("#dmMessages .msg,#dmMessages [data-msg-id]")) return messageArea || (isServerConversationContext(getClosestMediaDomConversationId(el)) ? "server-message" : "chat-message");
+  if (el.closest("#dmPinsPanel,.dmPinRow")) return isServerConversationContext(activeDmId) ? "server-pin" : "pin";
+  if (el.closest("#gifModal")) return "gif-picker";
+  if (el.closest(".serverMemberRow,.serverSettingsRoleMemberRow,.serverChannelCreateAccessRow,.serverVoiceMember")) return "member-list-avatar";
+  if (el.closest("#dmProfilePanel,#userCardModal,.userCardModal,.userCard")) {
+    const ctxKind = String(userCardCurrentContext?.kind || "").trim().toLowerCase();
+    return ctxKind === "server" ? "server-profile-preview" : "profile-preview";
+  }
+  if (el.closest(".memberAvatar,.friendAvatar,.dmAvatar,.profileAvatarMediaClip")) return "avatar";
+  if (el.closest(".serverIcon,.groupOrb,.serverNavItem,.dmProfileContextIcon")) return "sidebar";
+  if (el.closest(".dmProfileWidgetPreviewCard,.profileWidgetCard")) return "widget";
+  return "unknown";
+}
+
+function getElementInlineUrlValues(el) {
+  if (!(el instanceof HTMLElement)) return [];
+  const out = [];
+  const push = (kind, attr, value) => {
+    extractCssUrlValues(value).forEach((url) => out.push({ kind, attr, url }));
+  };
+  push("background-image", "style.backgroundImage", String(el.style?.backgroundImage || ""));
+  try {
+    for (let i = 0; i < el.style.length; i += 1) {
+      const prop = el.style.item(i);
+      if (!prop) continue;
+      const value = el.style.getPropertyValue(prop);
+      if (String(value || "").includes("url(")) push("css-url", prop, value);
+    }
+  } catch (_) {}
+  return out;
+}
+
+function collectMediaDomElementUrls(el) {
+  if (!(el instanceof Element)) return [];
+  const out = [];
+  const push = (kind, attr, url) => {
+    const safeUrl = normalizeMediaEgressUrl(url);
+    if (safeUrl) out.push({ kind, attr, url: safeUrl });
+  };
+  if (el instanceof HTMLImageElement) push("img-src", "src", el.getAttribute("src") || el.currentSrc || "");
+  if (el instanceof HTMLVideoElement) push("video-src", "src", el.getAttribute("src") || el.currentSrc || "");
+  if (el instanceof HTMLAudioElement) push("audio-src", "src", el.getAttribute("src") || el.currentSrc || "");
+  if (el instanceof HTMLSourceElement) push("source-src", "src", el.getAttribute("src") || "");
+  if (el instanceof HTMLAnchorElement) push("href", "href", el.getAttribute("href") || el.href || "");
+  push("data-media-src", "data-media-src", el.getAttribute("data-media-src") || "");
+  getElementInlineUrlValues(el).forEach((entry) => push(entry.kind, entry.attr, entry.url));
+  return out;
+}
+
+function buildMediaDomScanRow(el, entry) {
+  const url = normalizeMediaEgressUrl(entry?.url || "");
+  const area = guessMediaDomSourceArea(el);
+  const tagName = String(el?.tagName || "").toLowerCase();
+  const className = String(el?.className || "").trim();
+  const id = String(el?.id || "").trim();
+  return {
+    tagName,
+    className,
+    id,
+    messageId: getClosestMediaDomMessageId(el),
+    conversationId: getClosestMediaDomConversationId(el),
+    containers: getUsefulMediaDomContainers(el),
+    sourceArea: area,
+    attr: String(entry?.attr || ""),
+    kind: String(entry?.kind || ""),
+    url,
+    isSupabaseStorage: isLikelySupabaseStorageMediaUrl(url),
+    mediaKind: getMediaDomUrlKind(url),
+    looksLikeMedia: isMediaDomUrlLikeMedia(url),
+    insideChatTranscript: isInsideChatTranscript(el),
+    outerHTML: String(el?.outerHTML || "").slice(0, 500),
+  };
+}
+
+function scanAltaraMediaDom(root = document, { print = true } = {}) {
+  const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+  const nodes = new Set();
+  const add = (el) => {
+    if (el instanceof Element) nodes.add(el);
+  };
+  add(scope instanceof Element ? scope : null);
+  scope.querySelectorAll?.("img,video,audio,source,a[href],[data-media-src],[style]").forEach(add);
+  const rows = [];
+  nodes.forEach((el) => {
+    collectMediaDomElementUrls(el).forEach((entry) => {
+      rows.push(buildMediaDomScanRow(el, entry));
+    });
+  });
+  if (print) {
+    try {
+      if (typeof console !== "undefined" && typeof console.table === "function") console.table(rows);
+      else if (typeof console !== "undefined") console.log(rows);
+    } catch (_) {}
+  }
+  return rows;
+}
+
+function pushMediaDomWatchEvent(event) {
+  if (!event?.url || !isLikelySupabaseStorageMediaUrl(event.url)) return;
+  mediaDomWatchEvents.push(event);
+  while (mediaDomWatchEvents.length > MEDIA_DOM_WATCH_MAX_EVENTS) mediaDomWatchEvents.shift();
+  try {
+    console.warn("[ALTARA media watch]", event);
+  } catch (_) {}
+}
+
+function logMediaDomWatchAssignment(el, attr = "", value = "", { via = "", stack = "" } = {}) {
+  const url = normalizeMediaEgressUrl(value);
+  if (!url || !isLikelySupabaseStorageMediaUrl(url)) return;
+  const event = {
+    at: new Date().toISOString(),
+    via: String(via || "assignment"),
+    attr: String(attr || ""),
+    tagName: String(el?.tagName || "").toLowerCase(),
+    className: String(el?.className || "").trim(),
+    id: String(el?.id || "").trim(),
+    messageId: getClosestMediaDomMessageId(el),
+    conversationId: getClosestMediaDomConversationId(el),
+    sourceArea: guessMediaDomSourceArea(el),
+    insideChatTranscript: isInsideChatTranscript(el),
+    mediaKind: getMediaDomUrlKind(url),
+    url,
+    stack: String(stack || "").slice(0, 2200),
+  };
+  pushMediaDomWatchEvent(event);
+}
+
+function installMediaDomWatchPatchesOnce() {
+  if (mediaDomWatchPatchState.installed) return;
+  if (typeof window === "undefined" || typeof Element === "undefined") return;
+  const originals = {};
+  mediaDomWatchPatchState.originals = originals;
+  mediaDomWatchPatchState.installed = true;
+
+  originals.setAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function patchedSetAttribute(name, value) {
+    const attr = String(name || "").trim();
+    if (/^(src|href|data-media-src)$/i.test(attr)) {
+      logMediaDomWatchAssignment(this, attr, value, {
+        via: "setAttribute",
+        stack: new Error("ALTARA media setAttribute").stack || "",
+      });
+    }
+    return originals.setAttribute.apply(this, arguments);
+  };
+
+  if (typeof HTMLImageElement !== "undefined") {
+    originals.imgSrc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+    if (originals.imgSrc?.set && originals.imgSrc?.get) {
+      Object.defineProperty(HTMLImageElement.prototype, "src", {
+        configurable: true,
+        enumerable: originals.imgSrc.enumerable,
+        get: function getPatchedImgSrc() {
+          return originals.imgSrc.get.call(this);
+        },
+        set: function setPatchedImgSrc(value) {
+          logMediaDomWatchAssignment(this, "src", value, {
+            via: "HTMLImageElement.src",
+            stack: new Error("ALTARA media img.src").stack || "",
+          });
+          return originals.imgSrc.set.call(this, value);
+        },
+      });
+    }
+  }
+
+  if (typeof HTMLMediaElement !== "undefined") {
+    originals.mediaSrc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "src");
+    if (originals.mediaSrc?.set && originals.mediaSrc?.get) {
+      Object.defineProperty(HTMLMediaElement.prototype, "src", {
+        configurable: true,
+        enumerable: originals.mediaSrc.enumerable,
+        get: function getPatchedMediaSrc() {
+          return originals.mediaSrc.get.call(this);
+        },
+        set: function setPatchedMediaSrc(value) {
+          logMediaDomWatchAssignment(this, "src", value, {
+            via: "HTMLMediaElement.src",
+            stack: new Error("ALTARA media element src").stack || "",
+          });
+          return originals.mediaSrc.set.call(this, value);
+        },
+      });
+    }
+  }
+
+  if (typeof HTMLAnchorElement !== "undefined") {
+    originals.anchorHref = Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype, "href");
+    if (originals.anchorHref?.set && originals.anchorHref?.get) {
+      Object.defineProperty(HTMLAnchorElement.prototype, "href", {
+        configurable: true,
+        enumerable: originals.anchorHref.enumerable,
+        get: function getPatchedAnchorHref() {
+          return originals.anchorHref.get.call(this);
+        },
+        set: function setPatchedAnchorHref(value) {
+          logMediaDomWatchAssignment(this, "href", value, {
+            via: "HTMLAnchorElement.href",
+            stack: new Error("ALTARA media href").stack || "",
+          });
+          return originals.anchorHref.set.call(this, value);
+        },
+      });
+    }
+  }
+
+  if (typeof CSSStyleDeclaration !== "undefined") {
+    originals.styleSetProperty = CSSStyleDeclaration.prototype.setProperty;
+    CSSStyleDeclaration.prototype.setProperty = function patchedStyleSetProperty(name, value, priority) {
+      const raw = String(value || "");
+      if (raw.includes("url(")) {
+        extractCssUrlValues(raw).forEach((url) => {
+          logMediaDomWatchAssignment(this?.ownerElement || null, String(name || ""), url, {
+            via: "CSSStyleDeclaration.setProperty",
+            stack: new Error("ALTARA media style.setProperty").stack || "",
+          });
+        });
+      }
+      return originals.styleSetProperty.apply(this, arguments);
+    };
+  }
+}
+
+function restoreMediaDomWatchPatches() {
+  const originals = mediaDomWatchPatchState.originals;
+  if (!mediaDomWatchPatchState.installed || !originals) return;
+  try { if (originals.setAttribute) Element.prototype.setAttribute = originals.setAttribute; } catch (_) {}
+  try {
+    if (originals.imgSrc && typeof HTMLImageElement !== "undefined") {
+      Object.defineProperty(HTMLImageElement.prototype, "src", originals.imgSrc);
+    }
+  } catch (_) {}
+  try {
+    if (originals.mediaSrc && typeof HTMLMediaElement !== "undefined") {
+      Object.defineProperty(HTMLMediaElement.prototype, "src", originals.mediaSrc);
+    }
+  } catch (_) {}
+  try {
+    if (originals.anchorHref && typeof HTMLAnchorElement !== "undefined") {
+      Object.defineProperty(HTMLAnchorElement.prototype, "href", originals.anchorHref);
+    }
+  } catch (_) {}
+  try {
+    if (originals.styleSetProperty && typeof CSSStyleDeclaration !== "undefined") {
+      CSSStyleDeclaration.prototype.setProperty = originals.styleSetProperty;
+    }
+  } catch (_) {}
+  mediaDomWatchPatchState.installed = false;
+  mediaDomWatchPatchState.originals = null;
+}
+
+function startAltaraMediaDomWatch() {
+  if (typeof document === "undefined" || !document.body || typeof MutationObserver === "undefined") return [];
+  installMediaDomWatchPatchesOnce();
+  if (mediaDomWatchObserver) return mediaDomWatchEvents.slice();
+  mediaDomWatchObserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === "attributes") {
+        const target = mutation.target;
+        const attr = String(mutation.attributeName || "");
+        if (target instanceof Element && /^(src|href|data-media-src|style)$/i.test(attr)) {
+          collectMediaDomElementUrls(target).forEach((entry) => {
+            if (entry.attr === attr || attr === "style") {
+              logMediaDomWatchAssignment(target, entry.attr, entry.url, { via: "MutationObserver" });
+            }
+          });
+        }
+        return;
+      }
+      mutation.addedNodes?.forEach((node) => {
+        if (!(node instanceof Element)) return;
+        scanAltaraMediaDom(node, { print: false })
+          .filter((row) => row.isSupabaseStorage)
+          .forEach((row) => pushMediaDomWatchEvent({
+            at: new Date().toISOString(),
+            via: "MutationObserver.addedNode",
+            attr: row.attr,
+            tagName: row.tagName,
+            className: row.className,
+            id: row.id,
+            messageId: row.messageId,
+            conversationId: row.conversationId,
+            sourceArea: row.sourceArea,
+            insideChatTranscript: row.insideChatTranscript,
+            mediaKind: row.mediaKind,
+            url: row.url,
+            stack: "",
+          }));
+      });
+    });
+  });
+  mediaDomWatchObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["src", "href", "data-media-src", "style"],
+  });
+  return mediaDomWatchEvents.slice();
+}
+
+function stopAltaraMediaDomWatch() {
+  try { mediaDomWatchObserver?.disconnect?.(); } catch (_) {}
+  mediaDomWatchObserver = null;
+  restoreMediaDomWatchPatches();
+  return mediaDomWatchEvents.slice();
+}
+
+function installMediaDomDebugHelpersOnce() {
+  if (typeof window === "undefined") return;
+  window.__ALTARA_SCAN_MEDIA_DOM__ = () => scanAltaraMediaDom(document);
+  window.__ALTARA_MEDIA_WATCH_START__ = () => startAltaraMediaDomWatch();
+  window.__ALTARA_MEDIA_WATCH_STOP__ = () => stopAltaraMediaDomWatch();
+}
+
+function recordMediaEgressLoad(rawUrl = "", {
+  element = null,
+  source = "",
+  reason = "",
+  automatic = true,
+  kind = "src",
+} = {}) {
+  const url = normalizeMediaEgressUrl(rawUrl);
+  if (!url) return;
+  const el = element instanceof HTMLElement ? element : null;
+  const key = `${kind}:${url}`;
+  if (el && !rememberMediaEgressElementValue(el, key)) return;
+  const resolvedSource = String(source || inferMediaEgressSource(el));
+  const resolvedKind = String(kind || "src");
+  const resolvedAutomatic = !!automatic;
+  const resolvedReason = String(reason || inferMediaEgressReason(el, !!automatic));
+  const event = {
+    at: new Date().toISOString(),
+    kind: resolvedKind,
+    source: resolvedSource,
+    reason: resolvedReason,
+    automatic: resolvedAutomatic,
+    problem: resolvedReason === "lightweight-preview" ? false : isAutomaticChatMediaEgressProblem(url, {
+      source: resolvedSource,
+      automatic: resolvedAutomatic,
+      kind: resolvedKind,
+    }),
+    url,
+  };
+  mediaEgressDebugEvents.push(event);
+  maybeWarnAutomaticChatMediaEgress(event);
+  while (mediaEgressDebugEvents.length > MEDIA_EGRESS_DEBUG_MAX_EVENTS) {
+    mediaEgressDebugEvents.shift();
+  }
+}
+
+function extractCssUrlValues(value = "") {
+  const src = String(value || "");
+  if (!src || !src.includes("url(")) return [];
+  const out = [];
+  const re = /url\((["']?)(.*?)\1\)/gi;
+  let match;
+  while ((match = re.exec(src))) {
+    const url = String(match[2] || "").trim();
+    if (url) out.push(url);
+  }
+  return out;
+}
+
+function scanMediaEgressElement(el) {
+  if (!(el instanceof HTMLElement)) return;
+  if (el instanceof HTMLImageElement) {
+    const src = normalizeMediaEgressUrl(el.getAttribute("src") || "");
+    if (src) {
+      recordMediaEgressLoad(src, {
+        element: el,
+        automatic: true,
+        kind: "src",
+      });
+    }
+  }
+  const background = String(el.style?.backgroundImage || "");
+  extractCssUrlValues(background).forEach((url) => {
+    recordMediaEgressLoad(url, {
+      element: el,
+      automatic: true,
+      kind: "background-image",
+    });
+  });
+}
+
+function installMediaEgressDebugHelperOnce() {
+  if (typeof window === "undefined") return;
+  window.__ALTARA_MEDIA_EGRESS_DEBUG__ = () => {
+    const rows = mediaEgressDebugEvents.slice();
+    try {
+      if (typeof console !== "undefined" && typeof console.table === "function") console.table(rows);
+      else if (typeof console !== "undefined") console.log(rows);
+    } catch (_) {}
+    return rows;
+  };
+  installMediaDomDebugHelpersOnce();
+}
+
+function bindMediaEgressDebugObserverOnce() {
+  installMediaEgressDebugHelperOnce();
+  if (mediaEgressDebugObserverBound) return;
+  if (typeof MutationObserver === "undefined" || typeof document === "undefined" || !document.body) return;
+  mediaEgressDebugObserverBound = true;
+
+  const visit = (node) => {
+    if (!(node instanceof HTMLElement)) return;
+    scanMediaEgressElement(node);
+    node.querySelectorAll?.("img[src], [style]").forEach(scanMediaEgressElement);
+  };
+
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === "attributes") {
+        scanMediaEgressElement(mutation.target);
+        return;
+      }
+      mutation.addedNodes?.forEach(visit);
+    });
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["src", "style"],
+  });
+  visit(document.body);
+}
+
+installMediaEgressDebugHelperOnce();
+
+function isCoreInlineMediaElement(img) {
+  if (!(img instanceof HTMLImageElement)) return false;
+  return !!(
+    img.classList.contains("profileAvatarMedia")
+    || img.closest(".msg__avatar,.memberAvatar,.friendAvatar,.dmAvatar,.profileAvatarMediaClip,.emojiBtn,.msg__emojiFlag")
+  );
+}
+
+function isChatMessagePreviewMediaElement(img) {
+  if (!(img instanceof HTMLImageElement)) return false;
+  if (isCoreInlineMediaElement(img)) return false;
+  return !!(
+    img.classList.contains("msg__attachmentImage")
+    || img.classList.contains("msg__gif")
+    || img.classList.contains("dmPinPreviewMedia")
+    || img.classList.contains("msgInviteCard__icon")
+    || img.classList.contains("dmServerInviteHeroImg")
+    || img.closest(".msg__attachmentMedia,.msg__gifDeferred,.msg__gifWrap,#dmPinsPanel .dmPinRow,.msgInviteCard,.dmServerInviteCard")
+  );
+}
+
+function shouldBlockAutomaticChatMediaImageLoad(img, rawSrc = "") {
+  if (!(img instanceof HTMLImageElement)) return false;
+  if (!isChatMessagePreviewMediaElement(img)) return false;
+  const src = String(rawSrc || img.dataset?.mediaSrc || img.getAttribute("data-media-src") || img.getAttribute("src") || "").trim();
+  if (!src) return true;
+  if (isLikelySupabaseStorageMediaUrl(src)) return true;
+  return img.classList.contains("msg__attachmentImage")
+    || img.classList.contains("msg__gif")
+    || img.classList.contains("dmPinPreviewMedia")
+    || img.classList.contains("msgInviteCard__icon")
+    || img.classList.contains("dmServerInviteHeroImg");
+}
+
+function loadLazyMediaImage(img, {
+  force = false,
+  source = "",
+  reason = "",
+  automatic = null,
+} = {}) {
+  if (!(img instanceof HTMLImageElement)) return false;
+  const rawSrc = String(img.dataset?.mediaSrc || img.getAttribute("data-media-src") || "").trim();
+  if (!rawSrc) return false;
+  const automaticLoad = automatic === null ? !force : !!automatic;
+  if (shouldBlockAutomaticChatMediaImageLoad(img, rawSrc) && automaticLoad) {
+    return false;
+  }
+  if (!force && img.dataset.mediaLoaded === "1") return true;
+  if (String(img.getAttribute("src") || "").trim() === rawSrc) {
+    img.dataset.mediaLoaded = "1";
+    recordMediaEgressLoad(rawSrc, {
+      element: img,
+      source,
+      reason,
+      automatic: automaticLoad,
+      kind: "src",
+    });
+    return true;
+  }
+  img.dataset.mediaLoaded = "1";
+  img.src = rawSrc;
+  recordMediaEgressLoad(rawSrc, {
+    element: img,
+    source,
+    reason,
+    automatic: automaticLoad,
+    kind: "src",
+  });
+  if (isGifLikeUrl(rawSrc)) {
+    img.dataset.gifLiveSrc = rawSrc;
+  }
+  queueManagedGifPlaybackSync(img.closest("[data-managed-gif-root]") || img);
+  return true;
+}
+
+function getLazyMediaImageObserver() {
+  if (typeof IntersectionObserver === "undefined") return null;
+  if (lazyMediaImageObserver) return lazyMediaImageObserver;
+  lazyMediaImageObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry?.isIntersecting) return;
+      const img = entry.target;
+      lazyMediaImageObserver?.unobserve?.(img);
+      loadLazyMediaImage(img);
+    });
+  }, {
+    root: null,
+    rootMargin: LAZY_MEDIA_IMAGE_ROOT_MARGIN,
+    threshold: 0.01,
+  });
+  return lazyMediaImageObserver;
+}
+
+function bindLazyMediaImages(root = document) {
+  bindMediaEgressDebugObserverOnce();
+  const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+  const images = [];
+  if (root instanceof HTMLImageElement && root.hasAttribute("data-media-src")) images.push(root);
+  scope?.querySelectorAll?.("img[data-media-src]").forEach((img) => images.push(img));
+  if (!images.length) return;
+
+  const observer = getLazyMediaImageObserver();
+  images.forEach((img) => {
+    if (!(img instanceof HTMLImageElement)) return;
+    img.loading = "lazy";
+    img.decoding = "async";
+    if (img.dataset.mediaLoaded === "1" || String(img.getAttribute("src") || "").trim()) return;
+    if (shouldBlockAutomaticChatMediaImageLoad(img)) return;
+    if (img.closest?.(".msg__attachmentMedia--deferred") && img.closest?.(".msg__attachmentPreview")?.hidden) return;
+    if (img.closest?.(".msg__gifDeferred") && img.closest?.(".msg__gifWrap")?.hidden) return;
+    if (!observer) {
+      loadLazyMediaImage(img, { force: true, automatic: true, reason: "intersection-observer-unavailable" });
+      return;
+    }
+    observer.observe(img);
+  });
+}
+
+function lazyMediaImageHtml(url = "", {
+  className = "",
+  alt = "",
+  attrs = "",
+  managedGif = false,
+} = {}) {
+  const safeUrl = String(url || "").trim();
+  if (!safeUrl) return "";
+  const cls = ["lazyMediaImage", className].filter(Boolean).join(" ");
+  const gifAttrs = managedGif ? ' data-managed-gif-media="1" crossorigin="anonymous" referrerpolicy="no-referrer"' : "";
+  const extraAttrs = attrs ? ` ${attrs}` : "";
+  return `<img class="${escAttr(cls)}" data-media-src="${escAttr(safeUrl)}" alt="${escAttr(alt)}" loading="lazy" decoding="async"${gifAttrs}${extraAttrs} />`;
 }
 
 function getManagedGifPausedLabel() {
@@ -39446,6 +40404,9 @@ function setMessageGifPlaybackState(wrap, shouldPlay) {
 
   const liveUrl = getManagedGifLiveUrl(wrap, img);
   if (!liveUrl) return;
+  const srcNow = String(img.getAttribute("src") || img.currentSrc || "").trim();
+  if (shouldBlockAutomaticChatMediaImageLoad(img, liveUrl) && img.dataset.mediaLoaded !== "1" && !srcNow) return;
+  if (img.hasAttribute("data-media-src") && !srcNow) return;
 
   if (shouldPlay) {
     wrap.classList.remove("is-gif-paused");
@@ -39473,9 +40434,16 @@ function syncMessageGifPlaybackState(wrap) {
 
 function bindMessageGifPlaybackForWrap(wrap) {
   if (!(wrap instanceof HTMLElement) || wrap.dataset.gifPlaybackBound === "1") return;
-  wrap.dataset.gifPlaybackBound = "1";
   const img = getManagedGifMediaElement(wrap);
   if (!(img instanceof HTMLImageElement)) return;
+  if (
+    shouldBlockAutomaticChatMediaImageLoad(img)
+    && img.dataset.mediaLoaded !== "1"
+    && !String(img.getAttribute("src") || "").trim()
+  ) {
+    return;
+  }
+  wrap.dataset.gifPlaybackBound = "1";
 
   const liveUrl = getManagedGifLiveUrl(wrap, img);
   if (liveUrl) img.dataset.gifLiveSrc = liveUrl;
@@ -39589,6 +40557,7 @@ function bindManagedGifPlaybackObserverOnce() {
 
 function bindDmGifAutoscroll(container) {
   if (!container) return;
+  bindLazyMediaImages(container);
   const shouldStickOnReady = () => {
     if (canForceDmOpenAutoScroll()) return true;
     return isDmNearBottom(container, 120);
@@ -39610,10 +40579,7 @@ function bindDmGifAutoscroll(container) {
     if (img.dataset.dmGifBound === "1") return;
     img.dataset.dmGifBound = "1";
     img.dataset.dmStickLatest = shouldStickOnReady() ? "1" : "0";
-    if (img.dataset.dmStickLatest === "1" && img.loading === "lazy") {
-      img.loading = "eager";
-    }
-    if (img.complete) {
+    if (String(img.getAttribute("src") || "").trim() && img.complete) {
       onMediaReady(img);
       return;
     }
@@ -39625,10 +40591,7 @@ function bindDmGifAutoscroll(container) {
     if (img.dataset.dmMediaBound === "1") return;
     img.dataset.dmMediaBound = "1";
     img.dataset.dmStickLatest = shouldStickOnReady() ? "1" : "0";
-    if (img.dataset.dmStickLatest === "1" && img.loading === "lazy") {
-      img.loading = "eager";
-    }
-    if (img.complete) {
+    if (String(img.getAttribute("src") || "").trim() && img.complete) {
       onMediaReady(img);
       return;
     }
@@ -39651,6 +40614,25 @@ function bindDmGifAutoscroll(container) {
     video.addEventListener("error", ready, { once: true });
   });
   syncAllMessageGifPlaybackStates(container);
+}
+
+function ensureDeferredMediaSrc(mediaEl) {
+  if (!mediaEl) return false;
+  if (String(mediaEl.getAttribute("src") || "").trim()) return true;
+  const deferredSrc = String(mediaEl.dataset?.mediaSrc || mediaEl.getAttribute("data-media-src") || "").trim();
+  if (!deferredSrc) return false;
+  mediaEl.setAttribute("src", deferredSrc);
+  recordMediaEgressLoad(deferredSrc, {
+    element: mediaEl instanceof HTMLElement ? mediaEl : null,
+    source: "chat-message",
+    reason: "user-started-media",
+    automatic: false,
+    kind: "src",
+  });
+  try {
+    if (typeof mediaEl.load === "function") mediaEl.load();
+  } catch (_) {}
+  return true;
 }
 
 function formatVideoTimeLabel(seconds) {
@@ -39683,6 +40665,7 @@ function bindDmVideoPlayerUi(container) {
     player.dataset.videoUiBound = "1";
     video.controls = false;
     video.playsInline = true;
+    video.preload = "none";
 
     const updatePlay = () => {
       const paused = video.paused || video.ended;
@@ -39780,6 +40763,7 @@ function bindDmVideoPlayerUi(container) {
 
     const toggleVideoPlayback = async () => {
       if (video.paused || video.ended) {
+        if (!ensureDeferredMediaSrc(video)) return;
         try { await video.play(); } catch (_) {}
       } else {
         video.pause();
@@ -39842,6 +40826,7 @@ function bindDmVideoPlayerUi(container) {
       e.stopPropagation();
       const isFs = isPlayerFullscreen();
       if (!isFs) {
+        ensureDeferredMediaSrc(video);
         const enteredPlayer = await requestFullscreenFrom(player);
         if (!enteredPlayer) {
           const enteredVideo = await requestFullscreenFrom(video);
@@ -39902,6 +40887,7 @@ function bindDmAudioPlayerUi(container) {
 
     player.dataset.audioUiBound = "1";
     audio.controls = false;
+    audio.preload = "none";
 
     let volHideTimer = null;
     const clearVolHideTimer = () => {
@@ -39959,6 +40945,7 @@ function bindDmAudioPlayerUi(container) {
 
     const toggleAudioPlayback = async () => {
       if (audio.paused || audio.ended) {
+        if (!ensureDeferredMediaSrc(audio)) return;
         try { await audio.play(); } catch (_) {}
       } else {
         audio.pause();
@@ -41254,7 +42241,8 @@ function renderMessagesFromCache({ keepBottom = true } = {}) {
     return;
   }
 
-  msgsBox.innerHTML = buildMessagesHtml(dmMessagesCache);
+  msgsBox.innerHTML = sanitizeChatMessageMediaHtml(buildMessagesHtml(dmMessagesCache));
+  enforceServerMessageMediaEgressGuards(msgsBox);
   bindDmGifAutoscroll(msgsBox);
   bindDmVideoPlayerUi(msgsBox);
   bindDmAudioPlayerUi(msgsBox);
@@ -45282,7 +46270,7 @@ function renderDmGroupMembersPanel(members = [], { loading = false } = {}) {
     const status = getPresenceStatusForUser(uid) || "offline";
     const nameColorAttrs = buildUserNameColorAttrs(uid, m?.nameColor || "");
     const avatarHtml = m?.avatarUrl
-      ? buildAvatarMediaHtml(m.avatarUrl, { userId: uid, alt: m.displayName || m.username || "avatar", loading: "lazy" })
+      ? buildAvatarMediaHtml(m.avatarUrl, { userId: uid, alt: m.displayName || m.username || "avatar", loading: "lazy", deferAnimatedStorage: true })
       : `<span class="groupDmAvatarFallback">${esc(String(m?.displayName || m?.username || "?").trim().charAt(0).toUpperCase() || "?")}</span>`;
     return `
         <button
@@ -45381,11 +46369,8 @@ function buildDmProfileWidgetsPreviewHtml(widgets = [], {
         ${previewWidgets.map(({ widget, item, itemCount }) => {
     const typeLabel = getProfileWidgetTypeLabel(widget?.widget_type || "");
     const title = normalizeProfileWidgetTitle(item?.title || widget?.title || "") || t("profile.widgets.item.untitled", "Untitled");
-    const coverUrl = normalizeCatalogCoverUrl(item?.cover_url || "");
     const metaText = buildDmProfileWidgetPreviewMeta(widget, item, itemCount);
-    const mediaHtml = coverUrl
-      ? `<img src="${escAttr(coverUrl)}" alt="" loading="lazy" />`
-      : `<span>${esc(String(title).charAt(0).toUpperCase() || "?")}</span>`;
+    const mediaHtml = `<span>${esc(String(title).charAt(0).toUpperCase() || "?")}</span>`;
     return `
           <button class="dmProfileWidgetPreviewCard" type="button" data-dm-profile-widget-preview="1">
             <span class="dmProfileWidgetPreviewMedia">${mediaHtml}</span>
@@ -45450,7 +46435,7 @@ function buildDmProfileMutualServerEntryHtml(entry = {}) {
       : t("dm.group_member_count", "{n} members").replace("{n}", String(memberCount)))
     : t("usercard.recently_loaded", "recently loaded");
   const iconHtml = iconUrl
-    ? `<img src="${escAttr(iconUrl)}" alt="${escAttr(name)}" loading="lazy" />`
+    ? lazyMediaImageHtml(iconUrl, { alt: name })
     : `<span>${esc(initial)}</span>`;
   return `
     <div class="dmProfileContextRow">
@@ -45582,12 +46567,12 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
     const start = mixHex(base, "#111827", 0.74);
     const end = mixHex(base, "#0b1018", 0.9);
     const glow = rgbaFromHex(base, 0.24);
-    applyBannerStyle(bannerEl, bannerUrl, start, end, glow, {
+    applyBannerStyle(bannerEl, "", start, end, glow, {
       overlay: "none",
       userId: uid,
       profile,
     });
-    bannerEl.classList.toggle("has-image", !!normalizeBannerUrl(bannerUrl));
+    bannerEl.classList.remove("has-image");
   }
   if (avatarEl) {
     avatarEl.innerHTML = avatarUrl
@@ -45744,17 +46729,49 @@ function closeDmPinsModal() {
   syncDmPinsPanelState();
 }
 
+function getDisplayFileNameFromUrl(rawUrl = "", fallback = "ficheiro") {
+  const safeFallback = String(fallback || "ficheiro").trim() || "ficheiro";
+  try {
+    const parsed = new URL(String(rawUrl || ""), window.location.href);
+    const leaf = decodeURIComponent(String(parsed.pathname || "").split("/").filter(Boolean).pop() || "");
+    return leaf || safeFallback;
+  } catch (_) {
+    return safeFallback;
+  }
+}
+
+function dmPinFilePreviewHtml({
+  icon = "",
+  displayName = "",
+  meta = "",
+  badgeHtml = "",
+} = {}) {
+  return `
+    <div class="dmPinPreview dmPinPreview--file">
+      <span class="dmPinPreview__icon" aria-hidden="true">${esc(icon || "FILE")}</span>
+      <span class="dmPinPreview__fileText">
+        <span class="dmPinPreview__fileName">${esc(displayName || "ficheiro")}</span>
+        <span class="dmPinPreview__fileMeta">${esc(meta || "Unknown size")}</span>
+      </span>
+      ${badgeHtml || ""}
+    </div>
+  `;
+}
+
 function dmPinPreviewHtml(m) {
   const parsed = safeParseMessageContent(m?.content);
 
   if (parsed.type === "gif") {
     const url = String(parsed.url || "").trim();
     if (url) {
-      return `
-        <div class="dmPinPreview dmPinPreview--media">
-          <img class="dmPinPreviewMedia dmPinPreviewMedia--image" src="${esc(url)}" alt="GIF" loading="lazy" />
-        </div>
-      `;
+      const gifAttachment = sanitizeAttachmentPayload(parsed.attachment);
+      const displayName = gifAttachment
+        ? formatAttachmentDisplayName(gifAttachment.name || "gif", gifAttachment.kind)
+        : formatAttachmentDisplayName(getDisplayFileNameFromUrl(url, "gif"), "image");
+      const meta = gifAttachment
+        ? (attachmentMetaLabel(gifAttachment) || "GIF - Unknown size")
+        : "GIF - Unknown size";
+      return dmPinFilePreviewHtml({ icon: "GIF", displayName, meta });
     }
     return `<div class="dmPinPreview dmPinPreview--text">${esc(getMessagePreviewText(m))}</div>`;
   }
@@ -45773,21 +46790,21 @@ function dmPinPreviewHtml(m) {
     const spoilerBadge = badgeParts.length ? `<span class="dmPinPreview__badge">${esc(badgeParts.join(" "))}</span>` : "";
 
     if (att.kind === "image") {
-      return `
-        <div class="dmPinPreview dmPinPreview--media${spoilerCls}">
-          <img class="dmPinPreviewMedia dmPinPreviewMedia--image" src="${esc(att.url)}" alt="${escAttr(displayName)}" loading="lazy" />
-          ${spoilerBadge}
-        </div>
-      `;
+      return dmPinFilePreviewHtml({
+        icon: isGifLikeAttachment(att) ? "GIF" : "IMG",
+        displayName,
+        meta: meta || `${isGifLikeAttachment(att) ? "GIF" : "Imagem"} - Unknown size`,
+        badgeHtml: spoilerBadge,
+      });
     }
 
     if (att.kind === "video") {
-      return `
-        <div class="dmPinPreview dmPinPreview--media${spoilerCls}">
-          <video class="dmPinPreviewMedia dmPinPreviewMedia--video" src="${esc(att.url)}" preload="metadata" playsinline muted></video>
-          ${spoilerBadge}
-        </div>
-      `;
+      return dmPinFilePreviewHtml({
+        icon: "VID",
+        displayName,
+        meta: meta || "Video - Unknown size",
+        badgeHtml: spoilerBadge,
+      });
     }
 
     if (att.kind === "audio") {
@@ -45823,6 +46840,10 @@ function dmPinPreviewHtml(m) {
 function renderDmPinsList(items) {
   const list = document.getElementById("dmPinsList");
   if (!list) return;
+  if (!dmPinsPanelOpen) {
+    list.innerHTML = "";
+    return;
+  }
 
   if (!Array.isArray(items) || !items.length) {
     list.innerHTML = `<div class="hint">${t("dm.no_pins", "No pinned messages.")}</div>`;
@@ -46478,8 +47499,12 @@ function buildUserCardMediaPanelHtml(profile = {}, insights = {}, { loading = fa
   const isVideo = latestMedia.kind === "video";
   const isGif = latestMedia.kind === "gif" || isGifLikeUrl(safeUrl);
   const previewHtml = isVideo
-    ? `<video class="userCardMediaAsset" src="${esc(safeUrl)}" preload="metadata" muted playsinline></video>`
-    : `<img class="userCardMediaAsset" src="${esc(safeUrl)}" alt="ultima media"${isGif ? ' data-managed-gif-media="1"' : ""} loading="lazy" />`;
+    ? `<video class="userCardMediaAsset" src="${esc(safeUrl)}" preload="none" muted playsinline></video>`
+    : lazyMediaImageHtml(safeUrl, {
+      className: "userCardMediaAsset",
+      alt: "ultima media",
+      managedGif: isGif,
+    });
 
   return `
     <div class="userCardPanelIntro">
@@ -46538,7 +47563,7 @@ function buildUserCardSharedPanelHtml(profile = {}, insights = {}, { relation = 
             return `
               <div class="userCardServerItem">
                 <div class="userCardServerOrb">
-                  ${iconUrl ? `<img src="${esc(iconUrl)}" alt="${escAttr(name)}" />` : `<span>${esc(initial)}</span>`}
+                  ${iconUrl ? lazyMediaImageHtml(iconUrl, { alt: name }) : `<span>${esc(initial)}</span>`}
                 </div>
                 <div class="userCardServerMeta">
                   <div class="userCardServerName">${esc(name)}</div>
@@ -47160,8 +48185,9 @@ function renderProfileWidgetItemReadonlyPreview(item = null, { visible = false }
   const metaParts = [safeYear, sourceLabel].filter(Boolean);
   const initial = String(title || "?").trim().charAt(0).toUpperCase() || "?";
   mediaEl.innerHTML = coverUrl
-    ? `<img src="${escAttr(coverUrl)}" alt="${escAttr(title)}" loading="lazy" />`
+    ? lazyMediaImageHtml(coverUrl, { alt: title })
     : `<div class="profileWidgetItemReadonlyPreviewFallback">${esc(initial)}</div>`;
+  bindLazyMediaImages(mediaEl);
   titleEl.textContent = title;
   metaEl.textContent = metaParts.join(" • ");
   metaEl.style.display = metaParts.length ? "" : "none";
@@ -47181,7 +48207,7 @@ function buildCatalogSearchResultCardHtml(item = {}, idx = 0) {
   const key = `${source}::${String(item?.source_id || "").trim()}`;
   const initial = title.charAt(0).toUpperCase() || "?";
   const mediaHtml = coverUrl
-    ? `<img src="${escAttr(coverUrl)}" alt="${escAttr(title)}" loading="lazy" />`
+    ? lazyMediaImageHtml(coverUrl, { alt: title })
     : `<div class="userCardWidgetItemFallback">${esc(initial)}</div>`;
 
   return `
@@ -47226,6 +48252,7 @@ function renderProfileWidgetCatalogSearchResults(results = [], {
 
   els.results.dataset.catalogPayload = JSON.stringify(safeResults);
   els.results.innerHTML = safeResults.map((item, idx) => buildCatalogSearchResultCardHtml(item, idx)).join("");
+  bindLazyMediaImages(els.results);
   setProfileWidgetCatalogUiState({
     loading: false,
     error: onlineError ? t("profile.widgets.catalog.error.online_only", "Couldn't load online results.") : "",
@@ -47974,7 +49001,7 @@ function buildProfileWidgetItemCardHtml(item = {}, {
   const initial = String(title || "?").trim().charAt(0).toUpperCase() || "?";
 
   const mediaHtml = coverUrl
-    ? `<img src="${escAttr(coverUrl)}" alt="${escAttr(title)}" loading="lazy" />`
+    ? lazyMediaImageHtml(coverUrl, { alt: title })
     : `<div class="userCardWidgetItemFallback">${esc(initial)}</div>`;
 
   const noteHtml = note ? `<div class="userCardWidgetItemNote">${esc(note)}</div>` : "";
@@ -48030,7 +49057,7 @@ function buildProfileWidgetInlineSearchResultHtml(widgetId, item = {}, idx = 0) 
     : "";
   const initial = String(title || "?").trim().charAt(0).toUpperCase() || "?";
   const mediaHtml = coverUrl
-    ? `<img src="${escAttr(coverUrl)}" alt="${escAttr(title)}" loading="lazy" />`
+    ? lazyMediaImageHtml(coverUrl, { alt: title })
     : `<div class="userCardWidgetItemFallback">${esc(initial)}</div>`;
   const metaParts = [typeLabel, year, sourceLabel].filter(Boolean);
 
@@ -48624,6 +49651,7 @@ function renderUserCard(profile = {}, { loading = false } = {}) {
     mediaPanelEl.innerHTML = buildUserCardMediaPanelHtml(profile, insights, {
       loading: !!(loading || userCardInsightsLoading),
     });
+    bindLazyMediaImages(mediaPanelEl);
     queueManagedGifPlaybackSync(mediaPanelEl);
   }
   if (sharedPanelEl) {
@@ -48631,6 +49659,7 @@ function renderUserCard(profile = {}, { loading = false } = {}) {
       relation,
       context: userCardCurrentContext,
     });
+    bindLazyMediaImages(sharedPanelEl);
   }
 
   const hasWidgets = widgets.length > 0;
@@ -48649,6 +49678,7 @@ function renderUserCard(profile = {}, { loading = false } = {}) {
       error: userCardWidgetsError,
       isOwner: canManageWidgets,
     });
+    bindLazyMediaImages(widgetsPanelEl);
   }
   setUserCardActiveTab(userCardActiveTab || "activity");
 
@@ -50444,16 +51474,64 @@ function attachmentMetaLabel(att) {
   return [attachmentKindLabel(safe.kind), extLabel, sizeLabel].filter(Boolean).join(" - ");
 }
 
+function isHeavyImageAttachmentPreview(att) {
+  const safe = sanitizeAttachmentPayload(att);
+  if (!safe || safe.kind !== "image") return false;
+  if (isGifLikeAttachment(safe) || isGifLikeUrl(safe.url)) return true;
+  const size = Number(safe.size);
+  if (Number.isFinite(size) && size > 0) return size > DM_HEAVY_IMAGE_PREVIEW_BYTES;
+  return isLikelySupabaseStorageMediaUrl(safe.url) && (isImageLikeUrl(safe.url) || isImageLikeUrl(safe.name));
+}
+
+function attachmentPreviewTypeLabel(att) {
+  const safe = sanitizeAttachmentPayload(att);
+  if (!safe) return "Media";
+  if (safe.kind === "image" && isGifLikeAttachment(safe)) return "GIF";
+  return attachmentKindLabel(safe.kind);
+}
+
+function attachmentDeferredPreviewHtml(safe, {
+  name = "",
+  meta = "",
+} = {}) {
+  const displayName = name || formatAttachmentDisplayName(safe?.name || "ficheiro", safe?.kind || "file");
+  const typeLabel = attachmentPreviewTypeLabel(safe);
+  const rawName = String(safe?.name || "").trim();
+  const ext = String(rawName.split(".").pop() || "").trim().toUpperCase();
+  const extLabel = rawName && ext && ext !== rawName.toUpperCase() ? ext : "";
+  const sizeLabel = formatBytesLabel(safe?.size) || "Unknown size";
+  const detail = [typeLabel, extLabel, sizeLabel].filter(Boolean).join(" - ") || meta;
+  return `
+    <button class="msg__attachmentDeferredPreview" type="button" data-att-load-preview="1" aria-label="Load preview">
+      <span class="msg__attachmentDeferredIcon" aria-hidden="true">${isGifLikeAttachment(safe) ? "GIF" : "IMG"}</span>
+      <span class="msg__attachmentDeferredBody">
+        <span class="msg__attachmentDeferredTitle">${esc(displayName)}</span>
+        <span class="msg__attachmentDeferredMeta">${esc(detail || meta || typeLabel)}</span>
+        <span class="msg__attachmentDeferredAction">Load preview</span>
+      </span>
+    </button>
+  `;
+}
+
 function attachmentDataAttrs(att) {
   const safe = sanitizeAttachmentPayload(att);
   if (!safe) return "";
   const sizeAttr = Number.isFinite(Number(safe.size)) ? String(Math.round(Number(safe.size))) : "";
+  const previewSizeAttr = Number.isFinite(Number(safe.previewSize)) ? String(Math.round(Number(safe.previewSize))) : "";
+  const widthAttr = Number.isFinite(Number(safe.width)) ? String(Math.round(Number(safe.width))) : "";
+  const heightAttr = Number.isFinite(Number(safe.height)) ? String(Math.round(Number(safe.height))) : "";
   return [
     `data-att-url="${escAttr(safe.url)}"`,
+    `data-att-original-url="${escAttr(safe.originalUrl || safe.url)}"`,
+    `data-att-preview-url="${escAttr(safe.previewUrl || "")}"`,
     `data-att-name="${escAttr(safe.name || "")}"`,
     `data-att-mime="${escAttr(safe.mime || "")}"`,
     `data-att-kind="${escAttr(safe.kind || "file")}"`,
     `data-att-size="${escAttr(sizeAttr)}"`,
+    `data-att-preview-size="${escAttr(previewSizeAttr)}"`,
+    `data-att-width="${escAttr(widthAttr)}"`,
+    `data-att-height="${escAttr(heightAttr)}"`,
+    `data-att-animated="${safe.isAnimated ? "1" : "0"}"`,
     `data-att-spoiler="${safe.spoiler ? "1" : "0"}"`,
   ].join(" ");
 }
@@ -50466,10 +51544,16 @@ function readAttachmentFromNode(node) {
   return sanitizeAttachmentPayload({
     type: "attachment",
     url: host.getAttribute("data-att-url") || "",
+    originalUrl: host.getAttribute("data-att-original-url") || "",
+    previewUrl: host.getAttribute("data-att-preview-url") || "",
     name: host.getAttribute("data-att-name") || "",
     mime: host.getAttribute("data-att-mime") || "",
     kind: host.getAttribute("data-att-kind") || "",
     size: Number.isFinite(sizeRaw) && sizeRaw >= 0 ? sizeRaw : null,
+    previewSize: Number(host.getAttribute("data-att-preview-size")),
+    width: Number(host.getAttribute("data-att-width")),
+    height: Number(host.getAttribute("data-att-height")),
+    isAnimated: host.getAttribute("data-att-animated") === "1",
     spoiler: host.getAttribute("data-att-spoiler") === "1",
   });
 }
@@ -50506,6 +51590,98 @@ function triggerAttachmentDownload(att) {
   a.remove();
 }
 
+function loadDeferredGifPreviewFromButton(buttonEl) {
+  const btn = buttonEl instanceof HTMLElement ? buttonEl : null;
+  const root = btn?.closest?.("[data-msg-gif-deferred]");
+  if (!(root instanceof HTMLElement)) return;
+  const wrap = root.querySelector(".msg__gifWrap");
+  const img = root.querySelector("img.msg__gif");
+  if (!(wrap instanceof HTMLElement) || !(img instanceof HTMLImageElement)) return;
+  const deferredSrc = String(wrap.getAttribute("data-gif-url") || "").trim();
+  if (!deferredSrc) return;
+
+  root.classList.add("is-loading");
+  btn.disabled = true;
+  wrap.hidden = false;
+
+  const finish = (loaded) => {
+    root.classList.remove("is-loading");
+    btn.disabled = false;
+    if (!loaded) {
+      root.classList.add("is-error");
+      wrap.hidden = true;
+      return;
+    }
+    root.classList.add("is-loaded");
+    root.classList.remove("is-error");
+    btn.hidden = true;
+    queueManagedGifPlaybackSync(wrap);
+  };
+
+  img.addEventListener("load", () => finish(true), { once: true });
+  img.addEventListener("error", () => finish(false), { once: true });
+  img.dataset.mediaLoaded = "1";
+  img.dataset.gifLiveSrc = deferredSrc;
+  img.src = deferredSrc;
+  recordMediaEgressLoad(deferredSrc, {
+    element: img,
+    source: "chat-message",
+    reason: "user-clicked-load-preview",
+    automatic: false,
+    kind: "src",
+  });
+  if (img.complete && Number(img.naturalWidth || 0) > 0) finish(true);
+}
+
+function loadDeferredAttachmentPreviewFromButton(buttonEl) {
+  const btn = buttonEl instanceof HTMLElement ? buttonEl : null;
+  const media = btn?.closest?.(".msg__attachmentMedia");
+  if (!(media instanceof HTMLElement)) return;
+  const img = media.querySelector("img.msg__attachmentImage");
+  const previewBtn = media.querySelector(".msg__attachmentPreview");
+  if (!(img instanceof HTMLImageElement)) return;
+  const att = readAttachmentFromNode(btn);
+  const deferredSrc = String(att?.url || "").trim();
+  if (!deferredSrc) return;
+  const deferredIsGif = isGifLikeAttachment(att) || isGifLikeUrl(deferredSrc);
+
+  media.classList.add("is-loading");
+  btn.disabled = true;
+
+  const finish = (loaded) => {
+    media.classList.remove("is-loading");
+    btn.disabled = false;
+    if (!loaded) {
+      media.classList.add("is-error");
+      return;
+    }
+    media.classList.add("is-loaded");
+    media.classList.remove("is-error");
+    btn.hidden = true;
+    if (previewBtn instanceof HTMLElement) previewBtn.hidden = false;
+    if (deferredIsGif) queueManagedGifPlaybackSync(img.closest("[data-managed-gif-root]") || img);
+  };
+
+  img.addEventListener("load", () => finish(true), { once: true });
+  img.addEventListener("error", () => finish(false), { once: true });
+  img.dataset.mediaLoaded = "1";
+  if (deferredIsGif) {
+    img.dataset.gifLiveSrc = deferredSrc;
+    img.setAttribute("data-managed-gif-media", "1");
+    img.setAttribute("crossorigin", "anonymous");
+    img.setAttribute("referrerpolicy", "no-referrer");
+  }
+  img.src = deferredSrc;
+  recordMediaEgressLoad(deferredSrc, {
+    element: img,
+    source: "chat-message",
+    reason: "user-clicked-load-preview",
+    automatic: false,
+    kind: "src",
+  });
+  if (img.complete && Number(img.naturalWidth || 0) > 0) finish(true);
+}
+
 function closeDmAttachmentModal() {
   const modal = document.getElementById("dmAttachmentModal");
   if (!modal) return;
@@ -50535,11 +51711,11 @@ function openDmAttachmentModal(att) {
   downloadBtn.setAttribute("download", safe.name || displayName || "ficheiro");
 
   if (safe.kind === "image") {
-    body.innerHTML = `<img class="dmAttachmentPreview dmAttachmentPreview--image" src="${esc(safe.url)}" alt="${escAttr(displayName)}" loading="eager" />`;
+    body.innerHTML = `<img class="dmAttachmentPreview dmAttachmentPreview--image" src="${esc(safe.url)}" alt="${escAttr(displayName)}" loading="lazy" decoding="async" />`;
   } else if (safe.kind === "video") {
-    body.innerHTML = `<video class="dmAttachmentPreview dmAttachmentPreview--video" src="${esc(safe.url)}" controls preload="metadata"></video>`;
+    body.innerHTML = `<video class="dmAttachmentPreview dmAttachmentPreview--video" src="${esc(safe.url)}" controls preload="none" playsinline></video>`;
   } else if (safe.kind === "audio") {
-    body.innerHTML = `<audio class="dmAttachmentPreview dmAttachmentPreview--audio" src="${esc(safe.url)}" controls preload="metadata"></audio>`;
+    body.innerHTML = `<audio class="dmAttachmentPreview dmAttachmentPreview--audio" src="${esc(safe.url)}" controls preload="none"></audio>`;
   } else {
     body.innerHTML = `
       <div class="dmAttachmentFilePreview">
@@ -50694,9 +51870,14 @@ function bindReportUserModalOnce() {
   });
 }
 
-function attachmentBodyHtml(att, { messageId = "" } = {}) {
+function attachmentBodyHtml(att, {
+  messageId = "",
+  forceDeferredPreview = false,
+  sourceArea = "chat-message",
+} = {}) {
   const safe = sanitizeAttachmentPayload(att);
   if (!safe) return `<span>(anexo indisponivel)</span>`;
+  const mediaSource = String(sourceArea || "chat-message").trim() || "chat-message";
 
   const rawName = safe.name || "ficheiro";
   const name = formatAttachmentDisplayName(rawName, safe.kind);
@@ -50713,14 +51894,29 @@ function attachmentBodyHtml(att, { messageId = "" } = {}) {
     : "";
 
   if (safe.kind === "image") {
+    const isGif = isGifLikeAttachment(safe) || isGifLikeUrl(safe.url);
+    const previewUrl = String(safe.previewUrl || "").trim();
+    const hasLightweightPreview = !!previewUrl && !forceDeferredPreview && !safe.spoiler;
+    const gifAttrs = isGif && !hasLightweightPreview
+      ? ' data-managed-gif-media="1" crossorigin="anonymous" referrerpolicy="no-referrer"'
+      : "";
+    const previewAttrs = hasLightweightPreview
+      ? ` src="${escAttr(previewUrl)}" data-media-preview="1" data-media-loaded="1" data-media-load-reason="lightweight-preview"`
+      : ' data-media-load-reason="user-clicked-load-preview"';
+    const imageHtml = `<img class="msg__attachmentImage" alt="${escAttr(name)}" loading="lazy" decoding="async" data-media-source="${escAttr(mediaSource)}"${previewAttrs}${gifAttrs} />`;
+    const loadOriginalBtnHtml = hasLightweightPreview && isGif
+      ? `<button class="msg__attachmentCornerBtn msg__attachmentCornerBtn--loadFull" type="button" data-att-load-preview="1" title="Play GIF">Play GIF</button>`
+      : "";
     return `
       <div class="msg__attachment msg__attachment--image" ${dataAttrs}>
-        <div class="msg__attachmentMedia ${isSpoilerMedia ? "is-spoiler" : ""} ${isRevealed ? "is-revealed" : ""}">
-          <button class="msg__attachmentPreview" type="button" data-att-open="1" aria-label="Abrir imagem">
-            <img class="msg__attachmentImage" src="${esc(safe.url)}" alt="${escAttr(name)}" loading="lazy" />
+        <div class="msg__attachmentMedia ${hasLightweightPreview ? "is-loaded" : "msg__attachmentMedia--deferred"} ${isSpoilerMedia ? "is-spoiler" : ""} ${isRevealed ? "is-revealed" : ""}">
+          ${hasLightweightPreview ? "" : attachmentDeferredPreviewHtml(safe, { name, meta })}
+          <button class="msg__attachmentPreview" type="button" data-att-open="1" aria-label="Abrir imagem" ${hasLightweightPreview ? "" : "hidden"}>
+            ${imageHtml}
           </button>
           ${isSpoilerMedia && !isRevealed ? `<button class="msg__attachmentSpoilerMask" type="button" data-att-reveal="1">Blur - clicar para revelar</button>` : ""}
           ${deleteCornerBtnHtml}
+          ${loadOriginalBtnHtml}
           <button class="msg__attachmentCornerBtn" type="button" data-att-download="1" title="Download">Download</button>
         </div>
         <div class="msg__attachmentCaption">
@@ -50735,7 +51931,7 @@ function attachmentBodyHtml(att, { messageId = "" } = {}) {
       <div class="msg__attachment" ${dataAttrs}>
         <div class="msg__attachmentMedia ${isSpoilerMedia ? "is-spoiler" : ""} ${isRevealed ? "is-revealed" : ""}">
           <div class="msg__videoPlayer" data-video-player>
-            <video class="msg__attachmentVideo" src="${esc(safe.url)}" preload="metadata" playsinline></video>
+            <video class="msg__attachmentVideo" data-media-src="${escAttr(safe.url)}" data-media-source="${escAttr(mediaSource)}" preload="none" playsinline></video>
             <div class="msg__videoUi" data-video-ui>
               <button class="msgVideoBtn msgVideoBtn--play" type="button" data-video-play aria-label="Play" title="Play">${UI_GLYPHS.play}</button>
               <span class="msgVideoTime" data-video-current>0:00</span>
@@ -50784,7 +51980,7 @@ function attachmentBodyHtml(att, { messageId = "" } = {}) {
             </button>
           </div>
           <div class="msgAudioPlayerRow">
-            <audio class="msg__attachmentAudio" src="${esc(safe.url)}" preload="metadata"></audio>
+            <audio class="msg__attachmentAudio" data-media-src="${escAttr(safe.url)}" data-media-source="${escAttr(mediaSource)}" preload="none"></audio>
             <button class="msgAudioBtn msgAudioBtn--play" type="button" data-audio-play aria-label="Play" title="Play">${UI_GLYPHS.play}</button>
             <span class="msgAudioTime" data-audio-current>0:00</span>
             <input class="msgAudioSeek" type="range" min="0" max="1000" step="1" value="0" data-audio-seek aria-label="Posicao do audio" />
@@ -50819,10 +52015,13 @@ function attachmentBodyHtml(att, { messageId = "" } = {}) {
   `;
 }
 
-function attachmentCollectionBodyHtml(parsed, { messageId = "" } = {}) {
+function attachmentCollectionBodyHtml(parsed, {
+  messageId = "",
+  sourceArea = "chat-message",
+} = {}) {
   const attachments = extractParsedAttachments(parsed);
   if (!attachments.length) return `<span>(anexo indisponivel)</span>`;
-  if (attachments.length === 1) return attachmentBodyHtml(attachments[0], { messageId });
+  if (attachments.length === 1) return attachmentBodyHtml(attachments[0], { messageId, sourceArea });
 
   const mediaOnly = attachments.every((att) => att.kind === "image" || att.kind === "video");
   const cls = mediaOnly
@@ -50834,10 +52033,187 @@ function attachmentCollectionBodyHtml(parsed, { messageId = "" } = {}) {
     <div class="${cls}" data-count="${escAttr(String(count))}">
       ${attachments.map((att) => `
         <div class="msg__attachmentsItem">
-          ${attachmentBodyHtml(att, { messageId })}
+          ${attachmentBodyHtml(att, { messageId, sourceArea })}
         </div>
       `).join("")}
     </div>
+  `;
+}
+
+function sanitizeChatMessageMediaHtml(html = "") {
+  const sourceHtml = String(html || "");
+  if (!sourceHtml || typeof document === "undefined") return sourceHtml;
+  const template = document.createElement("template");
+  template.innerHTML = sourceHtml;
+  const nodes = Array.from(template.content.querySelectorAll("img[src],img[data-media-src],video[src],source[src],[style]"));
+  nodes.forEach((node) => {
+    if (!(node instanceof Element)) return;
+    if (!node.closest(".msg,[data-msg-id]")) return;
+    if (node.closest(".msg__avatar,.msg__avatarBtn,.profileAvatarMediaClip,.msg__emojiFlag")) return;
+    if (node.getAttribute("data-media-preview") === "1") return;
+    if (node.getAttribute("data-media-load-reason") === "lightweight-preview") return;
+    if (node.closest(".msg__attachmentMedia--deferred,.msg__gifDeferred")) return;
+
+    const urls = [];
+    const push = (value = "") => {
+      const url = normalizeMediaEgressUrl(value);
+      if (url && !urls.includes(url)) urls.push(url);
+    };
+    push(node.getAttribute("src") || "");
+    push(node.getAttribute("data-media-src") || "");
+    if (node instanceof HTMLElement) {
+      getElementInlineUrlValues(node).forEach((entry) => push(entry.url));
+    }
+    const mediaUrl = urls.find((url) => (
+      isLikelySupabaseStorageMediaUrl(url)
+      && (isGifLikeUrl(url) || getMediaDomUrlKind(url) === "image")
+    ));
+    if (!mediaUrl) return;
+
+    const name = getDisplayFileNameFromUrl(mediaUrl, isGifLikeUrl(mediaUrl) ? "gif" : "image");
+    const sourceArea = node.closest("[data-message-area=\"server-message\"], [data-server-message=\"1\"]")
+      ? "server-message"
+      : "chat-message";
+    const replacement = document.createElement("template");
+    replacement.innerHTML = attachmentBodyHtml({
+      type: "attachment",
+      url: mediaUrl,
+      name,
+      mime: isGifLikeUrl(mediaUrl) ? "image/gif" : "",
+      kind: "image",
+      size: null,
+    }, { sourceArea });
+    const replacementNode = replacement.content.firstElementChild;
+    if (!replacementNode) return;
+    const replaceTarget = node.closest(".msg__attachment,.msg__gifWrap,.msgInviteCard") || node;
+    replaceTarget.replaceWith(replacementNode);
+  });
+  return template.innerHTML;
+}
+
+function isServerMessageMediaGuardTarget(el) {
+  if (!(el instanceof Element)) return false;
+  if (!el.closest("[data-server-message=\"1\"], [data-message-area=\"server-message\"]")) return false;
+  if (el.closest(".msg__avatar,.msg__avatarBtn,.profileAvatarMediaClip,.msg__emojiFlag")) return false;
+  if (el.getAttribute("data-media-preview") === "1") return false;
+  if (el.getAttribute("data-media-load-reason") === "lightweight-preview") return false;
+  if (el.closest(".msg__attachmentMedia--deferred,.msg__gifDeferred")) return false;
+  return true;
+}
+
+function enforceServerMessageMediaEgressGuards(root = document) {
+  const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+  if (!scope) return 0;
+  const candidates = [];
+  if (root instanceof Element) candidates.push(root);
+  scope.querySelectorAll?.("img[src],img[data-media-src],source[src],[style]").forEach((node) => candidates.push(node));
+  let replaced = 0;
+  candidates.forEach((node) => {
+    if (!(node instanceof Element) || !isServerMessageMediaGuardTarget(node)) return;
+    const urls = [];
+    const push = (value = "") => {
+      const url = normalizeMediaEgressUrl(value);
+      if (url && !urls.includes(url)) urls.push(url);
+    };
+    push(node.getAttribute("src") || "");
+    push(node.getAttribute("data-media-src") || "");
+    if (node instanceof HTMLElement) {
+      getElementInlineUrlValues(node).forEach((entry) => push(entry.url));
+    }
+    const mediaUrl = urls.find((url) => (
+      isLikelySupabaseStorageMediaUrl(url)
+      && (isGifLikeUrl(url) || getMediaDomUrlKind(url) === "image")
+    ));
+    if (!mediaUrl) return;
+
+    const messageId = getClosestMediaDomMessageId(node);
+    const className = String(node.className || "").trim();
+    const sourceArea = node.closest(".msgInviteCard,.dmServerInviteCard")
+      ? "server-invite"
+      : (node.closest("#dmPinsPanel,.dmPinRow") ? "server-pin" : "server-message");
+    const name = getDisplayFileNameFromUrl(mediaUrl, isGifLikeUrl(mediaUrl) ? "gif" : "image");
+    const replacement = document.createElement("template");
+    replacement.innerHTML = attachmentBodyHtml({
+      type: "attachment",
+      url: mediaUrl,
+      name,
+      mime: isGifLikeUrl(mediaUrl) ? "image/gif" : "",
+      kind: "image",
+      size: null,
+    }, {
+      messageId,
+      sourceArea: "server-message",
+      forceDeferredPreview: true,
+    });
+    const replacementNode = replacement.content.firstElementChild;
+    if (!replacementNode) return;
+    const replaceTarget = node.closest(".msg__attachment,.msg__gifWrap,.msgInviteCard") || node;
+    replaceTarget.replaceWith(replacementNode);
+    replaced += 1;
+    recordMediaEgressLoad(mediaUrl, {
+      element: node instanceof HTMLElement ? node : null,
+      source: sourceArea,
+      reason: "server-final-safety-replaced-original",
+      automatic: true,
+      kind: node instanceof HTMLElement && String(node.style?.backgroundImage || "").includes(mediaUrl) ? "background-image" : "src",
+    });
+    if (shouldEmitMediaEgressDevWarnings()) {
+      try {
+        console.warn("[ALTARA media egress] Replaced automatic server message media", {
+          url: mediaUrl,
+          className,
+          messageId,
+          sourceArea,
+        });
+      } catch (_) {}
+    }
+  });
+  return replaced;
+}
+
+function deferredGifMessageBodyHtml(gif, safeUrl = "", {
+  sourceArea = "chat-message",
+} = {}) {
+  const url = String(safeUrl || gif?.url || "").trim();
+  if (!url) return "";
+  const mediaSource = String(sourceArea || "chat-message").trim() || "chat-message";
+  const gifId = String(gif?.id || url).trim();
+  const gifPreview = String(gif?.preview || url).trim();
+  const gifTitle = String(gif?.title || "").trim();
+  const fav = isFav(gif);
+  const favTitle = fav ? "Remover dos favoritos" : "Guardar nos favoritos";
+  const imgHtml = `<img class="msg__gif" alt="gif" loading="lazy" decoding="async" data-managed-gif-media="1" crossorigin="anonymous" referrerpolicy="no-referrer" data-media-source="${escAttr(mediaSource)}" data-media-load-reason="user-clicked-load-preview" />`;
+
+  return `
+    <span class="msg__gifDeferred" data-msg-gif-deferred="1">
+      <button class="msg__attachmentDeferredPreview msg__attachmentDeferredPreview--gif" type="button" data-msg-gif-load-preview="1" aria-label="Load preview">
+        <span class="msg__attachmentDeferredIcon" aria-hidden="true">GIF</span>
+        <span class="msg__attachmentDeferredBody">
+          <span class="msg__attachmentDeferredTitle">${esc(gifTitle || "GIF")}</span>
+          <span class="msg__attachmentDeferredMeta">GIF</span>
+          <span class="msg__attachmentDeferredAction">Load preview</span>
+        </span>
+      </button>
+      <span
+        class="msg__gifWrap"
+        data-msg-gif-wrap="1"
+        data-managed-gif-root="message"
+        data-gif-id="${escAttr(gifId)}"
+        data-gif-url="${escAttr(url)}"
+        data-gif-preview="${escAttr(gifPreview)}"
+        data-gif-title="${escAttr(gifTitle)}"
+        hidden
+      >
+        ${imgHtml}
+        <button
+          class="msg__gifFavBtn${fav ? " is-fav" : ""}"
+          type="button"
+          data-msg-gif-fav="1"
+          title="${escAttr(favTitle)}"
+          aria-label="${escAttr(favTitle)}"
+        >&#9733;</button>
+      </span>
+    </span>
   `;
 }
 
@@ -51008,16 +52384,12 @@ async function hydrateOneInviteCard(card) {
 
     if (iconWrap) {
       iconWrap.classList.remove("msgInviteCard__iconWrap--loading");
-      if (iconUrl) {
-        iconWrap.innerHTML = `<img class="msgInviteCard__icon" src="${esc(iconUrl)}" alt="${escAttr(serverName)}" loading="lazy" />`;
-      } else {
-        iconWrap.innerHTML = `<span class="msgInviteCard__iconFallback">${esc((serverName[0] || "S").toUpperCase())}</span>`;
-      }
+      iconWrap.innerHTML = `<span class="msgInviteCard__iconFallback">${esc((serverName[0] || "S").toUpperCase())}</span>`;
     }
 
-    if (heroEl && iconUrl) {
-      heroEl.classList.add("dmServerInviteHero--media");
-      heroEl.innerHTML = `<img class="dmServerInviteHeroImg" src="${escAttr(iconUrl)}" alt="" loading="lazy" />`;
+    if (heroEl) {
+      heroEl.classList.remove("dmServerInviteHero--media");
+      heroEl.innerHTML = "";
     }
 
     // Member count from local state if available
@@ -51102,7 +52474,13 @@ function renderMessageTextHtml(text) {
   return out;
 }
 
-function gifMessageBodyHtml(gifUrl = "", { title = "" } = {}) {
+function gifMessageBodyHtml(gifUrl = "", {
+  title = "",
+  attachment = null,
+  messageId = "",
+  sourceArea = "chat-message",
+} = {}) {
+  const safeAttachment = sanitizeAttachmentPayload(attachment);
   const gif = normalizeGifFavoriteEntry({
     id: gifUrl,
     url: gifUrl,
@@ -51111,31 +52489,37 @@ function gifMessageBodyHtml(gifUrl = "", { title = "" } = {}) {
   });
   const safeUrl = String(gif?.url || gifUrl || "").trim();
   if (!safeUrl) return "";
-  const gifId = String(gif?.id || safeUrl).trim();
-  const gifPreview = String(gif?.preview || safeUrl).trim();
-  const gifTitle = String(gif?.title || "").trim();
-  const fav = isFav(gif);
-  const favTitle = fav ? "Remover dos favoritos" : "Guardar nos favoritos";
-  return `
-    <span
-      class="msg__gifWrap"
-      data-msg-gif-wrap="1"
-      data-managed-gif-root="message"
-      data-gif-id="${escAttr(gifId)}"
-      data-gif-url="${escAttr(safeUrl)}"
-      data-gif-preview="${escAttr(gifPreview)}"
-      data-gif-title="${escAttr(gifTitle)}"
-    >
-      <img class="msg__gif" data-managed-gif-media="1" src="${esc(safeUrl)}" alt="gif" loading="lazy" />
-      <button
-        class="msg__gifFavBtn${fav ? " is-fav" : ""}"
-        type="button"
-        data-msg-gif-fav="1"
-        title="${escAttr(favTitle)}"
-        aria-label="${escAttr(favTitle)}"
-      >&#9733;</button>
-    </span>
-  `;
+
+  if (safeAttachment) {
+    return attachmentBodyHtml(safeAttachment, {
+      messageId,
+      forceDeferredPreview: !String(safeAttachment.previewUrl || "").trim(),
+      sourceArea,
+    });
+  }
+
+  if (!safeAttachment && isGifLikeUrl(safeUrl) && isLikelySupabaseStorageMediaUrl(safeUrl)) {
+    const fallbackName = (() => {
+      try {
+        const parsed = new URL(safeUrl, window.location.href);
+        const leaf = decodeURIComponent(String(parsed.pathname || "").split("/").filter(Boolean).pop() || "");
+        return leaf || "gif";
+      } catch (_) {
+        return "gif";
+      }
+    })();
+    const syntheticAttachment = sanitizeAttachmentPayload({
+      url: safeUrl,
+      name: fallbackName,
+      mime: "image/gif",
+      kind: "image",
+    });
+    if (syntheticAttachment) {
+      return attachmentBodyHtml(syntheticAttachment, { messageId, forceDeferredPreview: true, sourceArea });
+    }
+  }
+
+  return deferredGifMessageBodyHtml(gif, safeUrl, { sourceArea });
 }
 
 function messageHtml(m, opts = {}) {
@@ -51147,6 +52531,8 @@ function messageHtml(m, opts = {}) {
   const isOptimistic = !!optimisticSendState;
   const sendFailed = optimisticSendState === "failed";
   const sendError = String(m?._sendError || "").trim();
+  const isServerMsg = isServerConversationContext(m?.conversation_id || activeDmId || "");
+  const messageSourceArea = isServerMsg ? "server-message" : "chat-message";
 
   const authorUserId = getMessageAuthorUserId(m);
   const authorUsername = getMessageAuthorUsername(m);
@@ -51231,9 +52617,9 @@ function messageHtml(m, opts = {}) {
     ? rawTextHtml
     : `<span>${rawTextHtml}</span>`;
   const bodyHtml = (parsed.type === "gif")
-    ? gifMessageBodyHtml(parsed.url, { title: "GIF" })
+    ? gifMessageBodyHtml(parsed.url, { title: "GIF", attachment: parsed.attachment || null, messageId: mid, sourceArea: messageSourceArea })
     : ((parsed.type === "attachment" || parsed.type === "attachments"))
-      ? attachmentCollectionBodyHtml(parsed, { messageId: mid })
+      ? attachmentCollectionBodyHtml(parsed, { messageId: mid, sourceArea: messageSourceArea })
       : textBodyHtml;
   const emojiOnlySizeClass = emojiOnlyCount
     ? ` msg__text--emojiOnly msg__text--emojiOnly-${Math.min(emojiOnlyCount, 4)}`
@@ -51256,7 +52642,7 @@ function messageHtml(m, opts = {}) {
         </div>
       ` : "";
   const avatarHtml = avatarUrl
-    ? buildAvatarMediaHtml(avatarUrl, { userId: authorUserId, alt: "avatar", loading: "lazy" })
+    ? buildAvatarMediaHtml(avatarUrl, { userId: authorUserId, alt: "avatar", loading: "lazy", deferAnimatedStorage: isServerMsg })
     : `<span class="msg__avatarFallback">${esc(avatarInitial)}</span>`;
   const avatarWrapHtml = authorUserId
     ? `<button class="msg__avatar msg__avatarBtn" type="button" data-open-user-card="${escAttr(authorUserId)}" data-user-username="${escAttr(authorUsername || "")}" data-user-display="${escAttr(name || "")}" data-user-avatar="${escAttr(avatarUrl || "")}" data-user-name-color="${escAttr(authorNameColor || "")}" aria-label="Ver perfil de ${escAttr(name)}">${avatarHtml}</button>`
@@ -51286,10 +52672,11 @@ function messageHtml(m, opts = {}) {
     isMe ? "msg--me" : "",
     compact ? "msg--compact" : "",
     isEditingCurrent ? "msg--editingTarget" : "",
+    isServerMsg ? "msg--server" : "",
   ].filter(Boolean).join(" ");
 
   return `
-    <div class="${msgClasses}" data-msg-id="${escAttr(m.id || "")}">
+    <div class="${msgClasses}" data-msg-id="${escAttr(m.id || "")}" data-message-area="${escAttr(messageSourceArea)}"${isServerMsg ? ' data-server-message="1"' : ""}>
       ${avatarColHtml}
       <div class="msg__body">
         ${actionsHtml}
@@ -51432,7 +52819,8 @@ function appendMessage(m) {
   }
 
   const compact = canStackMessageWithPrevious(previousMessage, m);
-  dmMessages.insertAdjacentHTML("beforeend", messageHtml(m, { compact }));
+  dmMessages.insertAdjacentHTML("beforeend", sanitizeChatMessageMediaHtml(messageHtml(m, { compact })));
+  enforceServerMessageMediaEgressGuards(dmMessages.lastElementChild || dmMessages);
   bindDmGifAutoscroll(dmMessages);
   bindDmVideoPlayerUi(dmMessages);
   bindDmAudioPlayerUi(dmMessages);
@@ -51795,6 +53183,22 @@ function bindDmMessageActions() {
       const code = normalizeServerInviteCode(serverInviteLink.getAttribute("data-server-invite-code") || "");
       if (!code) return;
       await joinServerFromInviteCode(code, { openConversation: true, showFeedback: true });
+      return;
+    }
+
+    const gifLoadPreviewBtn = target.closest("[data-msg-gif-load-preview]");
+    if (gifLoadPreviewBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      loadDeferredGifPreviewFromButton(gifLoadPreviewBtn);
+      return;
+    }
+
+    const attLoadPreviewBtn = target.closest("[data-att-load-preview]");
+    if (attLoadPreviewBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      loadDeferredAttachmentPreviewFromButton(attLoadPreviewBtn);
       return;
     }
 
@@ -52193,9 +53597,9 @@ function pendingAttachmentCardHtml(item) {
   const meta = isSpoiler ? `Blur - ${metaBase}` : metaBase;
   let previewHtml = `<div class="dmPendingCard__fileIcon" aria-hidden="true">&#x1F4CE;</div>`;
   if (kind === "image" && item?.previewUrl) {
-    previewHtml = `<img class="dmPendingCard__image" src="${esc(item.previewUrl)}" alt="${escAttr(name)}" loading="lazy" />`;
+    previewHtml = lazyMediaImageHtml(item.previewUrl, { className: "dmPendingCard__image", alt: name });
   } else if (kind === "video" && item?.previewUrl) {
-    previewHtml = `<video class="dmPendingCard__video" src="${esc(item.previewUrl)}" muted playsinline preload="metadata"></video>`;
+    previewHtml = `<video class="dmPendingCard__video" src="${esc(item.previewUrl)}" muted playsinline preload="none"></video>`;
   } else if (kind === "audio" && item?.previewUrl) {
     previewHtml = `
       <div class="dmPendingAudioPreview">
@@ -52203,7 +53607,7 @@ function pendingAttachmentCardHtml(item) {
           <span class="dmPendingAudioPreview__icon" aria-hidden="true">&#x1F50A;</span>
           <span class="dmPendingAudioPreview__name" title="${escAttr(item?.name || "")}">${esc(name)}</span>
         </div>
-        <audio class="dmPendingCard__audio" src="${esc(item.previewUrl)}" controls preload="metadata"></audio>
+        <audio class="dmPendingCard__audio" src="${esc(item.previewUrl)}" controls preload="none"></audio>
       </div>
     `;
   }
@@ -52301,6 +53705,7 @@ function renderDmPendingAttachments() {
       ${dmPendingAttachments.map(pendingAttachmentCardHtml).join("")}
     </div>
   `;
+  bindLazyMediaImages(box);
 }
 
 function showDmComposerNotice(message = "", { title = "Messages" } = {}) {
@@ -52466,7 +53871,7 @@ async function uploadDmFileList(files, {
   const optimisticPayload = optimisticPreviewItems.length === 1
     ? (
       !optimisticPreviewItems[0]?.spoiler && isGifLikeAttachment(optimisticPreviewItems[0])
-        ? { type: "gif", url: optimisticPreviewItems[0].url }
+        ? { type: "gif", url: optimisticPreviewItems[0].url, attachment: optimisticPreviewItems[0] }
         : optimisticPreviewItems[0]
     )
     : (optimisticPreviewItems.length > 1 ? { type: "attachments", items: optimisticPreviewItems } : null);
@@ -52582,6 +53987,7 @@ async function uploadDmFileList(files, {
           const attachment = await uploadDmAttachmentFile(preparedFile, {
             conversationId: targetConversationId,
             spoiler: !!item.spoiler,
+            previewSourceFile: item?.file || preparedFile,
           });
           if (!attachment) throw new Error("Anexo invalido.");
           uploadResults[idx] = attachment;
@@ -53642,11 +55048,15 @@ function setGifFolderView(open, title = "Favoritos") {
 function closeGifModal() {
   const modal = document.getElementById("gifModal");
   if (!modal) return;
+  const grid = document.getElementById("gifGrid");
+  const quickTags = document.getElementById("gifQuickTags");
   setGifFolderView(false);
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
   modal.style.left = "";
   modal.style.top = "";
+  if (grid) grid.innerHTML = "";
+  if (quickTags) quickTags.innerHTML = "";
   gifPickerAnchorEl = null;
   gifPickerAnchorPoint = null;
 }
@@ -53756,11 +55166,25 @@ function setGifDiscoveryCardImage(el, imageUrl = "") {
   if (!raw) {
     el.classList.remove("has-image");
     el.style.removeProperty("--gif-card-image");
+    delete el.dataset.bgSrc;
+    return;
+  }
+  if (isLikelySupabaseStorageMediaUrl(raw)) {
+    el.classList.remove("has-image");
+    el.style.removeProperty("--gif-card-image");
+    el.dataset.bgSrc = raw;
     return;
   }
   const safe = raw.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
   el.classList.add("has-image");
   el.style.setProperty("--gif-card-image", `url("${safe}")`);
+  recordMediaEgressLoad(raw, {
+    element: el,
+    source: "gif-picker",
+    reason: "gif-picker-open",
+    automatic: true,
+    kind: "background-image",
+  });
 }
 
 function makeShortcutButton(title, subtitle, onClick, extraClass = "", previewUrl = "") {
@@ -53789,6 +55213,11 @@ function renderGifQuickTags(tags = null, {
   const modal = document.getElementById("gifModal");
   const searchInput = document.getElementById("gifSearch");
   if (!box) return;
+  if (modal?.classList?.contains("hidden") || modal?.getAttribute("aria-hidden") === "true") {
+    box.innerHTML = "";
+    box.style.display = "none";
+    return;
+  }
   box.innerHTML = "";
   const folderOpen = !!modal?.classList?.contains("gif-folder-open");
   const hasActiveSearchQuery = !!String(searchInput?.value || "").trim();
@@ -53875,6 +55304,12 @@ function renderGifLoading(text) {
 function renderGifGrid(list) {
   const gifGrid = document.getElementById("gifGrid");
   if (!gifGrid) return;
+  const modal = document.getElementById("gifModal");
+  if (modal?.classList?.contains("hidden") || modal?.getAttribute("aria-hidden") === "true") {
+    gifGrid.innerHTML = "";
+    setGifGridVisible(false);
+    return;
+  }
   setGifGridVisible(true);
   gifGrid.innerHTML = "";
 
@@ -53923,16 +55358,26 @@ function renderGifGrid(list) {
     item.setAttribute("aria-label", gifObj.title ? `Enviar GIF: ${gifObj.title}` : "Enviar GIF");
 
     const img = document.createElement("img");
-    img.src = gifObj.preview || gifObj.url;
+    img.setAttribute("data-media-src", gifObj.preview || gifObj.url);
+    img.setAttribute("data-media-source", "gif-picker");
+    img.setAttribute("data-media-load-reason", "gif-picker-open");
     img.alt = gifObj.title || "GIF";
     img.loading = "lazy";
     img.decoding = "async";
     img.referrerPolicy = "no-referrer";
     img.title = gifObj.title || "GIF";
     img.addEventListener("error", () => {
-      if (!img.dataset.retryWithMain && gifObj.url && img.src !== gifObj.url) {
+      if (!img.dataset.retryWithMain && gifObj.url && String(img.dataset.mediaSrc || "") !== gifObj.url) {
         img.dataset.retryWithMain = "1";
-        img.src = gifObj.url;
+        img.removeAttribute("src");
+        img.removeAttribute("data-media-loaded");
+        img.setAttribute("data-media-src", gifObj.url);
+        loadLazyMediaImage(img, {
+          force: true,
+          source: "gif-picker",
+          reason: "gif-picker-fallback",
+          automatic: true,
+        });
         return;
       }
       item.classList.add("is-broken");
@@ -53973,6 +55418,7 @@ function renderGifGrid(list) {
     item.appendChild(fav);
     columns[idx % columns.length].appendChild(item);
   });
+  bindLazyMediaImages(gifGrid);
   queueGifPickerPosition();
 }
 
@@ -54298,7 +55744,38 @@ function buildDmUploadPath(userId, conversationId, fileName) {
   return `${String(userId || "u")}/dm/${String(conversationId || "conv")}/${stamp}_${rnd}_${cleanName}`;
 }
 
-async function uploadDmAttachmentFile(file, { conversationId = activeDmId, spoiler = false } = {}) {
+function buildDmUploadPreviewPath(userId, conversationId, fileName) {
+  const cleanName = sanitizeFileName(fileName, "preview.webp");
+  const stamp = Date.now();
+  const rnd = Math.random().toString(36).slice(2, 10);
+  return `${String(userId || "u")}/dm/${String(conversationId || "conv")}/previews/${stamp}_${rnd}_${cleanName}`;
+}
+
+async function uploadDmAttachmentPreviewFile(previewFile, {
+  bucket = "",
+  conversationId = activeDmId,
+} = {}) {
+  const targetConversationId = normId(conversationId);
+  const bucketName = String(bucket || "").trim();
+  if (!previewFile || !bucketName || !state.user?.id || !targetConversationId) return "";
+  const previewName = sanitizeFileName(previewFile.name || "preview.webp", "preview.webp");
+  const previewType = String(previewFile.type || "").trim() || "image/webp";
+  const previewPath = buildDmUploadPreviewPath(state.user.id, targetConversationId, previewName);
+  const { error } = await supabase.storage.from(bucketName).upload(previewPath, previewFile, {
+    upsert: false,
+    contentType: previewType,
+    cacheControl: "31536000",
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from(bucketName).getPublicUrl(previewPath);
+  return String(data?.publicUrl || "").trim();
+}
+
+async function uploadDmAttachmentFile(file, {
+  conversationId = activeDmId,
+  spoiler = false,
+  previewSourceFile = null,
+} = {}) {
   const targetConversationId = normId(conversationId);
   if (!file || !state.user?.id || !targetConversationId) {
     throw new Error("Upload invalido.");
@@ -54308,6 +55785,13 @@ async function uploadDmAttachmentFile(file, { conversationId = activeDmId, spoil
   const contentType = String(file.type || "").trim() || "application/octet-stream";
   const attachmentKind = getAttachmentKindFromMime(contentType, fileName);
   const path = buildDmUploadPath(state.user.id, targetConversationId, fileName);
+  const previewSource = previewSourceFile || file;
+  const previewCandidate = attachmentKind === "image"
+    ? await createDmImagePreviewFileForUpload(previewSource).catch((err) => {
+      console.warn("dm attachment preview generation failed:", err);
+      return null;
+    })
+    : null;
 
   let lastError = null;
   for (const bucket of DM_UPLOAD_BUCKET_CANDIDATES) {
@@ -54328,13 +55812,32 @@ async function uploadDmAttachmentFile(file, { conversationId = activeDmId, spoil
     const url = String(data?.publicUrl || "").trim();
     if (!url) throw new Error("Nao consegui obter URL publica do anexo.");
 
+    let previewUrl = "";
+    if (previewCandidate?.file) {
+      try {
+        previewUrl = await uploadDmAttachmentPreviewFile(previewCandidate.file, {
+          bucket,
+          conversationId: targetConversationId,
+        });
+      } catch (previewErr) {
+        console.warn("dm attachment preview upload failed:", previewErr);
+        previewUrl = "";
+      }
+    }
+
     return sanitizeAttachmentPayload({
       type: "attachment",
       url,
+      originalUrl: url,
+      previewUrl,
       name: fileName,
       mime: contentType,
       size: Number(file.size || 0),
       kind: attachmentKind,
+      width: previewCandidate?.sourceWidth || previewCandidate?.width || null,
+      height: previewCandidate?.sourceHeight || previewCandidate?.height || null,
+      previewSize: previewCandidate?.file ? Number(previewCandidate.file.size || 0) : null,
+      isAnimated: !!(previewCandidate?.isAnimated || fileLooksGifLike(file) || fileLooksGifLike(previewSource)),
       spoiler: !!spoiler && canAttachmentUseSpoiler(attachmentKind),
     });
   }
@@ -54361,7 +55864,7 @@ async function sendAttachmentBatchMessage(attachments = [], {
   const payload = safeItems.length === 1
     ? (
       !safeItems[0]?.spoiler && isGifLikeAttachment(safeItems[0])
-        ? { type: "gif", url: safeItems[0].url }
+        ? { type: "gif", url: safeItems[0].url, attachment: safeItems[0] }
         : safeItems[0]
     )
     : { type: "attachments", items: safeItems };
@@ -54413,6 +55916,7 @@ async function sendAttachmentMessage(file, { conversationId = activeDmId, spoile
   const attachment = await uploadDmAttachmentFile(file, {
     conversationId: targetConversationId,
     spoiler: !!spoiler,
+    previewSourceFile: file,
   });
   if (!attachment) throw new Error("Anexo invalido.");
   await sendAttachmentBatchMessage([attachment], {
@@ -92587,8 +94091,12 @@ async function uploadAvatarBlob(blob, user, ext, contentTypeOverride = "", crop 
 
 async function uploadAvatarFileDirect(file, user) {
   if (!file || !user?.id) throw new Error("Upload de avatar invalido.");
-  const ext = (String(file.name || "").split(".").pop() || "gif").toLowerCase();
-  await uploadAvatarBlob(file, user, ext, file.type || "");
+  const uploadFile = await maybeResizeStaticImageFileForUpload(file, {
+    maxDimension: STATIC_AVATAR_UPLOAD_MAX_DIMENSION,
+    quality: STATIC_AVATAR_UPLOAD_QUALITY,
+  });
+  const ext = (String(uploadFile.name || file.name || "").split(".").pop() || "gif").toLowerCase();
+  await uploadAvatarBlob(uploadFile, user, ext, uploadFile.type || file.type || "");
 }
 
 function buildThemeWithBannerCrop(themeInput, crop = null) {
@@ -92732,8 +94240,12 @@ async function uploadBannerFile(file, user) {
   if (!contentType.startsWith("image/")) {
     throw new Error("Banner invalido. Escolhe uma imagem.");
   }
-  const ext = (String(file.name || "").split(".").pop() || "png").toLowerCase();
-  await uploadBannerBlob(file, user, ext, file.type || "");
+  const uploadFile = await maybeResizeStaticImageFileForUpload(file, {
+    maxDimension: STATIC_BANNER_UPLOAD_MAX_DIMENSION,
+    quality: STATIC_BANNER_UPLOAD_QUALITY,
+  });
+  const ext = (String(uploadFile.name || file.name || "").split(".").pop() || "png").toLowerCase();
+  await uploadBannerBlob(uploadFile, user, ext, uploadFile.type || file.type || "");
 }
 
 async function applyBanner() {
@@ -92748,10 +94260,9 @@ async function applyBanner() {
       const bannerCrop = captureBannerEditorCropSnapshot();
       await uploadBannerBlob(BE.sourceFile, BE.user, "gif", BE.sourceFile.type || "image/gif", bannerCrop);
     } else {
-      const bannerCrop = captureBannerEditorCropSnapshot();
-      const sourceFile = BE.sourceFile;
-      if (!sourceFile) throw new Error("Ficheiro original do banner indisponivel.");
-      await uploadBannerBlob(sourceFile, BE.user, BE.ext, sourceFile.type || "", bannerCrop);
+      const blob = await exportBannerBlob(STATIC_BANNER_UPLOAD_MAX_DIMENSION);
+      const editedExt = blob?.type === "image/jpeg" ? "jpg" : (blob?.type === "image/webp" ? "webp" : "png");
+      await uploadBannerBlob(blob, BE.user, editedExt, blob?.type || "", null);
     }
     hideBannerEditor();
   } catch (e) {
@@ -92982,7 +94493,7 @@ function buildMeProfilePopoutWidgetPreviewHtml(userId = "", { loading = false } 
       ${previews.map((item) => {
         const initial = String(item.title || "?").trim().charAt(0).toUpperCase() || "?";
         const mediaHtml = item.coverUrl
-          ? `<img src="${escAttr(item.coverUrl)}" alt="" loading="lazy" decoding="async" draggable="false" />`
+          ? lazyMediaImageHtml(item.coverUrl, { alt: "", attrs: 'draggable="false"' })
           : esc(initial);
         return `
           <button class="meProfilePopout__widgetCard" type="button" data-me-popout-act="view-full">
@@ -93088,6 +94599,7 @@ function renderMeProfilePopoutWidgetsPreview({ loading = false } = {}) {
   const host = popout.querySelector("[data-me-popout-widgets-preview]");
   if (!uid || !host) return;
   host.innerHTML = buildMeProfilePopoutWidgetPreviewHtml(uid, { loading });
+  bindLazyMediaImages(host);
 }
 
 async function refreshMeProfilePopoutWidgetsPreview({ force = true } = {}) {
@@ -93938,6 +95450,7 @@ async function startPresence() {
 (async function init() {
   setDesktopBootOverlayVisible(!!getDesktopBridge());
   initGlobalMotionMode();
+  bindMediaEgressDebugObserverOnce();
   state.user = await requireAuth("./login.html");
   if (!state.user) {
     setDesktopBootOverlayVisible(false);

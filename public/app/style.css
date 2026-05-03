@@ -13706,6 +13706,14 @@ input[type="range"] {
   line-height: 0;
 }
 
+.msg__gifDeferred{
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: min(640px, 100%);
+}
+
 .msg__gif{
   width: auto;
   max-width: 100%;
@@ -13715,6 +13723,14 @@ input[type="range"] {
   border-radius: 8px;
   display:block;
   border: 1px solid rgba(200,232,255,.18);
+}
+
+.msg__gif.lazyMediaImage:not([src]),
+.msg__attachmentImage.lazyMediaImage:not([src]) {
+  width: min(420px, 72vw);
+  min-height: 132px;
+  aspect-ratio: 16 / 10;
+  background: rgba(8, 13, 23, 0.72);
 }
 
 .msg__gifFavBtn{
@@ -13852,6 +13868,79 @@ input[type="range"] {
   width: fit-content;
   max-width: 100%;
   cursor: zoom-in;
+}
+
+.msg__attachmentDeferredPreview {
+  width: min(360px, 72vw);
+  min-height: 148px;
+  border: 1px solid rgba(200, 232, 255, 0.2);
+  border-radius: 10px;
+  padding: 14px;
+  background: rgba(8, 13, 23, 0.72);
+  color: #edf4ff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+
+.msg__attachmentDeferredPreview:hover,
+.msg__attachmentDeferredPreview:focus-visible {
+  border-color: rgba(125, 192, 255, 0.46);
+  background: rgba(13, 21, 36, 0.86);
+}
+
+.msg__attachmentDeferredPreview:disabled {
+  opacity: 0.78;
+  cursor: wait;
+}
+
+.msg__attachmentDeferredIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  border: 1px solid rgba(200, 232, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.msg__attachmentDeferredBody {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.msg__attachmentDeferredTitle,
+.msg__attachmentDeferredMeta,
+.msg__attachmentDeferredAction {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg__attachmentDeferredTitle {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.msg__attachmentDeferredMeta {
+  font-size: 12px;
+  color: rgba(237, 244, 255, 0.7);
+}
+
+.msg__attachmentDeferredAction {
+  font-size: 12px;
+  color: #9fd0ff;
+  font-weight: 700;
+}
+
+.msg__attachmentMedia--deferred:not(.is-loaded) .msg__attachmentSpoilerMask {
+  display: none;
 }
 
 .msg__attachmentSpoilerMask {
