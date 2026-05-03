@@ -714,6 +714,7 @@ async function uploadAvatarBlob(blob, user, ext, contentTypeOverride = ""){
   const up = await supabase.storage.from("avatars").upload(path, blob, {
     upsert: true,
     contentType: mime,
+    cacheControl: "31536000",
   });
   setDebug({ upload: up });
   if (up.error) throw up.error;

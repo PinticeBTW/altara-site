@@ -4268,6 +4268,7 @@ let profileStatusSupported = null;
 let profilePronounsSupported = null;
 let profileCreatedAtSupported = null;
 const profileCache = new Map();
+const profileFetchInFlightByKey = new Map();
 let meHeaderMediaCacheUserId = "";
 let meHeaderAvatarCacheUrl = "";
 let meHeaderBannerCacheUrl = "";
@@ -4522,7 +4523,7 @@ async function fetchProfilesByIds(userIds, { includeBio = false, force = false }
     .filter(Boolean)));
   if (!wanted.length) return [];
 
-  const missing = wanted.filter((id) => {
+  let missing = wanted.filter((id) => {
     if (force) return true;
     const cached = getCachedProfile(id);
     if (!cached) return true;
@@ -4538,6 +4539,33 @@ async function fetchProfilesByIds(userIds, { includeBio = false, force = false }
   if (!missing.length) {
     return wanted.map((id) => getCachedProfile(id)).filter(Boolean);
   }
+
+  const fetchKey = [
+    includeBio ? "bio" : "summary",
+    missing.slice().sort().join(","),
+    profileNameColorSupported,
+    profileCallTileColorSupported,
+    profileBannerUrlSupported,
+    profileStatusSupported,
+    profilePronounsSupported,
+    profileCreatedAtSupported,
+  ].join("|");
+  if (!force && profileFetchInFlightByKey.has(fetchKey)) {
+    await profileFetchInFlightByKey.get(fetchKey).catch(() => {});
+    return wanted.map((id) => getCachedProfile(id)).filter(Boolean);
+  }
+
+  let resolveProfileFetchInFlight = null;
+  const profileFetchInFlight = !force
+    ? new Promise((resolve) => {
+      resolveProfileFetchInFlight = resolve;
+    })
+    : null;
+  if (profileFetchInFlight) {
+    profileFetchInFlightByKey.set(fetchKey, profileFetchInFlight);
+  }
+
+  try {
 
   const baseCols = ["id", "username", "display_name", "avatar_url"];
   if (includeBio) baseCols.push("bio");
@@ -4701,6 +4729,14 @@ async function fetchProfilesByIds(userIds, { includeBio = false, force = false }
 
   cacheProfileRows(data || []);
   return wanted.map((id) => getCachedProfile(id)).filter(Boolean);
+  } finally {
+    if (profileFetchInFlightByKey.get(fetchKey) === profileFetchInFlight) {
+      profileFetchInFlightByKey.delete(fetchKey);
+    }
+    if (typeof resolveProfileFetchInFlight === "function") {
+      resolveProfileFetchInFlight();
+    }
+  }
 }
 
 function findKnownUserIdByUsername(usernameInput = "") {
@@ -18769,52 +18805,75 @@ async function hydrateGroupConversationMetadata(rows = []) {
     const ownerMap = new Map();
     const avatarMap = new Map();
 
-    const [ownerResult, avatarResult] = await Promise.allSettled([
-      supabase
-        .from("conversations")
-        .select("id, created_by")
-        .in("id", groupIds),
-      supabase
-        .from("conversations")
-        .select("id, avatar_url")
-        .in("id", groupIds),
-    ]);
+    const combinedResult = await supabase
+      .from("conversations")
+      .select("id, created_by, avatar_url")
+      .in("id", groupIds);
 
-    if (ownerResult.status === "fulfilled") {
-      const { data: ownerRows, error: ownerErr } = ownerResult.value || {};
-      if (!ownerErr && Array.isArray(ownerRows)) {
-        ownerRows.forEach((r) => {
-          const id = normId(r?.id);
-          if (!id) return;
-          ownerMap.set(id, normId(r?.created_by));
-        });
-      } else if (ownerErr) {
-        const msg = String(ownerErr?.message || "").toLowerCase();
-        if (!(msg.includes("created_by") && msg.includes("column"))) {
-          console.warn("group owner hydrate failed", ownerErr);
-        }
-      }
+    if (!combinedResult?.error && Array.isArray(combinedResult?.data)) {
+      combinedResult.data.forEach((r) => {
+        const id = normId(r?.id);
+        if (!id) return;
+        ownerMap.set(id, normId(r?.created_by));
+        avatarMap.set(id, String(r?.avatar_url || "").trim());
+      });
     } else {
-      console.warn("group owner hydrate failed", ownerResult.reason);
-    }
+      const combinedMsg = String(combinedResult?.error?.message || "").toLowerCase();
+      const canFallback = combinedMsg.includes("created_by")
+        || combinedMsg.includes("avatar_url")
+        || combinedMsg.includes("column")
+        || combinedMsg.includes("schema cache");
+      if (!canFallback && combinedResult?.error) {
+        console.warn("group metadata hydrate failed", combinedResult.error);
+      }
 
-    if (avatarResult.status === "fulfilled") {
-      const { data: avatarRows, error: avatarErr } = avatarResult.value || {};
-      if (!avatarErr && Array.isArray(avatarRows)) {
-        avatarRows.forEach((r) => {
+      const [ownerResult, avatarResult] = await Promise.allSettled([
+        supabase
+          .from("conversations")
+          .select("id, created_by")
+          .in("id", groupIds),
+        supabase
+          .from("conversations")
+          .select("id, avatar_url")
+          .in("id", groupIds),
+      ]);
+
+      if (ownerResult.status === "fulfilled") {
+        const { data: ownerRows, error: ownerErr } = ownerResult.value || {};
+        if (!ownerErr && Array.isArray(ownerRows)) {
+          ownerRows.forEach((r) => {
+            const id = normId(r?.id);
+            if (!id) return;
+            ownerMap.set(id, normId(r?.created_by));
+          });
+        } else if (ownerErr) {
+          const msg = String(ownerErr?.message || "").toLowerCase();
+          if (!(msg.includes("created_by") && msg.includes("column"))) {
+            console.warn("group owner hydrate failed", ownerErr);
+          }
+        }
+      } else {
+        console.warn("group owner hydrate failed", ownerResult.reason);
+      }
+
+      if (avatarResult.status === "fulfilled") {
+        const { data: avatarRows, error: avatarErr } = avatarResult.value || {};
+        if (!avatarErr && Array.isArray(avatarRows)) {
+          avatarRows.forEach((r) => {
           const id = normId(r?.id);
           if (!id) return;
           const avatarUrl = String(r?.avatar_url || "").trim();
           avatarMap.set(id, avatarUrl);
-        });
-      } else if (avatarErr) {
-        const msg = String(avatarErr?.message || "").toLowerCase();
-        if (!(msg.includes("avatar_url") && msg.includes("column"))) {
-          console.warn("group avatar hydrate failed", avatarErr);
+          });
+        } else if (avatarErr) {
+          const msg = String(avatarErr?.message || "").toLowerCase();
+          if (!(msg.includes("avatar_url") && msg.includes("column"))) {
+            console.warn("group avatar hydrate failed", avatarErr);
+          }
         }
+      } else {
+        console.warn("group avatar hydrate failed", avatarResult.reason);
       }
-    } else {
-      console.warn("group avatar hydrate failed", avatarResult.reason);
     }
 
     state.groupDms = list.map((g) => {
@@ -20093,6 +20152,7 @@ async function uploadServerIconFile(file, { serverId = "" } = {}) {
   const upload = await supabase.storage.from("avatars").upload(path, file, {
     upsert: true,
     contentType: mime,
+    cacheControl: "31536000",
   });
   if (upload.error) throw upload.error;
   const { data } = supabase.storage.from("avatars").getPublicUrl(path);
@@ -26875,6 +26935,170 @@ async function fetchServerChannelCategoriesForSidebar(serverId, { force = false 
   return normalized;
 }
 
+function resolveServerMemberAvatarPathUrl(pathInput = "") {
+  const path = normalizeAvatarUrl(pathInput);
+  if (!path) return "";
+  if (/^(https?:|data:|blob:|file:)/i.test(path) || path.startsWith("//")) return path;
+  const storagePath = path.replace(/^\/+/, "").replace(/^avatars\//i, "");
+  if (!storagePath) return "";
+  try {
+    const { data } = supabase.storage.from("avatars").getPublicUrl(storagePath);
+    return normalizeAvatarUrl(data?.publicUrl || "");
+  } catch (_) {
+    return "";
+  }
+}
+
+function resolveServerMemberProfileAvatarUrl(profileInput = null) {
+  const profile = profileInput && typeof profileInput === "object" ? profileInput : {};
+  const nested = profile?.profiles && typeof profile.profiles === "object" ? profile.profiles : {};
+  return resolveProfileAvatarUrl(
+    profile.avatar_url
+      || profile.avatarUrl
+      || profile.profile_avatar_url
+      || profile.profileAvatarUrl
+      || nested.avatar_url
+      || nested.avatarUrl
+      || nested.profile_avatar_url
+      || nested.profileAvatarUrl
+      || "",
+    resolveServerMemberAvatarPathUrl(
+      profile.avatar_path
+        || profile.avatarPath
+        || nested.avatar_path
+        || nested.avatarPath
+        || ""
+    )
+  );
+}
+
+function normalizeServerMemberDisplayProfile(userId = "", profileInput = null, fallbackInput = null) {
+  const uid = normId(userId || profileInput?.id || profileInput?.user_id || fallbackInput?.id || fallbackInput?.user_id || "");
+  if (!uid) return null;
+  const profile = profileInput && typeof profileInput === "object" ? profileInput : {};
+  const fallback = fallbackInput && typeof fallbackInput === "object" ? fallbackInput : {};
+  const avatarUrl = resolveProfileAvatarUrl(
+    resolveServerMemberProfileAvatarUrl(profile),
+    resolveServerMemberProfileAvatarUrl(fallback)
+  );
+  const nameColor = normalizeNameColor(
+    profile.name_color
+      || profile.nameColor
+      || profile.profile_color
+      || profile.profileColor
+      || profile.accent_color
+      || profile.accentColor
+      || fallback.name_color
+      || fallback.nameColor
+      || fallback.profile_color
+      || fallback.profileColor
+      || fallback.accent_color
+      || fallback.accentColor
+      || ""
+  );
+  const normalized = {
+    id: uid,
+    username: String(profile.username || fallback.username || "").trim(),
+    display_name: String(profile.display_name || profile.displayName || fallback.display_name || fallback.displayName || "").trim(),
+  };
+  if (avatarUrl) normalized.avatar_url = avatarUrl;
+  if (nameColor) normalized.name_color = nameColor;
+  return normalized;
+}
+
+function serverMemberDisplayProfileNeedsFetch(profileInput = null) {
+  const profile = profileInput && typeof profileInput === "object" ? profileInput : null;
+  if (!profile) return true;
+  const hasName = !!String(profile.display_name || profile.displayName || profile.username || "").trim();
+  const hasAvatar = !!resolveServerMemberProfileAvatarUrl(profile);
+  return !hasName || !hasAvatar;
+}
+
+async function fetchServerMemberDisplayProfilesByIds(userIds = []) {
+  const wanted = normalizeUuidArray(userIds);
+  if (!wanted.length) return [];
+  const fetchKey = `server-member-display:${wanted.slice().sort().join(",")}`;
+  if (profileFetchInFlightByKey.has(fetchKey)) {
+    return await profileFetchInFlightByKey.get(fetchKey).catch(() => []);
+  }
+
+  const run = (async () => {
+    const rowsById = new Map();
+    const primarySelects = [
+      "id, username, display_name, avatar_url, name_color",
+      "id, username, display_name, avatar_url",
+      "id, username, display_name, avatar_path, name_color",
+      "id, username, display_name, avatar_path",
+      "id, username, display_name, profile_avatar_url, name_color",
+      "id, username, display_name, profile_avatar_url",
+      "id, username, display_name",
+    ];
+
+    for (const selectCols of primarySelects) {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select(selectCols)
+        .in("id", wanted);
+      if (error) {
+        if (isMissingColumnError(error)) continue;
+        console.warn("server member profile fallback failed", error);
+        break;
+      }
+      (Array.isArray(data) ? data : []).forEach((row) => {
+        const uid = normId(row?.id || "");
+        const normalized = normalizeServerMemberDisplayProfile(uid, row, getCachedProfile(uid));
+        if (!uid || !normalized) return;
+        rowsById.set(uid, normalized);
+      });
+      break;
+    }
+
+    let missingAvatarIds = wanted.filter((uid) => {
+      const current = normalizeServerMemberDisplayProfile(uid, rowsById.get(uid), getCachedProfile(uid));
+      return !resolveServerMemberProfileAvatarUrl(current);
+    });
+
+    for (const selectCols of ["id, avatar_path", "id, profile_avatar_url"]) {
+      if (!missingAvatarIds.length) break;
+      const { data, error } = await supabase
+        .from("profiles")
+        .select(selectCols)
+        .in("id", missingAvatarIds);
+      if (error) {
+        if (isMissingColumnError(error)) continue;
+        console.warn("server member avatar fallback failed", error);
+        break;
+      }
+      (Array.isArray(data) ? data : []).forEach((row) => {
+        const uid = normId(row?.id || "");
+        if (!uid) return;
+        const merged = normalizeServerMemberDisplayProfile(uid, row, rowsById.get(uid) || getCachedProfile(uid));
+        if (merged) rowsById.set(uid, merged);
+      });
+      missingAvatarIds = missingAvatarIds.filter((uid) => {
+        const current = normalizeServerMemberDisplayProfile(uid, rowsById.get(uid), getCachedProfile(uid));
+        return !resolveServerMemberProfileAvatarUrl(current);
+      });
+    }
+
+    const rows = wanted.map((uid) => {
+      const normalized = normalizeServerMemberDisplayProfile(uid, rowsById.get(uid), getCachedProfile(uid));
+      return normalized;
+    }).filter(Boolean);
+    cacheProfileRows(rows);
+    return rows;
+  })();
+
+  profileFetchInFlightByKey.set(fetchKey, run);
+  try {
+    return await run;
+  } finally {
+    if (profileFetchInFlightByKey.get(fetchKey) === run) {
+      profileFetchInFlightByKey.delete(fetchKey);
+    }
+  }
+}
+
 async function fetchServerMembersForSidebar(serverId, { force = false } = {}) {
   const sid = normId(serverId);
   if (!sid) return [];
@@ -26914,19 +27138,39 @@ async function fetchServerMembersForSidebar(serverId, { force = false } = {}) {
   }
 
   const memberIds = normalizeUuidArray(rows.map((row) => normId(row?.user_id || "")));
+  const profileById = new Map();
+  if (usedEmbeddedProfiles) {
+    rows.forEach((row) => {
+      const uid = normId(row?.user_id || "");
+      const embedded = row?.profiles && typeof row.profiles === "object" ? row.profiles : null;
+      if (!uid || !embedded) return;
+      const normalized = normalizeServerMemberDisplayProfile(uid, embedded, getCachedProfile(uid));
+      if (!normalized) return;
+      cacheProfileRow(normalized);
+      profileById.set(uid, normalized);
+    });
+  }
+
+  const memberIdsNeedingProfileFetch = memberIds.filter((uid) => {
+    if (!uid) return false;
+    const profile = normalizeServerMemberDisplayProfile(uid, profileById.get(uid), getCachedProfile(uid));
+    if (profile && !profileById.has(uid)) profileById.set(uid, profile);
+    return serverMemberDisplayProfileNeedsFetch(profile);
+  });
+
   let profileRows = [];
-  if (memberIds.length) {
+  if (memberIdsNeedingProfileFetch.length) {
     try {
-      profileRows = await fetchProfilesByIds(memberIds, { includeBio: false, force: false });
+      profileRows = await fetchServerMemberDisplayProfilesByIds(memberIdsNeedingProfileFetch);
     } catch (_) {
       profileRows = [];
     }
   }
-  const profileById = new Map();
   (profileRows || []).forEach((p) => {
     const uid = normId(p?.id || "");
     if (!uid) return;
-    profileById.set(uid, p);
+    const merged = normalizeServerMemberDisplayProfile(uid, p, profileById.get(uid) || getCachedProfile(uid));
+    if (merged) profileById.set(uid, merged);
   });
 
   const meId = normId(state.user?.id || "");
@@ -26937,7 +27181,7 @@ async function fetchServerMembersForSidebar(serverId, { force = false } = {}) {
     const embedded = usedEmbeddedProfiles && row?.profiles && typeof row.profiles === "object"
       ? row.profiles
       : null;
-    const profile = profileById.get(uid) || embedded || {};
+    const profile = normalizeServerMemberDisplayProfile(uid, profileById.get(uid), embedded || getCachedProfile(uid)) || {};
     const role = String(row?.role || "member").trim().toLowerCase();
     return {
       userId: uid,
@@ -26945,7 +27189,7 @@ async function fetchServerMembersForSidebar(serverId, { force = false } = {}) {
       joinedAt: Date.parse(String(row?.joined_at || "")) || 0,
       username: String(profile?.username || "").trim(),
       displayName: String(profile?.display_name || profile?.username || "").trim(),
-      avatarUrl: String(profile?.avatar_url || "").trim(),
+      avatarUrl: resolveServerMemberProfileAvatarUrl(profile),
       nameColor: normalizeNameColor(profile?.name_color || ""),
       isMe: !!(meId && uid === meId),
     };
@@ -30804,6 +31048,7 @@ async function uploadGroupAvatarFile(file, { conversationId = "" } = {}) {
   const upload = await supabase.storage.from("avatars").upload(path, file, {
     upsert: true,
     contentType: mime,
+    cacheControl: "31536000",
   });
   if (upload.error) throw upload.error;
   const { data } = supabase.storage.from("avatars").getPublicUrl(path);
@@ -36179,10 +36424,15 @@ let dmOpenAutoScrollStartedAt = 0;
 let dmOpenAutoScrollArmed = false;
 const DM_OPEN_AUTOSCROLL_MS = 15000;
 let dmReactionsSyncTimer = null;
+let dmReactionsFetchInFlight = null;
+let dmReactionsLastFetchKey = "";
+let dmReactionsLastFetchAt = 0;
 let dmReplyTarget = null;
 let dmEditTarget = null;
 const dmReactionsByMessage = new Map();
 const dmMineReactionKeys = new Set();
+const DM_REACTIONS_FETCH_VISIBLE_MIN_MS = 15000;
+const DM_REACTIONS_FETCH_HIDDEN_MIN_MS = 60000;
 const QUICK_REACTIONS = ["\u{1F410}", "\u{1F346}", "\u{1F913}", "\u2705"];
 const DM_PIN_LIMIT = 100;
 const DM_SERVER_EDIT_WINDOW_MS = 30 * 60 * 1000;
@@ -38602,7 +38852,7 @@ function startDmReactionsSync(conversationId) {
     if (ok) renderAllReactionChips();
   };
   tick();
-  dmReactionsSyncTimer = setInterval(tick, 2200);
+  dmReactionsSyncTimer = setInterval(tick, DM_REACTIONS_FETCH_VISIBLE_MIN_MS);
 }
 
 let dmStickToBottomUntilMs = 0;
@@ -39823,6 +40073,8 @@ function reactionKey(messageId, emoji) {
 function clearReactionCaches() {
   dmReactionsByMessage.clear();
   dmMineReactionKeys.clear();
+  dmReactionsLastFetchKey = "";
+  dmReactionsLastFetchAt = 0;
 }
 
 function getMessageById(messageId) {
@@ -40907,49 +41159,83 @@ function applyReactionDelta(messageId, emoji, userId, isAdd) {
   }
 }
 
-async function fetchReactionsForMessages(conversationId) {
+function getDmReactionsFetchMinIntervalMs() {
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+    return DM_REACTIONS_FETCH_HIDDEN_MIN_MS;
+  }
+  return DM_REACTIONS_FETCH_VISIBLE_MIN_MS;
+}
+
+async function fetchReactionsForMessages(conversationId, { force = false } = {}) {
   if (!dmFeatureCaps.messageReactions) return false;
-  const ids = dmMessagesCache.map((m) => m?.id).filter(Boolean);
-  if (!conversationId || !ids.length) {
+  const convId = normId(conversationId || "");
+  const ids = dmMessagesCache.map((m) => normId(m?.id)).filter(Boolean);
+  if (!convId || !ids.length) {
     clearReactionCaches();
     return true;
   }
 
-  const { data, error } = await supabase
-    .from("message_reactions")
-    .select("message_id, user_id, emoji")
-    .eq("conversation_id", conversationId)
-    .in("message_id", ids);
-
-  if (error) {
-    console.warn("reactions fetch failed", error);
-    return false;
+  const fetchKey = `${convId}:${ids.slice().sort().join(",")}`;
+  const now = Date.now();
+  if (!force && dmReactionsFetchInFlight?.key === fetchKey) {
+    return dmReactionsFetchInFlight.promise;
+  }
+  if (
+    !force
+    && dmReactionsLastFetchKey === fetchKey
+    && (now - Number(dmReactionsLastFetchAt || 0)) < getDmReactionsFetchMinIntervalMs()
+  ) {
+    return true;
   }
 
-  const nextMap = new Map();
-  const nextMine = new Set();
-  (data || []).forEach((r) => {
-    const mid = normId(r?.message_id);
-    const em = String(r?.emoji || "").trim();
-    const uid = normId(r?.user_id);
-    if (!mid || !em || !uid) return;
+  const run = (async () => {
+    const { data, error } = await supabase
+      .from("message_reactions")
+      .select("message_id, user_id, emoji")
+      .eq("conversation_id", convId)
+      .in("message_id", ids);
 
-    let emMap = nextMap.get(mid);
-    if (!emMap) {
-      emMap = new Map();
-      nextMap.set(mid, emMap);
+    if (error) {
+      console.warn("reactions fetch failed", error);
+      return false;
     }
-    emMap.set(em, Number(emMap.get(em) || 0) + 1);
-    if (uid === normId(state.user?.id)) {
-      nextMine.add(reactionKey(mid, em));
-    }
-  });
 
-  dmReactionsByMessage.clear();
-  dmMineReactionKeys.clear();
-  nextMap.forEach((emMap, mid) => dmReactionsByMessage.set(mid, emMap));
-  nextMine.forEach((k) => dmMineReactionKeys.add(k));
-  return true;
+    const nextMap = new Map();
+    const nextMine = new Set();
+    (data || []).forEach((r) => {
+      const mid = normId(r?.message_id);
+      const em = String(r?.emoji || "").trim();
+      const uid = normId(r?.user_id);
+      if (!mid || !em || !uid) return;
+
+      let emMap = nextMap.get(mid);
+      if (!emMap) {
+        emMap = new Map();
+        nextMap.set(mid, emMap);
+      }
+      emMap.set(em, Number(emMap.get(em) || 0) + 1);
+      if (uid === normId(state.user?.id)) {
+        nextMine.add(reactionKey(mid, em));
+      }
+    });
+
+    dmReactionsByMessage.clear();
+    dmMineReactionKeys.clear();
+    nextMap.forEach((emMap, mid) => dmReactionsByMessage.set(mid, emMap));
+    nextMine.forEach((k) => dmMineReactionKeys.add(k));
+    dmReactionsLastFetchKey = fetchKey;
+    dmReactionsLastFetchAt = Date.now();
+    return true;
+  })();
+
+  dmReactionsFetchInFlight = { key: fetchKey, promise: run };
+  try {
+    return await run;
+  } finally {
+    if (dmReactionsFetchInFlight?.promise === run) {
+      dmReactionsFetchInFlight = null;
+    }
+  }
 }
 
 function renderMessagesFromCache({ keepBottom = true } = {}) {
@@ -54028,6 +54314,7 @@ async function uploadDmAttachmentFile(file, { conversationId = activeDmId, spoil
     const { error: uploadErr } = await supabase.storage.from(bucket).upload(path, file, {
       upsert: false,
       contentType,
+      cacheControl: "31536000",
     });
     if (uploadErr) {
       lastError = uploadErr;
@@ -90462,6 +90749,10 @@ async function showDm(conversationId, opts = {}) {
         const r = payload?.new;
         if (!r?.message_id || !r?.emoji || !r?.user_id) return;
         if (!dmMessageIds.has(normId(r.message_id))) return;
+        if (normId(r.user_id) === normId(state.user?.id) && dmMineReactionKeys.has(reactionKey(r.message_id, r.emoji))) {
+          updateMessageReactionsUi(r.message_id);
+          return;
+        }
         applyReactionDelta(r.message_id, r.emoji, r.user_id, true);
         updateMessageReactionsUi(r.message_id);
       })
@@ -90474,6 +90765,10 @@ async function showDm(conversationId, opts = {}) {
         const r = payload?.old;
         if (!r?.message_id || !r?.emoji || !r?.user_id) return;
         if (!dmMessageIds.has(normId(r.message_id))) return;
+        if (normId(r.user_id) === normId(state.user?.id) && !dmMineReactionKeys.has(reactionKey(r.message_id, r.emoji))) {
+          updateMessageReactionsUi(r.message_id);
+          return;
+        }
         applyReactionDelta(r.message_id, r.emoji, r.user_id, false);
         updateMessageReactionsUi(r.message_id);
       })
@@ -92262,6 +92557,7 @@ async function uploadAvatarBlob(blob, user, ext, contentTypeOverride = "", crop 
   const up = await supabase.storage.from("avatars").upload(path, blob, {
     upsert: true,
     contentType: mime,
+    cacheControl: "31536000",
   });
 
   setProfileDebug({ upload: up });
@@ -92390,6 +92686,7 @@ async function uploadBannerBlob(blob, user, ext, contentTypeOverride = "", crop 
   const upload = await supabase.storage.from("avatars").upload(path, blob, {
     upsert: true,
     contentType: mime,
+    cacheControl: "31536000",
   });
   setProfileDebug({ banner_upload: upload });
   if (upload.error) throw upload.error;
