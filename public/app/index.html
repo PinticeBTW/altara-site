@@ -366,6 +366,10 @@
             </span>
           </button>
 
+          <div id="dmHeaderAvatar" class="dmHeaderAvatar" role="img" aria-label="Conversation avatar">
+            <span class="dmHeaderAvatarFallback">D</span>
+          </div>
+
           <div class="dmHeaderText">
             <div class="dmTitleRow">
               <div id="dmTitle" class="dmTitle">DM</div>
@@ -520,25 +524,28 @@
 
           <aside id="dmProfilePanel" class="dmProfilePanel hidden" aria-hidden="true">
             <div class="dmProfilePanel__top">
-              <div class="dmProfilePanel__title">&#128100; Profile</div>
+              <div class="dmProfilePanel__title">Profile Preview</div>
               <button id="btnDmProfileClose" class="btn ghost" type="button" aria-label="Close profile">&times;</button>
             </div>
             <div id="dmProfileBanner" class="dmProfilePanel__banner"></div>
             <button id="dmProfileAvatar" class="dmProfileAvatar" type="button" aria-label="Open full profile"></button>
             <div class="dmProfilePanel__body">
-              <div id="dmProfileName" class="dmProfileName">User</div>
-              <div id="dmProfileHandle" class="dmProfileHandle">@user</div>
-              <div class="dmProfilePresence">
-                <span id="dmProfileStatusDot" class="dmProfileStatusDot" data-status="offline"></span>
-                <span id="dmProfileStatusText" class="dmProfileStatusText">offline</span>
+              <div class="dmProfileIdentity">
+                <div id="dmProfileName" class="dmProfileName">User</div>
+                <div id="dmProfileHandle" class="dmProfileHandle">@user</div>
+                <div class="dmProfilePresence">
+                  <span id="dmProfileStatusDot" class="dmProfileStatusDot" data-status="offline"></span>
+                  <span id="dmProfileStatusText" class="dmProfileStatusText">offline</span>
+                </div>
               </div>
-
-              <div id="dmProfileWidgetsPreview" class="dmProfileWidgetsPreview hidden" aria-hidden="true"></div>
 
               <div class="dmProfileSection">
                 <div class="dmProfileSection__title">About Me</div>
-                <div id="dmProfileBio" class="dmProfileBio">No bio.</div>
+                <div id="dmProfileBio" class="dmProfileBio">No bio yet.</div>
               </div>
+
+              <div id="dmProfileWidgetsPreview" class="dmProfileWidgetsPreview hidden" aria-hidden="true"></div>
+              <div id="dmProfileMutualSection" class="dmProfileContextSection hidden" aria-hidden="true"></div>
             </div>
             <div class="dmProfilePanel__footer">
               <button id="btnDmProfileOpenCard" class="btn ghost w100" type="button">View Full Profile</button>
@@ -1257,8 +1264,9 @@
   <div id="gifModal" class="modal hidden" aria-hidden="true" data-close="1">
     <div class="modalCard">
       <div class="modalTop">
+        <div class="gifModalBrand" aria-hidden="true">A</div>
         <div class="modalTitle">Escolher GIF</div>
-        <button id="btnGifClose" class="btn ghost">&times;</button>
+        <button id="btnGifClose" class="btn ghost" type="button" aria-label="Fechar GIF picker">&times;</button>
       </div>
       <div class="editorWrap">
         <div id="gifFolderTop" class="gifFolderTop" style="display:none;">
@@ -1273,7 +1281,7 @@
         </div>
         <div id="gifSearchRow" class="gifSearchRow">
           <div class="gifSearchField">
-            <span class="gifSearchIcon" aria-hidden="true">&#128269;</span>
+            <span class="gifSearchIcon" aria-hidden="true"></span>
             <input id="gifSearch" class="input" placeholder="Search Tenor" />
           </div>
         </div>
@@ -1282,6 +1290,7 @@
         <div id="gifQuickTags" class="gifQuickTags"></div>
         <div id="gifGrid" class="gifGrid"></div>
         <div id="gifHint" class="hint" style="margin-top:10px; display:none;"></div>
+        <div class="gifFooterHint">Dica: Use Tab para navegar e Enter para enviar</div>
       </div>
     </div>
   </div>
@@ -1918,8 +1927,12 @@
   <!-- EMOJI PICKER -->
   <div id="emojiPicker" class="emojiPicker hidden" aria-hidden="true">
     <div class="emojiPickerTop">
-      <input id="emojiSearch" class="input" placeholder="Procurar emoji ou :skull:" />
-      <button id="btnEmojiPickerClose" class="btn ghost" type="button">&times;</button>
+      <div class="emojiPickerTitle">Emoji</div>
+      <label class="emojiSearchWrap" for="emojiSearch">
+        <span class="emojiSearchIcon" aria-hidden="true"></span>
+        <input id="emojiSearch" class="input" placeholder="Procurar emoji ou :skull:" />
+      </label>
+      <button id="btnEmojiPickerClose" class="btn ghost" type="button" aria-label="Fechar emoji picker">&times;</button>
     </div>
     <div id="emojiPickerCats" class="emojiPickerCats" role="tablist" aria-label="Categorias de emoji"></div>
     <div id="emojiPickerGrid" class="emojiPickerGrid"></div>

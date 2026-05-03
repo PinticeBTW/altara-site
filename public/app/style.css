@@ -6240,6 +6240,52 @@ body.desktop-install-welcome-open {
   flex: 1 1 auto;
 }
 
+.dmHeaderAvatar {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.12));
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 30% 18%, color-mix(in srgb, var(--altara-accent, #e8cfae) 18%, transparent), transparent 42%),
+    linear-gradient(160deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 78%, transparent), color-mix(in srgb, var(--altara-bg, #101010) 86%, transparent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 8px 22px rgba(0, 0, 0, 0.16);
+}
+
+.dmHeaderAvatar img,
+.dmHeaderAvatar .profileAvatarMedia,
+.dmHeaderAvatar .profileAvatarMediaClip {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+}
+
+.dmHeaderAvatar img,
+.dmHeaderAvatar .profileAvatarMedia {
+  object-fit: cover;
+}
+
+.dmHeaderAvatarFallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 30% 18%, color-mix(in srgb, var(--altara-accent, #e8cfae) 18%, transparent), transparent 40%),
+    linear-gradient(160deg, rgba(44, 41, 36, 0.92), rgba(18, 18, 18, 0.96));
+  color: var(--altara-text, #f2f0ec);
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1;
+}
+
 .dmTitleRow {
   min-width: 0;
   display: flex;
@@ -6250,6 +6296,44 @@ body.desktop-install-welcome-open {
 .dmHeaderActions {
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.dmHeaderIcon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  line-height: 0;
+  pointer-events: none;
+}
+
+.dmHeaderIcon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.dmHeaderIconBtn .dmHeaderIcon--members,
+.dmHeaderIconBtn--group-manage .dmHeaderIcon--delete {
+  display: none;
+}
+
+.dmHeaderIconBtn.is-members-mode .dmHeaderIcon--profile,
+.dmHeaderIconBtn--group-manage.is-owner .dmHeaderIcon--leave {
+  display: none;
+}
+
+.dmHeaderIconBtn.is-members-mode .dmHeaderIcon--members,
+.dmHeaderIconBtn--group-manage.is-owner .dmHeaderIcon--delete {
+  display: inline-flex;
 }
 
 .dmPrivacyBadge {
@@ -6493,64 +6577,105 @@ body.desktop-install-welcome-open {
   padding-bottom: 1px;
 }
 
-.msg--system {
-  grid-template-columns: minmax(0, 1fr);
-  padding: 4px 14px;
+.msg--system,
+.dmSystemMessage {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
 }
 
 .msg--system:hover {
   background: transparent;
 }
 
-.msg__systemChip {
+.msg__systemChip,
+.dmSystemMessage__pill {
   width: fit-content;
-  max-width: min(940px, 100%);
+  max-width: min(720px, calc(100% - 12px));
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  border: 1px solid rgba(114, 255, 184, 0.32);
-  background: rgba(29, 77, 58, 0.18);
+  row-gap: 4px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    color-mix(in srgb, var(--altara-surface-elevated, #202020) 74%, transparent);
+  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 8px 22px rgba(0, 0, 0, 0.18);
+  text-align: center;
+  font: inherit;
 }
 
 .msg__systemChip--joinable {
   cursor: pointer;
-  transition: background-color 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
 }
 
 .msg__systemChip--joinable:hover {
-  border-color: rgba(137, 255, 200, 0.66);
-  background: rgba(29, 102, 72, 0.28);
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.11));
+  color: var(--altara-text, #f2f0ec);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 10px 28px rgba(0, 0, 0, 0.22);
   transform: translateY(-1px);
 }
 
 .msg__systemChip--joinable:focus-visible {
   outline: none;
-  border-color: rgba(169, 255, 214, 0.86);
-  box-shadow: 0 0 0 2px rgba(88, 242, 169, 0.22);
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.34));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--altara-accent, #e8cfae) 12%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
 }
 
-.msg__systemIcon {
-  color: #49d17f;
-  font-size: 14px;
+.msg__systemIcon,
+.dmSystemMessage__icon {
+  color: var(--altara-accent-strong, #f1dbc0);
+  font-size: 12px;
   line-height: 1;
+  opacity: 0.88;
 }
 
 .msg__systemIcon--danger {
-  color: #ff6f86;
+  color: #f2a0a0;
 }
 
-.msg__systemText {
-  color: #d6f3e2;
-  font-size: 14px;
+.msg__systemText,
+.dmSystemMessage__text {
+  min-width: 0;
+  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
+  font-size: 12.5px;
+  font-weight: 650;
   line-height: 1.3;
 }
 
-.msg__systemTime {
-  color: var(--text-muted);
-  font-size: 12px;
+.msg__systemTime,
+.dmSystemMessage__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--altara-text-muted, var(--text-muted));
+  font-size: 11.5px;
+  font-weight: 600;
   white-space: nowrap;
+}
+
+.dmSystemMessage__time::before {
+  content: "";
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.58;
 }
 
 .msg__avatarCol {
@@ -6689,11 +6814,15 @@ body.desktop-install-welcome-open {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid rgba(200, 232, 255, 0.18);
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
   border-radius: 10px;
-  background: rgba(20, 24, 32, 0.98);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    color-mix(in srgb, var(--altara-surface-elevated, #202020) 84%, var(--altara-bg, #101010));
   padding: 4px 6px;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.42);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .msg__actionsRow--shift {
@@ -6748,9 +6877,9 @@ body.msg-shift-held .msg__actionsRow--shift {
   margin: 3px 0 6px;
   padding: 6px 10px;
   border: 0;
-  border-left: 2px solid rgba(200, 232, 255, 0.28);
+  border-left: 2px solid var(--altara-border-strong, rgba(255, 255, 255, 0.12));
   border-radius: 0 8px 8px 0;
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 48%, transparent);
   display: grid;
   gap: 2px;
   text-align: left;
@@ -6759,8 +6888,8 @@ body.msg-shift-held .msg__actionsRow--shift {
 
 .msg__replyRef:hover,
 .msg__replyRef:focus-visible {
-  border-left-color: var(--accent-strong);
-  background: rgba(88, 101, 242, 0.14);
+  border-left-color: var(--altara-accent-strong, var(--accent-strong));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.11));
 }
 
 .msg__replyName {
@@ -6790,12 +6919,12 @@ body.msg-shift-held .msg__actionsRow--shift {
 }
 
 .msg__reaction {
-  border: 1px solid var(--stroke);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--altara-border, var(--stroke));
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 62%, transparent);
   border-radius: 999px;
   min-height: 24px;
   padding: 0 8px;
-  color: var(--text-soft);
+  color: var(--altara-text-soft, var(--text-soft));
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -6805,14 +6934,15 @@ body.msg-shift-held .msg__actionsRow--shift {
 
 .msg__reaction:hover,
 .msg__reaction:focus-visible {
-  border-color: var(--accent-strong);
-  color: var(--text-main);
+  border-color: var(--altara-accent-border, var(--accent-strong));
+  background: var(--altara-hover, rgba(255, 255, 255, 0.07));
+  color: var(--altara-text, var(--text-main));
 }
 
 .msg__reaction.is-on {
-  border-color: var(--accent-strong);
-  background: var(--accent-soft);
-  color: #fff;
+  border-color: var(--altara-accent-border, var(--accent-strong));
+  background: var(--altara-accent-soft, var(--accent-soft));
+  color: var(--altara-accent-strong, #f1dbc0);
 }
 
 .msg__focusPulse {
@@ -7051,9 +7181,9 @@ body.msg-shift-held .msg__actionsRow--shift {
 .dmPendingCard__qualityToggle {
   min-height: 26px;
   border-radius: 8px;
-  border: 1px solid rgba(148, 194, 255, 0.32);
-  background: rgba(78, 128, 255, 0.12);
-  color: #d9e7ff;
+  border: 1px solid var(--altara-border-strong, rgba(255, 255, 255, 0.12));
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 58%, transparent);
+  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
   cursor: pointer;
   font-size: 11px;
   font-weight: 700;
@@ -7063,9 +7193,9 @@ body.msg-shift-held .msg__actionsRow--shift {
 
 .dmPendingCard__qualityToggle:hover,
 .dmPendingCard__qualityToggle:focus-visible {
-  border-color: var(--accent-strong);
-  background: rgba(88, 101, 242, 0.24);
-  color: #fff;
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.11));
+  color: var(--altara-accent-strong, #f1dbc0);
 }
 
 .dmPendingCard__qualityToggle.is-on {
@@ -7080,9 +7210,9 @@ body.msg-shift-held .msg__actionsRow--shift {
   left: 6px;
   height: 24px;
   border-radius: 7px;
-  border: 1px solid rgba(200, 232, 255, 0.3);
-  background: rgba(15, 20, 32, 0.75);
-  color: #dce7ff;
+  border: 1px solid var(--altara-border-strong, rgba(255, 255, 255, 0.12));
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 72%, transparent);
+  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
   cursor: pointer;
   font-size: 11px;
   font-weight: 700;
@@ -7092,9 +7222,9 @@ body.msg-shift-held .msg__actionsRow--shift {
 
 .dmPendingCard__spoilerToggle:hover,
 .dmPendingCard__spoilerToggle:focus-visible {
-  border-color: var(--accent-strong);
-  background: rgba(88, 101, 242, 0.24);
-  color: #fff;
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.11));
+  color: var(--altara-accent-strong, #f1dbc0);
 }
 
 .dmPendingCard__spoilerToggle.is-on {
@@ -7983,58 +8113,102 @@ body.msg-shift-held .msg__actionsRow--shift {
   color: #9bc6ff;
 }
 
-/* ---- Invite embed card ---- */
-.msgInviteCard {
+/* ---- DM server invite card ---- */
+.msgInviteCard,
+.dmServerInviteCard {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  margin-top: 8px;
-  border-radius: 16px;
-  border: 1px solid rgba(88, 101, 242, 0.3);
-  background: rgba(9, 13, 22, 0.98);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.42);
-  max-width: 360px;
-  overflow: hidden;
-}
-
-/* Banner strip at top */
-.msgInviteCard::before {
-  content: "";
   display: block;
-  height: 52px;
-  background: linear-gradient(135deg,
-    rgba(60, 72, 200, 0.55) 0%,
-    rgba(88, 101, 242, 0.45) 40%,
-    rgba(110, 88, 220, 0.35) 70%,
-    rgba(50, 60, 160, 0.4) 100%
-  );
-  border-bottom: 1px solid rgba(88, 101, 242, 0.22);
-}
-
-.msgInviteCard__left {
-  display: flex;
-  align-items: flex-end;
-  gap: 0;
-  padding: 0 16px;
-  margin-top: -26px;
-  margin-bottom: 8px;
-}
-
-.msgInviteCard__iconWrap {
-  flex-shrink: 0;
-  width: 52px;
-  height: 52px;
-  border-radius: 13px;
+  width: min(430px, 100%);
+  max-width: 100%;
+  margin: 6px 0 2px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    color-mix(in srgb, var(--altara-surface, #181818) 90%, #000 10%);
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(255, 255, 255, 0.018),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  white-space: normal;
   overflow: hidden;
-  background: linear-gradient(145deg, rgba(40, 50, 160, 0.6), rgba(20, 30, 100, 0.5));
-  border: 3px solid rgba(9, 13, 22, 0.98);
+  isolation: isolate;
+}
+
+.dmServerInviteHero {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-bottom: 0;
+  background:
+    linear-gradient(90deg, rgba(12, 12, 12, 0.98) 0%, rgba(20, 20, 20, 0.86) 48%, rgba(16, 16, 16, 0.7) 100%),
+    radial-gradient(circle at 18% 8%, var(--altara-accent-soft, rgba(232, 207, 174, 0.13)), transparent 40%),
+    linear-gradient(135deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 84%, var(--altara-accent, #e8cfae) 16%), var(--altara-bg, #101010));
+}
+
+.dmServerInviteHero--media {
+  height: auto;
+}
+
+.dmServerInviteHero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(10, 10, 10, 0.88) 0%, rgba(12, 12, 12, 0.5) 46%, rgba(12, 12, 12, 0.18) 100%),
+    linear-gradient(180deg, rgba(16, 16, 16, 0.06), rgba(16, 16, 16, 0.68)),
+    radial-gradient(circle at 82% 10%, rgba(255, 255, 255, 0.07), transparent 28%);
+  pointer-events: none;
+}
+
+.dmServerInviteHeroImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  filter: saturate(1.04) contrast(1.02);
+  opacity: 0.42;
+}
+
+.msgInviteCard__left,
+.dmServerInviteHeader {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 12px 0;
+}
+
+.dmServerInviteHeaderText {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.msgInviteCard__iconWrap,
+.dmServerInviteIcon {
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  border-radius: 11px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(circle at 30% 18%, var(--altara-accent-soft, rgba(232, 207, 174, 0.11)), transparent 58%),
+    var(--altara-surface-elevated, #202020);
+  color: var(--altara-accent-strong, #f1dbc0);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
-  position: relative;
-  z-index: 1;
+  box-shadow:
+    0 10px 20px rgba(0, 0, 0, 0.34),
+    0 0 0 1px var(--altara-border, rgba(255, 255, 255, 0.08));
 }
 
 .msgInviteCard__iconWrap--loading {
@@ -8042,143 +8216,195 @@ body.msg-shift-held .msg__actionsRow--shift {
 }
 
 @keyframes msgInviteIconPulse {
-  0%, 100% { opacity: 0.45; }
-  50%       { opacity: 0.9;  }
+  0%, 100% { opacity: 0.58; }
+  50% { opacity: 0.94; }
 }
 
 .msgInviteCard__icon {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 11px;
+  border-radius: 10px;
 }
 
 .msgInviteCard__iconFallback {
-  font-size: 24px;
-  font-weight: 800;
-  color: rgba(180, 200, 255, 0.85);
-  line-height: 1;
   font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 850;
+  line-height: 1;
+  color: currentColor;
 }
 
-.msgInviteCard__info {
-  flex: 1;
+.msgInviteCard__label,
+.dmServerInviteLabel {
   min-width: 0;
-  padding: 0 16px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.msgInviteCard__label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.56));
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  line-height: 1.15;
   text-transform: uppercase;
-  color: rgba(130, 155, 210, 0.6);
-  white-space: nowrap;
-  margin-bottom: 1px;
-}
-
-.msgInviteCard__name {
-  font-size: 16px;
-  font-weight: 800;
-  color: #edf0ff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: var(--font-display);
-  letter-spacing: -0.01em;
 }
 
-.msgInviteCard__members {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: rgba(150, 170, 220, 0.55);
-  display: flex;
+.msgInviteCard__name,
+.dmServerInviteName {
+  min-width: 0;
+  color: var(--altara-text, #f2f0ec);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 850;
+  line-height: 1.18;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msgInviteCard__info,
+.dmServerInviteMeta {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding: 6px 12px 0;
+}
+
+.msgInviteCard__members,
+.dmServerInviteMetaLine {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 0;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-top: 1px;
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.58));
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
-.msgInviteCard__members:empty {
+.msgInviteCard__members:empty,
+.dmServerInviteMetaLine:empty {
   display: none;
 }
 
-.msgInviteCard__membersDot {
-  width: 7px;
-  height: 7px;
+.msgInviteCard__membersDot,
+.dmServerInviteMetaDot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
   border-radius: 50%;
-  background: rgba(56, 210, 120, 0.8);
-  flex-shrink: 0;
-  box-shadow: 0 0 5px rgba(56, 210, 120, 0.5);
+  background: var(--ok, #49d17f);
+  box-shadow: 0 0 0 3px rgba(73, 209, 127, 0.1);
 }
 
-/* Footer row with join button */
-.msgInviteCard__footer {
-  padding: 0 14px 14px;
+.dmServerInviteMetaText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.msgInviteCard__joinBtn {
+.msgInviteCard__footer,
+.dmServerInviteFooter {
+  position: relative;
+  z-index: 1;
+  padding: 10px 12px 12px;
+}
+
+.msgInviteCard__joinBtn,
+.dmServerInviteAction {
   width: 100%;
-  height: 38px;
-  padding: 0 18px;
-  font-size: 13.5px;
-  font-weight: 700;
-  border-radius: 10px;
-  letter-spacing: 0.01em;
-  border: 1.5px solid rgba(56, 200, 116, 0.55);
-  background: linear-gradient(145deg, rgba(35, 160, 85, 0.5), rgba(24, 125, 65, 0.42));
-  color: #baffd8;
-  box-shadow: 0 2px 10px rgba(25, 130, 70, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  cursor: pointer;
-  display: flex;
+  min-width: 0;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 58%, #ffffff 8%);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-accent, #e8cfae) 92%, #ffffff 8%), color-mix(in srgb, var(--altara-accent, #e8cfae) 82%, #8d6d48 18%));
+  color: #2a2017;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 9px 18px rgba(0, 0, 0, 0.22);
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0;
+  cursor: pointer;
 }
 
-.msgInviteCard__joinBtn:hover {
-  border-color: rgba(56, 210, 120, 0.85);
-  background: linear-gradient(145deg, rgba(38, 178, 96, 0.68), rgba(28, 148, 78, 0.58));
-  color: #d8fff0;
-  box-shadow: 0 4px 16px rgba(25, 155, 80, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+.msgInviteCard__joinBtn:hover,
+.msgInviteCard__joinBtn:focus-visible,
+.dmServerInviteAction:hover,
+.dmServerInviteAction:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 72%, #ffffff 12%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-accent, #e8cfae) 98%, #ffffff 12%), color-mix(in srgb, var(--altara-accent, #e8cfae) 88%, #8d6d48 12%));
+  color: #211812;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    0 11px 22px rgba(0, 0, 0, 0.26);
 }
 
-body.motion-ready .msgInviteCard {
-  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-base) ease;
+body.motion-ready .msgInviteCard,
+body.motion-ready .dmServerInviteCard {
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-base) ease, transform var(--motion-fast) var(--motion-curve-snappy);
 }
 
-body.motion-ready .msgInviteCard:hover {
-  border-color: rgba(88, 101, 242, 0.52);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 18px rgba(88, 101, 242, 0.07);
+body.motion-ready .msgInviteCard:hover,
+body.motion-ready .dmServerInviteCard:hover {
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  box-shadow:
+    0 20px 46px rgba(0, 0, 0, 0.4),
+    0 0 0 1px color-mix(in srgb, var(--altara-accent, #e8cfae) 12%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-body.motion-ready .msgInviteCard__joinBtn {
+body.motion-ready .msgInviteCard__joinBtn,
+body.motion-ready .dmServerInviteAction {
   transition:
-    background      var(--motion-fast) ease,
-    border-color    var(--motion-fast) ease,
-    color           var(--motion-fast) ease,
-    box-shadow      var(--motion-fast) ease,
-    transform       var(--motion-fast) var(--motion-curve-snappy);
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease,
+    transform var(--motion-fast) var(--motion-curve-snappy);
 }
 
-body.motion-ready .msgInviteCard__joinBtn:hover {
+body.motion-ready .msgInviteCard__joinBtn:hover,
+body.motion-ready .dmServerInviteAction:hover {
   transform: translateY(-1px);
 }
 
-body.motion-ready .msgInviteCard__joinBtn:active {
+body.motion-ready .msgInviteCard__joinBtn:active,
+body.motion-ready .dmServerInviteAction:active {
   transform: scale(0.98);
   transition-duration: 55ms;
 }
 
-body.motion-ready .msgInviteCard__iconWrap {
+body.motion-ready .msgInviteCard__iconWrap,
+body.motion-ready .dmServerInviteIcon {
   transition: box-shadow var(--motion-fast) ease, transform var(--motion-base) var(--motion-curve-snappy);
 }
 
-body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
-  transform: scale(1.05) translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55), 0 0 0 3px rgba(88, 101, 242, 0.22);
+body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap,
+body.motion-ready .dmServerInviteCard:hover .dmServerInviteIcon {
+  transform: scale(1.03) translateY(-1px);
+  box-shadow:
+    0 15px 30px rgba(0, 0, 0, 0.4),
+    0 0 0 3px color-mix(in srgb, var(--altara-accent, #e8cfae) 12%, transparent);
 }
 
 .msg__codeInline {
@@ -8240,16 +8466,18 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
   flex: 1 1 auto;
   min-width: 0;
   min-height: var(--dmComposerInputHeight);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.12));
   border-radius: var(--radius-md);
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--altara-input, rgba(0, 0, 0, 0.3));
   transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
 }
 
 .dmInputWrap:focus-within {
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: none;
-  background: rgba(4, 14, 20, 0.72);
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--altara-accent, #e8cfae) 10%, transparent),
+    inset 0 1px 3px rgba(0, 0, 0, 0.18);
+  background: color-mix(in srgb, var(--altara-input, #121212) 78%, var(--altara-surface-elevated, #202020));
 }
 
 .dmInputWrap #dmInput {
@@ -8322,7 +8550,7 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 }
 
 .dmInputWrap.has-rich-preview[data-rich-ready="1"] #dmInput:focus::selection {
-  background: rgba(126, 152, 255, 0.34);
+  background: color-mix(in srgb, var(--altara-accent, #e8cfae) 22%, transparent);
   color: transparent;
   -webkit-text-fill-color: transparent;
 }
@@ -8422,10 +8650,14 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
   align-items: center;
   gap: 4px;
   padding: 5px;
-  border: 1px solid rgba(190, 207, 242, 0.22);
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
   border-radius: 9px;
-  background: rgba(10, 12, 18, 0.96);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.46);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    color-mix(in srgb, var(--altara-surface-elevated, #202020) 84%, var(--altara-bg, #101010));
+  box-shadow:
+    0 14px 28px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .dmFormatToolbar__btn {
@@ -8434,7 +8666,7 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
-  color: rgba(232, 238, 250, 0.92);
+  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
   font-size: 14px;
   font-weight: 700;
   display: inline-flex;
@@ -8446,8 +8678,9 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 
 .dmFormatToolbar__btn:hover,
 .dmFormatToolbar__btn:focus-visible {
-  border-color: rgba(200, 216, 247, 0.3);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.11));
+  color: var(--altara-accent-strong, #f1dbc0);
   outline: none;
 }
 
@@ -8459,7 +8692,7 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 .dmFormatToolbar__sizeSlider {
   width: 92px;
   height: 26px;
-  accent-color: #8ea0ff;
+  accent-color: var(--altara-accent, #e8cfae);
   cursor: ew-resize;
 }
 
@@ -10585,17 +10818,23 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 .emojiPicker {
   position: fixed;
   z-index: 2700;
-  width: min(448px, 96vw);
-  border: 1px solid var(--stroke-strong);
-  border-radius: 14px;
+  width: min(440px, calc(100vw - 18px));
+  max-height: min(500px, calc(100vh - 18px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  border-radius: 16px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
-    linear-gradient(180deg, var(--surface-1), var(--ui-shell-bg));
+    radial-gradient(520px 220px at 18% 0%, color-mix(in srgb, var(--altara-accent, #e8cfae) 12%, transparent), transparent 68%),
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 78%, rgba(255, 255, 255, 0.035)), var(--altara-surface, #151515));
   box-shadow:
-    var(--shadow-soft),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(var(--theme-blur, 12px));
-  padding: 10px 10px 9px;
+    0 28px 86px rgba(0, 0, 0, 0.56),
+    0 0 0 1px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(var(--theme-blur, 14px));
+  padding: 0;
+  color: var(--altara-text, #f2f0ec);
 }
 
 .emojiPicker.hidden {
@@ -10603,43 +10842,138 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 }
 
 .emojiPickerTop {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
   align-items: center;
-  margin-bottom: 8px;
+  min-height: 58px;
+  padding: 10px 12px 9px;
+  border-bottom: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 62%, transparent), transparent);
   position: relative;
   z-index: 3;
 }
 
-.emojiPickerTop .input {
-  flex: 1;
-  min-width: 0;
-  height: 38px;
-  background: var(--ui-input-bg);
-  border-color: var(--stroke);
+.emojiPickerTitle {
+  min-width: 58px;
+  color: var(--altara-text, #f2f0ec);
+  font-family: var(--font-display, var(--font-ui, inherit));
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1;
 }
 
-.emojiPickerTop .input:focus {
-  border-color: var(--ui-btn-hover-border);
-  background: var(--ui-input-focus-bg);
+.emojiPicker:not(.emojiPicker--nested) #btnEmojiPickerBack,
+.emojiPicker:not(.emojiPicker--nested) .emojiPickerBack,
+.emojiPicker[data-emoji-depth="0"] [data-emoji-picker-back] {
+  display: none !important;
+}
+
+.emojiSearchWrap {
+  min-width: 0;
+  height: 38px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.012)),
+    color-mix(in srgb, var(--altara-bg, #101010) 72%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 10px 28px rgba(0, 0, 0, 0.14);
+  cursor: text;
+  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.emojiSearchWrap:focus-within {
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.32));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-accent, #e8cfae) 7%, transparent), rgba(255, 255, 255, 0.012)),
+    color-mix(in srgb, var(--altara-bg, #101010) 74%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 0 3px var(--altara-accent-soft, rgba(232, 207, 174, 0.1));
+}
+
+.emojiSearchIcon {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  position: relative;
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.5));
+}
+
+.emojiSearchIcon::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 9px;
+  height: 9px;
+  border: 1.8px solid currentColor;
+  border-radius: 999px;
+}
+
+.emojiSearchIcon::after {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 11px;
+  width: 6px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(45deg);
+  transform-origin: left center;
+}
+
+.emojiPickerTop .input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--altara-text, #f2f0ec);
+  font-size: 13.5px;
+  font-weight: 550;
+  outline: none;
+}
+
+.emojiPickerTop .input::placeholder {
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.5));
 }
 
 .emojiPickerTop #btnEmojiPickerClose {
-  min-width: 34px;
-  width: 34px;
-  height: 34px;
+  min-width: 38px;
+  width: 38px;
+  height: 38px;
   padding: 0;
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
-  border: 1px solid var(--ui-btn-border);
-  border-radius: 10px;
-  background: var(--ui-btn-bg);
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--altara-bg, #101010) 48%, transparent);
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.64));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
 }
 
 .emojiPickerTop #btnEmojiPickerClose:hover,
 .emojiPickerTop #btnEmojiPickerClose:focus-visible {
-  border-color: var(--ui-btn-hover-border);
-  background: var(--ui-btn-hover-bg);
+  outline: none;
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.26));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.1));
+  color: var(--altara-text, #f2f0ec);
+  transform: translateY(-1px);
 }
 
 .emojiPickerCats {
@@ -10647,11 +10981,13 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
   align-items: center;
   flex-wrap: nowrap;
   gap: 6px;
-  margin-bottom: 8px;
+  min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 6px;
+  padding: 8px 12px 9px;
+  border-bottom: 1px solid var(--altara-border, rgba(255, 255, 255, 0.075));
+  background: color-mix(in srgb, var(--altara-surface, #181818) 76%, transparent);
   white-space: nowrap;
   position: relative;
   z-index: 3;
@@ -10659,58 +10995,72 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 
 .emojiCatBtn {
   flex: 0 0 auto;
-  border: 1px solid var(--stroke);
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
   border-radius: 999px;
-  background: var(--ui-row-strong-bg);
-  color: var(--text-muted);
-  height: 29px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), rgba(255, 255, 255, 0.008)),
+    color-mix(in srgb, var(--altara-bg, #101010) 42%, transparent);
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.64));
+  height: 28px;
   min-width: max-content;
-  padding: 0 11px;
+  padding: 0 10px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   cursor: pointer;
   white-space: nowrap;
   font-size: 12px;
+  font-weight: 750;
   line-height: 1;
   overflow: hidden;
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
 }
 
 .emojiCatBtn span {
-  opacity: 0.9;
+  opacity: 0.92;
 }
 
 .emojiCatBtn:hover,
 .emojiCatBtn:focus-visible,
 .emojiCatBtn.active {
-  border-color: var(--ui-btn-hover-border);
-  color: var(--text-main);
-  background: var(--ui-btn-hover-bg);
+  outline: none;
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  color: var(--altara-text, #f2f0ec);
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.1));
 }
 
 .emojiCatBtn.active {
+  color: var(--altara-accent-strong, #f0d8b8);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-accent, #e8cfae) 14%, transparent), color-mix(in srgb, var(--altara-accent, #e8cfae) 7%, transparent)),
+    color-mix(in srgb, var(--altara-bg, #101010) 34%, transparent);
   box-shadow:
-    inset 0 0 0 1px var(--accent-soft),
-    0 0 0 1px rgba(0, 0, 0, 0.24);
+    inset 0 0 0 1px color-mix(in srgb, var(--altara-accent, #e8cfae) 20%, transparent),
+    0 6px 18px rgba(0, 0, 0, 0.16);
 }
 
 .emojiPickerGrid {
-  max-height: min(344px, 50vh);
-  overflow: auto;
+  max-height: min(340px, calc(100vh - 164px));
+  min-height: 220px;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   display: grid;
-  grid-template-columns: repeat(8, minmax(34px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
   gap: 7px;
   align-content: start;
-  padding-right: 2px;
+  padding: 10px 12px 12px;
   position: relative;
   z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent 24%),
+    color-mix(in srgb, var(--altara-bg, #101010) 18%, transparent);
 }
 
 .emojiPickerCats {
   scrollbar-width: thin;
-  scrollbar-color: var(--ui-btn-hover-border) transparent;
+  scrollbar-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28)) transparent;
 }
 
 .emojiPickerCats::-webkit-scrollbar {
@@ -10723,12 +11073,12 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 
 .emojiPickerCats::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: var(--ui-btn-border);
+  background: var(--altara-border, rgba(255, 255, 255, 0.12));
 }
 
 .emojiPickerGrid {
   scrollbar-width: thin;
-  scrollbar-color: var(--ui-btn-hover-border) transparent;
+  scrollbar-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28)) transparent;
 }
 
 .emojiPickerGrid::-webkit-scrollbar {
@@ -10741,42 +11091,51 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 
 .emojiPickerGrid::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: var(--ui-btn-border);
+  background: color-mix(in srgb, var(--altara-accent, #e8cfae) 22%, transparent);
 }
 
 .emojiPickerGrid::-webkit-scrollbar-thumb:hover {
-  background: var(--ui-btn-hover-border);
+  background: color-mix(in srgb, var(--altara-accent, #e8cfae) 34%, transparent);
 }
 
 .emojiSectionTitle {
   grid-column: 1 / -1;
-  margin: 2px 2px 0;
+  margin: 4px 2px 0;
+  padding-top: 1px;
+  color: var(--altara-accent-strong, #f0d8b8);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 850;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
-  color: var(--text-muted);
 }
 
 .emojiPickerHint {
   grid-column: 1 / -1;
-  margin: 4px 2px 2px;
-  color: var(--text-muted);
+  margin: 6px 2px 2px;
+  padding: 11px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 54%, transparent);
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.62));
   font-size: 12px;
 }
 
 .emojiBtn {
-  border: 1px solid var(--stroke);
-  border-radius: 10px;
-  background: var(--ui-row-bg);
-  min-height: 36px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.075));
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
+    color-mix(in srgb, var(--altara-surface-elevated, #202020) 62%, transparent);
+  min-height: 40px;
   aspect-ratio: 1 / 1;
   display: grid;
   place-items: center;
-  font-size: 21px;
+  color: var(--altara-text, #f2f0ec);
+  font-size: 22px;
   line-height: 1;
   cursor: pointer;
-  transition: border-color 0.14s ease, background-color 0.14s ease, transform 0.14s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  transition: border-color 0.14s ease, background-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
 }
 
 .emojiBtn__glyph {
@@ -10788,8 +11147,8 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 }
 
 .emojiBtn__img {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   object-fit: contain;
   pointer-events: none;
   user-select: none;
@@ -10801,9 +11160,16 @@ body.motion-ready .msgInviteCard:hover .msgInviteCard__iconWrap {
 
 .emojiBtn:hover,
 .emojiBtn:focus-visible {
-  border-color: var(--ui-btn-hover-border);
-  background: var(--ui-btn-hover-bg);
-  transform: translateY(-1px) scale(1.03);
+  outline: none;
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.38));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-accent, #e8cfae) 12%, transparent), color-mix(in srgb, var(--altara-accent, #e8cfae) 5%, transparent)),
+    color-mix(in srgb, var(--altara-surface-elevated, #202020) 64%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 0 3px var(--altara-accent-soft, rgba(232, 207, 174, 0.11)),
+    0 12px 28px rgba(0, 0, 0, 0.22);
+  transform: translateY(-2px);
 }
 
 .dmEmojiShortcodeMenu {
@@ -17795,6 +18161,50 @@ select:focus {
   display: inline-flex !important;
 }
 
+.panel.mid.is-dm-conversation-open .midTop {
+  display: none !important;
+}
+
+.panel.mid.is-dm-conversation-open #dmMain {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+}
+
+body:not(.authPage).desktop-titlebar-overlay .panel.mid.is-dm-conversation-open #dmMain {
+  padding-top: var(--desktop-titlebar-overlay-height, 40px);
+}
+
+.panel.mid.is-dm-conversation-open #dmMain .dmHeader,
+.panel.mid.is-dm-conversation-open #dmMain .dmComposer,
+.panel.mid.is-dm-conversation-open #dmMain #dmReplyBar,
+.panel.mid.is-dm-conversation-open #dmMain #dmPendingAttachments {
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
+.panel.mid.is-dm-conversation-open #dmMain .dmHeader {
+  position: relative;
+  z-index: 2;
+}
+
+.panel.mid.is-dm-conversation-open #dmMain .dmMainBody {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel.mid.is-dm-conversation-open #dmMain .dmThread {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel.mid.is-dm-conversation-open #dmMain .dmMessages {
+  min-height: 0;
+}
+
 #dmMain.is-server-voice-call-layout .dmMainBody {
   min-height: 0;
 }
@@ -18176,152 +18586,9 @@ select:focus {
 }
 
 .callStageControls .btn.is-on,
-.callBar .btn.is-on,
-.dmHeaderActions .btn.is-on {
+.callBar .btn.is-on {
   border-color: #6e79b5;
   background: #3f496d;
-}
-
-#dmMain .dmHeaderActions {
-  gap: 6px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  padding-bottom: 1px;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn {
-  min-width: 0;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border-radius: 10px;
-  border: 1px solid rgba(200, 232, 255, 0.24);
-  background: rgba(11, 16, 25, 0.78);
-  color: #dfe6f8;
-  flex: 0 0 auto;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn:hover {
-  border-color: rgba(136, 150, 250, 0.75);
-  background: rgba(88, 101, 242, 0.26);
-  transform: translateY(-1px);
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn:focus-visible {
-  outline: none;
-  border-color: rgba(153, 167, 252, 0.86);
-  box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.3);
-}
-
-#dmMain .dmHeaderActions .dmHeaderIcon {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn .dmHeaderIcon--members {
-  display: none;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.is-members-mode .dmHeaderIcon--profile {
-  display: none;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.is-members-mode .dmHeaderIcon--members {
-  display: inline-flex;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIcon svg {
-  width: 100%;
-  height: 100%;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  transform: none;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.danger {
-  border-color: rgba(242, 111, 111, 0.62);
-  background: rgba(242, 111, 111, 0.2);
-  color: #ffe3e3;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.danger:hover {
-  border-color: rgba(242, 111, 111, 0.86);
-  background: rgba(242, 111, 111, 0.3);
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.btn.is-on {
-  border-color: #6e79b5;
-  background: #3f496d;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.is-active-private {
-  border-color: rgba(120, 255, 190, 0.5);
-  background: linear-gradient(160deg, rgba(26, 108, 72, 0.72), rgba(15, 37, 29, 0.9));
-  color: #eafff4;
-  box-shadow: 0 0 0 1px rgba(120, 255, 190, 0.14), 0 0 16px rgba(54, 214, 146, 0.18);
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.is-active-private:hover {
-  border-color: rgba(145, 255, 203, 0.72);
-  background: linear-gradient(160deg, rgba(31, 128, 85, 0.78), rgba(18, 46, 34, 0.94));
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.is-pending-private {
-  border-color: rgba(255, 209, 102, 0.44);
-  background: linear-gradient(160deg, rgba(110, 82, 30, 0.58), rgba(43, 31, 13, 0.88));
-  color: #fff1c7;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.is-pending-private:hover {
-  border-color: rgba(255, 222, 137, 0.66);
-  background: linear-gradient(160deg, rgba(136, 101, 36, 0.66), rgba(55, 39, 15, 0.92));
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.is-joinable {
-  border-color: rgba(85, 226, 153, 0.88);
-  background: linear-gradient(160deg, rgba(35, 114, 77, 0.62), rgba(19, 46, 35, 0.86));
-  color: #e9fff2;
-  box-shadow: 0 0 0 1px rgba(85, 226, 153, 0.26), 0 0 18px rgba(85, 226, 153, 0.22);
-  animation: dmJoinCallPulse 1.35s ease-in-out infinite;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn.is-joinable:hover {
-  border-color: rgba(114, 239, 173, 0.95);
-  background: linear-gradient(160deg, rgba(42, 133, 92, 0.72), rgba(24, 56, 42, 0.92));
-}
-
-@keyframes dmJoinCallPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 1px rgba(85, 226, 153, 0.24), 0 0 14px rgba(85, 226, 153, 0.18);
-  }
-  50% {
-    box-shadow: 0 0 0 1px rgba(85, 226, 153, 0.45), 0 0 28px rgba(85, 226, 153, 0.36);
-  }
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn--group-manage .dmHeaderIcon--delete {
-  display: none;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn--group-manage.is-owner .dmHeaderIcon--leave {
-  display: none;
-}
-
-#dmMain .dmHeaderActions .dmHeaderIconBtn--group-manage.is-owner .dmHeaderIcon--delete {
-  display: inline-flex;
 }
 
 @media (max-width: 980px) {
@@ -18689,21 +18956,27 @@ body.theme-density-comfortable .padded {
 #gifModal .gifGrid {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   max-height: 48vh;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-content: start;
 }
 
 #gifModal .gif-item {
-  min-height: 150px;
+  min-height: 84px;
+  height: auto;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(12, 17, 24, 0.82);
 }
 
 #gifModal .gif-item img {
-  min-height: 150px;
+  width: 100%;
+  height: auto;
+  min-height: 84px;
+  object-fit: cover;
 }
 
 #gifModal .gif-fav-btn {
@@ -18768,13 +19041,15 @@ body.theme-density-comfortable .padded {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-x: hidden;
 }
 
 #gifModal .gifQuickTags {
   margin-top: 10px;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   align-content: start;
   padding-right: 2px;
 }
@@ -18782,34 +19057,592 @@ body.theme-density-comfortable .padded {
 #gifModal .gifGrid {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: 220px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   align-content: start;
   padding-right: 2px;
 }
 
 #gifModal.gif-folder-open .gifGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 #gifModal .gif-item {
   position: relative;
-  min-height: 220px;
-  height: 100%;
-  aspect-ratio: auto;
+  min-height: 84px;
+  height: auto;
+  aspect-ratio: auto !important;
   overflow: hidden;
 }
 
 #gifModal .gif-item img {
   display: block;
   width: 100%;
-  height: 100%;
-  min-height: 0;
+  height: auto;
+  min-height: 84px;
   object-fit: cover;
+}
+
+/* ALTARA premium GIF picker */
+#gifModal {
+  inset: auto;
+  z-index: 2710;
+  display: block;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+#gifModal.hidden {
+  display: none !important;
+}
+
+#gifModal:not(.hidden) {
+  display: block;
+}
+
+#gifModal .modalCard {
+  width: min(500px, calc(100vw - 20px));
+  max-width: min(500px, calc(100vw - 20px));
+  height: min(540px, calc(100vh - 20px));
+  max-height: calc(100vh - 20px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  border-radius: 18px;
+  background:
+    radial-gradient(620px 240px at 12% 0%, color-mix(in srgb, var(--altara-accent, #e8cfae) 12%, transparent), transparent 66%),
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 78%, rgba(255, 255, 255, 0.032)), var(--altara-surface, #151515));
+  box-shadow:
+    0 24px 76px rgba(0, 0, 0, 0.52),
+    0 0 0 1px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+#gifModal .modalCard::after {
+  content: "";
+  position: absolute;
+  right: 42px;
+  bottom: -8px;
+  width: 16px;
+  height: 16px;
+  border-right: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  border-bottom: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  background: var(--altara-surface, #151515);
+  transform: rotate(45deg);
+  box-shadow: 8px 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+#gifModal .modalTop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 12px 12px 10px 14px;
+  border-bottom: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 62%, transparent), transparent);
+}
+
+#gifModal.gif-folder-open .modalTop {
+  display: grid;
+}
+
+#gifModal .gifModalBrand {
+  width: 34px;
+  height: 34px;
+  display: none !important;
+  place-items: center;
+  border: 1px solid var(--altara-accent-border, rgba(232, 207, 174, 0.26));
+  border-radius: 11px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-accent, #e8cfae) 18%, transparent), color-mix(in srgb, var(--altara-accent, #e8cfae) 8%, transparent));
+  color: var(--altara-accent-strong, #f0d8b8);
+  font-family: var(--font-display, var(--font-ui, inherit));
+  font-size: 19px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+#gifModal .modalTitle {
+  color: var(--altara-text, #f2f0ec);
+  font-family: var(--font-display, var(--font-ui, inherit));
+  font-size: 16px;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+#gifModal #btnGifClose {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--altara-bg, #101010) 48%, transparent);
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.64));
+  font-size: 22px;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+#gifModal #btnGifClose:hover,
+#gifModal #btnGifClose:focus-visible {
+  outline: none;
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.1));
+  color: var(--altara-text, #f2f0ec);
+  transform: translateY(-1px);
+}
+
+#gifModal .editorWrap {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  gap: 7px;
+  overflow: hidden;
+  padding: 9px 12px 12px;
+}
+
+#gifModal .gifFolderTop {
+  min-height: 32px;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 0;
+}
+
+#gifModal .gifFolderBack {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--altara-bg, #101010) 42%, transparent);
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.68));
+}
+
+#gifModal .gifFolderBack:hover,
+#gifModal .gifFolderBack:focus-visible {
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.1));
+  color: var(--altara-text, #f2f0ec);
+}
+
+#gifModal .gifFolderTitle {
+  color: var(--altara-accent-strong, #f0d8b8);
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+#gifModal .gifSearchRow {
+  margin: 0;
+}
+
+#gifModal .gifSearchField {
+  height: 38px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 0 15px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  border-radius: 11px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), rgba(255, 255, 255, 0.01)),
+    color-mix(in srgb, var(--altara-bg, #101010) 72%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 10px 28px rgba(0, 0, 0, 0.14);
+  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+#gifModal .gifSearchField:focus-within {
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.34));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-accent, #e8cfae) 7%, transparent), rgba(255, 255, 255, 0.012)),
+    color-mix(in srgb, var(--altara-bg, #101010) 74%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 0 3px var(--altara-accent-soft, rgba(232, 207, 174, 0.1));
+}
+
+#gifModal .gifSearchIcon {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: 19px;
+  height: 19px;
+  display: inline-block;
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.5));
+  transform: none;
+}
+
+#gifModal .gifSearchIcon::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+}
+
+#gifModal .gifSearchIcon::after {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 13px;
+  width: 7px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(45deg);
+  transform-origin: left center;
+}
+
+#gifModal #gifSearch.input {
+  width: 100%;
+  height: 100%;
+  padding: 0 !important;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--altara-text, #f2f0ec);
+  font-size: 15px;
+  font-weight: 550;
+  outline: none;
+  box-shadow: none;
+}
+
+#gifModal #gifSearch.input::placeholder {
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.52));
+}
+
+#gifModal .gifQuickTags {
+  min-height: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(84px, auto);
+  gap: 7px;
+  overflow: auto;
+  align-content: start;
+  padding: 0 4px 2px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28)) transparent;
+}
+
+#gifModal .gifBrowseTop {
+  grid-column: 1 / -1;
+}
+
+#gifModal .gifBrowseTop,
+#gifModal .gifGridSectionTop {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+#gifModal .gifBrowseTitle,
+#gifModal .gifGridSectionTitle {
+  color: var(--altara-text, #f2f0ec);
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+#gifModal .gifGridSectionMeta {
+  border: 0;
+  background: transparent;
+  color: var(--altara-accent-strong, #f0d8b8);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+#gifModal .gif-shortcut,
+#gifModal .gif-term {
+  min-height: 84px;
+  border-radius: 12px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 64%, rgba(255, 255, 255, 0.02)), color-mix(in srgb, var(--altara-bg, #101010) 54%, transparent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 12px 28px rgba(0, 0, 0, 0.14);
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+#gifModal .gif-shortcut:hover,
+#gifModal .gif-term:hover,
+#gifModal .gif-shortcut:focus-visible,
+#gifModal .gif-term:focus-visible {
+  outline: none;
+  transform: translateY(-2px);
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.32));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 18px 38px rgba(0, 0, 0, 0.24);
+  filter: brightness(1.04);
+}
+
+#gifModal .gif-shortcut::after,
+#gifModal .gif-term::after {
+  background:
+    linear-gradient(180deg, rgba(6, 6, 6, 0.1), rgba(6, 6, 6, 0.62)),
+    radial-gradient(260px 120px at 10% 0%, color-mix(in srgb, var(--altara-accent, #e8cfae) 15%, transparent), transparent 70%);
+}
+
+#gifModal .gif-shortcut--favorites,
+#gifModal .gif-shortcut--trending {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--altara-accent, #e8cfae) 18%, var(--altara-surface-elevated, #202020)), color-mix(in srgb, var(--altara-bg, #101010) 78%, transparent));
+}
+
+#gifModal .gif-shortcut__title,
+#gifModal .gif-term__title {
+  color: var(--altara-text, #f2f0ec);
+  font-size: clamp(16px, 1.7vw, 22px);
+  font-weight: 900;
+  letter-spacing: 0;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
+}
+
+#gifModal .gif-shortcut__meta {
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.72));
+  font-size: 12px;
+  font-weight: 620;
+}
+
+#gifModal .gifGrid {
+  min-height: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-content: start;
+  padding: 0 4px 2px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28)) transparent;
+}
+
+#gifModal .gifGridSectionTop {
+  grid-column: 1 / -1;
+  min-height: 22px;
+}
+
+#gifModal .gifMasonry {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+#gifModal .gifMasonryColumn {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+#gifModal .gifGrid::-webkit-scrollbar,
+#gifModal .gifQuickTags::-webkit-scrollbar {
+  width: 8px;
+  height: 6px;
+}
+
+#gifModal .gifGrid::-webkit-scrollbar-track,
+#gifModal .gifQuickTags::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#gifModal .gifGrid::-webkit-scrollbar-thumb,
+#gifModal .gifQuickTags::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--altara-accent, #e8cfae) 24%, transparent);
+}
+
+#gifModal .gif-item {
+  position: relative;
+  min-height: 84px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: auto !important;
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.1));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--altara-bg, #101010) 54%, transparent);
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 12px 28px rgba(0, 0, 0, 0.16);
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+#gifModal .gif-item:hover,
+#gifModal .gif-item:focus-visible {
+  outline: none;
+  transform: translateY(-2px);
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.34));
+  box-shadow:
+    0 0 0 3px var(--altara-accent-soft, rgba(232, 207, 174, 0.1)),
+    0 18px 44px rgba(0, 0, 0, 0.28);
+  filter: brightness(1.04);
+}
+
+#gifModal .gif-item img {
+  width: 100%;
+  height: auto;
+  min-height: 84px;
+  display: block;
+  object-fit: cover;
+  transition: transform 0.18s ease;
+}
+
+#gifModal .gif-item:hover img,
+#gifModal .gif-item:focus-visible img {
+  transform: scale(1.025);
+}
+
+#gifModal .gif-item::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 56%;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.62));
+  opacity: 0;
+}
+
+#gifModal .gif-fav-btn {
+  z-index: 3;
+  top: 7px;
+  right: 7px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(16, 16, 16, 0.64);
+  color: rgba(242, 240, 236, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+#gifModal .gif-fav-btn:hover,
+#gifModal .gif-fav-btn:focus-visible {
+  outline: none;
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.32));
+  background: rgba(232, 207, 174, 0.15);
+  color: var(--altara-accent-strong, #f0d8b8);
+}
+
+#gifModal .gif-fav-btn.is-fav {
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.4));
+  background: color-mix(in srgb, var(--altara-accent, #e8cfae) 22%, rgba(16, 16, 16, 0.66));
+  color: var(--altara-accent-strong, #f0d8b8);
+}
+
+#gifModal .gif-empty {
+  grid-column: 1 / -1;
+  min-height: 110px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 54%, transparent);
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.62));
+  font-size: 13px;
+}
+
+#gifModal #gifHint {
+  margin-top: 0 !important;
+  padding: 8px 10px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--altara-bg, #101010) 42%, transparent);
+  font-size: 12px;
+}
+
+#gifModal .gifFooterHint {
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.56));
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+@media (max-width: 560px) {
+  #gifModal {
+    max-width: calc(100vw - 16px);
+  }
+
+  #gifModal .modalCard {
+    width: min(420px, calc(100vw - 16px));
+    max-width: min(420px, calc(100vw - 16px));
+    height: min(500px, calc(100vh - 16px));
+    max-height: calc(100vh - 16px);
+    border-radius: 16px;
+  }
+
+  #gifModal .modalTop {
+    min-height: 54px;
+    padding: 10px 10px 9px 12px;
+  }
+
+  #gifModal .modalTitle {
+    font-size: 15px;
+  }
+
+#gifModal .editorWrap {
+    padding: 9px 10px 10px;
+  }
+
+  #gifModal .gifGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  #gifModal .gifQuickTags {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #gifModal .gifGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #gifModal .gifMasonry {
+    gap: 8px;
+  }
+
+  #gifModal .gifMasonryColumn {
+    gap: 8px;
+  }
+
+  #gifModal .gifFooterHint {
+    display: none;
+  }
 }
 
 /* Call polish refresh */
@@ -20264,6 +21097,23 @@ body .panel.mid {
   transform: none;
 }
 
+body:not(.authPage) #gifModal .gifFolderBack {
+  border-color: var(--altara-border, rgba(255, 255, 255, 0.1));
+  background: color-mix(in srgb, var(--altara-bg, #101010) 42%, transparent);
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.68));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+body:not(.authPage) #gifModal .gifFolderBack:hover:not(:disabled),
+body:not(.authPage) #gifModal .gifFolderBack:focus-visible {
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.1));
+  color: var(--altara-text, #f2f0ec);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 0 0 3px var(--altara-accent-soft, rgba(232, 207, 174, 0.1));
+}
+
 .midNavBtn__icon,
 .arrowNavBtn__icon {
   width: 15px;
@@ -20288,19 +21138,19 @@ body .panel.mid {
 }
 
 /* Global premium treatment for app action icons */
-:is(.leftTop .meCtrlBtn, #dmMain .dmHeaderActions .dmHeaderIconBtn, .callStageControls .callCtrlBtn, .callBar .callMiniBtn) {
+:is(.leftTop .meCtrlBtn, .callStageControls .callCtrlBtn, .callBar .callMiniBtn) {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
     0 8px 18px rgba(0, 0, 0, 0.22);
 }
 
-:is(.leftTop .meCtrlBtn:hover, #dmMain .dmHeaderActions .dmHeaderIconBtn:hover, .callStageControls .callCtrlBtn:hover, .callBar .callMiniBtn:hover) {
+:is(.leftTop .meCtrlBtn:hover, .callStageControls .callCtrlBtn:hover, .callBar .callMiniBtn:hover) {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     0 10px 22px rgba(0, 0, 0, 0.28);
 }
 
-:is(.leftTop .meCtrlBtn__icon svg, #dmMain .dmHeaderActions .dmHeaderIcon svg, .callCtrlBtn__icon svg, .callMiniBtn__icon svg) {
+:is(.leftTop .meCtrlBtn__icon svg, .callCtrlBtn__icon svg, .callMiniBtn__icon svg) {
   filter:
     drop-shadow(0 1px 0 rgba(255, 255, 255, 0.08))
     drop-shadow(0 2px 5px rgba(0, 0, 0, 0.3));
@@ -20585,9 +21435,11 @@ body.motion-ready .dmInputWrap {
     background-color var(--motion-fast) ease;
 }
 body.motion-ready .dmInputWrap:focus-within {
-  border-color: rgba(121, 131, 245, 0.42);
-  box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.11), inset 0 1px 3px rgba(0,0,0,0.18);
-  background: rgba(4, 10, 18, 0.75);
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--altara-accent, #e8cfae) 10%, transparent),
+    inset 0 1px 3px rgba(0, 0, 0, 0.18);
+  background: color-mix(in srgb, var(--altara-input, #121212) 78%, var(--altara-surface-elevated, #202020));
 }
 
 /* --- Call mini buttons --- */
@@ -24058,6 +24910,11 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
   color: rgba(242, 240, 236, 0.9);
 }
 
+.meProfilePopout.is-floating {
+  top: var(--me-popout-top, 92px);
+  bottom: auto;
+}
+
 .meProfilePopout.is-open {
   display: block;
 }
@@ -24399,6 +25256,17 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
   border-color: rgba(232, 207, 174, 0.14);
   background: rgba(232, 207, 174, 0.065);
   color: rgba(242, 240, 236, 0.94);
+}
+
+.meProfilePopout__statusText--readonly {
+  cursor: default;
+}
+
+.meProfilePopout__statusText--readonly:hover,
+.meProfilePopout__statusText--readonly:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
 }
 
 .meProfilePopout__statusText [data-me-popout-status-label] {
@@ -28648,6 +29516,549 @@ body.theme-resolved-light:not(.authPage) #userCardName.userNameCustom,
 body.theme-resolved-light:not(.authPage) #dmTitle.userNameCustom,
 body.theme-resolved-light:not(.authPage) #meName.userNameCustom {
   color: var(--user-name-color) !important;
+}
+
+/* DM profile preview sidebar: compact premium card language. */
+body:not(.authPage) #dmMain .dmProfilePanel {
+  width: clamp(292px, 27vw, 360px);
+  min-width: 280px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 16px 16px 0 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 72%, rgba(255, 255, 255, 0.035)), var(--altara-surface, #181818));
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__top {
+  min-height: 38px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 48%, transparent);
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__title {
+  font-family: var(--font-ui, inherit);
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.58));
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__banner {
+  aspect-ratio: auto;
+  min-height: 86px;
+  height: 86px;
+  background:
+    radial-gradient(230px 110px at 12% 0%, color-mix(in srgb, var(--altara-accent, #e8cfae) 24%, transparent), transparent 70%),
+    radial-gradient(220px 120px at 100% 0%, rgba(255, 255, 255, 0.06), transparent 66%),
+    linear-gradient(145deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 80%, var(--altara-accent, #e8cfae) 10%), color-mix(in srgb, var(--altara-bg, #101010) 92%, #000 8%));
+  border-bottom: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  box-shadow: inset 0 -28px 34px color-mix(in srgb, var(--altara-bg, #101010) 64%, transparent);
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__banner.has-image {
+  box-shadow: inset 0 -32px 42px rgba(0, 0, 0, 0.28);
+}
+
+body:not(.authPage) #dmMain .dmProfileAvatar {
+  width: 76px;
+  height: 76px;
+  margin: -38px 0 0 14px;
+  border: 4px solid color-mix(in srgb, var(--altara-surface, #181818) 94%, #000 6%);
+  background:
+    radial-gradient(circle at 32% 18%, var(--altara-accent-soft, rgba(232, 207, 174, 0.11)), transparent 58%),
+    var(--altara-surface-elevated, #202020);
+  color: var(--altara-accent-strong, #f0d8b8);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.32),
+    0 0 0 1px var(--altara-border, rgba(255, 255, 255, 0.08));
+}
+
+body:not(.authPage) #dmMain .dmProfileAvatar:hover,
+body:not(.authPage) #dmMain .dmProfileAvatar:focus-visible {
+  border-color: color-mix(in srgb, var(--altara-surface, #181818) 72%, var(--altara-accent, #e8cfae) 28%);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.34),
+    0 0 0 3px var(--altara-accent-soft, rgba(232, 207, 174, 0.11));
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28)) transparent;
+}
+
+body:not(.authPage) #dmMain .dmProfileName {
+  margin-top: 0;
+  color: var(--altara-text, #f2f0ec);
+  font-size: 21px;
+  font-weight: 850;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #dmMain .dmProfileHandle {
+  margin-top: -4px;
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.58));
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+body:not(.authPage) #dmMain .dmProfilePresence {
+  width: fit-content;
+  margin-top: 0;
+  padding: 5px 9px;
+  gap: 7px;
+  border-color: var(--altara-border, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 70%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+body:not(.authPage) #dmMain .dmProfileStatusDot {
+  width: 8px;
+  height: 8px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--altara-surface, #181818) 86%, transparent);
+}
+
+body:not(.authPage) #dmMain .dmProfileStatusText {
+  color: var(--altara-text, #f2f0ec);
+  font-size: 10.5px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+body:not(.authPage) #dmMain .dmProfileSection,
+body:not(.authPage) #dmMain .dmProfileWidgetsPreviewShell,
+body:not(.authPage) #dmMain .dmGroupMemberRow {
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 13px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 62%, rgba(255, 255, 255, 0.02)), color-mix(in srgb, var(--altara-surface, #181818) 90%, transparent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+body:not(.authPage) #dmMain .dmProfileSection {
+  margin-top: 0;
+  padding: 11px 12px;
+}
+
+body:not(.authPage) #dmMain .dmProfileSection__title,
+body:not(.authPage) #dmMain .dmProfileWidgetsPreviewTitle {
+  color: var(--altara-accent-strong, #f0d8b8);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.11em;
+  line-height: 1.2;
+}
+
+body:not(.authPage) #dmMain .dmProfileBio {
+  margin-top: 7px;
+  color: var(--altara-text, #f2f0ec);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetsPreview {
+  margin-top: 0;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetsPreviewShell {
+  padding: 11px;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewList {
+  gap: 7px;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewCard {
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 9px;
+  padding: 7px;
+  border-color: var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--altara-bg, #101010) 42%, transparent);
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewCard:hover,
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewCard:focus-visible,
+body:not(.authPage) #dmMain .dmGroupMemberRow:hover,
+body:not(.authPage) #dmMain .dmGroupMemberRow:focus-visible {
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.11));
+  outline: none;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewMedia {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 30% 18%, var(--altara-accent-soft, rgba(232, 207, 174, 0.11)), transparent 58%),
+    var(--altara-surface-elevated, #202020);
+  color: var(--altara-accent-strong, #f0d8b8);
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewBadge {
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.11));
+  color: var(--altara-accent-strong, #f0d8b8);
+  font-size: 9px;
+  padding: 3px 6px;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewName {
+  color: var(--altara-text, #f2f0ec);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewMeta,
+body:not(.authPage) #dmMain .dmProfileWidgetsPreviewLoading {
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.58));
+  font-size: 11px;
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__footer {
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding: 0 12px 12px;
+  border-top: 0;
+  background: transparent;
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__footer .btn {
+  height: 39px;
+  border-radius: 12px !important;
+  border-color: var(--altara-accent-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.11));
+  color: var(--altara-accent-strong, #f0d8b8);
+  font-size: 12.5px;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__footer .btn:hover,
+body:not(.authPage) #dmMain .dmProfilePanel__footer .btn:focus-visible {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 54%, var(--altara-border, rgba(255, 255, 255, 0.08)));
+  background: color-mix(in srgb, var(--altara-accent-soft, rgba(232, 207, 174, 0.11)) 72%, var(--altara-hover, rgba(255, 255, 255, 0.055)));
+  color: var(--altara-text, #f2f0ec);
+}
+
+/* DM profile preview sidebar: expanded mini-profile structure. */
+body:not(.authPage) #dmMain .dmProfilePanel {
+  width: clamp(304px, 28vw, 372px);
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 58%, transparent), transparent 28%),
+    var(--altara-surface, #181818);
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__top {
+  flex: 0 0 auto;
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__banner {
+  flex: 0 0 80px;
+  min-height: 80px;
+  height: 80px;
+}
+
+body:not(.authPage) #dmMain .dmProfileAvatar {
+  flex: 0 0 auto;
+  width: 72px;
+  height: 72px;
+  margin-top: -36px;
+  border-radius: 22px;
+}
+
+body:not(.authPage) #dmMain .dmProfileAvatar img,
+body:not(.authPage) #dmMain .dmProfileAvatar .profileAvatarMediaClip,
+body:not(.authPage) #dmMain .dmProfileAvatar .profileAvatarMedia {
+  border-radius: 18px;
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__body {
+  flex: 1 1 auto;
+  padding: 8px 12px 12px;
+  gap: 9px;
+  align-content: start;
+}
+
+body:not(.authPage) #dmMain .dmProfileIdentity {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 2px 2px;
+}
+
+body:not(.authPage) #dmMain .dmProfileName {
+  margin-top: 0;
+  font-size: 20px;
+  line-height: 1.12;
+}
+
+body:not(.authPage) #dmMain .dmProfileHandle {
+  margin-top: 0;
+  font-size: 12px;
+}
+
+body:not(.authPage) #dmMain .dmProfilePresence {
+  margin-top: 3px;
+}
+
+body:not(.authPage) #dmMain .dmProfileSection,
+body:not(.authPage) #dmMain .dmProfileWidgetsPreviewShell,
+body:not(.authPage) #dmMain .dmProfileContextShell {
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 58%, rgba(255, 255, 255, 0.02)), color-mix(in srgb, var(--altara-surface, #181818) 92%, transparent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetsPreviewShell,
+body:not(.authPage) #dmMain .dmProfileContextShell {
+  padding: 10px;
+}
+
+body:not(.authPage) #dmMain .dmProfileSection__title,
+body:not(.authPage) #dmMain .dmProfileWidgetsPreviewTitle,
+body:not(.authPage) #dmMain .dmProfileContextTitle {
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.48));
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+body:not(.authPage) #dmMain .dmProfileBio {
+  display: -webkit-box;
+  max-height: 5.9em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewList,
+body:not(.authPage) #dmMain .dmProfileContextList {
+  display: grid;
+  gap: 7px;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewCard {
+  grid-template-columns: 42px minmax(0, 1fr);
+  min-height: 56px;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewMedia {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewBody {
+  gap: 2px;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewBadge {
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewName,
+body:not(.authPage) #dmMain .dmProfileWidgetPreviewMeta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #dmMain .dmProfileEmptyState {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 54px;
+  padding: 7px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 38%, transparent), transparent),
+    color-mix(in srgb, var(--altara-bg, #101010) 42%, transparent);
+}
+
+body:not(.authPage) #dmMain .dmProfileEmptyState__mark {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--altara-accent-border, rgba(232, 207, 174, 0.22));
+  border-radius: 11px;
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.08));
+  color: var(--altara-accent-strong, #f0d8b8);
+}
+
+body:not(.authPage) #dmMain .dmProfileEmptyState__mark::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid currentColor;
+  border-radius: 5px;
+  opacity: 0.76;
+}
+
+body:not(.authPage) #dmMain .dmProfileEmptyState--loading .dmProfileEmptyState__mark::before {
+  border-radius: 999px;
+  border-top-color: transparent;
+  animation: callTileLoadingSpin 0.9s linear infinite;
+}
+
+body:not(.authPage) #dmMain .dmProfileEmptyState__body {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+body:not(.authPage) #dmMain .dmProfileEmptyState__title,
+body:not(.authPage) #dmMain .dmProfileEmptyState__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #dmMain .dmProfileEmptyState__title {
+  color: var(--altara-text, #f2f0ec);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+body:not(.authPage) #dmMain .dmProfileEmptyState__text {
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.58));
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+body:not(.authPage) #dmMain .dmProfileContextSection.hidden {
+  display: none !important;
+}
+
+body:not(.authPage) #dmMain .dmProfileContextShell {
+  display: grid;
+  gap: 9px;
+}
+
+body:not(.authPage) #dmMain .dmProfileContextHeader {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body:not(.authPage) #dmMain .dmProfileContextCount {
+  min-width: 0;
+  overflow: hidden;
+  padding: 3px 7px;
+  border: 1px solid var(--altara-accent-border, rgba(232, 207, 174, 0.24));
+  border-radius: 999px;
+  background: var(--altara-accent-soft, rgba(232, 207, 174, 0.08));
+  color: var(--altara-accent-strong, #f0d8b8);
+  font-size: 9.5px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #dmMain .dmProfileContextRow {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 6px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--altara-bg, #101010) 42%, transparent);
+}
+
+body:not(.authPage) #dmMain .dmProfileContextIcon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  border-radius: 11px;
+  background:
+    radial-gradient(circle at 30% 18%, var(--altara-accent-soft, rgba(232, 207, 174, 0.11)), transparent 58%),
+    var(--altara-surface-elevated, #202020);
+  color: var(--altara-accent-strong, #f0d8b8);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+body:not(.authPage) #dmMain .dmProfileContextIcon img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+body:not(.authPage) #dmMain .dmProfileContextMeta {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+body:not(.authPage) #dmMain .dmProfileContextName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--altara-text, #f2f0ec);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #dmMain .dmProfileContextSub {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.58));
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__footer {
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--altara-border, rgba(255, 255, 255, 0.08));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 34%, transparent), transparent),
+    var(--altara-surface, #181818);
 }
 
 /* Active Now disabled: no hover reveal, no invisible hitbox, no reserved gutter. */

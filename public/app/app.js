@@ -2118,6 +2118,7 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.edit_group": "Edit group",
     "dm.manage_group": "Leave group",
     "dm.profile": "Profile",
+    "dm.profile_preview": "Profile Preview",
     "dm.close_pins": "Close pins",
     "dm.close_profile_panel": "Close profile",
     "dm.open_full_profile": "Open full profile",
@@ -2128,6 +2129,23 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.drop.sub": "Any file type, up to 35GB each",
     "dm.no_pins": "No pinned messages.",
     "dm.no_bio": "No bio.",
+    "dm.profile_no_bio": "No bio yet.",
+    "dm.profile_featured": "Featured",
+    "dm.profile_featured_empty_title": "No featured widgets yet.",
+    "dm.profile_featured_empty_body": "Open full profile to see more.",
+    "dm.profile_featured_loading": "Loading featured widgets...",
+    "dm.profile_shared": "Shared",
+    "dm.profile_shared_empty": "No shared spaces yet.",
+    "dm.profile_shared_count_one": "1 shared space",
+    "dm.profile_shared_count": "{n} shared spaces",
+    "dm.mutual_servers": "Mutual Servers",
+    "dm.mutual_servers_empty": "No mutual servers yet.",
+    "dm.mutual_server_count_one": "1 shared server",
+    "dm.mutual_server_count": "{n} shared servers",
+    "dm.server_invite.label": "SERVER INVITE",
+    "dm.server_invite.loading": "Loading server...",
+    "dm.server_invite.join": "Join Server",
+    "dm.server_invite.open": "Open Server",
     "dm.view_full_profile": "View Full Profile",
     "dm.attach": "Attach file",
     "dm.composer_actions": "Message actions",
@@ -2857,6 +2875,7 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.edit_group": "Editar grupo",
     "dm.manage_group": "Sair do grupo",
     "dm.profile": "Perfil",
+    "dm.profile_preview": "Previa do perfil",
     "dm.close_pins": "Fechar pins",
     "dm.close_profile_panel": "Fechar perfil",
     "dm.open_full_profile": "Abrir perfil completo",
@@ -2867,6 +2886,23 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.drop.sub": "Qualquer tipo de ficheiro atÃ© 35GB cada",
     "dm.no_pins": "Sem mensagens pinadas.",
     "dm.no_bio": "Sem bio.",
+    "dm.profile_no_bio": "Ainda sem bio.",
+    "dm.profile_featured": "Em destaque",
+    "dm.profile_featured_empty_title": "Ainda sem widgets em destaque.",
+    "dm.profile_featured_empty_body": "Abre o perfil completo para veres mais.",
+    "dm.profile_featured_loading": "A carregar widgets em destaque...",
+    "dm.profile_shared": "Partilhado",
+    "dm.profile_shared_empty": "Ainda sem espacos partilhados.",
+    "dm.profile_shared_count_one": "1 espaco partilhado",
+    "dm.profile_shared_count": "{n} espacos partilhados",
+    "dm.mutual_servers": "Servers em comum",
+    "dm.mutual_servers_empty": "Ainda sem servers em comum.",
+    "dm.mutual_server_count_one": "1 server em comum",
+    "dm.mutual_server_count": "{n} servers em comum",
+    "dm.server_invite.label": "CONVITE PARA SERVIDOR",
+    "dm.server_invite.loading": "A carregar server...",
+    "dm.server_invite.join": "Entrar no Server",
+    "dm.server_invite.open": "Abrir Server",
     "dm.view_full_profile": "Ver Perfil Completo",
     "dm.attach": "Anexar ficheiro",
     "dm.composer_actions": "AÃ§Ãµes de mensagem",
@@ -9829,6 +9865,54 @@ function applyUserNameColorToEl(el, userId, fallbackColor = "") {
   else el.style.removeProperty("--user-name-color");
 }
 
+function updateDmHeaderAvatar() {
+  const host = document.getElementById("dmHeaderAvatar");
+  if (!host) return;
+
+  const active = state.activeDm && typeof state.activeDm === "object" ? state.activeDm : {};
+  const kind = String(active.kind || "").trim().toLowerCase();
+  const isGroupLike = !!active.isGroup || kind === "group" || kind === "server";
+  const peerUserId = isGroupLike ? "" : normId(active.otherUserId || active.other_user_id || callOtherUserId || "");
+  const cached = peerUserId ? getCachedProfile(peerUserId) || null : null;
+  const friend = peerUserId
+    ? ((state.friends || []).find((f) => normId(f?.other_user_id || f?.id || f?.user_id || "") === peerUserId) || null)
+    : null;
+  const label = normalizeConversationLabel(
+    active.displayName
+      || active.name
+      || active.username
+      || friend?.display_name
+      || friend?.username
+      || cached?.display_name
+      || cached?.username
+      || (isGroupLike ? "Group DM" : "DM"),
+    isGroupLike ? "Group DM" : "DM"
+  );
+  const avatarUrl = String(
+    active.avatarUrl
+      || active.avatar_url
+      || friend?.avatar_url
+      || cached?.avatar_url
+      || ""
+  ).trim();
+  const fallback = isGroupLike
+    ? getGroupAvatarFallbackInitial(label)
+    : resolveAvatarFallbackInitial(peerUserId, label, label);
+
+  host.classList.toggle("dmHeaderAvatar--group", isGroupLike);
+  host.setAttribute("aria-label", label ? `${label} avatar` : "Conversation avatar");
+  host.title = label || "";
+  host.innerHTML = avatarUrl
+    ? buildAvatarMediaHtml(avatarUrl, {
+      userId: peerUserId,
+      alt: label || "avatar",
+      loading: "lazy",
+      fallbackChar: fallback,
+    })
+    : `<span class="dmHeaderAvatarFallback">${esc(fallback)}</span>`;
+  queueManagedGifPlaybackSync(host);
+}
+
 function applyDmTitleNameStyle() {
   const dmTitle = document.getElementById("dmTitle");
   if (!dmTitle) return;
@@ -13020,6 +13104,8 @@ function applyLanguageToStaticUi() {
   if (btnDmProfileClose) btnDmProfileClose.setAttribute("aria-label", t("dm.close_profile_panel", "Close profile"));
   const dmProfileAvatar = document.getElementById("dmProfileAvatar");
   if (dmProfileAvatar) dmProfileAvatar.setAttribute("aria-label", t("dm.open_full_profile", "Open full profile"));
+  const dmProfilePanelTitle = document.querySelector("#dmProfilePanel .dmProfilePanel__title");
+  if (dmProfilePanelTitle) dmProfilePanelTitle.textContent = t("dm.profile_preview", "Profile Preview");
 
   // === DM content ===
   const dmMessagesEmpty = document.getElementById("dmMessagesEmpty");
@@ -13035,7 +13121,7 @@ function applyLanguageToStaticUi() {
   const dmPinsEmpty = document.getElementById("dmPinsEmpty");
   if (dmPinsEmpty) dmPinsEmpty.textContent = t("dm.no_pins", "No pinned messages.");
   const dmProfileBio = document.getElementById("dmProfileBio");
-  if (dmProfileBio && !dmProfileBio.dataset.loaded) dmProfileBio.textContent = t("dm.no_bio", "No bio.");
+  if (dmProfileBio && !dmProfileBio.dataset.loaded) dmProfileBio.textContent = t("dm.profile_no_bio", "No bio yet.");
   const btnDmProfileOpenCard = document.getElementById("btnDmProfileOpenCard");
   if (btnDmProfileOpenCard) btnDmProfileOpenCard.textContent = t("dm.view_full_profile", "View Full Profile");
   const btnAttach = document.getElementById("btnAttach");
@@ -18060,6 +18146,7 @@ function dockStageIntoDm(yes, { barInSidebar = false } = {}) {
 function setMidMode(mode) {
   const dmMain = document.getElementById("dmMain");
   if (!dmMain) return;
+  const midPanel = dmMain.closest(".panel.mid");
   const midBody = dmMain.closest(".panelBody") || document.querySelector(".midBody");
   const appShell = document.querySelector(".app");
   const activeMeta = getActiveConversationMeta(activeDmId) || state.activeDm || {};
@@ -18074,6 +18161,7 @@ function setMidMode(mode) {
   );
 
   if (mode === "dm") {
+    midPanel?.classList.add("is-dm-conversation-open");
     $("tabWidgets").style.display = "none";
     $("tabFriends").style.display = "none";
     $("tabPending").style.display = "none";
@@ -18089,6 +18177,7 @@ function setMidMode(mode) {
     updateDmJumpLatestButton(document.getElementById("dmMessages"));
   } else {
     stageOpen = false;
+    midPanel?.classList.remove("is-dm-conversation-open");
     dmMain.style.display = "none";
     midBody?.classList.remove("is-dm-open");
     appShell?.classList.remove("dm-focus");
@@ -36262,6 +36351,7 @@ const PROFILE_WIDGET_LIMITS = Object.freeze({
 let emojiPickerBound = false;
 let emojiPickerContext = { mode: "composer", messageId: null };
 let emojiPickerActiveCategory = "all";
+let emojiPickerNavigationDepth = 0;
 let dmEmojiShortcodeMenuBound = false;
 let dmEmojiShortcodeMenuState = {
   open: false,
@@ -36597,7 +36687,7 @@ const EMOJI_PICKER_CATEGORIES = [
   { id: "activities", label: "Atividades", icon: EMOJI.gamepad },
   { id: "travel", label: "Viagens", icon: EMOJI.rocket },
   { id: "objects", label: "Objetos", icon: EMOJI.keyboard },
-  { id: "symbols", label: "Simbolos", icon: EMOJI.symbol },
+  { id: "symbols", label: "Símbolos", icon: EMOJI.symbol },
   { id: "flags", label: "Bandeiras", icon: EMOJI.flag },
 ];
 let emojiDataset = null;
@@ -38515,18 +38605,47 @@ function startDmReactionsSync(conversationId) {
   dmReactionsSyncTimer = setInterval(tick, 2200);
 }
 
+let dmStickToBottomUntilMs = 0;
+
+function requestDmStickToBottom(durationMs = 1200) {
+  const until = Date.now() + Math.max(120, Number(durationMs || 0));
+  dmStickToBottomUntilMs = Math.max(Number(dmStickToBottomUntilMs || 0), until);
+}
+
+function shouldHonorDmStickToBottom() {
+  return Date.now() <= Number(dmStickToBottomUntilMs || 0);
+}
+
+function cancelDmStickToBottom() {
+  dmStickToBottomUntilMs = 0;
+}
+
+function setDmScrollTopToLatest(dmMessages) {
+  if (!dmMessages) return;
+  dmMessages.scrollTop = Math.max(0, Number(dmMessages.scrollHeight || 0) - Number(dmMessages.clientHeight || 0) + 999999);
+}
+
+function scheduleDmScrollToLatestAfterRender({ durationMs = 700 } = {}) {
+  requestDmStickToBottom(durationMs);
+  const run = () => {
+    if (!shouldHonorDmStickToBottom()) return;
+    scrollDmToLatest();
+  };
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => {
+      run();
+      requestAnimationFrame(run);
+    });
+  } else {
+    setTimeout(run, 0);
+    setTimeout(run, 32);
+  }
+}
+
 function scrollDmToLatest() {
   const dmMessages = document.getElementById("dmMessages");
   if (!dmMessages) return;
-  const lastNode = dmMessages.lastElementChild || null;
-  if (lastNode && typeof lastNode.scrollIntoView === "function") {
-    try {
-      lastNode.scrollIntoView({ block: "end", inline: "nearest", behavior: "auto" });
-    } catch (_) {
-      try { lastNode.scrollIntoView(false); } catch (_) {}
-    }
-  }
-  dmMessages.scrollTop = dmMessages.scrollHeight + 999999;
+  setDmScrollTopToLatest(dmMessages);
   updateDmJumpLatestButton(dmMessages);
 }
 
@@ -38704,6 +38823,7 @@ function bindDmJumpLatestButtonOnce(container) {
   });
 
   container.addEventListener("scroll", () => {
+    if (!isDmNearBottom(container, 160)) cancelDmStickToBottom();
     updateDmJumpLatestButton(container);
     maybeLoadOlderDmMessages(container);
   }, { passive: true });
@@ -39226,11 +39346,15 @@ function bindDmGifAutoscroll(container) {
 
   const onMediaReady = (mediaEl) => {
     const stickLatest = String(mediaEl?.dataset?.dmStickLatest || "") === "1";
-    if (stickLatest && canForceDmOpenAutoScroll()) {
+    if (stickLatest || canForceDmOpenAutoScroll()) {
       scrollDmToLatest();
+      scheduleDmScrollToLatestAfterRender();
       return;
     }
-    if (isDmNearBottom(container, 84)) scrollDmToLatest();
+    if (isDmNearBottom(container, 84)) {
+      scrollDmToLatest();
+      scheduleDmScrollToLatestAfterRender();
+    }
   };
   container.querySelectorAll("img.msg__gif").forEach((img) => {
     if (img.dataset.dmGifBound === "1") return;
@@ -40833,6 +40957,7 @@ function renderMessagesFromCache({ keepBottom = true } = {}) {
   if (!msgsBox) return;
   bindDmJumpLatestButtonOnce(msgsBox);
   const nearBottom = isDmNearBottom(msgsBox, 90);
+  const shouldStickToBottom = !!(keepBottom && (nearBottom || shouldHonorDmStickToBottom()));
   const prevScrollTop = Number(msgsBox.scrollTop || 0);
   const prevScrollHeight = Number(msgsBox.scrollHeight || 0);
 
@@ -40850,8 +40975,9 @@ function renderMessagesFromCache({ keepBottom = true } = {}) {
   hydrateInviteCards(msgsBox);
   if (dmPinsPanelOpen) renderDmPinsList(getPinnedMessagesFromCache());
   if (dmProfilePanelOpen) refreshDmProfilePanel();
-  if (keepBottom && nearBottom) {
+  if (shouldStickToBottom) {
     scrollDmToLatest();
+    scheduleDmScrollToLatestAfterRender();
   } else {
     const nextScrollHeight = Number(msgsBox.scrollHeight || 0);
     const growth = Math.max(0, nextScrollHeight - prevScrollHeight);
@@ -44807,11 +44933,13 @@ function renderDmGroupMembersPanel(members = [], { loading = false } = {}) {
   const avatarEl = document.getElementById("dmProfileAvatar");
   const bodyEl = document.querySelector("#dmProfilePanel .dmProfilePanel__body");
   const footerEl = document.querySelector("#dmProfilePanel .dmProfilePanel__footer");
+  const identityWrap = document.querySelector("#dmProfilePanel .dmProfileIdentity");
   const nameEl = document.getElementById("dmProfileName");
   const handleEl = document.getElementById("dmProfileHandle");
   const statusWrap = document.querySelector("#dmProfilePanel .dmProfilePresence");
   const bioWrap = document.querySelector("#dmProfilePanel .dmProfileSection");
   const widgetsPreviewEl = document.getElementById("dmProfileWidgetsPreview");
+  const mutualSectionEl = document.getElementById("dmProfileMutualSection");
   const btnOpen = document.getElementById("btnDmProfileOpenCard");
   if (!panel || !bodyEl) return;
 
@@ -44830,6 +44958,7 @@ function renderDmGroupMembersPanel(members = [], { loading = false } = {}) {
   if (titleEl) titleEl.textContent = `Members - ${count}`;
   if (bannerEl) bannerEl.style.display = "none";
   if (avatarEl) avatarEl.style.display = "none";
+  if (identityWrap) identityWrap.style.display = "none";
   if (nameEl) nameEl.style.display = "none";
   if (handleEl) handleEl.style.display = "none";
   if (statusWrap) statusWrap.style.display = "none";
@@ -44838,6 +44967,11 @@ function renderDmGroupMembersPanel(members = [], { loading = false } = {}) {
     widgetsPreviewEl.classList.add("hidden");
     widgetsPreviewEl.setAttribute("aria-hidden", "true");
     widgetsPreviewEl.innerHTML = "";
+  }
+  if (mutualSectionEl) {
+    mutualSectionEl.classList.add("hidden");
+    mutualSectionEl.setAttribute("aria-hidden", "true");
+    mutualSectionEl.innerHTML = "";
   }
   if (footerEl) footerEl.style.display = "none";
   if (btnOpen) btnOpen.style.display = "none";
@@ -44883,6 +45017,33 @@ function renderDmGroupMembersPanel(members = [], { loading = false } = {}) {
   `;
 }
 
+function trimDmProfilePreviewText(value = "", maxLen = 46) {
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  if (!raw) return "";
+  return raw.length > maxLen ? `${raw.slice(0, Math.max(1, maxLen - 3))}...` : raw;
+}
+
+function buildDmProfileWidgetPreviewMeta(widget = {}, item = null, itemCount = 0) {
+  const parts = [];
+  if (item) {
+    const statusLabel = getProfileWidgetStatusLabel(item?.status || "");
+    if (statusLabel) parts.push(statusLabel);
+    const note = trimDmProfilePreviewText(item?.note || "", 42);
+    if (note) parts.push(note);
+    const tag = Array.isArray(item?.tags)
+      ? trimDmProfilePreviewText(item.tags.find((entry) => String(entry || "").trim()) || "", 24)
+      : "";
+    if (tag) parts.push(`#${tag}`);
+  }
+  if (itemCount > 1) {
+    parts.push(t("profile.widgets.preview.more", "{count} items").replace("{count}", String(itemCount)));
+  }
+  if (!parts.length) {
+    parts.push(normalizeProfileWidgetTitle(widget?.title || "") || getProfileWidgetTypeLabel(widget?.widget_type || ""));
+  }
+  return parts.slice(0, 2).filter(Boolean).join(" - ");
+}
+
 function buildDmProfileWidgetsPreviewHtml(widgets = [], {
   loading = false,
   error = "",
@@ -44892,43 +45053,50 @@ function buildDmProfileWidgetsPreviewHtml(widgets = [], {
     .map((widget) => {
       const items = Array.isArray(widget?.items) ? widget.items : [];
       const featured = getProfileWidgetFeaturedItem(widget);
-      const item = featured || items[0] || null;
+      const item = featured || items.find((entry) => normalizeProfileWidgetTitle(entry?.title || "")) || null;
       return { widget, item, itemCount: items.length };
     })
     .filter((entry) => entry.item || entry.itemCount)
-    .slice(0, 2);
+    .slice(0, 3);
+  const sectionLabel = t("dm.profile_featured", "Featured");
 
   if (!previewWidgets.length) {
-    if (loading) {
-      return `
-        <section class="dmProfileWidgetsPreviewShell" aria-label="${escAttr(t("profile.widgets.eyebrow", "Widgets"))}">
-          <div class="dmProfileWidgetsPreviewTitle">${esc(t("profile.widgets.eyebrow", "Widgets"))}</div>
-          <div class="dmProfileWidgetsPreviewLoading">${esc(t("profile.widgets.loading.text", "Fetching profile interests."))}</div>
-        </section>
+    const stateHtml = loading
+      ? `
+        <div class="dmProfileEmptyState dmProfileEmptyState--loading">
+          <span class="dmProfileEmptyState__mark" aria-hidden="true"></span>
+          <span class="dmProfileEmptyState__body">
+            <span class="dmProfileEmptyState__title">${esc(t("dm.profile_featured_loading", "Loading featured widgets..."))}</span>
+            <span class="dmProfileEmptyState__text">${esc(t("profile.widgets.loading.text", "Fetching profile interests."))}</span>
+          </span>
+        </div>
+      `
+      : `
+        <div class="dmProfileEmptyState">
+          <span class="dmProfileEmptyState__mark" aria-hidden="true"></span>
+          <span class="dmProfileEmptyState__body">
+            <span class="dmProfileEmptyState__title">${esc(t("dm.profile_featured_empty_title", "No featured widgets yet."))}</span>
+            <span class="dmProfileEmptyState__text">${esc(error || t("dm.profile_featured_empty_body", "Open full profile to see more."))}</span>
+          </span>
+        </div>
       `;
-    }
-    if (error) {
-      return `
-        <section class="dmProfileWidgetsPreviewShell" aria-label="${escAttr(t("profile.widgets.eyebrow", "Widgets"))}">
-          <div class="dmProfileWidgetsPreviewTitle">${esc(t("profile.widgets.eyebrow", "Widgets"))}</div>
-          <div class="dmProfileWidgetsPreviewLoading">${esc(error)}</div>
-        </section>
-      `;
-    }
-    return "";
+    return `
+      <section class="dmProfileWidgetsPreviewShell" aria-label="${escAttr(sectionLabel)}">
+        <div class="dmProfileWidgetsPreviewTitle">${esc(sectionLabel)}</div>
+        ${stateHtml}
+      </section>
+    `;
   }
 
   return `
-    <section class="dmProfileWidgetsPreviewShell" aria-label="${escAttr(t("profile.widgets.eyebrow", "Widgets"))}">
-      <div class="dmProfileWidgetsPreviewTitle">${esc(t("profile.widgets.eyebrow", "Widgets"))}</div>
+    <section class="dmProfileWidgetsPreviewShell" aria-label="${escAttr(sectionLabel)}">
+      <div class="dmProfileWidgetsPreviewTitle">${esc(sectionLabel)}</div>
       <div class="dmProfileWidgetPreviewList">
         ${previewWidgets.map(({ widget, item, itemCount }) => {
     const typeLabel = getProfileWidgetTypeLabel(widget?.widget_type || "");
     const title = normalizeProfileWidgetTitle(item?.title || widget?.title || "") || t("profile.widgets.item.untitled", "Untitled");
     const coverUrl = normalizeCatalogCoverUrl(item?.cover_url || "");
-    const metaText = itemCount > 1
-      ? t("profile.widgets.preview.more", "{count} items").replace("{count}", String(itemCount))
-      : (normalizeProfileWidgetTitle(widget?.title || "") || typeLabel);
+    const metaText = buildDmProfileWidgetPreviewMeta(widget, item, itemCount);
     const mediaHtml = coverUrl
       ? `<img src="${escAttr(coverUrl)}" alt="" loading="lazy" />`
       : `<span>${esc(String(title).charAt(0).toUpperCase() || "?")}</span>`;
@@ -44958,8 +45126,98 @@ function renderDmProfileWidgetsPreview(userId = "", widgets = [], {
   const html = buildDmProfileWidgetsPreviewHtml(widgets, { loading, error });
   el.innerHTML = html;
   el.dataset.userId = uid;
-  el.classList.toggle("hidden", !html);
-  el.setAttribute("aria-hidden", html ? "false" : "true");
+  el.classList.remove("hidden");
+  el.setAttribute("aria-hidden", "false");
+}
+
+function getDmProfileMutualServers(userId = "") {
+  const uid = normId(userId || "");
+  if (!uid) return [];
+  const seen = new Set();
+  const servers = [];
+  (Array.isArray(state.servers) ? state.servers : []).forEach((serverRow) => {
+    const sid = normId(serverRow?.serverId || serverRow?.server_id || serverRow?.id || "");
+    if (!sid || seen.has(sid)) return;
+    const members = Array.isArray(serverMemberListByServerId.get(sid))
+      ? (serverMemberListByServerId.get(sid) || [])
+      : [];
+    if (!members.some((member) => normId(member?.userId || member?.user_id || member?.id || "") === uid)) return;
+    seen.add(sid);
+    servers.push({
+      serverId: sid,
+      name: normalizeConversationLabel(serverRow?.name || "Server", "Server"),
+      iconUrl: String(serverRow?.iconUrl || serverRow?.icon_url || "").trim(),
+      memberCount: Number(serverRow?.memberCount || serverRow?.member_count || 0),
+    });
+  });
+  return servers.slice(0, 3);
+}
+
+function buildDmProfileMutualServerEntryHtml(entry = {}) {
+  const name = String(entry?.name || "Server").trim();
+  const iconUrl = String(entry?.iconUrl || "").trim();
+  const initial = name.charAt(0).toUpperCase() || "S";
+  const memberCount = Number(entry?.memberCount || 0);
+  const sub = memberCount > 0
+    ? (memberCount === 1
+      ? t("dm.group_member_count_one", "1 member")
+      : t("dm.group_member_count", "{n} members").replace("{n}", String(memberCount)))
+    : t("usercard.recently_loaded", "recently loaded");
+  const iconHtml = iconUrl
+    ? `<img src="${escAttr(iconUrl)}" alt="${escAttr(name)}" loading="lazy" />`
+    : `<span>${esc(initial)}</span>`;
+  return `
+    <div class="dmProfileContextRow">
+      <span class="dmProfileContextIcon">${iconHtml}</span>
+      <span class="dmProfileContextMeta">
+        <span class="dmProfileContextName">${esc(name)}</span>
+        <span class="dmProfileContextSub">${esc(sub)}</span>
+      </span>
+    </div>
+  `;
+}
+
+function buildDmProfileMutualSectionHtml(userId = "") {
+  const servers = getDmProfileMutualServers(userId);
+  const sectionLabel = t("dm.mutual_servers", "Mutual Servers");
+  if (!servers.length) {
+    return `
+      <section class="dmProfileContextShell" aria-label="${escAttr(sectionLabel)}">
+        <div class="dmProfileContextHeader">
+          <div class="dmProfileContextTitle">${esc(sectionLabel)}</div>
+        </div>
+        <div class="dmProfileEmptyState">
+          <span class="dmProfileEmptyState__mark" aria-hidden="true"></span>
+          <span class="dmProfileEmptyState__body">
+            <span class="dmProfileEmptyState__title">${esc(t("dm.mutual_servers_empty", "No mutual servers yet."))}</span>
+          </span>
+        </div>
+      </section>
+    `;
+  }
+  const countLabel = servers.length === 1
+    ? t("dm.mutual_server_count_one", "1 shared server")
+    : t("dm.mutual_server_count", "{n} shared servers").replace("{n}", String(servers.length));
+  return `
+    <section class="dmProfileContextShell" aria-label="${escAttr(sectionLabel)}">
+      <div class="dmProfileContextHeader">
+        <div class="dmProfileContextTitle">${esc(sectionLabel)}</div>
+        <div class="dmProfileContextCount">${esc(countLabel)}</div>
+      </div>
+      <div class="dmProfileContextList">
+        ${servers.map((server) => buildDmProfileMutualServerEntryHtml(server)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderDmProfileMutualSection(userId = "") {
+  const el = document.getElementById("dmProfileMutualSection");
+  if (!el) return;
+  const html = buildDmProfileMutualSectionHtml(userId);
+  el.innerHTML = html;
+  el.classList.remove("hidden");
+  el.setAttribute("aria-hidden", "false");
 }
 
 async function openDmGroupMembersPanel({ force = false } = {}) {
@@ -45008,20 +45266,24 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
   const titleEl = document.querySelector("#dmProfilePanel .dmProfilePanel__title");
   const footerEl = document.querySelector("#dmProfilePanel .dmProfilePanel__footer");
   const membersBody = document.getElementById("dmGroupMembersBody");
+  const identityWrap = document.querySelector("#dmProfilePanel .dmProfileIdentity");
   const statusWrap = document.querySelector("#dmProfilePanel .dmProfilePresence");
   const bioWrap = document.querySelector("#dmProfilePanel .dmProfileSection");
   const widgetsPreviewEl = document.getElementById("dmProfileWidgetsPreview");
+  const mutualSectionEl = document.getElementById("dmProfileMutualSection");
   const btnOpen = document.getElementById("btnDmProfileOpenCard");
 
   if (panel) panel.classList.remove("is-group-members");
-  if (titleEl) titleEl.textContent = "Profile";
+  if (titleEl) titleEl.textContent = t("dm.profile_preview", "Profile Preview");
   if (bannerEl) bannerEl.style.display = "";
   if (avatarEl) avatarEl.style.display = "";
+  if (identityWrap) identityWrap.style.display = "";
   if (nameEl) nameEl.style.display = "";
   if (handleEl) handleEl.style.display = "";
   if (statusWrap) statusWrap.style.display = "";
   if (bioWrap) bioWrap.style.display = "";
   if (widgetsPreviewEl) widgetsPreviewEl.style.display = "";
+  if (mutualSectionEl) mutualSectionEl.style.display = "";
   if (footerEl) footerEl.style.display = "";
   if (btnOpen) btnOpen.style.display = "";
   if (membersBody) {
@@ -45070,8 +45332,9 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
   }
   if (statusDotEl) statusDotEl.setAttribute("data-status", status || "offline");
   if (statusTextEl) statusTextEl.textContent = dmStatusLabel(status);
-  if (bioEl) bioEl.textContent = bio || (loading ? t("app.loading", "Loading...") : t("dm.no_bio", "No bio."));
+  if (bioEl) bioEl.textContent = bio || (loading ? t("app.loading", "Loading...") : t("dm.profile_no_bio", "No bio yet."));
   renderDmProfileWidgetsPreview(uid, getCachedProfileWidgetsForUser(uid), { loading });
+  renderDmProfileMutualSection(uid);
 }
 
 function refreshDmProfilePanel() {
@@ -49290,6 +49553,24 @@ function closeEmojiPicker() {
   picker.classList.add("hidden");
   picker.setAttribute("aria-hidden", "true");
   emojiPickerContext = { mode: "composer", messageId: null };
+  setEmojiPickerNavigationDepth(0);
+}
+
+function setEmojiPickerNavigationDepth(depth = 0) {
+  const picker = document.getElementById("emojiPicker");
+  const nextDepth = Math.max(0, Number(depth || 0) || 0);
+  emojiPickerNavigationDepth = nextDepth;
+  if (!picker) return;
+  picker.classList.toggle("emojiPicker--nested", nextDepth > 0);
+  picker.dataset.emojiDepth = String(nextDepth);
+  const backBtn = document.getElementById("btnEmojiPickerBack")
+    || picker.querySelector?.("[data-emoji-picker-back]");
+  if (backBtn instanceof HTMLElement) {
+    const shouldShow = nextDepth > 0;
+    backBtn.hidden = !shouldShow;
+    backBtn.setAttribute("aria-hidden", shouldShow ? "false" : "true");
+    backBtn.tabIndex = shouldShow ? 0 : -1;
+  }
 }
 
 function renderEmojiPickerCategories() {
@@ -49552,6 +49833,7 @@ function openEmojiPicker({ mode = "composer", messageId = null, anchorEl = null,
 
   emojiPickerContext = { mode, messageId: messageId ? String(messageId) : null };
   emojiPickerActiveCategory = "all";
+  setEmojiPickerNavigationDepth(0);
   picker.classList.remove("hidden");
   picker.setAttribute("aria-hidden", "false");
   if (search) search.value = "";
@@ -50369,23 +50651,29 @@ function renderMessageTextSegmentHtml(text) {
 
 function buildInviteCardHtml(inviteCode) {
   const code = escAttr(inviteCode);
+  const label = esc(t("dm.server_invite.label", "SERVER INVITE"));
+  const loading = esc(t("dm.server_invite.loading", "Loading server..."));
+  const joinLabel = esc(t("dm.server_invite.join", "Join Server"));
   return `
-    <div class="msgInviteCard" data-invite-code="${code}">
-      <div class="msgInviteCard__left">
-        <div class="msgInviteCard__iconWrap msgInviteCard__iconWrap--loading" aria-hidden="true">
+    <div class="msgInviteCard dmServerInviteCard" data-invite-code="${code}">
+      <div class="dmServerInviteHero" data-invite-hero="1" aria-hidden="true"></div>
+      <div class="msgInviteCard__left dmServerInviteHeader">
+        <div class="msgInviteCard__iconWrap dmServerInviteIcon msgInviteCard__iconWrap--loading" aria-hidden="true">
           <span class="msgInviteCard__iconFallback">A</span>
         </div>
+        <div class="dmServerInviteHeaderText">
+          <div class="msgInviteCard__label dmServerInviteLabel">${label}</div>
+          <div class="msgInviteCard__name dmServerInviteName">${loading}</div>
+        </div>
       </div>
-      <div class="msgInviteCard__info">
-        <div class="msgInviteCard__label">Convite para Servidor</div>
-        <div class="msgInviteCard__name">A carregar&hellip;</div>
-        <div class="msgInviteCard__members"></div>
+      <div class="msgInviteCard__info dmServerInviteMeta">
+        <div class="msgInviteCard__members dmServerInviteMetaLine"></div>
       </div>
-      <div class="msgInviteCard__footer">
-        <button class="msgInviteCard__joinBtn" type="button" data-server-invite-code="${code}">Entrar no Servidor</button>
+      <div class="msgInviteCard__footer dmServerInviteFooter">
+        <button class="msgInviteCard__joinBtn dmServerInviteAction" type="button" data-server-invite-code="${code}">${joinLabel}</button>
       </div>
     </div>
-  `;
+  `.trim();
 }
 
 async function hydrateOneInviteCard(card) {
@@ -50394,6 +50682,12 @@ async function hydrateOneInviteCard(card) {
 
   const nameEl = card.querySelector(".msgInviteCard__name");
   const iconWrap = card.querySelector(".msgInviteCard__iconWrap");
+  const heroEl = card.querySelector(".dmServerInviteHero");
+  const scrollContainer = card.closest?.("#dmMessages") || null;
+  const shouldStickAfterHydrate = !!(
+    scrollContainer
+    && (isDmNearBottom(scrollContainer, 140) || shouldHonorDmStickToBottom())
+  );
 
   try {
     // Try direct table query first (works when RLS policy is applied via SUPABASE_PATCH_INVITE_PREVIEW.sql)
@@ -50423,6 +50717,7 @@ async function hydrateOneInviteCard(card) {
 
     if (!serverName) return;
 
+    card.classList.add("dmServerInviteCard--ready");
     if (nameEl) nameEl.textContent = serverName;
 
     if (iconWrap) {
@@ -50434,13 +50729,18 @@ async function hydrateOneInviteCard(card) {
       }
     }
 
+    if (heroEl && iconUrl) {
+      heroEl.classList.add("dmServerInviteHero--media");
+      heroEl.innerHTML = `<img class="dmServerInviteHeroImg" src="${escAttr(iconUrl)}" alt="" loading="lazy" />`;
+    }
+
     // Member count from local state if available
     const serverRow = serverId ? getServerRowById(serverId) : null;
-    const memberCount = Number(serverRow?.member_count || 0);
+    const memberCount = Number(serverRow?.memberCount || serverRow?.member_count || 0);
     const membersEl = card.querySelector(".msgInviteCard__members");
     if (membersEl && memberCount > 0) {
       const label = memberCount === 1 ? t("dm.group_member_count_one", "1 member") : t("dm.group_member_count", "{n} members").replace("{n}", memberCount.toLocaleString());
-      membersEl.innerHTML = `<span class="msgInviteCard__membersDot"></span>${esc(label)}`;
+      membersEl.innerHTML = `<span class="msgInviteCard__membersDot dmServerInviteMetaDot"></span><span class="dmServerInviteMetaText">${esc(label)}</span>`;
     }
 
     // If already a member, change button label
@@ -50449,9 +50749,11 @@ async function hydrateOneInviteCard(card) {
     );
     const joinBtn = card.querySelector(".msgInviteCard__joinBtn");
     if (joinBtn && alreadyMember) {
-      joinBtn.textContent = "Abrir Servidor";
+      joinBtn.textContent = t("dm.server_invite.open", "Open Server");
+      card.setAttribute("data-invite-state", "member");
     }
     if (serverId) card.setAttribute("data-invite-server-id", serverId);
+    if (shouldStickAfterHydrate) scheduleDmScrollToLatestAfterRender();
   } catch (_) {
     // Silently ignore â€” card stays in loading state, Join still works
   }
@@ -50563,7 +50865,8 @@ function messageHtml(m, opts = {}) {
   const authorUserId = getMessageAuthorUserId(m);
   const authorUsername = getMessageAuthorUsername(m);
   const name = getMessageAuthorName(m);
-  const nameColorAttrs = buildUserNameColorAttrs(authorUserId, getMessageAuthorNameColor(m));
+  const authorNameColor = getMessageAuthorNameColor(m);
+  const nameColorAttrs = buildUserNameColorAttrs(authorUserId, authorNameColor);
   const avatarUrl = getMessageAvatarUrl(m);
   const avatarInitial = String(name || "?").trim().charAt(0).toUpperCase() || "?";
 
@@ -50606,8 +50909,8 @@ function messageHtml(m, opts = {}) {
     const systemText = getSystemEventDisplayText(m, parsed);
     const iconHtml = getSystemEventIcon(parsed);
     const iconCls = (parsed.type === "call_event" && String(parsed?.event || "").trim().toLowerCase() === "ended")
-      ? "msg__systemIcon msg__systemIcon--danger"
-      : "msg__systemIcon";
+      ? "msg__systemIcon dmSystemMessage__icon msg__systemIcon--danger"
+      : "msg__systemIcon dmSystemMessage__icon";
     const chipCls = parsed.type === "call_event" ? "msg--callEvent" : "msg--systemEvent";
     const canJoinCallFromChip = !!(
       parsed.type === "call_event"
@@ -50620,11 +50923,11 @@ function messageHtml(m, opts = {}) {
       : "";
     const chipJoinCls = canJoinCallFromChip ? " msg__systemChip--joinable" : "";
     return `
-    <div class="msg msg--system ${chipCls}" data-msg-id="${escAttr(mid)}">
-      <${chipTag} class="msg__systemChip${chipJoinCls}"${chipAttrs}>
+    <div class="msg msg--system dmSystemMessage ${chipCls}" data-msg-id="${escAttr(mid)}">
+      <${chipTag} class="msg__systemChip dmSystemMessage__pill${chipJoinCls}"${chipAttrs}>
         <span class="${iconCls}" aria-hidden="true">${iconHtml}</span>
-        <span class="msg__systemText">${esc(systemText)}</span>
-        <span class="msg__systemTime">${esc(stamp)}</span>
+        <span class="msg__systemText dmSystemMessage__text">${esc(systemText)}</span>
+        <span class="msg__systemTime dmSystemMessage__time">${esc(stamp)}</span>
       </${chipTag}>
     </div>
   `;
@@ -50638,7 +50941,7 @@ function messageHtml(m, opts = {}) {
     "msg__emojiFlag"
   );
   // Avoid wrapping in <span> when we have a block-level invite card (div inside span = invalid HTML).
-  const textBodyHtml = rawTextHtml.includes("msgInviteCard")
+  const textBodyHtml = rawTextHtml.includes("msgInviteCard") || rawTextHtml.includes("dmServerInviteCard")
     ? rawTextHtml
     : `<span>${rawTextHtml}</span>`;
   const bodyHtml = (parsed.type === "gif")
@@ -50670,10 +50973,10 @@ function messageHtml(m, opts = {}) {
     ? buildAvatarMediaHtml(avatarUrl, { userId: authorUserId, alt: "avatar", loading: "lazy" })
     : `<span class="msg__avatarFallback">${esc(avatarInitial)}</span>`;
   const avatarWrapHtml = authorUserId
-    ? `<button class="msg__avatar msg__avatarBtn" type="button" data-open-user-card="${escAttr(authorUserId)}" data-user-username="${escAttr(authorUsername || "")}" aria-label="Ver perfil de ${escAttr(name)}">${avatarHtml}</button>`
+    ? `<button class="msg__avatar msg__avatarBtn" type="button" data-open-user-card="${escAttr(authorUserId)}" data-user-username="${escAttr(authorUsername || "")}" data-user-display="${escAttr(name || "")}" data-user-avatar="${escAttr(avatarUrl || "")}" data-user-name-color="${escAttr(authorNameColor || "")}" aria-label="Ver perfil de ${escAttr(name)}">${avatarHtml}</button>`
     : `<div class="msg__avatar">${avatarHtml}</div>`;
   const nameHtml = authorUserId
-    ? `<button class="msg__name msg__nameBtn${nameColorAttrs.cls}" type="button" data-open-user-card="${escAttr(authorUserId)}" data-user-username="${escAttr(authorUsername || "")}"${nameColorAttrs.style}>${esc(name)}</button>`
+    ? `<button class="msg__name msg__nameBtn${nameColorAttrs.cls}" type="button" data-open-user-card="${escAttr(authorUserId)}" data-user-username="${escAttr(authorUsername || "")}" data-user-display="${escAttr(name || "")}" data-user-avatar="${escAttr(avatarUrl || "")}" data-user-name-color="${escAttr(authorNameColor || "")}"${nameColorAttrs.style}>${esc(name)}</button>`
     : `<span class="msg__name${nameColorAttrs.cls}"${nameColorAttrs.style}>${esc(name)}</span>`;
   const metaHtml = compact
     ? ""
@@ -50773,6 +51076,10 @@ function appendMessage(m) {
   }
   const mid = normId(m.id);
   if (mid && dmMessageIds.has(mid)) return;
+  const dmMessages = document.getElementById("dmMessages");
+  const wasNearBottom = isDmNearBottom(dmMessages, 118);
+  const shouldStickToLatest = !!(dmMessages && (wasNearBottom || canForceDmOpenAutoScroll()));
+  if (shouldStickToLatest) requestDmStickToBottom();
   const previousMessage = dmMessagesCache.length ? dmMessagesCache[dmMessagesCache.length - 1] : null;
   const shouldCue = shouldPlayIncomingMessageCue(m);
   const isGroupConversation = !!(
@@ -50825,9 +51132,7 @@ function appendMessage(m) {
     void fetchProfilesByIds([m?.user_id], { includeBio: false });
   }
 
-  const dmMessages = document.getElementById("dmMessages");
   if (!dmMessages) return;
-  const wasNearBottom = isDmNearBottom(dmMessages, 84);
 
   if (dmMessages.querySelector(".hint")) dmMessages.innerHTML = "";
 
@@ -50847,8 +51152,9 @@ function appendMessage(m) {
   bindDmAudioPlayerUi(dmMessages);
   hydrateInviteCards(dmMessages);
   const shouldForceLatest = canForceDmOpenAutoScroll();
-  if (shouldForceLatest || wasNearBottom) {
+  if (shouldForceLatest || wasNearBottom || shouldHonorDmStickToBottom()) {
     scrollDmToLatest();
+    scheduleDmScrollToLatestAfterRender();
   }
   updateDmJumpLatestButton(dmMessages);
   if (shouldCue) playUiCue("msg");
@@ -51164,15 +51470,20 @@ function bindDmMessageActions() {
     const userBtn = target.closest("[data-open-user-card]");
     if (userBtn) {
       e.preventDefault();
-      const uid = userBtn.getAttribute("data-open-user-card");
-      const uname = userBtn.getAttribute("data-user-username") || "";
-      await openUserCardModal(uid, { username: uname }, {
+      e.stopPropagation();
+      const uid = normId(userBtn.getAttribute("data-open-user-card") || "");
+      const seed = {
+        username: userBtn.getAttribute("data-user-username") || "",
+        display_name: userBtn.getAttribute("data-user-display") || "",
+        avatar_url: userBtn.getAttribute("data-user-avatar") || "",
+        name_color: userBtn.getAttribute("data-user-name-color") || "",
+      };
+      await openProfileMiniPopoutForUser(uid, seed, {
         anchorEl: userBtn,
         conversationId: normId(activeDmId || state.activeDm?.conversationId || ""),
         conversationLabel: String(state.activeDm?.displayName || state.activeDm?.username || "").trim(),
         serverId: normId(state.activeDm?.serverId || ""),
         kind: normId(state.activeDm?.serverId || "") ? "server" : String(state.activeDm?.kind || "").trim().toLowerCase(),
-        layout: "preview",
       });
       closeMessageMenu();
       return;
@@ -52975,8 +53286,12 @@ function setGifHint(text = "", isError = false) {
 
 function setGifMode(mode) {
   gifMode = mode;
+  const modal = document.getElementById("gifModal");
   const favBtn = document.getElementById("btnGifFavorites");
   const trBtn = document.getElementById("btnGifTrending");
+  if (modal) {
+    modal.dataset.gifMode = String(mode || "trending");
+  }
   if (favBtn) favBtn.classList.toggle("active", mode === "favorites");
   if (trBtn) trBtn.classList.toggle("active", mode === "trending");
 }
@@ -52992,25 +53307,26 @@ function positionGifPicker(anchorEl = gifPickerAnchorEl, point = gifPickerAnchor
       right: Number(point.x || 0),
       top: Number(point.y || 0),
       bottom: Number(point.y || 0),
+      width: 0,
     }
     : anchorEl?.getBoundingClientRect?.();
   if (!rect) return;
 
   const vw = window.innerWidth || document.documentElement.clientWidth || 0;
   const vh = window.innerHeight || document.documentElement.clientHeight || 0;
-  const cardWidth = card.offsetWidth || 560;
-  const pickerHeight = modal.offsetHeight || card.offsetHeight || 520;
+  const margin = 10;
+  const cardWidth = Math.min(card.offsetWidth || 500, Math.max(280, vw - (margin * 2)));
+  const cardHeight = Math.min(card.offsetHeight || 520, Math.max(280, vh - (margin * 2)));
 
-  let left = rect.left;
-  if (left + cardWidth > vw - 8) left = Math.max(8, vw - cardWidth - 8);
-  if (left < 8) left = 8;
+  let left = Math.round((Number(rect.right || rect.left) || 0) - cardWidth);
+  left = Math.max(margin, Math.min(left, Math.max(margin, vw - cardWidth - margin)));
 
-  let top = rect.top - pickerHeight - 8;
-  if (top < 8) top = rect.bottom + 8;
-  if (top + pickerHeight > vh - 8) top = Math.max(8, vh - pickerHeight - 8);
+  let top = Math.round((Number(rect.top || 0) || 0) - cardHeight - 10);
+  if (top < margin) top = Math.round((Number(rect.bottom || 0) || 0) + 10);
+  if (top + cardHeight > vh - margin) top = Math.max(margin, vh - cardHeight - margin);
 
-  modal.style.left = `${Math.round(left)}px`;
-  modal.style.top = `${Math.round(top)}px`;
+  modal.style.left = `${left}px`;
+  modal.style.top = `${top}px`;
 }
 
 function queueGifPickerPosition() {
@@ -53021,7 +53337,7 @@ function queueGifPickerPosition() {
   });
 }
 
-function setGifFolderView(open, title = "Favorites") {
+function setGifFolderView(open, title = "Favoritos") {
   const modal = document.getElementById("gifModal");
   const folderTop = document.getElementById("gifFolderTop");
   const folderTitle = document.getElementById("gifFolderTitle");
@@ -53031,8 +53347,8 @@ function setGifFolderView(open, title = "Favorites") {
 
   if (modal) modal.classList.toggle("gif-folder-open", shouldOpen);
   if (folderTop) folderTop.style.display = shouldOpen ? "flex" : "none";
-  if (folderTitle) folderTitle.textContent = shouldOpen ? (title || "Favorites") : "";
-  if (searchRow) searchRow.style.display = shouldOpen ? "none" : "";
+  if (folderTitle) folderTitle.textContent = shouldOpen ? (title || "Favoritos") : "";
+  if (searchRow) searchRow.style.display = "";
   if (quickTags) quickTags.style.display = shouldOpen ? "none" : "";
   queueGifPickerPosition();
 }
@@ -53061,7 +53377,7 @@ function openGifModal({ anchorEl = null, point = null } = {}) {
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
   searchInput.value = "";
-  gifFolderTitle = "Favorites";
+  gifFolderTitle = "Favoritos";
   setGifFolderView(false);
   setGifHint("");
   positionGifPicker(gifPickerAnchorEl, gifPickerAnchorPoint);
@@ -53205,10 +53521,15 @@ function renderGifQuickTags(tags = null, {
   const heroPreview = String(trendingPreview || "").trim();
   if (heroPreview) gifTrendingPreviewUrl = heroPreview;
 
+  const sectionTop = document.createElement("div");
+  sectionTop.className = "gifBrowseTop";
+  sectionTop.innerHTML = `<div class="gifBrowseTitle">Explorar GIFs</div>`;
+  box.appendChild(sectionTop);
+
   const favCount = getFavs().length;
   box.appendChild(
     makeShortcutButton(
-      "Favorites",
+      "Favoritos",
       `${favCount} guardados`,
       () => loadGifFavorites(),
       "gif-shortcut--favorites",
@@ -53285,11 +53606,35 @@ function renderGifGrid(list) {
     return;
   }
 
-  list.forEach((gifObj) => {
+  const sectionTop = document.createElement("div");
+  sectionTop.className = "gifGridSectionTop";
+  const title = gifMode === "favorites"
+    ? "Favoritos"
+    : gifMode === "search"
+      ? "Resultados"
+      : (gifFolderTitle || "Trending GIFs");
+  sectionTop.innerHTML = `
+    <div class="gifGridSectionTitle">${esc(title)}</div>
+  `;
+  gifGrid.appendChild(sectionTop);
+
+  const masonry = document.createElement("div");
+  masonry.className = "gifMasonry";
+  const columns = [document.createElement("div"), document.createElement("div")];
+  columns.forEach((column) => {
+    column.className = "gifMasonryColumn";
+    masonry.appendChild(column);
+  });
+  gifGrid.appendChild(masonry);
+
+  list.forEach((gifObj, idx) => {
     if (!gifObj?.url) return;
 
     const item = document.createElement("div");
     item.className = "gif-item";
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    item.setAttribute("aria-label", gifObj.title ? `Enviar GIF: ${gifObj.title}` : "Enviar GIF");
 
     const img = document.createElement("img");
     img.src = gifObj.preview || gifObj.url;
@@ -53307,11 +53652,18 @@ function renderGifGrid(list) {
       item.classList.add("is-broken");
     });
 
-    img.addEventListener("click", () => {
+    const sendSelectedGif = () => {
       closeGifModal();
       void sendGifMessage(gifObj.url).catch((err) => {
         console.warn("gif send failed", err);
       });
+    };
+
+    item.addEventListener("click", sendSelectedGif);
+    item.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      sendSelectedGif();
     });
 
     const fav = document.createElement("button");
@@ -53333,7 +53685,7 @@ function renderGifGrid(list) {
 
     item.appendChild(img);
     item.appendChild(fav);
-    gifGrid.appendChild(item);
+    columns[idx % columns.length].appendChild(item);
   });
   queueGifPickerPosition();
 }
@@ -53461,7 +53813,7 @@ async function loadGifSearch(q) {
 
 function loadGifFavorites() {
   ++gifRequestSeq;
-  gifFolderTitle = "Favorites";
+  gifFolderTitle = "Favoritos";
   setGifMode("favorites");
   setGifFolderView(true, gifFolderTitle);
   setGifHint("");
@@ -88234,6 +88586,7 @@ function syncActiveConversationHeaderFromMeta() {
     titleEl.textContent = nextTitle;
     applyDmTitleNameStyle();
   }
+  updateDmHeaderAvatar();
 }
 
 async function runDmCollectionsSyncFallback() {
@@ -88798,6 +89151,7 @@ function applyRealtimeProfileUpdate(profileRow) {
   updatePresenceRender();
   if (activeDmId) {
     applyDmTitleNameStyle();
+    updateDmHeaderAvatar();
     refreshDmProfilePanel();
   }
   if (userCardCurrentUserId && normId(userCardCurrentUserId) === uid) refreshOpenUserCard();
@@ -89890,6 +90244,7 @@ async function showDm(conversationId, opts = {}) {
     channelType: normalizeConversationChannelType(state.activeDm?.channelType || resolvedChannelType || ""),
     ...(finalConversationKind === "dm" ? resolvedDmPrivacyMeta : {}),
   });
+  updateDmHeaderAvatar();
   if (isCallCapableGroupConversationMeta(state.activeDm)) {
     void fetchGroupConversationMembers(convIdNorm || conversationId, { force: false });
   }
@@ -92201,6 +92556,13 @@ function ensureMeStatusMenu() {
 
 let meProfilePopoutBound = false;
 let meProfilePopoutWidgetsRequestSeq = 0;
+let meProfilePopoutRequestSeq = 0;
+let meProfilePopoutTargetUserId = "";
+let meProfilePopoutTargetSeed = null;
+let meProfilePopoutAnchorEl = null;
+let meProfilePopoutAnchorPoint = null;
+let meProfilePopoutLastAnchorRect = null;
+let meProfilePopoutContext = null;
 
 function isMeProfilePopoutDebugEnabled() {
   try {
@@ -92220,7 +92582,40 @@ function getMeProfilePopoutStatusLabel(statusInput = "") {
   if (status === "idle") return t("status.option.idle", "Away");
   if (status === "dnd") return t("status.option.dnd", "Do Not Disturb");
   if (status === "invisible") return t("status.option.invisible", "Invisible");
+  if (status === "offline") return t("status.offline", "offline");
   return t("status.option.online", "Online");
+}
+
+function getMeProfilePopoutTargetId() {
+  return normId(meProfilePopoutTargetUserId || state.user?.id || "");
+}
+
+function isMeProfilePopoutSelf(userId = "") {
+  const uid = normId(userId || getMeProfilePopoutTargetId());
+  return !!uid && uid === normId(state.user?.id || "");
+}
+
+function buildMiniProfileSeedForUser(userId, seed = {}) {
+  const uid = normId(userId || "");
+  if (!uid) return null;
+  if (uid === normId(state.user?.id || "")) {
+    return getMeUserCardSeed();
+  }
+  const friend = (state.friends || []).find((f) => normId(f?.other_user_id || "") === uid) || null;
+  const cached = getCachedProfile(uid) || {};
+  return {
+    id: uid,
+    username: seed?.username || friend?.username || cached?.username || "",
+    display_name: seed?.display_name || seed?.displayName || friend?.display_name || cached?.display_name || cached?.username || "",
+    avatar_url: seed?.avatar_url || seed?.avatarUrl || friend?.avatar_url || cached?.avatar_url || "",
+    banner_url: seed?.banner_url || seed?.bannerUrl || friend?.banner_url || cached?.banner_url || cached?.theme_settings?.banner_url || "",
+    pronouns: seed?.pronouns || friend?.pronouns || cached?.pronouns || "",
+    bio: typeof seed?.bio === "string" ? seed.bio : (typeof cached?.bio === "string" ? cached.bio : ""),
+    name_color: seed?.name_color || seed?.nameColor || friend?.name_color || cached?.name_color || "",
+    call_tile_color: seed?.call_tile_color || seed?.callTileColor || friend?.call_tile_color || cached?.call_tile_color || "",
+    theme_settings: seed?.theme_settings || cached?.theme_settings || null,
+    created_at: seed?.created_at || cached?.created_at || null,
+  };
 }
 
 function ensureMeProfilePopout() {
@@ -92236,19 +92631,24 @@ function ensureMeProfilePopout() {
 }
 
 function getMeProfilePopoutAvatarHtml(profile = null) {
-  const uid = normId(profile?.id || state.user?.id || "");
-  const avatarUrl = getCurrentMeAvatarUrl();
+  const uid = normId(profile?.id || getMeProfilePopoutTargetId());
+  const isSelf = isMeProfilePopoutSelf(uid);
+  const avatarUrl = isSelf
+    ? getCurrentMeAvatarUrl()
+    : resolveProfileAvatarUrl(profile?.avatar_url || profile?.avatarUrl || getCachedProfile(uid)?.avatar_url || "", "");
   if (avatarUrl) {
     return buildAvatarMediaHtml(avatarUrl, {
       userId: uid,
-      profile: profile || state.me || null,
+      profile: profile || getCachedProfile(uid) || null,
       alt: "avatar",
       controlledGif: true,
     });
   }
-  const renderedFallback = document.querySelector("#meAvatar .meAvatarFallback, #meAvatar .profileAvatarFallback");
+  const renderedFallback = isSelf
+    ? document.querySelector("#meAvatar .meAvatarFallback, #meAvatar .profileAvatarFallback")
+    : null;
   if (renderedFallback) return renderedFallback.outerHTML;
-  const seed = profile?.display_name || profile?.username || state.me?.display_name || state.me?.username || "User";
+  const seed = profile?.display_name || profile?.username || (isSelf ? (state.me?.display_name || state.me?.username) : "") || "User";
   return getAvatarFallbackHtml(uid, seed, "avatar", "meProfilePopout__avatarFallback");
 }
 
@@ -92302,9 +92702,12 @@ function buildMeProfilePopoutWidgetPreviewHtml(userId = "", { loading = false } 
   `;
 }
 
-function buildMeProfilePopoutHtml() {
-  const profile = getCurrentMeProfileSnapshot();
-  const uid = normId(profile?.id || state.user?.id || "");
+function buildMeProfilePopoutHtml(profileInput = null, { loading = false } = {}) {
+  const uid = normId(profileInput?.id || getMeProfilePopoutTargetId());
+  const profile = uid && isMeProfilePopoutSelf(uid)
+    ? getCurrentMeProfileSnapshot(profileInput || null)
+    : (profileInput || getCachedProfile(uid) || buildMiniProfileSeedForUser(uid, meProfilePopoutTargetSeed || {}) || {});
+  const isSelf = isMeProfilePopoutSelf(uid);
   const hasWidgetCache = userCardWidgetsCache.has(uid);
   const displayName = profile?.display_name || profile?.username || "User";
   const username = profile?.username || "";
@@ -92312,8 +92715,33 @@ function buildMeProfilePopoutHtml() {
   const handleText = username ? `@${username}` : "@user";
   const handleLine = pronouns ? `${handleText} · ${pronouns}` : handleText;
   const bio = String(profile?.bio || "").trim();
-  const status = resolveMyPresenceStatus(profile);
+  const nameColor = resolveUserNameColor(uid, profile?.name_color || "");
+  const nameClass = nameColor ? " userNameCustom" : "";
+  const nameStyle = nameColor ? ` style="--user-name-color:${escAttr(nameColor)}"` : "";
+  const status = isSelf ? resolveMyPresenceStatus(profile) : getPresenceStatusForUser(uid);
   const statusLabel = getMeProfilePopoutStatusLabel(status);
+  const statusControlHtml = isSelf
+    ? `
+            <button class="meProfilePopout__statusText" type="button" data-me-popout-act="status" aria-label="${escAttr(t("settings.section.status", "Status"))}: ${escAttr(statusLabel)}">
+              <span class="dotMini" data-status-mini="${escAttr(status)}"></span>
+              <span data-me-popout-status-label="1">${esc(statusLabel)}</span>
+            </button>
+            <button class="meProfilePopout__statusAction" type="button" data-me-popout-act="status">${esc(t("settings.section.status", "Status"))}</button>
+      `
+    : `
+            <div class="meProfilePopout__statusText meProfilePopout__statusText--readonly" aria-label="${escAttr(statusLabel)}">
+              <span class="dotMini" data-status-mini="${escAttr(status || "offline")}"></span>
+              <span data-me-popout-status-label="1">${esc(statusLabel)}</span>
+            </div>
+      `;
+  const actionsHtml = isSelf
+    ? `
+        <button class="meProfilePopout__action" type="button" data-me-popout-act="edit">${esc(t("profile.edit", "Edit Profile"))}</button>
+        <button class="meProfilePopout__action" type="button" data-me-popout-act="settings">${esc(t("settings.title", "Settings"))}</button>
+      `
+    : `
+        <button class="meProfilePopout__action meProfilePopout__action--primary" type="button" data-me-popout-act="view-full">${esc(t("dm.view_full_profile", "View Full Profile"))}</button>
+      `;
 
   return `
     <div class="meProfilePopout__scroll">
@@ -92327,35 +92755,30 @@ function buildMeProfilePopoutHtml() {
             <span class="statusDot userCardAvatarStatusDot" data-status-dot="${escAttr(uid)}" data-status="${escAttr(status || "offline")}" aria-label="${escAttr(statusLabel)}"></span>
           </button>
           <button class="meProfilePopout__identity" type="button" data-me-popout-act="view-full" aria-label="${escAttr(t("dm.view_full_profile", "View Full Profile"))}">
-            <div class="meProfilePopout__name">${esc(displayName)}</div>
+            <div class="meProfilePopout__name${nameClass}"${nameStyle}>${esc(displayName)}</div>
             <div class="meProfilePopout__handle">${esc(handleLine)}</div>
           </button>
         </div>
         <div class="meProfilePopout__body">
-          <div class="meProfilePopout__statusLine">
-            <button class="meProfilePopout__statusText" type="button" data-me-popout-act="status" aria-label="${escAttr(t("settings.section.status", "Status"))}: ${escAttr(statusLabel)}">
-              <span class="dotMini" data-status-mini="${escAttr(status)}"></span>
-              <span data-me-popout-status-label="1">${esc(statusLabel)}</span>
-            </button>
-            <button class="meProfilePopout__statusAction" type="button" data-me-popout-act="status">${esc(t("settings.section.status", "Status"))}</button>
+          <div class="meProfilePopout__statusLine${isSelf ? "" : " meProfilePopout__statusLine--readonly"}">
+            ${statusControlHtml}
           </div>
           <section class="meProfilePopout__about">
             <div class="meProfilePopout__sectionLabel">${esc(t("profile.about", "About"))}</div>
-            <div class="meProfilePopout__bio">${esc(bio || t("dm.no_bio", "No bio."))}</div>
+            <div class="meProfilePopout__bio">${esc(bio || (loading ? t("app.loading", "Loading...") : t("dm.no_bio", "No bio.")))}</div>
           </section>
           <section class="meProfilePopout__widgets">
             <div class="meProfilePopout__sectionTop">
               <div class="meProfilePopout__sectionLabel">${esc(t("profile.widgets.title", "Widgets"))}</div>
             </div>
             <div data-me-popout-widgets-preview>
-              ${buildMeProfilePopoutWidgetPreviewHtml(uid, { loading: !hasWidgetCache })}
+              ${buildMeProfilePopoutWidgetPreviewHtml(uid, { loading: loading || !hasWidgetCache })}
             </div>
           </section>
         </div>
       </div>
       <div class="meProfilePopout__actions">
-        <button class="meProfilePopout__action" type="button" data-me-popout-act="edit">${esc(t("profile.edit", "Edit Profile"))}</button>
-        <button class="meProfilePopout__action" type="button" data-me-popout-act="settings">${esc(t("settings.title", "Settings"))}</button>
+        ${actionsHtml}
       </div>
     </div>
   `;
@@ -92364,14 +92787,14 @@ function buildMeProfilePopoutHtml() {
 function renderMeProfilePopoutWidgetsPreview({ loading = false } = {}) {
   const popout = document.getElementById("meProfilePopout");
   if (!popout || !popout.classList.contains("is-open")) return;
-  const uid = normId(state.user?.id || "");
+  const uid = getMeProfilePopoutTargetId();
   const host = popout.querySelector("[data-me-popout-widgets-preview]");
   if (!uid || !host) return;
   host.innerHTML = buildMeProfilePopoutWidgetPreviewHtml(uid, { loading });
 }
 
 async function refreshMeProfilePopoutWidgetsPreview({ force = true } = {}) {
-  const uid = normId(state.user?.id || "");
+  const uid = getMeProfilePopoutTargetId();
   if (!uid) return;
   const requestId = ++meProfilePopoutWidgetsRequestSeq;
   const hasCachedWidgets = getCachedProfileWidgetsForUser(uid).length > 0;
@@ -92384,6 +92807,7 @@ async function refreshMeProfilePopoutWidgetsPreview({ force = true } = {}) {
   if (requestId !== meProfilePopoutWidgetsRequestSeq) return;
   const popout = document.getElementById("meProfilePopout");
   if (!popout || !popout.classList.contains("is-open")) return;
+  if (uid !== getMeProfilePopoutTargetId()) return;
   renderMeProfilePopoutWidgetsPreview({ loading: false });
   positionMeProfilePopout();
 }
@@ -92391,7 +92815,10 @@ async function refreshMeProfilePopoutWidgetsPreview({ force = true } = {}) {
 function applyMeProfilePopoutBannerStyle(profileInput = null) {
   const bannerEl = document.querySelector("#meProfilePopout .meProfilePopout__banner");
   if (!bannerEl) return;
-  const profile = profileInput || getCurrentMeProfileSnapshot();
+  const uid = normId(profileInput?.id || getMeProfilePopoutTargetId());
+  const profile = uid && isMeProfilePopoutSelf(uid)
+    ? getCurrentMeProfileSnapshot(profileInput || null)
+    : (profileInput || getCachedProfile(uid) || {});
   const theme = normalizeThemeSettings(profile?.theme_settings || {});
   const base = normalizeHexColor(
     theme.surface_secondary || theme.surface || profile?.call_tile_color || "#24211d",
@@ -92400,35 +92827,82 @@ function applyMeProfilePopoutBannerStyle(profileInput = null) {
   const start = mixHex(base, "#24211d", 0.36);
   const end = mixHex(base, "#101010", 0.78);
   const glow = rgbaFromHex(base, 0.16);
-  const bannerUrl = getCurrentMeBannerUrl(theme);
+  const bannerUrl = isMeProfilePopoutSelf(uid)
+    ? getCurrentMeBannerUrl(theme)
+    : resolveUserBannerUrl(uid, profile?.banner_url || profile?.theme_settings?.banner_url || "");
   applyBannerStyle(bannerEl, bannerUrl, start, end, glow, {
-    userId: profile?.id || state.user?.id || "",
+    userId: uid || profile?.id || state.user?.id || "",
     profile,
     overlay: "linear-gradient(180deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.38))",
   });
 }
 
+function getMeProfilePopoutAnchorRect() {
+  if (meProfilePopoutAnchorEl && document.body?.contains(meProfilePopoutAnchorEl) && typeof meProfilePopoutAnchorEl.getBoundingClientRect === "function") {
+    const rect = meProfilePopoutAnchorEl.getBoundingClientRect();
+    meProfilePopoutLastAnchorRect = {
+      left: Number(rect.left || 0),
+      right: Number(rect.right || 0),
+      top: Number(rect.top || 0),
+      bottom: Number(rect.bottom || 0),
+      width: Number(rect.width || 0),
+      height: Number(rect.height || 0),
+    };
+    return meProfilePopoutLastAnchorRect;
+  }
+  if (meProfilePopoutAnchorPoint && Number.isFinite(Number(meProfilePopoutAnchorPoint.x)) && Number.isFinite(Number(meProfilePopoutAnchorPoint.y))) {
+    const x = Number(meProfilePopoutAnchorPoint.x);
+    const y = Number(meProfilePopoutAnchorPoint.y);
+    meProfilePopoutLastAnchorRect = { left: x, right: x, top: y, bottom: y, width: 0, height: 0 };
+    return meProfilePopoutLastAnchorRect;
+  }
+  return meProfilePopoutLastAnchorRect || null;
+}
+
 function positionMeProfilePopout() {
   const popout = document.getElementById("meProfilePopout");
   const dock = document.getElementById("meProfileCard");
-  if (!popout || !dock || !popout.classList.contains("is-open")) return;
-  const rect = dock.getBoundingClientRect();
+  if (!popout || !popout.classList.contains("is-open")) return;
   const vw = window.innerWidth || document.documentElement.clientWidth || 0;
   const vh = window.innerHeight || document.documentElement.clientHeight || 0;
   const margin = 12;
+  const isFloating = popout.classList.contains("is-floating");
+  const anchorRect = isFloating ? getMeProfilePopoutAnchorRect() : null;
+  const dockRect = !isFloating && dock ? dock.getBoundingClientRect() : null;
+  const rect = anchorRect || dockRect;
+  if (!rect) return;
+
   const dockWidth = Math.round(rect.width || 0);
-  const width = Math.min(316, Math.max(220, dockWidth || 260), Math.max(220, vw - (margin * 2)));
-  const left = Math.max(margin, Math.min(Math.round(rect.left || margin), Math.max(margin, vw - width - margin)));
-  const availableAboveDock = Math.max(260, Math.round((rect.top || vh) - margin - 8));
-  const maxHeight = Math.max(260, Math.min(452, availableAboveDock, vh - (margin * 2)));
-  popout.style.setProperty("--me-popout-left", `${left}px`);
+  const width = isFloating
+    ? Math.min(316, Math.max(260, vw - (margin * 2)))
+    : Math.min(316, Math.max(220, dockWidth || 260), Math.max(220, vw - (margin * 2)));
+  const maxHeight = isFloating
+    ? Math.max(260, Math.min(452, vh - (margin * 2)))
+    : Math.max(260, Math.min(452, Math.max(260, Math.round((rect.top || vh) - margin - 8)), vh - (margin * 2)));
   popout.style.setProperty("--me-popout-width", `${width}px`);
   popout.style.setProperty("--me-popout-max-height", `${maxHeight}px`);
 
   const measuredHeight = Math.min(popout.getBoundingClientRect().height || maxHeight, maxHeight);
+  if (isFloating) {
+    let left = Math.round(Number(rect.right || 0) + 10);
+    if (left + width > vw - margin) left = Math.round(Number(rect.left || 0) - width - 10);
+    if (left < margin) {
+      left = Math.round(Math.min(Math.max(margin, Number(rect.left || margin)), Math.max(margin, vw - width - margin)));
+    }
+    let top = Math.round(Number(rect.top || margin) + (Number(rect.height || 0) / 2) - (measuredHeight * 0.22));
+    top = Math.max(margin, Math.min(top, vh - measuredHeight - margin));
+    popout.style.setProperty("--me-popout-left", `${left}px`);
+    popout.style.setProperty("--me-popout-top", `${top}px`);
+    popout.style.setProperty("--me-popout-bottom", "auto");
+    return;
+  }
+
+  const left = Math.max(margin, Math.min(Math.round(rect.left || margin), Math.max(margin, vw - width - margin)));
+  popout.style.setProperty("--me-popout-left", `${left}px`);
   const preferredBottom = Math.round(vh - (rect.top || 0) + 8);
   const maxBottom = Math.max(margin, vh - measuredHeight - margin);
   const bottom = Math.max(margin, Math.min(preferredBottom, maxBottom));
+  popout.style.removeProperty("--me-popout-top");
   popout.style.setProperty("--me-popout-bottom", `${bottom}px`);
 }
 
@@ -92436,7 +92910,16 @@ function closeMeProfilePopout() {
   const popout = document.getElementById("meProfilePopout");
   if (!popout) return;
   popout.classList.remove("is-open");
+  popout.classList.remove("is-floating");
   popout.setAttribute("aria-hidden", "true");
+  meProfilePopoutTargetUserId = "";
+  meProfilePopoutTargetSeed = null;
+  meProfilePopoutAnchorEl = null;
+  meProfilePopoutAnchorPoint = null;
+  meProfilePopoutLastAnchorRect = null;
+  meProfilePopoutContext = null;
+  meProfilePopoutRequestSeq += 1;
+  meProfilePopoutWidgetsRequestSeq += 1;
 }
 
 function getMeUserCardSeed() {
@@ -92457,33 +92940,99 @@ function getMeUserCardSeed() {
 }
 
 async function openMeFullProfileFromPopout() {
-  const uid = normId(state.user?.id || "");
+  const uid = getMeProfilePopoutTargetId();
   if (!uid) return;
   logMeProfilePopoutDebug("user_popout.view_full_profile_clicked", { userId: uid });
+  const isSelf = isMeProfilePopoutSelf(uid);
+  const seed = isSelf
+    ? getMeUserCardSeed()
+    : (getCachedProfile(uid) || buildMiniProfileSeedForUser(uid, meProfilePopoutTargetSeed || {}) || { id: uid });
+  const context = meProfilePopoutContext || {};
   closeMeProfilePopout();
-  await openUserCardModal(uid, getMeUserCardSeed(), {
+  await openUserCardModal(uid, seed, {
     presentation: "overlay",
-    kind: "self",
+    kind: isSelf ? "self" : (context.kind || ""),
+    conversationId: context.conversationId || "",
+    conversationLabel: context.conversationLabel || "",
+    serverId: context.serverId || "",
+    serverName: context.serverName || "",
     initialTab: "widgets",
   });
   setUserCardActiveTab("widgets");
 }
 
-function openMeProfilePopout() {
-  const uid = normId(state.user?.id || "");
+async function openProfileMiniPopoutForUser(userId, seed = {}, opts = {}) {
+  const uid = normId(userId || "");
   if (!uid) return;
   closeMessageMenu();
   closeDmListMenus();
   closeMeStatusMenu();
+  closeUserCardModal();
+  const isDock = String(opts?.placement || "").trim().toLowerCase() === "dock";
+  const initial = buildMiniProfileSeedForUser(uid, seed) || { id: uid };
+  cacheProfileRow(initial);
+  meProfilePopoutTargetUserId = uid;
+  meProfilePopoutTargetSeed = initial;
+  meProfilePopoutContext = normalizeUserCardContext(opts || {});
+  meProfilePopoutAnchorEl = !isDock && opts?.anchorEl && typeof opts.anchorEl.getBoundingClientRect === "function"
+    ? opts.anchorEl
+    : null;
+  meProfilePopoutAnchorPoint = !isDock && opts?.point && Number.isFinite(Number(opts.point.x)) && Number.isFinite(Number(opts.point.y))
+    ? { x: Number(opts.point.x), y: Number(opts.point.y) }
+    : null;
+  if (meProfilePopoutAnchorEl) {
+    const rect = meProfilePopoutAnchorEl.getBoundingClientRect();
+    meProfilePopoutLastAnchorRect = {
+      left: Number(rect.left || 0),
+      right: Number(rect.right || 0),
+      top: Number(rect.top || 0),
+      bottom: Number(rect.bottom || 0),
+      width: Number(rect.width || 0),
+      height: Number(rect.height || 0),
+    };
+  } else if (meProfilePopoutAnchorPoint) {
+    meProfilePopoutLastAnchorRect = {
+      left: meProfilePopoutAnchorPoint.x,
+      right: meProfilePopoutAnchorPoint.x,
+      top: meProfilePopoutAnchorPoint.y,
+      bottom: meProfilePopoutAnchorPoint.y,
+      width: 0,
+      height: 0,
+    };
+  } else {
+    meProfilePopoutLastAnchorRect = null;
+  }
+
   const popout = ensureMeProfilePopout();
-  popout.innerHTML = buildMeProfilePopoutHtml();
+  popout.innerHTML = buildMeProfilePopoutHtml(initial, { loading: true });
   popout.classList.add("is-open");
+  popout.classList.toggle("is-floating", !isDock);
   popout.setAttribute("aria-hidden", "false");
   queueManagedGifPlaybackSync(popout);
-  applyMeProfilePopoutBannerStyle();
+  applyMeProfilePopoutBannerStyle(initial);
   positionMeProfilePopout();
+  const requestId = ++meProfilePopoutRequestSeq;
   void refreshMeProfilePopoutWidgetsPreview({ force: true });
   logMeProfilePopoutDebug("user_popout.opened", { userId: uid });
+
+  const [profilesResult] = await Promise.all([
+    fetchProfilesByIds([uid], { includeBio: true, force: true }).catch(() => []),
+    fetchProfileWidgetsForUser(uid, { force: true }).catch(() => getCachedProfileWidgetsForUser(uid)),
+  ]);
+  if (requestId !== meProfilePopoutRequestSeq || uid !== getMeProfilePopoutTargetId()) return;
+  const freshProfile = profilesResult?.[0] || getCachedProfile(uid) || initial;
+  meProfilePopoutTargetSeed = freshProfile;
+  popout.innerHTML = buildMeProfilePopoutHtml(freshProfile, { loading: false });
+  queueManagedGifPlaybackSync(popout);
+  applyMeProfilePopoutBannerStyle(freshProfile);
+  renderMeProfilePopoutWidgetsPreview({ loading: false });
+  positionMeProfilePopout();
+}
+
+function openMeProfilePopout() {
+  const uid = normId(state.user?.id || "");
+  if (!uid) return;
+  void openProfileMiniPopoutForUser(uid, getMeUserCardSeed(), { placement: "dock", kind: "self" });
 }
 
 function bindMeProfilePopoutDockOnce() {
@@ -92534,15 +93083,19 @@ function bindMeProfilePopoutDockOnce() {
     e.preventDefault();
     e.stopPropagation();
     const action = String(actionBtn.getAttribute("data-me-popout-act") || "").trim();
+    const uid = getMeProfilePopoutTargetId();
+    const isSelf = isMeProfilePopoutSelf(uid);
     if (action === "view-full") {
       void openMeFullProfileFromPopout();
       return;
     }
     if (action === "status") {
+      if (!isSelf) return;
       openMeStatusMenuForElement(actionBtn, { placement: "side" });
       return;
     }
     if (action === "edit" || action === "settings") {
+      if (!isSelf) return;
       closeMeProfilePopout();
       openProfileOverlay();
     }
