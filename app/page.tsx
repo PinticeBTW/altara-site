@@ -12,6 +12,13 @@ import {
 const description =
   "ALTARA is a clean Discord alternative for friends, gaming groups, and small communities, with voice, private messages, widgets, and simple group spaces without the noise.";
 
+const heroImage = {
+  src: "/altara-home-page-clean.png",
+  width: 1592,
+  height: 988,
+  alt: "ALTARA home page showing widgets, friends, calendar, notes, calls, unread DMs, and active friends",
+};
+
 export const metadata: Metadata = {
   title: {
     absolute: "ALTARA | Where friends stay close",
@@ -26,17 +33,17 @@ export const metadata: Metadata = {
     description,
     images: [
       {
-        url: "/altara-app-preview-20260428.png",
-        width: 1478,
-        height: 885,
-        alt: "ALTARA app preview showing widgets, friends, calendar, calls, notes, and DMs",
+        url: heroImage.src,
+        width: heroImage.width,
+        height: heroImage.height,
+        alt: heroImage.alt,
       },
     ],
   },
   twitter: {
     title: "ALTARA | Where friends stay close",
     description,
-    images: ["/altara-app-preview-20260428.png"],
+    images: [heroImage.src],
   },
 };
 
@@ -63,28 +70,28 @@ const productProof = [
     title: "Widgets first",
     description: "Checklist, calendar, notepad, calls, status, and unread DMs live on the same clean home screen.",
     className: "proof-widgets",
-    image: "/proof-widgets.png",
-    imageWidth: 1136,
-    imageHeight: 790,
+    image: "/proof-widgets-clean.png",
+    imageWidth: 930,
+    imageHeight: 760,
     alt: "ALTARA widgets dashboard with checklist, calendar, notepad, call panel, online status, and unread DMs",
   },
   {
     title: "People stay close",
     description: "Friends, best friends, and group spaces stay visible without turning the app into a giant public feed.",
     className: "proof-people",
-    image: "/proof-people.png",
-    imageWidth: 252,
-    imageHeight: 520,
+    image: "/proof-people-clean.png",
+    imageWidth: 270,
+    imageHeight: 740,
     alt: "ALTARA friends list with best friends and online people",
   },
   {
     title: "Calls stay quick",
     description: "Jump into voice, open pending requests, or start a DM without digging through layers of UI.",
     className: "proof-calls",
-    image: "/proof-calls.png",
-    imageWidth: 1146,
-    imageHeight: 888,
-    alt: "ALTARA group call screen with call controls and active speaker",
+    image: "/proof-calls-clean.png",
+    imageWidth: 462,
+    imageHeight: 300,
+    alt: "ALTARA call widget with quick actions for friends, pending requests, and adding friends",
   },
 ];
 
@@ -144,11 +151,11 @@ export default function Home() {
               <div className="demo-frame demo-frame-screenshot" data-cursor="hover" data-tilt-preview>
                 <div className="preview-screenshot-wrap">
                   <Image
-                    src="/altara-app-preview-20260428.png"
-                    alt="ALTARA app preview showing widgets, friends, calendar, calls, notes, and DMs"
+                    src={heroImage.src}
+                    alt={heroImage.alt}
                     className="preview-screenshot"
-                    width={1478}
-                    height={885}
+                    width={heroImage.width}
+                    height={heroImage.height}
                     sizes="(max-width: 1200px) 100vw, 1120px"
                     priority
                     unoptimized

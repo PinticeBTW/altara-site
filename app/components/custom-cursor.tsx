@@ -53,8 +53,8 @@ export function CustomCursor() {
       target.style.setProperty("--shadow-x", "52px");
       target.style.setProperty("--shadow-y", "70px");
       target.style.setProperty("--shadow-blur", "110px");
-      target.style.setProperty("--purple-shadow-x", "-18px");
-      target.style.setProperty("--purple-shadow-y", "26px");
+      target.style.setProperty("--warm-shadow-x", "-18px");
+      target.style.setProperty("--warm-shadow-y", "26px");
       target.style.setProperty("--depth-x", "0px");
       target.style.setProperty("--depth-y", "0px");
       target.classList.remove("is-tilting");
@@ -108,8 +108,8 @@ export function CustomCursor() {
       const scale = 1.004 + cornerLift * 0.006;
       const shadowX = 52 + bodyX * 24;
       const shadowY = 70 + bodyY * 12;
-      const purpleShadowX = -18 - bodyX * 20;
-      const purpleShadowY = 26 - bodyY * 9;
+      const warmShadowX = -18 - bodyX * 20;
+      const warmShadowY = 26 - bodyY * 9;
       const leftLight = 0.03 + Math.max(0, -x) * 0.16;
       const rightLight = 0.04 + Math.max(0, x) * 0.28;
       const topLight = 0.04 + Math.max(0, -y) * 0.3;
@@ -143,8 +143,8 @@ export function CustomCursor() {
       target.style.setProperty("--shadow-x", `${shadowX.toFixed(1)}px`);
       target.style.setProperty("--shadow-y", `${shadowY.toFixed(1)}px`);
       target.style.setProperty("--shadow-blur", `${(96 + cornerLift * 22).toFixed(1)}px`);
-      target.style.setProperty("--purple-shadow-x", `${purpleShadowX.toFixed(1)}px`);
-      target.style.setProperty("--purple-shadow-y", `${purpleShadowY.toFixed(1)}px`);
+      target.style.setProperty("--warm-shadow-x", `${warmShadowX.toFixed(1)}px`);
+      target.style.setProperty("--warm-shadow-y", `${warmShadowY.toFixed(1)}px`);
       target.style.setProperty("--depth-x", `${(reactionX * 2).toFixed(1)}px`);
       target.style.setProperty("--depth-y", `${(reactionY * 2).toFixed(1)}px`);
       target.classList.add("is-tilting");

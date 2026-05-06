@@ -24,17 +24,17 @@ export const metadata: Metadata = {
     description,
     images: [
       {
-        url: "/altara-app-preview-20260428.png",
-        width: 1478,
-        height: 885,
-        alt: "ALTARA app preview showing widgets, friends, calendar, calls, notes, and DMs",
+        url: "/altara-home-page-clean.png",
+        width: 1592,
+        height: 988,
+        alt: "ALTARA home page showing widgets, friends, calendar, notes, calls, unread DMs, and active friends",
       },
     ],
   },
   twitter: {
     title: "ALTARA Features",
     description,
-    images: ["/altara-app-preview-20260428.png"],
+    images: ["/altara-home-page-clean.png"],
   },
 };
 
@@ -180,11 +180,11 @@ export default function FeaturesPage() {
               <div className="themes">
                 <div className="theme-card t1">
                   <div className="badge-active">✓</div>
-                  <div className="tname">Midnight</div>
+                  <div className="tname">ALTARA Dark</div>
                   <div className="swatches">
-                    <div className="sw" style={{ background: "#a78bfa" }} />
-                    <div className="sw" style={{ background: "#f472b6" }} />
-                    <div className="sw" style={{ background: "#fb923c" }} />
+                    <div className="sw" style={{ background: "#0a0a0a" }} />
+                    <div className="sw" style={{ background: "#1c1b1a" }} />
+                    <div className="sw" style={{ background: "#e8cdb0" }} />
                   </div>
                   <div className="preview">
                     <div className="pl m" />
@@ -222,11 +222,11 @@ export default function FeaturesPage() {
                 </div>
 
                 <div className="theme-card t4">
-                  <div className="tname">Cosmic</div>
+                  <div className="tname">Graphite</div>
                   <div className="swatches">
-                    <div className="sw" style={{ background: "#818cf8" }} />
-                    <div className="sw" style={{ background: "#c084fc" }} />
-                    <div className="sw" style={{ background: "#f0abfc" }} />
+                    <div className="sw" style={{ background: "#111111" }} />
+                    <div className="sw" style={{ background: "#38322b" }} />
+                    <div className="sw" style={{ background: "#c9aa8c" }} />
                   </div>
                   <div className="preview">
                     <div className="pl m" />
@@ -273,10 +273,10 @@ export default function FeaturesPage() {
             <div className="feature-visual feature-visual-live">
               <div className="feature-screenshot-card">
                 <Image
-                  src="/altara-app-preview-20260428.png"
-                  alt="ALTARA dashboard showing friends, widgets, calendar, notes, and calls"
-                  width={1478}
-                  height={885}
+                  src="/altara-home-page-clean.png"
+                  alt="ALTARA dashboard showing friends, widgets, calendar, notes, calls, and active friends"
+                  width={1592}
+                  height={988}
                   sizes="(max-width: 980px) 100vw, 560px"
                   unoptimized
                 />

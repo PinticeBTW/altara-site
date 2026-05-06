@@ -55,10 +55,10 @@ export const metadata: Metadata = {
     description: siteDescription,
     images: [
       {
-        url: "/altara-app-preview-20260428.png",
-        width: 1478,
-        height: 885,
-        alt: "ALTARA app preview showing widgets, friends, calendar, calls, notes, and DMs",
+        url: "/altara-home-page-clean.png",
+        width: 1592,
+        height: 988,
+        alt: "ALTARA home page showing widgets, friends, calendar, notes, calls, unread DMs, and active friends",
       },
     ],
   },
@@ -66,7 +66,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "ALTARA | Where friends stay close",
     description: siteDescription,
-    images: ["/altara-app-preview-20260428.png"],
+    images: ["/altara-home-page-clean.png"],
   },
   robots: {
     index: true,
