@@ -775,9 +775,41 @@ export function createServerVoiceScreenshareLayer({
 
   function buildState() {
     const records = Array.from(shareRecordsByKey.values());
+    const shareStates = records
+      .map((record) => (record
+        ? {
+          key: record.key,
+          ownerUserId: record.ownerUserId || "",
+          ownerDisplayName: record.ownerDisplayName || "",
+          isLocal: !!record.isLocal,
+          track: record.track || null,
+          trackId: record.trackId || "",
+          trackSid: record.trackSid || "",
+          stream: record.stream || null,
+          captureRequest: record.captureRequest || null,
+          captureSettings: record.captureSettings || null,
+          updatedAt: Number(record.updatedAt || 0),
+        }
+        : null))
+      .filter((record) => !!(record && record.ownerUserId));
     const active = readActiveShareRecord();
+    const activeState = active
+      ? (shareStates.find((record) => record.key === active.key) || {
+        key: active.key,
+        ownerUserId: active.ownerUserId || "",
+        ownerDisplayName: active.ownerDisplayName || "",
+        isLocal: !!active.isLocal,
+        track: active.track || null,
+        trackId: active.trackId || "",
+        trackSid: active.trackSid || "",
+        stream: active.stream || null,
+        captureRequest: active.captureRequest || null,
+        captureSettings: active.captureSettings || null,
+        updatedAt: Number(active.updatedAt || 0),
+      })
+      : null;
     const remoteParticipantIds = dedupeIds(
-      records
+      shareStates
         .filter((record) => !record?.isLocal)
         .map((record) => record?.ownerUserId || ""),
     );
@@ -787,21 +819,9 @@ export function createServerVoiceScreenshareLayer({
       localShareActive: !!(localShareKey && shareRecordsByKey.has(localShareKey)),
       capturePreferences: getCapturePreferences(),
       remoteShareParticipantIds: remoteParticipantIds,
-      shareParticipantIds: dedupeIds(records.map((record) => record?.ownerUserId || "")),
-      activeShare: active
-        ? {
-          key: active.key,
-          ownerUserId: active.ownerUserId || "",
-          ownerDisplayName: active.ownerDisplayName || "",
-          isLocal: !!active.isLocal,
-          trackId: active.trackId || "",
-          trackSid: active.trackSid || "",
-          stream: active.stream || null,
-          captureRequest: active.captureRequest || null,
-          captureSettings: active.captureSettings || null,
-          updatedAt: Number(active.updatedAt || 0),
-        }
-        : null,
+      shareParticipantIds: dedupeIds(shareStates.map((record) => record?.ownerUserId || "")),
+      shares: shareStates,
+      activeShare: activeState,
     };
   }
 

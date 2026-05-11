@@ -1,4 +1,4 @@
-﻿import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabaseClient.js";
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabaseClient.js";
 import { $, esc, escapeAttr as escAttr, setDebug, requireAuth, getMyProfile, logout, enhancePasswordVisibilityToggles } from "./ui.js";
 import {
   createCallChannel as createRealtimeCallChannel,
@@ -673,7 +673,7 @@ function formatDesktopInboxSummaryLegacy(unreadCount = 0, requestCount = 0) {
   if (unread) parts.push(pt ? `${unread} por ler` : `${unread} unread`);
   if (requests) parts.push(pt ? `${requests} pedidos` : `${requests} requests`);
   if (!parts.length) return pt ? "Tudo junto aqui em cima." : "Everything in one place.";
-  return parts.join(" â€¢ ");
+  return parts.join(" • ");
 }
 
 function formatDesktopInboxSummary(unreadCount = 0, requestCount = 0, moderationCount = 0) {
@@ -1395,7 +1395,7 @@ function applyGlobalMotionMode() {
 
 function initGlobalMotionMode() {
   // Defer by one frame so the browser completes an initial layout pass
-  // before CSS entrance animations start â€” prevents flicker on slow GPUs.
+  // before CSS entrance animations start — prevents flicker on slow GPUs.
   requestAnimationFrame(() => {
     applyGlobalMotionMode();
   });
@@ -1727,7 +1727,6 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.performance.pause_gifs_unfocused_hint": "Stops animated GIF playback while the window is not focused.",
     "settings.performance.gifs_hover": "Play GIFs only on hover",
     "settings.performance.gifs_hover_hint": "Animated GIFs stay paused until you hover them.",
-    "settings.performance.gif_placeholder_hover": "Hover to play",
     "settings.performance.gif_placeholder_paused": "Paused to save resources",
     "settings.desktop.hardware_acceleration": "Use hardware acceleration",
     "settings.desktop.hardware_acceleration_hint": "Uses the GPU to help render the desktop app. Can reduce CPU on some PCs.",
@@ -1800,8 +1799,8 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.keybind.mic.hint": "Mute or unmute your microphone anytime.",
     "settings.keybind.deafen.label": "Toggle Headphones",
     "settings.keybind.deafen.hint": "Mute or unmute incoming audio anytime.",
-    "settings.keybind.app.alt_s.label": "Toggle Left Sidebar / DM Profile",
-    "settings.keybind.app.alt_s.hint": "Context shortcut: in DMs it toggles profile, elsewhere it toggles the left sidebar.",
+    "settings.keybind.app.alt_s.label": "Toggle Active Now / DM Profile",
+    "settings.keybind.app.alt_s.hint": "Context shortcut: in DMs it toggles profile, elsewhere it toggles Active Now.",
     "settings.keybind.app.alt_s.value": "Alt + S",
     "settings.keybind.app.zoom.label": "UI Zoom",
     "settings.keybind.app.zoom.hint": "Hold Alt and use the mouse wheel to zoom the interface.",
@@ -2118,6 +2117,7 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.edit_group": "Edit group",
     "dm.manage_group": "Leave group",
     "dm.profile": "Profile",
+    "dm.profile_shortcut": "Profile (Alt+S)",
     "dm.profile_preview": "Profile Preview",
     "dm.close_pins": "Close pins",
     "dm.close_profile_panel": "Close profile",
@@ -2140,8 +2140,14 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.profile_shared_count": "{n} shared spaces",
     "dm.mutual_servers": "Mutual Servers",
     "dm.mutual_servers_empty": "No mutual servers yet.",
+    "dm.mutual_servers_loading": "Loading mutual servers...",
+    "dm.mutual_servers_unavailable": "Mutual servers unavailable.",
     "dm.mutual_server_count_one": "1 shared server",
     "dm.mutual_server_count": "{n} shared servers",
+    "dm.mutual_friends": "Mutual Friends",
+    "dm.mutual_friends_empty": "No mutual friends yet.",
+    "dm.mutual_friends_unavailable": "Mutual friends unavailable.",
+    "dm.mutual_friends_soon": "Soon",
     "dm.server_invite.label": "SERVER INVITE",
     "dm.server_invite.loading": "Loading server...",
     "dm.server_invite.join": "Join Server",
@@ -2405,7 +2411,7 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.reports.target_state.banned": "Banida",
     "settings.reports.user.unknown": "Utilizador desconhecido",
     "settings.reports.target.missing": "Sem utilizador alvo associado",
-    "settings.reports.evidence.title": "Contexto enviado pelo utilizador no momento da denÃºncia",
+    "settings.reports.evidence.title": "Contexto enviado pelo utilizador no momento da denúncia",
     "settings.reports.evidence.shared_messages": "Mensagens partilhadas",
     "settings.reports.evidence.reported_message": "Mensagem denunciada",
     "settings.reports.evidence.before": "Mensagens anteriores",
@@ -2453,20 +2459,20 @@ const APP_LANG_LABELS = Object.freeze({
     "report.modal.details.optional": "(opcional)",
     "report.modal.details.placeholder": "Descreve o que aconteceu...",
     "report.modal.cancel": "Cancelar",
-    "report.modal.submit": "Enviar denÃºncia",
+    "report.modal.submit": "Enviar denúncia",
     "report.modal.sending": "A enviar...",
-    "report.modal.alert_title": "DenÃºncia",
-    "report.modal.success_title": "DenÃºncia enviada",
-    "report.modal.success_body": "A tua denÃºncia foi recebida. Obrigado por contribuÃ­res para uma ALTARA mais segura.",
-    "report.modal.error.rate_limited": "Enviaste demasiadas denÃºncias recentemente. Tenta mais tarde.",
-    "report.modal.error.invalid_target": "Utilizador invÃ¡lido.",
+    "report.modal.alert_title": "Denúncia",
+    "report.modal.success_title": "Denúncia enviada",
+    "report.modal.success_body": "A tua denúncia foi recebida. Obrigado por contribuíres para uma ALTARA mais segura.",
+    "report.modal.error.rate_limited": "Enviaste demasiadas denúncias recentemente. Tenta mais tarde.",
+    "report.modal.error.invalid_target": "Utilizador inválido.",
     "report.modal.error.reason_too_short": "Motivo demasiado curto.",
-    "report.modal.error.cannot_report_self": "NÃ£o podes denunciar a tua prÃ³pria conta.",
-    "report.modal.error.dm_context_unavailable": "A ALTARA nÃ£o conseguiu recolher o contexto desta DM neste dispositivo. Podes enviar a denÃºncia sem contexto ou tentar novamente.",
+    "report.modal.error.cannot_report_self": "Não podes denunciar a tua própria conta.",
+    "report.modal.error.dm_context_unavailable": "A ALTARA não conseguiu recolher o contexto desta DM neste dispositivo. Podes enviar a denúncia sem contexto ou tentar novamente.",
     "report.modal.dm_context.label": "Incluir contexto desta DM como prova",
-    "report.modal.dm_context.hint": "Ao ativar esta opÃ§Ã£o, vais partilhar com a moderaÃ§Ã£o da ALTARA a mensagem denunciada e algumas mensagens prÃ³ximas desta DM.",
-    "report.modal.dm_context.summary": "Esta denÃºncia vai partilhar {count} mensagens desta DM: {before} antes, a mensagem denunciada, e {after} depois.",
-    "report.modal.dm_context.summary_unavailable": "A ALTARA nÃ£o conseguiu preparar o contexto prÃ³ximo desta DM para esta mensagem.",
+    "report.modal.dm_context.hint": "Ao ativar esta opção, vais partilhar com a moderação da ALTARA a mensagem denunciada e algumas mensagens próximas desta DM.",
+    "report.modal.dm_context.summary": "Esta denúncia vai partilhar {count} mensagens desta DM: {before} antes, a mensagem denunciada, e {after} depois.",
+    "report.modal.dm_context.summary_unavailable": "A ALTARA não conseguiu preparar o contexto próximo desta DM para esta mensagem.",
     "report.modal.dm_context.private_unavailable": "O contexto da DM nao pode incluir mensagens antigas encriptadas que estejam temporariamente indisponiveis.",
     "report.modal.dm_context.reported_message": "Mensagem denunciada",
     "report.modal.dm_context.reported_unavailable": "Indisponivel neste dispositivo",
@@ -2484,7 +2490,6 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.performance.pause_gifs_unfocused_hint": "Para a reproducao dos GIFs animados enquanto a janela nao estiver focada.",
     "settings.performance.gifs_hover": "Reproduzir GIFs so ao passar com o rato",
     "settings.performance.gifs_hover_hint": "Os GIFs animados ficam pausados ate passares com o rato por cima.",
-    "settings.performance.gif_placeholder_hover": "Passa com o rato para reproduzir",
     "settings.performance.gif_placeholder_paused": "Pausado para poupar recursos",
     "settings.desktop.hardware_acceleration": "Usar aceleracao por hardware",
     "settings.desktop.hardware_acceleration_hint": "Usa a GPU para ajudar a renderizar a app desktop. Pode baixar o CPU em alguns PCs.",
@@ -2557,8 +2562,8 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.keybind.mic.hint": "Liga ou desliga o teu microfone em qualquer momento.",
     "settings.keybind.deafen.label": "Alternar fones",
     "settings.keybind.deafen.hint": "Silencia ou reativa o audio recebido em qualquer momento.",
-    "settings.keybind.app.alt_s.label": "Alternar sidebar esquerda / Perfil DM",
-    "settings.keybind.app.alt_s.hint": "Atalho contextual: nas DMs alterna o perfil, no resto alterna a sidebar esquerda.",
+    "settings.keybind.app.alt_s.label": "Alternar Active Now / Perfil DM",
+    "settings.keybind.app.alt_s.hint": "Atalho contextual: nas DMs alterna o perfil, no resto alterna o Active Now.",
     "settings.keybind.app.alt_s.value": "Alt + S",
     "settings.keybind.app.zoom.label": "Zoom da interface",
     "settings.keybind.app.zoom.hint": "Segura Alt e usa a roda do rato para aproximar/afastar a interface.",
@@ -2577,13 +2582,13 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.keybind.capture.invalid": "Essa tecla nao pode ser usada como bind.",
     "settings.keybind.capture.in_use": "Esse atalho ja esta a ser usado por outra acao da call.",
     "settings.keybind.none": "Nao definido",
-    "settings.theme.save": "Guardar alterações",
+    "settings.theme.save": "Guardar altera��es",
     "settings.theme.hint": "O tema e a cor de destaque aparecem logo e sincronizam com a tua conta quando guardas.",
-    "settings.theme.saved_account": "Aparência guardada na tua conta.",
+    "settings.theme.saved_account": "Apar�ncia guardada na tua conta.",
     "settings.appearance.white_confirm.title": "Tens a certeza?",
     "settings.appearance.white_confirm.body": "O modo claro pode causar danos emocionais.",
     "settings.appearance.white_confirm.ok": "Sim, flashbang-me",
-    "settings.appearance.white_confirm.cancel": "Não, leva-me de volta à escuridão",
+    "settings.appearance.white_confirm.cancel": "N�o, leva-me de volta � escurid�o",
     "settings.language.label": "Idioma",
     "settings.time_format.label": "Formato do horario das mensagens",
     "settings.time_format.hint": "Escolhe 24h ou 12h AM/PM (estilo americano).",
@@ -2704,7 +2709,7 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.blocked.error.missing_sql": "Falta SQL de bloqueios. Executa SQL/SUPABASE_PATCH_FRIEND_BLOCK_REMOVE.sql e recarrega.",
     "settings.blocked.error.load": "Nao foi possivel carregar os bloqueados.",
     "settings.blocked.error.unblock": "Nao foi possivel desbloquear este utilizador.",
-    "dialog.confirm.title": "Confirmar aÃ§Ã£o",
+    "dialog.confirm.title": "Confirmar ação",
     "dialog.confirm.ok": "Confirmar",
     "dialog.confirm.cancel": "Cancelar",
     "dialog.notice.ok": "OK",
@@ -2718,25 +2723,25 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.notifications.dnd_mute.label": "Silenciar sons de notificacao em Nao incomodar",
     "settings.notifications.dnd_mute.hint": "Quando o teu estado esta em Nao incomodar, os sons de mensagens e toque ficam silenciados.",
     "settings.sound.custom": "Personalizado",
-    "settings.sound.default": "PadrÃ£o",
-    "settings.sound.error_type": "Escolhe um ficheiro de Ã¡udio (MP3/WAV/OGG/M4A).",
-    "settings.sound.error_size": "Ãudio demasiado grande. MÃ¡ximo 800KB por som.",
-    "settings.sound.error_read": "NÃ£o consegui ler o ficheiro de Ã¡udio.",
-    "settings.sound.error_save": "NÃ£o consegui guardar este som personalizado.",
+    "settings.sound.default": "Padrão",
+    "settings.sound.error_type": "Escolhe um ficheiro de áudio (MP3/WAV/OGG/M4A).",
+    "settings.sound.error_size": "Áudio demasiado grande. Máximo 800KB por som.",
+    "settings.sound.error_read": "Não consegui ler o ficheiro de áudio.",
+    "settings.sound.error_save": "Não consegui guardar este som personalizado.",
     "settings.sound.error_quota": "Armazenamento cheio. Remove alguns sons e tenta outra vez.",
     "settings.sound.reset_confirm": "Repor todos os sons personalizados da call?",
     "settings.sound.row.share_on": "Tu: partilha ligada",
     "settings.sound.row.share_off": "Tu: partilha desligada",
-    "settings.sound.row.camera_on": "Tu: cÃ¢mara ligada",
-    "settings.sound.row.camera_off": "Tu: cÃ¢mara desligada",
+    "settings.sound.row.camera_on": "Tu: câmara ligada",
+    "settings.sound.row.camera_off": "Tu: câmara desligada",
     "settings.sound.row.mic_on": "Tu: micro ligado",
     "settings.sound.row.mic_off": "Tu: micro desligado",
     "settings.sound.row.deafen_on": "Tu: fones ligados",
     "settings.sound.row.deafen_off": "Tu: fones desligados",
     "settings.sound.row.remote_share_on": "Outros: partilha ligada",
     "settings.sound.row.remote_share_off": "Outros: partilha desligada",
-    "settings.sound.row.remote_camera_on": "Outros: cÃ¢mara ligada",
-    "settings.sound.row.remote_camera_off": "Outros: cÃ¢mara desligada",
+    "settings.sound.row.remote_camera_on": "Outros: câmara ligada",
+    "settings.sound.row.remote_camera_off": "Outros: câmara desligada",
     "settings.sound.row.remote_mic_on": "Outros: micro ligado",
     "settings.sound.row.remote_mic_off": "Outros: micro desligado",
     "settings.sound.row.remote_deafen_on": "Outros: fones ligados",
@@ -2826,15 +2831,15 @@ const APP_LANG_LABELS = Object.freeze({
     "status.option.invisible": "Invisivel",
     "settings.status.hint": "Este estado fica guardado em tempo real para a tua conta.",
     "nav.back": "Voltar",
-    "nav.forward": "AvanÃ§ar",
-    "nav.group.aria": "NavegaÃ§Ã£o",
+    "nav.forward": "Avançar",
+    "nav.group.aria": "Navegação",
     "me.open_profile": "Abrir perfil",
-    "me.quick_controls": "Controlos rÃ¡pidos",
+    "me.quick_controls": "Controlos rápidos",
     "me.mute_mic": "Silenciar microfone",
     "me.unmute_mic": "Reativar microfone",
-    "me.deafen": "Silenciar Ã¡udio recebido",
+    "me.deafen": "Silenciar áudio recebido",
     "me.undeafen": "Voltar a ouvir",
-    "me.open_settings": "Abrir definiÃ§Ãµes",
+    "me.open_settings": "Abrir definições",
     "app.loading": "A carregar...",
     "dm.back": "Voltar",
     "dm.call": "Ligar",
@@ -2875,15 +2880,16 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.edit_group": "Editar grupo",
     "dm.manage_group": "Sair do grupo",
     "dm.profile": "Perfil",
+    "dm.profile_shortcut": "Perfil (Alt+S)",
     "dm.profile_preview": "Previa do perfil",
     "dm.close_pins": "Fechar pins",
     "dm.close_profile_panel": "Fechar perfil",
     "dm.open_full_profile": "Abrir perfil completo",
-    "dm.empty": "Ainda nÃ£o hÃ¡ mensagens. Diz olÃ¡ \uD83D\uDC4B",
+    "dm.empty": "Ainda não há mensagens. Diz olá \uD83D\uDC4B",
     "dm.jump_latest": "Mais recentes",
     "dm.jump_latest.title": "Ir para as mensagens mais recentes",
     "dm.drop.title": "Larga os ficheiros aqui",
-    "dm.drop.sub": "Qualquer tipo de ficheiro atÃ© 35GB cada",
+    "dm.drop.sub": "Qualquer tipo de ficheiro até 35GB cada",
     "dm.no_pins": "Sem mensagens pinadas.",
     "dm.no_bio": "Sem bio.",
     "dm.profile_no_bio": "Ainda sem bio.",
@@ -2897,39 +2903,45 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.profile_shared_count": "{n} espacos partilhados",
     "dm.mutual_servers": "Servers em comum",
     "dm.mutual_servers_empty": "Ainda sem servers em comum.",
+    "dm.mutual_servers_loading": "A carregar servers em comum...",
+    "dm.mutual_servers_unavailable": "Servers em comum indisponiveis.",
     "dm.mutual_server_count_one": "1 server em comum",
     "dm.mutual_server_count": "{n} servers em comum",
+    "dm.mutual_friends": "Amigos em comum",
+    "dm.mutual_friends_empty": "Ainda sem amigos em comum.",
+    "dm.mutual_friends_unavailable": "Amigos em comum indisponiveis.",
+    "dm.mutual_friends_soon": "Em breve",
     "dm.server_invite.label": "CONVITE PARA SERVIDOR",
     "dm.server_invite.loading": "A carregar server...",
     "dm.server_invite.join": "Entrar no Server",
     "dm.server_invite.open": "Abrir Server",
     "dm.view_full_profile": "Ver Perfil Completo",
     "dm.attach": "Anexar ficheiro",
-    "dm.composer_actions": "AÃ§Ãµes de mensagem",
+    "dm.composer_actions": "Ações de mensagem",
     "dm.text_color": "Escolher cor do texto selecionado",
     "format.bold": "Negrito",
-    "format.italic": "ItÃ¡lico",
+    "format.italic": "Itálico",
     "format.strike": "Riscado",
-    "format.code": "CÃ³digo",
+    "format.code": "Código",
     "format.color": "Cor",
     "format.spoiler": "Spoiler",
     "sidebar.resize_left.aria": "Redimensionar sidebar",
     "sidebar.resize_right.aria": "Redimensionar Active Now",
     "sidebar.resize.title": "Arrasta para redimensionar",
     "call.member": "membro",
-    "call.someone": "alguÃ©m",
+    "call.someone": "alguém",
     "call.a_member": "Um membro",
     "call.mute_mic": "Silenciar microfone",
     "call.unmute_mic": "Reativar microfone",
-    "call.deafen": "Silenciar Ã¡udio recebido",
+    "call.deafen": "Silenciar áudio recebido",
     "call.undeafen": "Voltar a ouvir",
-    "call.share_screen": "Partilhar ecrÃ£",
+    "call.share_screen": "Partilhar ecrã",
     "call.stop_share": "Parar partilha",
-    "call.share_options": "OpÃ§Ãµes da partilha",
-    "call.camera_on": "Ligar cÃ¢mara",
-    "call.camera_off": "Desligar cÃ¢mara",
+    "call.share_options": "Opções da partilha",
+    "call.camera_on": "Ligar câmara",
+    "call.camera_off": "Desligar câmara",
     "call.end": "Desligar chamada",
-    "call.not_in_call": "NÃ£o estÃ¡s numa chamada",
+    "call.not_in_call": "Não estás numa chamada",
     "call.fullscreen_enter": "Entrar em fullscreen",
     "call.fullscreen_exit": "Sair de fullscreen",
     "settings.change_banner": "Alterar banner",
@@ -2941,49 +2953,49 @@ const APP_LANG_LABELS = Object.freeze({
     "usercard.pronouns": "Pronomes",
     "usercard.in_server": "Em {server}",
     "usercard.in_this_server": "Neste server",
-    "usercard.unavailable": "IndisponÃ­vel",
+    "usercard.unavailable": "Indisponível",
     "usercard.you": "Tu",
     "usercard.message": "Mensagem",
     "usercard.profile": "Perfil",
     "group.you_suffix": " (Tu)",
-    "group.right_click_ring": "BotÃ£o direito para ring",
+    "group.right_click_ring": "Botão direito para ring",
     "dm.group_member_count_one": "1 membro",
     "dm.group_member_count": "{n} membros",
     "dm.no_members": "Sem membros para mostrar.",
     "usercard.current_server": "server atual",
     "usercard.recently_loaded": "carregado agora",
     "call.stage.sharing": "Tu a partilhar",
-    "call.stage.camera_on": "Tua cÃ¢mara ligada",
+    "call.stage.camera_on": "Tua câmara ligada",
     "call.stage.connected": "Ligado",
-    "call.stage.not_joined": "Ainda nÃ£o entraste. Clica no telefone para entrar.",
+    "call.stage.not_joined": "Ainda não entraste. Clica no telefone para entrar.",
     "call.stage.calling_group": "A ligar para o grupo...",
     "call.stage.calling": "A ligar...",
     "call.stage.group_active": "Chamada em curso no grupo {group}",
-    "dm.no_friends": "Ainda nÃ£o tens amigos. Vai a Add Friend.",
-    "dm.no_friends_html": "Ainda nÃ£o tens amigos. Vai a <b>Add Friend</b>.",
-    "dm.no_messages": "Ainda nÃ£o hÃ¡ mensagens. Diz olÃ¡.",
+    "dm.no_friends": "Ainda não tens amigos. Vai a Add Friend.",
+    "dm.no_friends_html": "Ainda não tens amigos. Vai a <b>Add Friend</b>.",
+    "dm.no_messages": "Ainda não há mensagens. Diz olá.",
     "dm.loading_pins": "A carregar pins...",
     "dm.loading_trending": "A carregar trending...",
     "share.loading": "A carregar fontes de partilha...",
-    "share.searching": "A procurar janelas e ecrÃ£s...",
+    "share.searching": "A procurar janelas e ecrãs...",
     "share.select.aria": "Partilhar {name}",
     "share.no_sources": "Sem fontes nesta categoria.",
-    "share.no_sources_hint": "NÃ£o encontrÃ¡mos fontes. Clica em Atualizar.",
-    "share.hint.selected": "Clique em Share Screen no preview para comeÃ§ar, ou duplo clique no card.",
+    "share.no_sources_hint": "Não encontrámos fontes. Clica em Atualizar.",
+    "share.hint.selected": "Clique em Share Screen no preview para começar, ou duplo clique no card.",
     "share.hint.select": "Seleciona uma fonte e passa o rato por cima para partilhar.",
     "share.share_screen_btn": "Share Screen",
     "call.friend": "amigo",
     "call.you": "Tu",
-    "call.camera": "CÃ¢mara",
+    "call.camera": "Câmara",
     "call.share_feed": "Partilha",
-    "call.video": "VÃ­deo",
+    "call.video": "Vídeo",
     "usercard.best_friend": "Melhor amigo",
     "usercard.friend_rel": "Amigo",
     "usercard.section.account": "Conta",
     "usercard.tabs.aria": "Perfil",
     "usercard.tab.activity": "Atividade",
     "usercard.tab.media": "Media",
-    "usercard.tab.shared": "LigaÃ§Ãµes",
+    "usercard.tab.shared": "Ligações",
     "usercard.tab.widgets": "Widgets",
     "usercard.activity.eyebrow": "Atividade",
     "usercard.activity.loading.title": "A puxar atividade...",
@@ -3000,7 +3012,7 @@ const APP_LANG_LABELS = Object.freeze({
     "usercard.msg.kind.message": "Mensagem",
     "usercard.msg.kind.system": "Sistema",
     "usercard.msg.kind.attachment": "Anexo",
-    "usercard.msg.preview.empty": "(sem conteÃºdo)",
+    "usercard.msg.preview.empty": "(sem conteúdo)",
     "dm.members": "Membros",
     "pending.type.message": "Mensagem",
     "pending.type.friendship": "Amizade",
@@ -3015,12 +3027,12 @@ const APP_LANG_LABELS = Object.freeze({
     "call.share.audio_state_on": "Ativo",
     "call.share.audio_state_off": "Inativo",
     "call.share.started": "Partilha ligada \u2022 {quality}",
-    "call.share.started_no_audio": "Partilha iniciada sem som (browser nÃ£o suportou Ã¡udio nesta janela).",
-    "call.share.error": "Falhou ao partilhar ecrÃ£.",
-    "call.share.picker.title": "Partilhar ecrÃ£",
-    "call.share.picker.hint": "Seleciona uma janela ou ecrÃ£ para partilhar",
-    "call.share.picker.screen": "EcrÃ£ inteiro",
-    "call.share.picker.window": "AplicaÃ§Ãµes",
+    "call.share.started_no_audio": "Partilha iniciada sem som (browser não suportou áudio nesta janela).",
+    "call.share.error": "Falhou ao partilhar ecrã.",
+    "call.share.picker.title": "Partilhar ecrã",
+    "call.share.picker.hint": "Seleciona uma janela ou ecrã para partilhar",
+    "call.share.picker.screen": "Ecrã inteiro",
+    "call.share.picker.window": "Aplicações",
     "call.share.picker.refresh": "Atualizar",
     "call.share.picker.audio": "Som",
     "call.share.picker.cancel": "Cancelar",
@@ -3031,22 +3043,22 @@ const APP_LANG_LABELS = Object.freeze({
     "call.share.profile.fluid": "Fluid",
     "call.share.source.screen": "Ecra",
     "call.share.source.window": "App",
-    "call.camera.error": "Falhou ao ligar cÃ¢mara.",
+    "call.camera.error": "Falhou ao ligar câmara.",
     "call.not_in_call.alert": "Tens de estar numa chamada.",
-    "call.already_in_call": "JÃ¡ estÃ¡s noutra chamada.",
-    "call.already_in_voice": "JÃ¡ estÃ¡s neste canal de voz.",
-    "call.already_in_group": "JÃ¡ estÃ¡s nesta call.",
+    "call.already_in_call": "Já estás noutra chamada.",
+    "call.already_in_voice": "Já estás neste canal de voz.",
+    "call.already_in_group": "Já estás nesta call.",
     "call.feed.share": "Partilha",
-    "call.feed.camera": "CÃ¢mara",
-    "call.feed.video": "VÃ­deo",
+    "call.feed.camera": "Câmara",
+    "call.feed.video": "Vídeo",
     "call.share.quality_updated": "Qualidade da partilha: {quality}",
     "call.share.quality_limited": "(limitado pelo browser)",
     "call.share.quality_recaptured": "atualizado",
     "call.watch.stopped": "Paraste de ver a partilha. Clica em Watch Stream para voltar.",
-    "call.share.audio_reselect_needed": "NÃ£o deu para ativar som sem voltar a escolher a janela/ecrÃ£.",
-    "call.group_not_supported": "Este chat nÃ£o suporta chamada de grupo.",
-    "call.all_members_in_call": "Todos os membros jÃ¡ estÃ£o nesta call.",
-    "share.audio_screen_hint": "Som nÃ£o disponÃ­vel ao partilhar o ecrÃ£ completo",
+    "call.share.audio_reselect_needed": "Não deu para ativar som sem voltar a escolher a janela/ecrã.",
+    "call.group_not_supported": "Este chat não suporta chamada de grupo.",
+    "call.all_members_in_call": "Todos os membros já estão nesta call.",
+    "share.audio_screen_hint": "Som não disponível ao partilhar o ecrã completo",
   }),
 });
 const LEFT_SIDEBAR_WIDTH_MIN = 300;
@@ -3177,6 +3189,7 @@ let rightSidebarRestoreCollapsedAfterServerVoiceStage = false;
 let rightSidebarForceHiddenForCall = false;
 let rightSidebarRestoreCollapsedAfterCall = false;
 let inputFocusRecoveryBound = false;
+let appPanelShortcutsBound = false;
 let groupDmRpcAvailable = true;
 let serverRpcAvailable = true;
 let uiZoomCurrentFactor = UI_ZOOM_DEFAULT_FACTOR;
@@ -3591,7 +3604,7 @@ function ensureCustomColorPickerEl() {
         <button id="btnAppColorPickerStopBase" class="appColorPicker__stopBtn is-on" type="button" aria-label="Edit first gradient color">A</button>
         <button id="btnAppColorPickerStopAlt" class="appColorPicker__stopBtn" type="button" aria-label="Edit second gradient color">B</button>
         <input id="appColorPickerAngle" class="appColorPicker__angle" type="range" min="0" max="360" step="1" value="180" />
-        <span id="appColorPickerAngleValue" class="appColorPicker__angleValue">180Â°</span>
+        <span id="appColorPickerAngleValue" class="appColorPicker__angleValue">180°</span>
       </div>
       <div id="appColorPickerIntensityRow" class="appColorPicker__intensityRow hidden">
         <span class="appColorPicker__intensityLabel">Intensity</span>
@@ -3600,7 +3613,7 @@ function ensureCustomColorPickerEl() {
       </div>
       <div class="appColorPicker__footer">
         <input id="appColorPickerHex" class="input appColorPicker__hex" maxlength="7" value="#8ea0ff" />
-        <button id="btnAppColorPickerEyedropper" class="appColorPicker__eyedropperBtn" type="button" title="Pipeta â€” escolher cor do ecrÃ£" aria-label="Pipeta">
+        <button id="btnAppColorPickerEyedropper" class="appColorPicker__eyedropperBtn" type="button" title="Pipeta — escolher cor do ecrã" aria-label="Pipeta">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a4 4 0 0 1 4 4c0 1.5-.6 2.8-1.6 3.8L6 18l-3 1 1-3 8.2-8.4A4 4 0 0 1 12 2z"/><path d="M5.5 18.5 3 21"/></svg>
         </button>
         <button id="btnAppColorPickerClose" class="btn ghost appColorPicker__done" type="button">Done</button>
@@ -3776,7 +3789,7 @@ function renderCustomColorPicker() {
     els.angle.disabled = !gradientEnabled;
   }
   if (els.angleValue instanceof HTMLElement) {
-    els.angleValue.textContent = `${angle}Â°`;
+    els.angleValue.textContent = `${angle}°`;
   }
   if (els.intensityRow instanceof HTMLElement) {
     els.intensityRow.classList.toggle("hidden", !intensitySupported);
@@ -4273,6 +4286,12 @@ let meHeaderMediaCacheUserId = "";
 let meHeaderAvatarCacheUrl = "";
 let meHeaderBannerCacheUrl = "";
 const ME_AVATAR_CACHE_STORAGE_PREFIX = "altara_me_avatar_cache_";
+const MANAGED_GIF_STILL_STORAGE_PREFIX = "altara_managed_gif_still_v2_";
+const MANAGED_GIF_STILL_STORAGE_INDEX_KEY = "altara_managed_gif_still_v2_index";
+const MANAGED_GIF_STILL_STORAGE_MAX_ITEMS = 32;
+const MANAGED_GIF_STILL_STORAGE_MAX_VALUE_LENGTH = 360000;
+const managedGifStillFrameCache = new Map();
+const managedGifStillFrameCaptureInFlight = new Map();
 
 function syncMeHeaderMediaCacheScope() {
   const meId = String(state.user?.id || "").trim();
@@ -7243,7 +7262,7 @@ async function persistThemeSettings(themeInput, { showSuccess = false, showError
   setThemeEditorCommitted(theme);
   applyThemeSettings(theme);
   syncSidebarWidthControls(theme.left_sidebar_width);
-  if (showSuccess) alert("PersonalizaÃ§Ã£o guardada na conta.");
+  if (showSuccess) alert("Personalização guardada na conta.");
   return true;
 }
 
@@ -7461,12 +7480,30 @@ function isTextInputFocused() {
   return !!getEditableTypingElementFromTarget(document.activeElement);
 }
 
+function isDmProfileAltSKeyboardShortcut(e) {
+  if (!e || e.isComposing || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return false;
+  const key = String(e.key || "").trim().toLowerCase();
+  const code = String(e.code || "").trim();
+  return key === "s" || code === "KeyS";
+}
+
+function shouldIgnoreTogglePanelsShortcutForEditable(e, {
+  allowDmComposer = false,
+} = {}) {
+  const editableTarget = getEditableTypingElementFromTarget(eventTargetElement(e));
+  const editableFocus = getEditableTypingElementFromTarget(document.activeElement);
+  const editable = editableTarget || editableFocus;
+  if (!editable) return false;
+  if (allowDmComposer && editable.id === "dmInput") return false;
+  return true;
+}
+
 function tryHandleDmProfileAltSShortcut(e) {
   if (!e) return false;
   if (e.__altaraDmProfileAltSHandled) return true;
   if (callKeybindCaptureAction || appKeybindCaptureAction) return false;
-  if (!doesKeyboardEventMatchAppKeybindAction("togglePanels", e)) return false;
-  if (isTextInputFocused()) return false;
+  if (!isDmProfileAltSKeyboardShortcut(e) && !doesKeyboardEventMatchAppKeybindAction("togglePanels", e)) return false;
+  if (shouldIgnoreTogglePanelsShortcutForEditable(e, { allowDmComposer: true })) return false;
 
   const dmMain = document.getElementById("dmMain");
   if (!dmMain || dmMain.style.display === "none") return false;
@@ -7490,6 +7527,31 @@ function tryHandleDmProfileAltSShortcut(e) {
   );
   void openDmProfilePanel({ force: forceGroupMembers });
   return true;
+}
+
+function bindAppPanelShortcutsOnce() {
+  if (appPanelShortcutsBound) return;
+  appPanelShortcutsBound = true;
+
+  document.addEventListener("keydown", (e) => {
+    if (tryHandleDmProfileAltSShortcut(e)) return;
+    if (callKeybindCaptureAction || appKeybindCaptureAction) return;
+    if (!isDmProfileAltSKeyboardShortcut(e) && !doesKeyboardEventMatchAppKeybindAction("togglePanels", e)) return;
+    if (shouldIgnoreTogglePanelsShortcutForEditable(e)) return;
+    const activeVoiceConvId = normId(activeDmId || state.activeDm?.conversationId || "");
+    const suppressServerVoicePanelToggle = !!(
+      activeVoiceConvId &&
+      isActiveServerVoiceConversationUiOpen() &&
+      isServerVoiceConversationUiContext(activeVoiceConvId) &&
+      isActiveServerVoiceCallJoined(activeVoiceConvId)
+    );
+    if (suppressServerVoicePanelToggle) {
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    setRightSidebarCollapsed(!isRightSidebarCollapsed(), { persist: true });
+  }, true);
 }
 
 function clearTransientInputLockState() {
@@ -7589,15 +7651,6 @@ function bindLeftSidebarOverlayOnce() {
     leftSidebarPanelHover = false;
     clearLeftSidebarOverlayCloseTimer();
     closeLeftSidebarOverlay();
-  });
-
-  document.addEventListener("keydown", (e) => {
-    if (tryHandleDmProfileAltSShortcut(e)) return;
-    if (callKeybindCaptureAction || appKeybindCaptureAction) return;
-    if (!doesKeyboardEventMatchAppKeybindAction("togglePanels", e)) return;
-    if (isTextInputFocused()) return;
-    e.preventDefault();
-    setSidebarCollapsed(!isSidebarCollapsed(), { persist: true });
   });
 
   setSidebarCollapsed(readSidebarCollapsedPreference(), { persist: false });
@@ -7782,7 +7835,49 @@ function isServerConversationUiOpen() {
   return isServerConversationKind(meta?.kind) || !!normId(meta?.serverId || "");
 }
 
+function isServerVoiceConversationUiContext(conversationId) {
+  const convId = normId(conversationId || "");
+  if (!convId) return false;
+  const meta = getActiveConversationMeta(convId)
+    || getConversationMeta(convId)
+    || (normId(activeDmId || "") === convId ? (state.activeDm || {}) : {});
+  if (isServerVoiceConversationMeta(meta) || isServerVoiceConversationById(convId)) return true;
+  const channelCtx = findServerChannelContextByConversationId(convId) || null;
+  const channelType = normalizeConversationChannelType(
+    channelCtx?.channel?.channelType
+    || meta?.channelType
+    || ""
+  );
+  return !!(normId(channelCtx?.serverId || meta?.serverId || "") && channelType === "voice");
+}
+
+function isActiveServerVoiceConversationUiOpen() {
+  const dmMain = document.getElementById("dmMain");
+  if (!dmMain || dmMain.style.display === "none") return false;
+  const convId = normId(activeDmId || state.activeDm?.conversationId || "");
+  return isServerVoiceConversationUiContext(convId);
+}
+
+function isActiveServerVoiceCallJoined(conversationId) {
+  const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
+  if (!convId || !isServerVoiceConversationUiContext(convId)) return false;
+  const activeCallConvId = normId(callConversationId || "");
+  return !!(
+    isServerVoiceTransportSessionActive(convId)
+    || (inCall && (!activeCallConvId || activeCallConvId === convId))
+  );
+}
+
 function syncServerVoiceStageRightSidebar({ hideMembers = false } = {}) {
+  const shouldUseVoiceSidebar = !!(hideMembers && isActiveServerVoiceConversationUiOpen());
+  if (shouldUseVoiceSidebar) {
+    rightSidebarForceHiddenForServerVoiceStage = false;
+    rightSidebarRestoreCollapsedAfterServerVoiceStage = false;
+    rightSidebarCollapsedServerMode = false;
+    if (isRightSidebarCollapsed()) setRightSidebarCollapsed(false, { persist: false });
+    return;
+  }
+
   const shouldForceHide = !!(hideMembers && isServerConversationUiOpen());
   if (shouldForceHide) {
     if (!rightSidebarForceHiddenForServerVoiceStage) {
@@ -7805,7 +7900,22 @@ function syncServerVoiceStageRightSidebar({ hideMembers = false } = {}) {
   }
 }
 
-function syncRightSidebarForCall(callActive) {
+function syncRightSidebarForCall(callActive, { conversationId = "" } = {}) {
+  const callConvId = normId(conversationId || callConversationId || activeDmId || state.activeDm?.conversationId || "");
+  const serverVoiceCallInCurrentView = !!(
+    callActive &&
+    isActiveServerVoiceConversationUiOpen() &&
+    isServerVoiceConversationUiContext(callConvId)
+  );
+  if (serverVoiceCallInCurrentView) {
+    if (!rightSidebarForceHiddenForCall) {
+      rightSidebarRestoreCollapsedAfterCall = isRightSidebarCollapsed();
+      rightSidebarForceHiddenForCall = true;
+    }
+    setRightSidebarCollapsed(true, { persist: false });
+    return;
+  }
+
   // While a call is active, collapse the right sidebar (hides "Active Now").
   // Saves and restores the user's preference when the call ends.
   if (callActive) {
@@ -8025,7 +8135,7 @@ function getTenorApiKey(){ return (localStorage.getItem("altara_tenor_api_key") 
 function setTenorApiKey(key){ localStorage.setItem("altara_tenor_api_key", key); }
 
 const GIF_PACK = [
-  // fallback pack: links diretos vÃ¡lidos (.gif)
+  // fallback pack: links diretos válidos (.gif)
   "https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif",
   "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif",
   "https://media.giphy.com/media/3o7aD2saalBwwftBIY/giphy.gif",
@@ -8705,9 +8815,13 @@ function safeParseMessageContent(content) {
       const obj = JSON.parse(s);
       if (obj && obj.type === "gif" && typeof obj.url === "string") {
         const attachment = sanitizeAttachmentPayload(obj.attachment || obj.file || obj.media || null);
+        const gifMeta = {
+          preview: String(obj.preview || obj.preview_url || "").trim(),
+          title: String(obj.title || obj.name || "").trim(),
+        };
         return attachment
-          ? { type: "gif", url: obj.url, attachment }
-          : { type: "gif", url: obj.url };
+          ? { type: "gif", url: obj.url, attachment, ...gifMeta }
+          : { type: "gif", url: obj.url, ...gifMeta };
       }
       if (obj && obj.type === "text" && typeof obj.text === "string") return { type: "text", text: obj.text };
       if (obj && obj.type === "attachment") {
@@ -8855,6 +8969,12 @@ function resolveSpeakingTileUserId(el) {
   if (speakingFromData) return speakingFromData;
   const fromData = normId(el.getAttribute("data-call-user-id") || "");
   if (fromData) return fromData;
+  const fromVoiceMember = normId(
+    el.getAttribute("data-server-voice-member-id")
+    || el.getAttribute("data-server-right-user")
+    || ""
+  );
+  if (fromVoiceMember) return fromVoiceMember;
   const id = String(el.id || "").trim();
   const meId = normId(state.user?.id || "");
   if (id === "tileSelf" || id === "tileSelfAux" || id === "gridSelf" || id === "gridSelfAux") return meId;
@@ -8909,7 +9029,10 @@ function applyCallSpeakingStateToTiles() {
     if (labelKey) speakingLabelKeys.add(labelKey);
   }
 
-  const tileEls = stage.querySelectorAll(".participantTile, .stageGridTile, .callStagePlaceholder");
+  const tileEls = [
+    ...stage.querySelectorAll(".participantTile, .stageGridTile, .callStagePlaceholder"),
+    ...document.querySelectorAll(".serverMemberRow--call, .serverVoiceMember"),
+  ];
   tileEls.forEach((el) => {
     const uid = resolveSpeakingTileUserId(el);
     let speaking = !!uid && speakingByUserId.has(uid);
@@ -10238,10 +10361,31 @@ function buildAvatarMediaHtml(url, {
   const styleAttr = style ? ` style="${escAttr(style)}"` : "";
   const loadingAttr = loading ? ` loading="${escAttr(loading)}"` : "";
   const fallbackInitial = resolveAvatarFallbackInitial(userId, fallbackChar, alt);
-  if (deferAnimatedStorage && isLikelySupabaseStorageMediaUrl(safeUrl) && isGifLikeUrl(safeUrl)) {
-    return `<span class="profileAvatarMediaClip profileAvatarMediaClip--fallback" data-avatar-fallback="${escAttr(fallbackInitial)}" data-avatar-deferred="animated-storage"><span class="msg__avatarFallback">${esc(fallbackInitial)}</span></span>`;
-  }
   const shouldManageGif = controlledGif !== false && isGifLikeUrl(safeUrl);
+  if (shouldManageGif) {
+    const gifContext = deferAnimatedStorage ? "avatar-list" : "profile-modal";
+    const lazyReason = "avatar-gif-lazy-visible";
+    const lazyLoadingAttr = loadingAttr || ' loading="lazy"';
+    const managedGifAttrs = buildManagedGifMediaHtmlAttrs();
+    const shouldAutoloadGif = shouldLoadGifOnVisible(gifContext);
+    const storedStillFrame = shouldAutoloadGif ? "" : readStoredManagedGifStillFrame(safeUrl);
+    const staticCandidate = shouldAutoloadGif
+      ? ""
+      : (
+        storedStillFrame
+        || (isLikelySupabaseStorageMediaUrl(safeUrl) ? "" : (buildManagedGifStaticUrlCandidates(safeUrl)[0] || ""))
+      );
+    if (!shouldAutoloadGif && !storedStillFrame && isLikelySupabaseStorageMediaUrl(safeUrl)) {
+      primeManagedGifStillFrameCache(safeUrl, { persist: true, maxSide: 192 });
+    }
+    const gifInitialSrcAttr = shouldAutoloadGif
+      ? ` src="${escAttr(safeUrl)}" data-media-loaded="1"`
+      : (staticCandidate ? ` src="${escAttr(staticCandidate)}" data-media-poster="1"` : "");
+    const gifLiveAttrs = ` data-avatar-src="${escAttr(safeUrl)}" data-media-src="${escAttr(safeUrl)}" data-gif-live-src="${escAttr(safeUrl)}"`;
+    const onErrorAttr = ' onerror="window.__altaraHandleAvatarImageError && window.__altaraHandleAvatarImageError(this)"';
+    const onLoadAttr = ' onload="window.__altaraHandleAvatarImageLoad && window.__altaraHandleAvatarImageLoad(this)"';
+    return `<span class="profileAvatarMediaClip profileAvatarMediaClip--lazyGif" data-avatar-fallback="${escAttr(fallbackInitial)}" data-avatar-deferred="${deferAnimatedStorage ? "animated-storage" : "gif-policy"}" data-managed-gif-root="avatar" data-gif-url="${escAttr(safeUrl)}"><img class="profileAvatarMedia"${gifInitialSrcAttr}${gifLiveAttrs} data-media-source="${escAttr(gifContext)}" data-media-load-reason="${escAttr(lazyReason)}" data-media-kind="gif" alt="${escAttr(alt)}"${lazyLoadingAttr}${styleAttr} data-managed-gif-media="1"${managedGifAttrs}${onErrorAttr}${onLoadAttr} /></span>`;
+  }
   const rootAttrs = shouldManageGif
     ? ` data-managed-gif-root="avatar" data-gif-url="${escAttr(safeUrl)}"`
     : "";
@@ -10267,6 +10411,31 @@ function buildAvatarRetryUrl(url = "", attempt = 1) {
 
 function handleAvatarImageError(imageEl) {
   if (!(imageEl instanceof HTMLImageElement)) return;
+  const root = imageEl.closest("[data-managed-gif-root]");
+  const liveUrl = root instanceof HTMLElement ? getManagedGifLiveUrl(root, imageEl) : "";
+  const context = root instanceof HTMLElement ? getManagedGifPolicyContext(root, imageEl) : getGifPolicyContextFromElement(imageEl);
+  const currentUrl = String(imageEl.getAttribute("src") || imageEl.currentSrc || "").trim();
+  if (
+    root instanceof HTMLElement
+    && liveUrl
+    && isAvatarContext(context)
+    && !shouldPlayManagedGif(root)
+    && currentUrl
+    && currentUrl !== liveUrl
+  ) {
+    imageEl.dataset.avatarRetry = "0";
+    imageEl.removeAttribute("src");
+    imageEl.removeAttribute("srcset");
+    imageEl.removeAttribute("data-media-poster");
+    imageEl.style.removeProperty("display");
+    const clip = imageEl.closest(".profileAvatarMediaClip");
+    if (clip) {
+      clip.classList.remove("is-error");
+      clip.classList.remove("is-loaded");
+    }
+    scheduleManagedGifStillFrameCapture(root, imageEl, liveUrl);
+    return;
+  }
   const originalUrl = String(imageEl.dataset.avatarSrc || imageEl.getAttribute("src") || "").trim();
   const attempts = Number.parseInt(String(imageEl.dataset.avatarRetry || "0"), 10) || 0;
   if (originalUrl && attempts < 2 && !originalUrl.startsWith("data:image/") && !originalUrl.startsWith("blob:")) {
@@ -10280,6 +10449,7 @@ function handleAvatarImageError(imageEl) {
   }
   const clip = imageEl.closest(".profileAvatarMediaClip");
   if (clip) clip.classList.add("is-error");
+  if (clip) clip.classList.remove("is-loaded");
   imageEl.style.display = "none";
 }
 
@@ -10288,6 +10458,7 @@ function handleAvatarImageLoad(imageEl) {
   imageEl.dataset.avatarRetry = "0";
   const clip = imageEl.closest(".profileAvatarMediaClip");
   if (clip) clip.classList.remove("is-error");
+  if (clip) clip.classList.add("is-loaded");
   imageEl.style.removeProperty("display");
 }
 
@@ -10326,16 +10497,26 @@ function applyBannerStyle(el, bannerUrl = "", fallbackStart = "", fallbackEnd = 
       el.setAttribute("data-managed-gif-root", "banner");
       el.setAttribute("data-gif-url", url);
       mediaEl.setAttribute("data-managed-gif-media", "1");
+      mediaEl.setAttribute("data-media-kind", "gif");
+      mediaEl.dataset.gifLiveSrc = url;
       mediaEl.crossOrigin = "anonymous";
       mediaEl.referrerPolicy = "no-referrer";
+      if (!shouldLoadGifOnVisible("profile-banner")) {
+        mediaEl.removeAttribute("src");
+        mediaEl.removeAttribute("srcset");
+        delete mediaEl.dataset.mediaLoaded;
+      }
     } else {
       el.removeAttribute("data-managed-gif-root");
       el.removeAttribute("data-gif-url");
       mediaEl.removeAttribute("data-managed-gif-media");
       mediaEl.removeAttribute("data-gif-live-src");
+      mediaEl.removeAttribute("data-media-kind");
       mediaEl.removeAttribute("crossorigin");
       mediaEl.removeAttribute("referrerpolicy");
     }
+    el.setAttribute("data-media-source", "profile-banner");
+    mediaEl.setAttribute("data-media-source", "profile-banner");
     if (String(mediaEl.getAttribute("data-media-src") || "") !== url) {
       mediaEl.removeAttribute("src");
       mediaEl.removeAttribute("data-media-loaded");
@@ -10370,6 +10551,7 @@ function applyBannerStyle(el, bannerUrl = "", fallbackStart = "", fallbackEnd = 
   el.classList.remove("has-banner-media");
   el.removeAttribute("data-managed-gif-root");
   el.removeAttribute("data-gif-url");
+  el.removeAttribute("data-media-source");
   el.style.removeProperty("background-image");
   el.style.removeProperty("background-size");
   el.style.removeProperty("background-position");
@@ -11546,7 +11728,7 @@ function renderCallSoundSettingsUiLegacy() {
     const cue = item.cue;
     const src = getCustomCallCueSrc(cue);
     const hasCustom = !!src;
-    const sizeLabel = hasCustom ? `${customLabel} â€¢ ${formatBytesShort(estimateDataUrlBytes(src))}` : defaultLabel;
+    const sizeLabel = hasCustom ? `${customLabel} • ${formatBytesShort(estimateDataUrlBytes(src))}` : defaultLabel;
     const label = t(item.labelKey, item.fallback);
     return `
       <div class="settingsSoundRow" data-call-cue-row="${escAttr(cue)}">
@@ -11736,7 +11918,7 @@ function renderBlockedUsersSettingsRows(rows = []) {
           </div>
           <div class="settingsBlockedMeta">
             <b>${esc(displayName)}</b>
-            <small>${esc([subLabel, sinceText].filter(Boolean).join(" â€¢ "))}</small>
+            <small>${esc([subLabel, sinceText].filter(Boolean).join(" • "))}</small>
           </div>
         </div>
         <button class="btn ghost" type="button" data-blocked-unblock="${escAttr(uid)}">${esc(unblockLabel)}</button>
@@ -11860,8 +12042,8 @@ function buildOwnerReportEvidenceMessageHtml(message = {}, { highlighted = false
   ].filter(Boolean);
   return `
     <div class="settingsReportsEvidenceItem${highlighted ? " is-reported" : ""}">
-      <div class="settingsReportsEvidenceItemMeta">${esc(metaParts.join(" â€¢ "))}</div>
-      <div class="settingsReportsEvidenceItemText">${esc(message?.text || "â€”")}</div>
+      <div class="settingsReportsEvidenceItemMeta">${esc(metaParts.join(" • "))}</div>
+      <div class="settingsReportsEvidenceItemText">${esc(message?.text || "—")}</div>
     </div>
   `;
 }
@@ -12150,7 +12332,7 @@ function buildOwnerReportModerationHistoryHtml(actionsInput = []) {
           <div class="settingsReportsModerationHistoryItem">
             <div class="settingsReportsModerationHistoryTop">
               <b>${esc(label)}</b>
-              <span>${esc(createdLabel || "â€”")}</span>
+              <span>${esc(createdLabel || "—")}</span>
             </div>
             ${reasonText ? `
               <div class="settingsReportsModerationHistoryMeta">${esc(
@@ -12212,7 +12394,7 @@ function renderOwnerReportsSettingsUiFromState() {
       : t("settings.reports.target.missing", "No linked target user");
     const reporterLabel = getOwnerReportUserLabel(row.reporterProfile, row.reporterUserId);
     const createdLabel = formatOwnerReportTimestamp(row.createdAt);
-    const reasonPreview = row.reason || "â€”";
+    const reasonPreview = row.reason || "—";
     return `
       <button class="settingsReportsItem${row.id === activeId ? " is-active" : ""}" type="button" data-settings-report-open="${escAttr(row.id)}">
         <div class="settingsReportsItemTop">
@@ -12294,7 +12476,7 @@ function renderOwnerReportsSettingsUiFromState() {
       <div class="settingsReportsKv">
         <div class="settingsReportsKvItem">
           <span>${esc(t("settings.reports.meta.created", "Created"))}</span>
-          <b>${esc(createdLabel || "â€”")}</b>
+          <b>${esc(createdLabel || "—")}</b>
         </div>
         <div class="settingsReportsKvItem">
           <span>${esc(t("settings.reports.meta.status", "Status"))}</span>
@@ -12302,11 +12484,11 @@ function renderOwnerReportsSettingsUiFromState() {
         </div>
         <div class="settingsReportsKvItem">
           <span>${esc(t("settings.reports.meta.reporter_user_id", "Reporter user ID"))}</span>
-          <code>${esc(activeRow.reporterUserId || "â€”")}</code>
+          <code>${esc(activeRow.reporterUserId || "—")}</code>
         </div>
         <div class="settingsReportsKvItem">
           <span>${esc(t("settings.reports.meta.target_user_id", "Target user ID"))}</span>
-          <code>${esc(activeRow.targetUserId || "â€”")}</code>
+          <code>${esc(activeRow.targetUserId || "—")}</code>
         </div>
         <div class="settingsReportsKvItem">
           <span>${esc(t("settings.reports.meta.target_state", "Target standing"))}</span>
@@ -12314,15 +12496,15 @@ function renderOwnerReportsSettingsUiFromState() {
         </div>
         <div class="settingsReportsKvItem">
           <span>${esc(t("settings.reports.meta.message_id", "Message ID"))}</span>
-          <code>${esc(activeRow.messageId || "â€”")}</code>
+          <code>${esc(activeRow.messageId || "—")}</code>
         </div>
         <div class="settingsReportsKvItem">
           <span>${esc(t("settings.reports.meta.conversation_id", "Conversation ID"))}</span>
-          <code>${esc(activeRow.conversationId || "â€”")}</code>
+          <code>${esc(activeRow.conversationId || "—")}</code>
         </div>
       </div>
       <div class="settingsSectionTitle">${esc(t("settings.reports.reason", "Reason"))}</div>
-      <div class="settingsReportsReason">${esc(activeRow.reason || "â€”")}</div>
+      <div class="settingsReportsReason">${esc(activeRow.reason || "—")}</div>
       ${evidenceHtml}
       ${detailLines.length ? `
         <div class="settingsSectionTitle">${esc(t("settings.reports.additional", "Additional metadata"))}</div>
@@ -13148,9 +13330,9 @@ function applyLanguageToStaticUi() {
   const secAppKeybinds = document.getElementById("settingsSectionAppKeybinds");
   if (secAppKeybinds) secAppKeybinds.textContent = t("settings.section.app_keybinds", "App Binds");
   const appKeybindAltSLabel = document.getElementById("settingsAppKeybindAltSLabel");
-  if (appKeybindAltSLabel) appKeybindAltSLabel.textContent = t("settings.keybind.app.alt_s.label", "Toggle Sidebars / DM Profile");
+  if (appKeybindAltSLabel) appKeybindAltSLabel.textContent = t("settings.keybind.app.alt_s.label", "Toggle Active Now / DM Profile");
   const appKeybindAltSHint = document.getElementById("settingsAppKeybindAltSHint");
-  if (appKeybindAltSHint) appKeybindAltSHint.textContent = t("settings.keybind.app.alt_s.hint", "Context shortcut: in DMs it toggles profile, elsewhere it toggles side panels.");
+  if (appKeybindAltSHint) appKeybindAltSHint.textContent = t("settings.keybind.app.alt_s.hint", "Context shortcut: in DMs it toggles profile, elsewhere it toggles Active Now.");
   const appKeybindTogglePanelsResetBtn = document.getElementById("btnSettingsAppKeybindTogglePanelsReset");
   if (appKeybindTogglePanelsResetBtn) appKeybindTogglePanelsResetBtn.textContent = t("settings.keybind.reset", "Clear");
   const appKeybindUiZoomLabel = document.getElementById("settingsAppKeybindUiZoomLabel");
@@ -13336,7 +13518,7 @@ function applyLanguageToStaticUi() {
   const btnDmGroupManage = document.getElementById("btnDmGroupManage");
   if (btnDmGroupManage) { const lbl = t("dm.manage_group", "Leave group"); btnDmGroupManage.title = lbl; btnDmGroupManage.setAttribute("aria-label", lbl); const sr = document.getElementById("btnDmGroupManageSrOnly"); if (sr) sr.textContent = lbl; }
   const btnDmProfilePanel = document.getElementById("btnDmProfilePanel");
-  if (btnDmProfilePanel) { const lbl = t("dm.profile", "Profile"); btnDmProfilePanel.title = lbl; btnDmProfilePanel.setAttribute("aria-label", lbl); const sr = document.getElementById("btnDmProfilePanelSrOnly"); if (sr) sr.textContent = lbl; }
+  if (btnDmProfilePanel) { const lbl = t("dm.profile_shortcut", "Profile (Alt+S)"); btnDmProfilePanel.title = lbl; btnDmProfilePanel.setAttribute("aria-label", lbl); const sr = document.getElementById("btnDmProfilePanelSrOnly"); if (sr) sr.textContent = t("dm.profile", "Profile"); }
   const btnDmPinsClose = document.getElementById("btnDmPinsClose");
   if (btnDmPinsClose) btnDmPinsClose.setAttribute("aria-label", t("dm.close_pins", "Close pins"));
   const btnDmProfileClose = document.getElementById("btnDmProfileClose");
@@ -13412,7 +13594,7 @@ function applyLanguageToStaticUi() {
   const shareMenuAudioLbl = document.getElementById("callShareMenuAudioLabel");
   if (shareMenuAudioLbl) shareMenuAudioLbl.textContent = t("call.share.stream_audio", "Share Stream Audio");
   syncCallShareMenuUi();
-  // Profile chips â€” share menu
+  // Profile chips — share menu
   document.querySelectorAll("[data-call-share-profile]").forEach((btn) => {
     const p = String(btn.getAttribute("data-call-share-profile") || "").trim();
     if (p) btn.textContent = t(`call.share.profile.${p}`, p.charAt(0).toUpperCase() + p.slice(1));
@@ -13421,7 +13603,7 @@ function applyLanguageToStaticUi() {
   document.querySelectorAll(".callShareMenu__sectionLabel").forEach((el) => {
     el.textContent = t("call.share.profile.label", "Stream mode");
   });
-  // Profile buttons â€” picker
+  // Profile buttons — picker
   document.querySelectorAll("[data-desktop-share-profile]").forEach((btn) => {
     const p = String(btn.getAttribute("data-desktop-share-profile") || "").trim();
     if (p) btn.textContent = t(`call.share.profile.${p}`, p.charAt(0).toUpperCase() + p.slice(1));
@@ -14211,7 +14393,7 @@ function bindProfileOverlayOnce() {
     );
     if (!sure) return;
 
-    // â”€â”€ TRUE OPTIMISTIC: remove row from DOM immediately, before network call â”€â”€
+    // ── TRUE OPTIMISTIC: remove row from DOM immediately, before network call ──
     const trace = beginRelationshipActionTrace("unblock_user", {
       userId: uid,
       displayName,
@@ -14225,7 +14407,7 @@ function bindProfileOverlayOnce() {
       affectedUserId: uid,
     });
     relationshipTraceSchedulePaint(trace, "optimisticPaint");
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────────────────────────────
 
     if (unblockBtn instanceof HTMLButtonElement) unblockBtn.disabled = true;
     try {
@@ -14285,7 +14467,7 @@ async function loadProfileOverlay() {
   applyMeHeaderNameStyle();
   applyMeHeaderBannerStyle();
 
-  document.getElementById("meLine").textContent = me.display_name || me.username || "â€¦";
+  document.getElementById("meLine").textContent = me.display_name || me.username || "…";
   document.getElementById("uidLine").textContent = me.username ? `@${me.username}` : "@...";
   const pronounsLine = document.getElementById("pronounsLine");
   if (pronounsLine) {
@@ -14379,7 +14561,7 @@ function setProfileDebug(obj) {
 
 async function saveUsername() {
   const u = document.getElementById("username").value.trim();
-  if (!validUsername(u)) return alert("Username invÃ¡lido.");
+  if (!validUsername(u)) return alert("Username inválido.");
 
   const { error } = await supabase.rpc("set_my_username", { p_username: u });
   setProfileDebug({ set_my_username: { error } });
@@ -14398,7 +14580,7 @@ async function saveUsername() {
   $("meTag").textContent = "@" + state.me.username;
   applyMeHeaderBannerStyle();
   const meLine = document.getElementById("meLine");
-  if (meLine) meLine.textContent = state.me.display_name || state.me.username || "â€¦";
+  if (meLine) meLine.textContent = state.me.display_name || state.me.username || "…";
   const uidLine = document.getElementById("uidLine");
   if (uidLine) uidLine.textContent = state.me.username ? `@${state.me.username}` : "@...";
   const pronounsLine = document.getElementById("pronounsLine");
@@ -14423,8 +14605,8 @@ async function saveProfile() {
   const nameColor = normalizeNameColor(document.getElementById("nameColor")?.value || "");
   const callTileColor = normalizeCallTileColor(document.getElementById("callTileColor")?.value || "");
 
-  if (display_name.length > 32) return alert("Display name mÃ¡ximo: 32 caracteres");
-  if (bio.length > PROFILE_BIO_MAX_LEN) return alert(`Bio mÃ¡xima: ${PROFILE_BIO_MAX_LEN} caracteres`);
+  if (display_name.length > 32) return alert("Display name máximo: 32 caracteres");
+  if (bio.length > PROFILE_BIO_MAX_LEN) return alert(`Bio máxima: ${PROFILE_BIO_MAX_LEN} caracteres`);
 
   let payload = {
     display_name: display_name || null,
@@ -14479,7 +14661,7 @@ async function saveProfile() {
   $("meTag").textContent = "@" + state.me.username;
   applyMeHeaderBannerStyle();
   const meLine = document.getElementById("meLine");
-  if (meLine) meLine.textContent = state.me.display_name || state.me.username || "â€¦";
+  if (meLine) meLine.textContent = state.me.display_name || state.me.username || "…";
   const uidLine = document.getElementById("uidLine");
   if (uidLine) uidLine.textContent = state.me.username ? `@${state.me.username}` : "@...";
   const pronounsLine = document.getElementById("pronounsLine");
@@ -14533,7 +14715,7 @@ async function updateEmail() {
   if (state.user) state.user.email = nextEmail;
   if (currentEmailInput) currentEmailInput.value = nextEmail;
   if (newEmailInput) newEmailInput.value = "";
-  await showSecurityDialogMessage("Pedido de troca de email feito (pode precisar de confirmaÃ§Ã£o).");
+  await showSecurityDialogMessage("Pedido de troca de email feito (pode precisar de confirmação).");
 }
 
 async function updatePassword() {
@@ -16978,7 +17160,7 @@ function getLegacyCalendarWidgetHtml(classes, id, draggable, tools) {
         ${tools}
         <div class="widgetCard__label">${esc(getWidgetLabel(id))}</div>
         <div class="widgetCard__value widgetCard__value--small">${esc(calendar.day)}</div>
-        <div class="widgetCard__meta">${esc(calendar.monthLabel)} ${esc(String(calendar.year))} â€¢ ${esc(calendar.weekdayLong)}</div>
+        <div class="widgetCard__meta">${esc(calendar.monthLabel)} ${esc(String(calendar.year))} • ${esc(calendar.weekdayLong)}</div>
       </article>
     `;
   }
@@ -17166,7 +17348,7 @@ function widgetCardHtml(widgetId, stats) {
           ${tools}
           <div class="widgetCard__label">${esc(getWidgetLabel(id))}</div>
           <div class="widgetCard__value widgetCard__value--small">${esc(calendar.day)}</div>
-          <div class="widgetCard__meta">${esc(calendar.monthLabel)} ${esc(String(calendar.year))} â€¢ ${esc(calendar.weekdayLong)}</div>
+          <div class="widgetCard__meta">${esc(calendar.monthLabel)} ${esc(String(calendar.year))} • ${esc(calendar.weekdayLong)}</div>
         </article>
       `;
     }
@@ -18411,7 +18593,7 @@ function setMidMode(mode) {
     else appShell?.classList.add("dm-focus");
     if (callActiveNow) stageOpen = true;
 
-    // palco dentro da DM quando estÃ¡s em chamada
+    // palco dentro da DM quando estás em chamada
     dockStageIntoDm(true);
     updateDmJumpLatestButton(document.getElementById("dmMessages"));
   } else {
@@ -18785,7 +18967,7 @@ function buildServerVoiceChannelSettingsSummary({
   const modeMeta = getServerVoiceMediaModeMeta(mediaMode);
   const manualLimit = clampServerVoiceUserLimit(userLimit, 0);
   const limitText = manualLimit > 0 ? `Manual limit ${manualLimit}` : "No manual limit";
-  return `${modeMeta.label} â€¢ ${limitText}`;
+  return `${modeMeta.label} • ${limitText}`;
 }
 
 function normalizeServerCategoryName(value, fallback = "Category") {
@@ -21472,7 +21654,7 @@ function formatServerInviteUsesSettingLabel(maxUses) {
 }
 
 function formatServerInviteSettingsSummary(hours, maxUses) {
-  return `${formatServerInviteExpirySettingLabel(hours)} â€¢ ${formatServerInviteUsesSettingLabel(maxUses)}`;
+  return `${formatServerInviteExpirySettingLabel(hours)} • ${formatServerInviteUsesSettingLabel(maxUses)}`;
 }
 
 function resetServerInviteGeneratedLink({ markDirty = false } = {}) {
@@ -22696,7 +22878,7 @@ function renderServerChannelCreatePrivateAccessUi() {
     .filter((uid) => uid && uid !== meId)
     .length;
   metaEl.textContent = selectedRoleCount || selectedMemberCount
-    ? `${selectedRoleCount} role${selectedRoleCount === 1 ? "" : "s"} â€¢ ${selectedMemberCount} member${selectedMemberCount === 1 ? "" : "s"} selected. You always keep access.`
+    ? `${selectedRoleCount} role${selectedRoleCount === 1 ? "" : "s"} • ${selectedMemberCount} member${selectedMemberCount === 1 ? "" : "s"} selected. You always keep access.`
     : "Select roles or members. You always keep access.";
 
   rolesListEl.innerHTML = roles.length
@@ -22743,7 +22925,7 @@ function renderServerChannelCreatePrivateAccessUi() {
             <span class="serverChannelCreateAccessRow__avatar" aria-hidden="true">${avatarHtml}</span>
             <span class="serverChannelCreateAccessRow__text">
               <span class="serverChannelCreateAccessRow__title">${esc(displayName)}</span>
-              <span class="serverChannelCreateAccessRow__meta">${esc(metaParts.join(" â€¢ ") || "Member")}</span>
+              <span class="serverChannelCreateAccessRow__meta">${esc(metaParts.join(" • ") || "Member")}</span>
             </span>
           </span>
         </label>
@@ -23315,7 +23497,7 @@ async function openServerCategoryEditModal(serverCtx = null, categoryCtx = null)
   const sid = normId(categoryCtx?.serverId || ctx?.serverId || "");
   const cid = normId(categoryCtx?.categoryId || "");
   if (!sid || !cid) {
-    alert("Categoria invÃ¡lida.");
+    alert("Categoria inválida.");
     return;
   }
 
@@ -23690,7 +23872,7 @@ async function ensureDefaultServerStructureForServer(serverId, {
 async function submitServerChannelCreateModal() {
   const sid = normId(serverChannelCreateServerId || "");
   if (!sid) {
-    alert("Server invÃ¡lido para criar canal.");
+    alert("Server inválido para criar canal.");
     return;
   }
 
@@ -24639,7 +24821,7 @@ async function runServerVoiceMemberMenuAction(action, context) {
     if (isSelfTarget) {
       if (action === "disconnect") {
         if (isLocalServerVoiceCallContextActive(convId)) {
-          await hangupCurrentCallByUser("?? SaÃ­ste da chamada.");
+          await hangupCurrentCallByUser("?? Saíste da chamada.");
         } else {
           applyLocalServerVoiceMemberRemoval(convId, uid);
           refreshCallUI();
@@ -24933,10 +25115,10 @@ function openServerVoiceMemberMenuAt(context, point) {
   const playbackMuted = !!getRemoteUserVoiceMuted(uid);
   const disabledHint = ctx.isSelf
     ? ""
-    : (canAct ? "" : "Sem permissÃµes para moderar este membro.");
+    : (canAct ? "" : "Sem permissões para moderar este membro.");
 
   menu.innerHTML = [
-    `<div class="msgMenu__meta">${esc(displayName)} â€¢ ${esc(roleLabel)}</div>`,
+    `<div class="msgMenu__meta">${esc(displayName)} • ${esc(roleLabel)}</div>`,
     `<div class="serverVoiceMemberMenuVolume" data-server-voice-member-volume-wrap="1">
       <div class="serverVoiceMemberMenuVolume__head">
         <span>User Volume</span>
@@ -25761,7 +25943,7 @@ function renderServerSettingsRolesUi() {
   const fallbackMeta = serverSettingsRolesLoading
     ? "Loading roles..."
     : (roleList.length
-      ? `${roleList.length} role${roleList.length === 1 ? "" : "s"} â€¢ ${selectedCount} member${selectedCount === 1 ? "" : "s"} selected`
+      ? `${roleList.length} role${roleList.length === 1 ? "" : "s"} • ${selectedCount} member${selectedCount === 1 ? "" : "s"} selected`
       : "No custom roles yet.");
   const activeMeta = serverSettingsRolesMetaMessage || fallbackMeta;
   metaEl.textContent = activeMeta;
@@ -25863,7 +26045,7 @@ function renderServerSettingsRolesUi() {
         </span>
         <span class="serverSettingsRoleMemberText">
           <span class="serverSettingsRoleMemberName">${esc(displayName)}${member?.isMe ? " (You)" : ""}</span>
-          <span class="serverSettingsRoleMemberMeta">@${esc(username || "user")}${baseRoleTag ? ` â€¢ ${esc(baseRoleTag)}` : ""}</span>
+          <span class="serverSettingsRoleMemberMeta">@${esc(username || "user")}${baseRoleTag ? ` • ${esc(baseRoleTag)}` : ""}</span>
         </span>
       </label>
     `;
@@ -25893,7 +26075,7 @@ function renderServerSettingsRolesUi() {
       ${permissionRowsHtml}
     </div>
     <div class="msgMenu__divider"></div>
-    <p class="serverSettingsRoleMembersHead">${esc(selectedRole.name)} â€¢ ${assignedSet.size} member${assignedSet.size === 1 ? "" : "s"}</p>
+    <p class="serverSettingsRoleMembersHead">${esc(selectedRole.name)} • ${assignedSet.size} member${assignedSet.size === 1 ? "" : "s"}</p>
     ${memberRowsHtml}
   `;
 }
@@ -28087,7 +28269,7 @@ function buildShareMetaText(meta = {}, {
   if (includeAudio && withAudio != null) {
     parts.push(withAudio ? t("call.share.audio_on", "with audio") : t("call.share.audio_off", "no audio"));
   }
-  return parts.filter(Boolean).join(" • ");
+  return parts.filter(Boolean).join(" � ");
 }
 
 function getPreferredRemoteShareState(conversationId = null) {
@@ -28183,7 +28365,7 @@ function buildCallAudioStateBadgesHtml(userId, conversationId = null) {
     badges.push(`<span class="callAudioStateBadge callAudioStateBadge--mic" title="Microfone silenciado" aria-label="Microfone silenciado">${CALL_AUDIO_BADGE_MIC_OFF_SVG}</span>`);
   }
   if (audioState.deafened) {
-    badges.push(`<span class="callAudioStateBadge callAudioStateBadge--deafen" title="Ãudio recebido silenciado" aria-label="Ãudio recebido silenciado">${CALL_AUDIO_BADGE_DEAFEN_OFF_SVG}</span>`);
+    badges.push(`<span class="callAudioStateBadge callAudioStateBadge--deafen" title="Áudio recebido silenciado" aria-label="Áudio recebido silenciado">${CALL_AUDIO_BADGE_DEAFEN_OFF_SVG}</span>`);
   }
   if (!badges.length) return "";
   return `<span class="callAudioStateBadges">${badges.join("")}</span>`;
@@ -28197,7 +28379,7 @@ function buildCallParticipantLabelHtml(label, userId, {
   const suffixText = String(suffix || "").trim();
   const badgesHtml = buildCallAudioStateBadgesHtml(userId, conversationId);
   const suffixHtml = suffixText
-    ? `<span class="callParticipantLabel__suffix"> • ${esc(suffixText)}</span>`
+    ? `<span class="callParticipantLabel__suffix"> � ${esc(suffixText)}</span>`
     : "";
   return `<span class="callParticipantLabel__name">${esc(nameText)}</span>${badgesHtml}${suffixHtml}`;
 }
@@ -28216,11 +28398,11 @@ function setCallParticipantLabel(el, label, userId, {
 function splitCallParticipantLabelAndSuffix(rawLabel) {
   const raw = String(rawLabel || "").trim();
   if (!raw) return { label: t("call.member", "member"), suffix: "" };
-  let idx = raw.indexOf("•");
+  let idx = raw.indexOf("�");
   let separatorLength = 1;
   if (idx < 0) {
-    idx = raw.indexOf("â€¢");
-    separatorLength = "â€¢".length;
+    idx = raw.indexOf("•");
+    separatorLength = "•".length;
   }
   if (idx < 0) return { label: raw, suffix: "" };
   return {
@@ -28886,18 +29068,31 @@ function buildServerVoiceParticipantsFromIds(conversationId, participantIds = []
       ? (participantUiStateByUserId.get(uid) || null)
       : null;
     const friendNickname = getDmFriendNickname(uid);
+    const isMe = !!(meId && uid === meId);
     const displayName = normalizeConversationLabel(
-      friendNickname || member?.displayName || voicePresenceMeta?.label || fallbackIdentity?.label || member?.username || "member",
+      friendNickname
+        || member?.displayName
+        || voicePresenceMeta?.label
+        || (isMe ? (state.me?.display_name || state.me?.username || "") : "")
+        || fallbackIdentity?.label
+        || member?.username
+        || "member",
       "member"
     );
-    const avatarUrl = String(member?.avatarUrl || voicePresenceMeta?.avatar || fallbackIdentity?.avatar || "").trim();
+    const avatarUrl = String(
+      member?.avatarUrl
+      || voicePresenceMeta?.avatar
+      || (isMe ? (state.me?.avatar_url || "") : "")
+      || fallbackIdentity?.avatar
+      || ""
+    ).trim();
     let presenceStatus = getPresenceStatusForServerMember(uid);
     if (presenceStatus === "offline") presenceStatus = "online";
     return {
       userId: uid,
       displayName,
       avatarUrl,
-      isMe: !!(meId && uid === meId),
+      isMe,
       presenceStatus,
       voiceState: participantUiState?.state || (includeTransportState
         ? SERVER_VOICE_PARTICIPANT_RUNTIME_STATE.NOT_IN_CHANNEL
@@ -28959,7 +29154,7 @@ function getServerVoiceChannelOccupantIds(conversationId, {
   const sourceDetail = String(occupancySnapshot.source || "").trim() || "unknown";
   const occupantIds = normalizeUuidArray(occupancySnapshot.occupantIds || []);
   logServerVoiceSourceSplitRenderSnapshot(convId, occupantIds, {
-    sourceType: "channel_occupants_control_plane",
+    sourceType: "normalized_voice_participants",
     sourceDetail,
     triggerReason: reason,
     callerFunction: caller,
@@ -29029,6 +29224,126 @@ function getServerVoiceInCallParticipants(conversationId, {
   });
 }
 
+function getServerVoiceStageParticipantIds(conversationId, {
+  triggerReason = "",
+  callerFunction = "",
+} = {}) {
+  const convId = normId(conversationId || "");
+  if (!convId || !isServerVoiceConversationUiContext(convId)) return [];
+  if (!isActiveServerVoiceCallJoined(convId)) return [];
+
+  return getServerVoiceChannelParticipantIds(convId, {
+    triggerReason: triggerReason || "server_voice_stage_participants",
+    callerFunction: callerFunction || "getServerVoiceStageParticipantIds",
+  });
+}
+
+function getServerVoiceChannelParticipantIds(conversationId, {
+  triggerReason = "",
+  callerFunction = "",
+} = {}) {
+  const convId = normId(conversationId || "");
+  const hasTransportContext = !!(
+    getServerVoiceTransportSnapshot(convId)
+    || getActiveServerVoiceTransportController(convId)
+    || serverVoiceUiVisibilityByConversation.has(convId)
+  );
+  if (!convId || (!isServerVoiceConversationUiContext(convId) && !hasTransportContext)) return [];
+
+  const reason = String(triggerReason || "").trim() || "server_voice_channel_participants";
+  const caller = String(callerFunction || "").trim() || "getServerVoiceChannelParticipantIds";
+  const ids = [];
+  const sourceByUserId = new Map();
+  const seen = new Set();
+  const forcedRemoved = new Set(getServerVoiceUiForcedRemovedIds(convId));
+  const push = (value, source) => {
+    const uid = normId(value || "");
+    if (!uid || seen.has(uid) || forcedRemoved.has(uid)) return;
+    seen.add(uid);
+    ids.push(uid);
+    sourceByUserId.set(uid, String(source || "").trim() || "unknown");
+  };
+
+  const liveKitParticipantIds = getServerVoiceInCallParticipantIds(convId, {
+    triggerReason: reason,
+    callerFunction: caller,
+  });
+  liveKitParticipantIds.forEach((uid) => push(uid, "livekit_transport"));
+
+  const realtimeParticipantIds = getServerVoiceChannelOccupantIds(convId, {
+    triggerReason: `${reason}:realtime_presence`,
+    callerFunction: caller,
+  });
+  realtimeParticipantIds.forEach((uid) => push(uid, "realtime_presence"));
+
+  const legacyParticipantIds = getServerVoiceLegacyUiParticipantIds(convId);
+  legacyParticipantIds.forEach((uid) => push(uid, "legacy_visible_cache"));
+
+  const meId = normId(state.user?.id || "");
+  if (meId && isActiveServerVoiceCallJoined(convId)) push(meId, "local_joined_fallback");
+
+  const sortedIds = sortGroupCallMemberIdsForLayout(convId, ids);
+  if (isServerVoiceDebugLoggingEnabled()) {
+    const finalParticipants = buildServerVoiceParticipantsFromIds(convId, sortedIds, {
+      includeTransportState: true,
+    });
+    logServerVoiceDebug("server_voice_channel_participants_resolved", {
+      channelId: convId,
+      conversationId: convId,
+      liveKitParticipantCount: liveKitParticipantIds.length,
+      realtimePresenceCount: realtimeParticipantIds.length,
+      legacyOccupantIdsCount: legacyParticipantIds.length,
+      finalNormalizedCount: sortedIds.length,
+      finalUserIds: sortedIds,
+      finalUsers: finalParticipants.map((participant) => ({
+        userId: participant.userId,
+        name: participant.displayName,
+        source: sourceByUserId.get(participant.userId) || "unknown",
+      })),
+      currentUserIncluded: !!(meId && sortedIds.includes(meId)),
+      duplicatesRemoved: Math.max(
+        0,
+        liveKitParticipantIds.length + realtimeParticipantIds.length + legacyParticipantIds.length + (meId ? 1 : 0) - sortedIds.length
+      ),
+      forcedRemovedIds: Array.from(forcedRemoved),
+      triggerReason: reason,
+      callerFunction: caller,
+    });
+  }
+  return sortedIds;
+}
+
+function getServerVoiceStageParticipants(conversationId, {
+  serverMembers = [],
+  triggerReason = "",
+  callerFunction = "",
+} = {}) {
+  const convId = normId(conversationId || "");
+  const participantIds = getServerVoiceStageParticipantIds(convId, {
+    triggerReason: triggerReason || "server_voice_stage_participants",
+    callerFunction: callerFunction || "getServerVoiceStageParticipants",
+  });
+  return buildServerVoiceParticipantsFromIds(convId, participantIds, {
+    serverMembers,
+    includeTransportState: true,
+  });
+}
+
+function resolveServerVoiceGridConversationId(conversationId = "") {
+  const preferredConvId = normId(conversationId || "");
+  const activeViewedConvId = normId(activeDmId || state.activeDm?.conversationId || "");
+  const activeCallConvId = normId(callConversationId || "");
+  const candidates = normalizeUuidArray([
+    preferredConvId,
+    activeViewedConvId,
+    activeCallConvId,
+  ]);
+  for (const candidateId of candidates) {
+    if (candidateId && isServerVoiceConversationUiContext(candidateId)) return candidateId;
+  }
+  return preferredConvId || activeViewedConvId || activeCallConvId || "";
+}
+
 // Control-plane occupants with UI metadata for sidebar/channel surfaces.
 function getServerVoiceChannelOccupants(conversationId, {
   serverMembers = [],
@@ -29036,13 +29351,13 @@ function getServerVoiceChannelOccupants(conversationId, {
   callerFunction = "",
 } = {}) {
   const convId = normId(conversationId || "");
-  const occupantIds = getServerVoiceChannelOccupantIds(convId, {
+  const participantIds = getServerVoiceChannelParticipantIds(convId, {
     triggerReason: triggerReason || "channel_occupants",
     callerFunction: callerFunction || "getServerVoiceChannelOccupants",
   });
-  return buildServerVoiceParticipantsFromIds(convId, occupantIds, {
+  return buildServerVoiceParticipantsFromIds(convId, participantIds, {
     serverMembers,
-    includeTransportState: false,
+    includeTransportState: true,
   });
 }
 
@@ -29097,7 +29412,7 @@ function buildServerVoiceMemberRowsHtml(conversationId, serverMembers = []) {
     if (member.isMe) stateBits.push("You");
     if (transportStatusLabel) stateBits.push(transportStatusLabel);
     const stateTextHtml = stateBits.length
-      ? `<span class="serverVoiceMember__stateText"${shareMetaText ? ` title="${escAttr(shareMetaText)}"` : ""}>${esc(stateBits.join(" â€¢ "))}</span>`
+      ? `<span class="serverVoiceMember__stateText"${shareMetaText ? ` title="${escAttr(shareMetaText)}"` : ""}>${esc(stateBits.join(" • "))}</span>`
       : "";
     return `
       <div
@@ -29156,6 +29471,21 @@ function refreshServerVoiceChannelBadges() {
         triggerReason: "refresh_server_voice_channel_badges",
         callerFunction: "refreshServerVoiceChannelBadges",
       });
+      const stageParticipantIds = isActiveServerVoiceCallJoined(convId)
+        ? getServerVoiceStageParticipantIds(convId, {
+          triggerReason: "refresh_server_voice_channel_badges:stage_count",
+          callerFunction: "refreshServerVoiceChannelBadges",
+        })
+        : [];
+      logServerVoiceDebug("server_voice_channel_badge_render", {
+        channelId: convId,
+        conversationId: convId,
+        displayedCount: count,
+        nestedRowCount: activeMembers.length,
+        stageParticipantCount: stageParticipantIds.length,
+        nestedUserIds: activeMembers.map((member) => member.userId),
+        stageParticipantIds,
+      });
       const currentIds = new Set(activeMembers.map((m) => m.userId));
       const previousIds = serverVoiceLastChannelOccupantsByConversation.get(convId) || new Set();
       const meId = normId(state.user?.id || "");
@@ -29166,7 +29496,7 @@ function refreshServerVoiceChannelBadges() {
             conversationId: convId,
             peerUserId: uid,
             reason: isLocal ? "local_presence_joined" : "remote_presence_joined",
-            sourceType: "channel_occupants_control_plane",
+            sourceType: "normalized_voice_participants",
             isLocal,
           });
         }
@@ -29180,7 +29510,7 @@ function refreshServerVoiceChannelBadges() {
             reason: isLocal
               ? "local_presence_left"
               : "remote_presence_left",
-            sourceType: "channel_occupants_control_plane",
+            sourceType: "normalized_voice_participants",
             isLocal,
           });
         }
@@ -30154,19 +30484,7 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
     activeChannelCtx?.channel?.channelType || state.activeDm?.channelType || ""
   );
   const isServerVoiceChannelContext = !!(activeChannelBelongsToServer && activeChannelType === "voice");
-  if (isServerVoiceChannelContext) {
-    rightSidebarCollapsedServerMode = true;
-    syncServerVoiceStageRightSidebar({ hideMembers: true });
-    setRightSidebarToServerMembers({ active: false });
-    return;
-  }
-  if (rightSidebarForceHiddenForServerVoiceStage) {
-    syncServerVoiceStageRightSidebar({ hideMembers: false });
-  }
-  if (rightSidebarForceHiddenForServerVoiceStage) {
-    setRightSidebarToServerMembers({ active: false });
-    return;
-  }
+  if (membersPanel) membersPanel.dataset.serverMembersMode = "members";
   const renderToken = ++serverMembersRightPanelRenderToken;
   const allMemberRows = Array.isArray(members) ? members : [];
   let memberRows = allMemberRows.slice();
@@ -30343,7 +30661,7 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
         </div>
         <div class="serverMemberRow__text">
           <div class="serverMemberRow__name"${nameColorStyle}>${esc(displayName)}${m?.isMe ? " (You)" : ""}</div>
-          <div class="serverMemberRow__meta">@${esc(username)} â€¢ ${esc(statusLabel)}</div>
+          <div class="serverMemberRow__meta">@${esc(username)} • ${esc(statusLabel)}</div>
         </div>
       </button>
     `;
@@ -30450,11 +30768,8 @@ async function refreshServerConversationUi({ force = false } = {}) {
     activeChannelCtx?.channel?.channelType || state.activeDm?.channelType || ""
   );
   if (activeChannelBelongsToServer && activeChannelType === "voice") {
-    rightSidebarCollapsedServerMode = true;
-    syncServerVoiceStageRightSidebar({ hideMembers: true });
-    setRightSidebarToServerMembers({ active: false });
     void requestServerVoicePresenceSnapshotsForServer(serverCtx.serverId, channels || [], members || []);
-    return;
+
   }
   await renderServerMembersRightPanel(serverCtx, members || [], {
     forceChannelMembers: force,
@@ -32001,7 +32316,7 @@ function renderWidgets() {
   }
 
   if (!activeIds.length) {
-    grid.innerHTML = `<div class="hint">Sem widgets ativos. Entra no modo de ediÃ§Ã£o para adicionar.</div>`;
+    grid.innerHTML = `<div class="hint">Sem widgets ativos. Entra no modo de edição para adicionar.</div>`;
   } else {
     grid.innerHTML = activeIds.map((id) => {
       try {
@@ -32316,7 +32631,7 @@ async function sendFriendRequest(usernameOverride = "", { preserveInput = true }
   }
   const trace = beginRelationshipActionTrace("send_friend_request", { username: uname });
 
-  // â”€â”€ TRUE OPTIMISTIC: patch state + render BEFORE the network call â”€â”€
+  // ── TRUE OPTIMISTIC: patch state + render BEFORE the network call ──
   const knownUserId = findKnownUserIdByUsername(uname);
   const optimisticProfile = getOptimisticRelationshipProfile({ userId: knownUserId, username: uname });
   const snapshot = relationshipTraceMeasureSync(trace, "snapshotRelationshipState", () => snapshotRelationshipState());
@@ -32340,7 +32655,7 @@ async function sendFriendRequest(usernameOverride = "", { preserveInput = true }
     affectedUsername: uname,
   });
   relationshipTraceSchedulePaint(trace, "optimisticPaint");
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ──────────────────────────────────────────────────────────────────
 
   const { data, error } = await relationshipTraceMeasureAsync(trace, "rpc:send_friend_request", () => (
     supabase.rpc("send_friend_request", { target_username: uname })
@@ -33028,7 +33343,7 @@ function syncReportUserModalUi() {
   }
   if (evidenceReportedMessage) {
     evidenceReportedMessage.textContent = canIncludeEvidence
-      ? (reportUserModalState.evidenceDraft?.reported_message?.text || "â€”")
+      ? (reportUserModalState.evidenceDraft?.reported_message?.text || "—")
       : t("report.modal.dm_context.reported_unavailable", "Unavailable on this device");
   }
 }
@@ -33132,7 +33447,7 @@ function closeReportUserModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
-// â”€â”€â”€ Optimistic relationship state helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Optimistic relationship state helpers ────────────────────────────────────
 // Patch in-memory state arrays and re-render immediately.
 // A background refresh() call will reconcile with the server.
 
@@ -33534,7 +33849,7 @@ function optimisticRemoveFriendById(userId) {
     (r) => normId(r?.to_user_id || "") !== uid
   );
 
-  // Zap the user's row from the DM sidebar immediately â€” no network call, pure DOM.
+  // Zap the user's row from the DM sidebar immediately — no network call, pure DOM.
   const dmList = document.getElementById("dmList");
   if (dmList) {
     dmList.querySelectorAll(`.dm-item[data-dm-id]`).forEach((el) => {
@@ -33542,7 +33857,7 @@ function optimisticRemoveFriendById(userId) {
     });
   }
 }
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function acceptReq(id) {
   const rid = normId(id || "");
@@ -36633,7 +36948,12 @@ let dmOpenAutoScrollTimer = null;
 let dmOpenAutoScrollUserInterrupted = false;
 let dmOpenAutoScrollStartedAt = 0;
 let dmOpenAutoScrollArmed = false;
-const DM_OPEN_AUTOSCROLL_MS = 15000;
+const DM_OPEN_AUTOSCROLL_MS = 4200;
+let dmInitialLatestConversationId = "";
+let dmInitialLatestUntilMs = 0;
+let dmInitialLatestTimer = null;
+let dmInitialLatestUserInterrupted = false;
+const DM_INITIAL_LATEST_STABILIZE_MS = 2800;
 let dmReactionsSyncTimer = null;
 let dmReactionsFetchInFlight = null;
 let dmReactionsLastFetchKey = "";
@@ -36696,6 +37016,11 @@ let dmPinsPanelOpen = false;
 let dmProfilePanelBound = false;
 let dmProfilePanelOpen = false;
 let dmProfilePanelRequestSeq = 0;
+let dmProfileMutualExpandedState = { userId: "", servers: false, friends: false };
+let dmProfileMutualProfileSnapshot = null;
+let dmProfileMutualServersLoadSeq = 0;
+let dmProfileMutualServersLoadKey = "";
+let dmProfileMutualServersLoadPromise = null;
 let dmShowRequestSeq = 0;
 const dmGroupMembersCacheByConversation = new Map();
 let dmGroupMemberMenuBound = false;
@@ -36978,7 +37303,7 @@ let dmE2eeReadiness = {
   updatedAt: 0,
 };
 let dmE2eeLastLoginSyncNotice = null;
-const MESSAGE_SEND_RATE_LIMIT_WARNING_PREFIX = "EstÃ¡s a enviar mensagens demasiado rÃ¡pido.";
+const MESSAGE_SEND_RATE_LIMIT_WARNING_PREFIX = "Estás a enviar mensagens demasiado rápido.";
 const MESSAGE_SEND_RATE_LIMIT_ERROR_CODE = "message_rate_limited";
 const MESSAGE_SEND_RATE_LIMITS_BY_KIND = Object.freeze({
   dm: Object.freeze({ actionType: "message_send_dm", maxCount: 20, windowSeconds: 60 }),
@@ -37148,7 +37473,7 @@ const EMOJI_PICKER_CATEGORIES = [
   { id: "activities", label: "Atividades", icon: EMOJI.gamepad },
   { id: "travel", label: "Viagens", icon: EMOJI.rocket },
   { id: "objects", label: "Objetos", icon: EMOJI.keyboard },
-  { id: "symbols", label: "Símbolos", icon: EMOJI.symbol },
+  { id: "symbols", label: "S�mbolos", icon: EMOJI.symbol },
   { id: "flags", label: "Bandeiras", icon: EMOJI.flag },
 ];
 let emojiDataset = null;
@@ -37793,7 +38118,7 @@ function normalizeRelayMediaKind(v) {
   const raw = String(v || "").trim().toLowerCase();
   if (!raw) return "";
   if (raw === "share" || raw === "screen" || raw === "partilha") return "share";
-  if (raw === "camera" || raw === "cam" || raw === "webcam" || raw === "camara" || raw === "cÃ¢mara") return "camera";
+  if (raw === "camera" || raw === "cam" || raw === "webcam" || raw === "camara" || raw === "câmara") return "camera";
   if (raw === "video") return "video";
   return "";
 }
@@ -39005,6 +39330,8 @@ async function retryFailedOptimisticMessage(messageId) {
     await sendGifMessage(retry.gifUrl || "", {
       conversationId: retry.conversationId || activeDmId,
       replyToId: retry.replyToId || null,
+      preview: retry.preview || "",
+      title: retry.title || "",
     });
     return;
   }
@@ -39072,10 +39399,74 @@ function startDmReactionsSync(conversationId) {
 }
 
 let dmStickToBottomUntilMs = 0;
+let dmJumpToLatestUntilMs = 0;
+let dmUserScrolledAwayFromBottom = false;
+
+function isDmInitialLatestActive(conversationId = activeDmId) {
+  const convId = normId(conversationId || activeDmId || "");
+  return !!(
+    convId
+    && dmInitialLatestConversationId
+    && normId(dmInitialLatestConversationId) === convId
+    && !dmInitialLatestUserInterrupted
+    && Date.now() <= Number(dmInitialLatestUntilMs || 0)
+  );
+}
+
+function clearDmInitialLatestTimer() {
+  if (!dmInitialLatestTimer) return;
+  clearTimeout(dmInitialLatestTimer);
+  dmInitialLatestTimer = null;
+}
+
+function cancelDmInitialLatestStick() {
+  dmInitialLatestUserInterrupted = true;
+  dmInitialLatestUntilMs = 0;
+  clearDmInitialLatestTimer();
+}
+
+function armDmInitialLatestStick(conversationId = activeDmId, durationMs = DM_INITIAL_LATEST_STABILIZE_MS) {
+  const convId = normId(conversationId || activeDmId || "");
+  if (!convId) return;
+  clearDmInitialLatestTimer();
+  dmInitialLatestConversationId = convId;
+  dmInitialLatestUntilMs = Date.now() + Math.max(600, Number(durationMs || DM_INITIAL_LATEST_STABILIZE_MS));
+  dmInitialLatestUserInterrupted = false;
+  dmUserScrolledAwayFromBottom = false;
+  dmJumpToLatestUntilMs = Math.max(Number(dmJumpToLatestUntilMs || 0), dmInitialLatestUntilMs);
+  dmInitialLatestTimer = setTimeout(() => {
+    if (normId(dmInitialLatestConversationId || "") !== normId(activeDmId || "")) return;
+    dmInitialLatestUntilMs = 0;
+    dmInitialLatestTimer = null;
+  }, Math.max(650, Number(durationMs || DM_INITIAL_LATEST_STABILIZE_MS) + 80));
+}
+
+function runDmInitialLatestScrollPass() {
+  if (!isDmInitialLatestActive()) return;
+  scrollDmToLatest({ stickMs: Math.max(260, Number(dmInitialLatestUntilMs || 0) - Date.now()) });
+}
+
+function scheduleDmInitialLatestScrollPasses() {
+  if (!isDmInitialLatestActive()) return;
+  runDmInitialLatestScrollPass();
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => {
+      runDmInitialLatestScrollPass();
+      requestAnimationFrame(runDmInitialLatestScrollPass);
+    });
+  } else {
+    setTimeout(runDmInitialLatestScrollPass, 0);
+    setTimeout(runDmInitialLatestScrollPass, 32);
+  }
+  [90, 260, 700, 1400, 2300].forEach((delay) => {
+    setTimeout(runDmInitialLatestScrollPass, delay);
+  });
+}
 
 function requestDmStickToBottom(durationMs = 1200) {
   const until = Date.now() + Math.max(120, Number(durationMs || 0));
   dmStickToBottomUntilMs = Math.max(Number(dmStickToBottomUntilMs || 0), until);
+  dmUserScrolledAwayFromBottom = false;
 }
 
 function shouldHonorDmStickToBottom() {
@@ -39086,8 +39477,14 @@ function cancelDmStickToBottom() {
   dmStickToBottomUntilMs = 0;
 }
 
+function getDmScrollBottomGap(container) {
+  if (!container) return 0;
+  return Math.max(0, Number(container.scrollHeight || 0) - (Number(container.scrollTop || 0) + Number(container.clientHeight || 0)));
+}
+
 function setDmScrollTopToLatest(dmMessages) {
   if (!dmMessages) return;
+  dmUserScrolledAwayFromBottom = false;
   dmMessages.scrollTop = Math.max(0, Number(dmMessages.scrollHeight || 0) - Number(dmMessages.clientHeight || 0) + 999999);
 }
 
@@ -39108,17 +39505,117 @@ function scheduleDmScrollToLatestAfterRender({ durationMs = 700 } = {}) {
   }
 }
 
-function scrollDmToLatest() {
+function scrollDmToLatest(options = {}) {
   const dmMessages = document.getElementById("dmMessages");
   if (!dmMessages) return;
-  setDmScrollTopToLatest(dmMessages);
+  const behavior = String(options?.behavior || "auto").trim().toLowerCase();
+  const stickMs = Number(options?.stickMs || 0);
+  dmUserScrolledAwayFromBottom = false;
+  if (stickMs > 0) requestDmStickToBottom(stickMs);
+  if (behavior === "smooth" && typeof dmMessages.scrollTo === "function") {
+    dmJumpToLatestUntilMs = Date.now() + Math.max(900, stickMs || 0);
+    try {
+      dmMessages.scrollTo({ top: dmMessages.scrollHeight, behavior: "smooth" });
+    } catch (_) {
+      setDmScrollTopToLatest(dmMessages);
+    }
+  } else {
+    setDmScrollTopToLatest(dmMessages);
+  }
   updateDmJumpLatestButton(dmMessages);
 }
 
 function isDmNearBottom(container, thresholdPx = 72) {
   if (!container) return true;
-  const gap = container.scrollHeight - (container.scrollTop + container.clientHeight);
-  return gap <= thresholdPx;
+  return getDmScrollBottomGap(container) <= thresholdPx;
+}
+
+function findDmScrollAnchorNode(container, anchor) {
+  if (!container || !anchor) return null;
+  if (anchor.kind === "message") {
+    const id = String(anchor.id || "");
+    if (!id) return null;
+    return Array.from(container.querySelectorAll("[data-msg-id]"))
+      .find((node) => String(node.getAttribute("data-msg-id") || "") === id) || null;
+  }
+  if (anchor.kind === "day") {
+    const day = String(anchor.day || "");
+    if (!day) return null;
+    return Array.from(container.querySelectorAll(".day-divider[data-day]"))
+      .find((node) => String(node.getAttribute("data-day") || "") === day) || null;
+  }
+  return null;
+}
+
+function captureDmScrollAnchor(container) {
+  if (!container || typeof container.getBoundingClientRect !== "function") return null;
+  const containerRect = container.getBoundingClientRect();
+  const topLimit = containerRect.top + 4;
+  const bottomLimit = containerRect.bottom - 4;
+  const candidates = container.querySelectorAll(".day-divider[data-day],[data-msg-id]");
+  for (const node of candidates) {
+    if (!(node instanceof HTMLElement)) continue;
+    const rect = node.getBoundingClientRect();
+    if (rect.bottom < topLimit || rect.top > bottomLimit) continue;
+    const msgId = String(node.getAttribute("data-msg-id") || "").trim();
+    const day = String(node.getAttribute("data-day") || "").trim();
+    return {
+      kind: msgId ? "message" : "day",
+      id: msgId,
+      day,
+      offset: rect.top - containerRect.top,
+      scrollTop: Number(container.scrollTop || 0),
+      scrollHeight: Number(container.scrollHeight || 0),
+    };
+  }
+  return {
+    kind: "scroll",
+    scrollTop: Number(container.scrollTop || 0),
+    scrollHeight: Number(container.scrollHeight || 0),
+  };
+}
+
+function restoreDmScrollAnchor(container, anchor) {
+  if (!container || !anchor) return false;
+  const node = findDmScrollAnchorNode(container, anchor);
+  if (node instanceof HTMLElement && typeof node.getBoundingClientRect === "function") {
+    const containerRect = container.getBoundingClientRect();
+    const rect = node.getBoundingClientRect();
+    const delta = (rect.top - containerRect.top) - Number(anchor.offset || 0);
+    if (Number.isFinite(delta) && Math.abs(delta) > 0.5) {
+      container.scrollTop = Math.max(0, Number(container.scrollTop || 0) + delta);
+    }
+    return true;
+  }
+  if (anchor.kind === "scroll") {
+    container.scrollTop = Math.max(0, Number(anchor.scrollTop || 0));
+    return true;
+  }
+  return false;
+}
+
+function restoreDmScrollAnchorSoon(container, anchor) {
+  if (!container || !anchor) return false;
+  const restored = restoreDmScrollAnchor(container, anchor);
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => restoreDmScrollAnchor(container, anchor));
+  }
+  return restored;
+}
+
+function noteDmScrollPosition(container) {
+  if (!container || !activeDmId) return;
+  const near = isDmNearBottom(container, 160);
+  if (near) {
+    dmUserScrolledAwayFromBottom = false;
+    return;
+  }
+  if (isDmInitialLatestActive()) return;
+  if (Date.now() <= Number(dmJumpToLatestUntilMs || 0)) return;
+  dmUserScrolledAwayFromBottom = true;
+  dmOpenAutoScrollUserInterrupted = true;
+  stopDmOpenAutoScroll();
+  cancelDmStickToBottom();
 }
 
 function setDmJumpLatestVisible(visible) {
@@ -39133,6 +39630,10 @@ function updateDmJumpLatestButton(container = document.getElementById("dmMessage
   const btn = document.getElementById("btnDmJumpLatest");
   if (!btn) return;
   if (!container || !activeDmId) {
+    setDmJumpLatestVisible(false);
+    return;
+  }
+  if (isDmInitialLatestActive()) {
     setDmJumpLatestVisible(false);
     return;
   }
@@ -39280,16 +39781,15 @@ function bindDmJumpLatestButtonOnce(container) {
     e.preventDefault();
     const target = document.getElementById("dmMessages");
     if (!target) return;
-    try {
-      target.scrollTo({ top: target.scrollHeight, behavior: "smooth" });
-    } catch (_) {
-      target.scrollTop = target.scrollHeight;
-    }
-    setTimeout(() => updateDmJumpLatestButton(target), 180);
+    scrollDmToLatest({ behavior: "smooth", stickMs: 1200 });
+    setTimeout(() => {
+      setDmScrollTopToLatest(target);
+      updateDmJumpLatestButton(target);
+    }, 900);
   });
 
   container.addEventListener("scroll", () => {
-    if (!isDmNearBottom(container, 160)) cancelDmStickToBottom();
+    noteDmScrollPosition(container);
     updateDmJumpLatestButton(container);
     maybeLoadOlderDmMessages(container);
   }, { passive: true });
@@ -39303,20 +39803,22 @@ function bindDmOpenAutoScrollCancel(container) {
   bindDmJumpLatestButtonOnce(container);
 
   const interrupt = (ev) => {
-    const now = Date.now();
-    const withinWindow = now <= dmOpenAutoScrollUntil;
-    if (withinWindow && (now - dmOpenAutoScrollStartedAt) < 420) return;
-
     const deltaY = Number(ev?.deltaY || 0);
-    const wantsScrollUp = deltaY < -1.5;
+    const wantsScrollUp = ev?.type === "touchmove" || deltaY < -1.5;
     if (!wantsScrollUp) return;
 
+    cancelDmInitialLatestStick();
     dmOpenAutoScrollUserInterrupted = true;
     stopDmOpenAutoScroll();
   };
 
   container.addEventListener("wheel", interrupt, { passive: true });
-  container.addEventListener("touchstart", interrupt, { passive: true });
+  container.addEventListener("touchmove", interrupt, { passive: true });
+  container.addEventListener("pointerdown", (ev) => {
+    if (!isDmInitialLatestActive()) return;
+    if (ev?.target !== container) return;
+    cancelDmInitialLatestStick();
+  }, { passive: true });
 }
 
 function isGifPlaybackWindowActive() {
@@ -39328,12 +39830,94 @@ function isGifPlaybackWindowActive() {
   return true;
 }
 
+function getGifPolicySettingsSnapshot() {
+  let settings = desktopBehaviorSettingsCache || {};
+  try {
+    if (typeof getEffectiveDesktopBehaviorSettings === "function") {
+      settings = getEffectiveDesktopBehaviorSettings(desktopBehaviorSettingsCache || {});
+    }
+  } catch (_) {}
+  const reducedMotion = !!settings?.reducedMotion;
+  const hoverOnly = !!settings?.gifsPlayOnHover || reducedMotion;
+  const pauseInBackground = !!settings?.pauseGifsWhenUnfocused;
+  const windowActive = isGifPlaybackWindowActive();
+  return {
+    reducedMotion,
+    hoverOnly,
+    pauseInBackground,
+    windowActive,
+  };
+}
+
+function normalizeGifPolicyContext(context = "") {
+  const raw = String(context || "").trim();
+  if (!raw) return "unknown";
+  if (raw === "member-list-avatar" || raw === "server-icon" || raw === "sidebar") return "avatar-list";
+  if (raw === "avatar") return "profile-modal";
+  if (raw === "profile-banner") return "profile-banner";
+  if (raw === "server-profile-preview" || raw === "profile-preview") return "widget";
+  if (raw === "server-invite") return "invite";
+  if (raw === "server-pin") return "pin";
+  return raw;
+}
+
+function isGifUrl(url = "") {
+  return isGifLikeUrl(url);
+}
+
+function isAvatarContext(context = "") {
+  const ctx = normalizeGifPolicyContext(context);
+  return ctx === "avatar-list" || ctx === "profile-modal";
+}
+
+function isChatMessageContext(context = "") {
+  const ctx = normalizeGifPolicyContext(context);
+  return ctx === "chat-message" || ctx === "server-message";
+}
+
+function isProfileBannerContext(context = "") {
+  return normalizeGifPolicyContext(context) === "profile-banner";
+}
+
+function isForbiddenAutoGifContext(context = "") {
+  const ctx = normalizeGifPolicyContext(context);
+  return ctx === "pin" || ctx === "invite" || ctx === "widget";
+}
+
+function shouldPauseGifInBackground() {
+  const settings = getGifPolicySettingsSnapshot();
+  return !!settings.pauseInBackground && !settings.windowActive;
+}
+
+function shouldAutoPlayGif(context = "") {
+  const ctx = normalizeGifPolicyContext(context);
+  const settings = getGifPolicySettingsSnapshot();
+  if (isForbiddenAutoGifContext(ctx)) return false;
+  if (settings.pauseInBackground && !settings.windowActive) return false;
+  if (settings.hoverOnly || settings.reducedMotion) return false;
+  return true;
+}
+
+function shouldLoadGifOnVisible(context = "") {
+  const ctx = normalizeGifPolicyContext(context);
+  if (isForbiddenAutoGifContext(ctx)) return false;
+  if (shouldPauseGifInBackground()) return false;
+  if (shouldLoadGifOnHover(ctx)) return false;
+  return true;
+}
+
+function shouldLoadGifOnHover(context = "") {
+  if (shouldPauseGifInBackground()) return false;
+  const settings = getGifPolicySettingsSnapshot();
+  return !!(settings.hoverOnly || settings.reducedMotion);
+}
+
 function shouldPauseMessageGifsForBackground() {
-  return !!desktopBehaviorSettingsCache?.pauseGifsWhenUnfocused && !isGifPlaybackWindowActive();
+  return shouldPauseGifInBackground();
 }
 
 function shouldUseHoverOnlyGifPlayback() {
-  return !!desktopBehaviorSettingsCache?.gifsPlayOnHover;
+  return !!getGifPolicySettingsSnapshot().hoverOnly;
 }
 
 function queueManagedGifPlaybackSync(root = document) {
@@ -39446,12 +40030,29 @@ function getManagedGifLiveUrl(root, img) {
   const liveUrl = String(
     root?.getAttribute?.("data-gif-url")
     || img?.dataset?.gifLiveSrc
+    || img?.dataset?.mediaSrc
+    || img?.getAttribute?.("data-media-src")
+    || img?.dataset?.avatarSrc
+    || img?.getAttribute?.("data-avatar-src")
     || img?.currentSrc
     || img?.src
     || ""
   ).trim();
   if (img instanceof HTMLImageElement && liveUrl) img.dataset.gifLiveSrc = liveUrl;
   return liveUrl;
+}
+
+function getManagedGifInteractionUrl(root, img) {
+  const liveUrl = getManagedGifLiveUrl(root, img);
+  return String(
+    img?.dataset?.mediaSrc
+    || img?.getAttribute?.("data-media-src")
+    || liveUrl
+    || root?.getAttribute?.("data-gif-url")
+    || img?.dataset?.avatarSrc
+    || img?.getAttribute?.("data-avatar-src")
+    || ""
+  ).trim();
 }
 
 function getManagedGifRootType(root) {
@@ -39465,6 +40066,102 @@ function shouldApplyManagedGifPerformanceRules(root) {
 
 function buildManagedGifMediaHtmlAttrs() {
   return ' decoding="async" crossorigin="anonymous" referrerpolicy="no-referrer"';
+}
+
+function isManagedGifBackgroundUrl(url = "") {
+  return isGifLikeUrl(url) || getMediaDomUrlKind(url) === "gif";
+}
+
+function getManagedGifBackgroundVarName(el) {
+  const explicit = String(el?.getAttribute?.("data-managed-gif-bg-var") || "").trim();
+  return explicit || "--gif-card-image";
+}
+
+function clearManagedGifBackgroundElement(el, { clearUrl = false } = {}) {
+  if (!(el instanceof HTMLElement)) return;
+  el.classList.remove("is-gif-paused");
+  el.removeAttribute("data-gif-playback");
+  el.style.removeProperty(getManagedGifBackgroundVarName(el));
+  if (clearUrl) {
+    el.removeAttribute("data-managed-gif-bg");
+    el.removeAttribute("data-managed-gif-bg-var");
+    el.removeAttribute("data-gif-bg-src");
+  }
+}
+
+function setManagedGifBackgroundImage(el, url = "", {
+  source = "",
+  reason = "",
+  automatic = true,
+} = {}) {
+  if (!(el instanceof HTMLElement)) return;
+  const raw = String(url || "").trim();
+  if (!raw) return;
+  const safe = raw.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+  el.style.setProperty(getManagedGifBackgroundVarName(el), `url("${safe}")`);
+  el.classList.remove("is-gif-paused");
+  el.removeAttribute("data-gif-playback");
+  recordMediaEgressLoad(raw, {
+    element: el,
+    source: source || getGifPolicyContextFromElement(el, "gif-picker"),
+    reason: reason || "gif-background-play",
+    automatic,
+    kind: "background-image",
+  });
+}
+
+function shouldPlayManagedGifBackground(el) {
+  if (!(el instanceof HTMLElement)) return true;
+  const context = getGifPolicyContextFromElement(el, "gif-picker");
+  if (shouldPauseGifInBackground()) return false;
+  if (shouldLoadGifOnHover(context)) return isGifPolicyInteractionActive(el, null);
+  return shouldAutoPlayGif(context);
+}
+
+function syncManagedGifBackgroundElement(el) {
+  if (!(el instanceof HTMLElement)) return;
+  const url = String(el.getAttribute("data-gif-bg-src") || el.dataset?.gifBgSrc || "").trim();
+  if (!url || !isManagedGifBackgroundUrl(url)) {
+    clearManagedGifBackgroundElement(el, { clearUrl: true });
+    return;
+  }
+  if (shouldPlayManagedGifBackground(el)) {
+    setManagedGifBackgroundImage(el, url, {
+      source: getGifPolicyContextFromElement(el, "gif-picker"),
+      reason: shouldLoadGifOnHover(getGifPolicyContextFromElement(el, "gif-picker"))
+        ? "hover-gif-background"
+        : "gif-picker-open",
+      automatic: !shouldLoadGifOnHover(getGifPolicyContextFromElement(el, "gif-picker")),
+    });
+    return;
+  }
+  clearManagedGifBackgroundElement(el);
+  el.classList.add("is-gif-paused");
+  el.setAttribute("data-gif-playback", "paused");
+}
+
+function bindManagedGifBackgroundElement(el) {
+  if (!(el instanceof HTMLElement) || el.dataset.gifBackgroundBound === "1") return;
+  el.dataset.gifBackgroundBound = "1";
+  const sync = () => syncManagedGifBackgroundElement(el);
+  el.addEventListener("mouseenter", sync);
+  el.addEventListener("focusin", sync);
+  el.addEventListener("touchstart", sync, { passive: true });
+  el.addEventListener("click", sync);
+  el.addEventListener("mouseleave", () => window.setTimeout(sync, 40));
+  el.addEventListener("focusout", () => window.setTimeout(sync, 40));
+}
+
+function syncManagedGifBackgrounds(root = document) {
+  const visit = (node) => {
+    if (!(node instanceof HTMLElement)) return;
+    if (node.getAttribute("data-managed-gif-bg") !== "1") return;
+    bindManagedGifBackgroundElement(node);
+    syncManagedGifBackgroundElement(node);
+  };
+  visit(root);
+  const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+  scope.querySelectorAll?.("[data-managed-gif-bg=\"1\"]").forEach(visit);
 }
 
 function normalizeMediaEgressUrl(rawUrl = "") {
@@ -39507,8 +40204,20 @@ function inferMediaEgressSource(el) {
   return "unknown";
 }
 
+function getGifPolicyContextFromElement(el, fallbackSource = "") {
+  const explicit = el instanceof HTMLElement
+    ? String(el.getAttribute("data-media-source") || "").trim()
+    : "";
+  return normalizeGifPolicyContext(explicit || fallbackSource || inferMediaEgressSource(el));
+}
+
 function inferMediaEgressReason(el, automatic = true) {
   if (el instanceof HTMLElement) {
+    const srcNow = String(el.getAttribute("src") || "").trim();
+    const liveSrc = String(el.getAttribute("data-media-src") || "").trim();
+    if (el.getAttribute("data-media-poster") === "1" && srcNow && liveSrc && srcNow !== liveSrc) {
+      return "gif-static-poster";
+    }
     const explicit = String(el.getAttribute("data-media-load-reason") || "").trim();
     if (explicit) return explicit;
     if (el.closest(".msg__attachmentMedia--deferred,.msg__gifDeferred")) {
@@ -39532,8 +40241,42 @@ function isChatMessageMediaDebugSource(source = "") {
     || src === "server-pin";
 }
 
+function isIntentionalVisibleGifAutoload(url = "", {
+  source = "",
+  reason = "",
+  kind = "src",
+} = {}) {
+  const src = String(source || "").trim();
+  const why = String(reason || "").trim();
+  const loadKind = String(kind || "").trim();
+  if (loadKind !== "src") return false;
+  if (why !== "visible-gif-autoload") return false;
+  if (src !== "chat-message" && src !== "server-message") return false;
+  return isGifLikeUrl(url) || getMediaDomUrlKind(url) === "gif";
+}
+
+function isGifMediaEgressPolicyProblem(url = "", {
+  source = "",
+  reason = "",
+  automatic = true,
+  kind = "src",
+} = {}) {
+  if (!automatic) return false;
+  if (!isGifLikeUrl(url) && getMediaDomUrlKind(url) !== "gif") return false;
+  const ctx = normalizeGifPolicyContext(source);
+  const loadKind = String(kind || "").trim();
+  const why = String(reason || "").trim();
+  if (loadKind === "background-image") return true;
+  if (isForbiddenAutoGifContext(ctx)) return true;
+  if ((why === "visible-gif-autoload" || why === "avatar-gif-lazy-visible") && !shouldLoadGifOnVisible(ctx)) {
+    return true;
+  }
+  return false;
+}
+
 function isAutomaticChatMediaEgressProblem(url = "", {
   source = "",
+  reason = "",
   automatic = true,
   kind = "src",
 } = {}) {
@@ -39541,6 +40284,8 @@ function isAutomaticChatMediaEgressProblem(url = "", {
   if (!isChatMessageMediaDebugSource(source)) return false;
   const kindValue = String(kind || "").trim();
   if (kindValue !== "src" && kindValue !== "background-image") return false;
+  if (String(reason || "").trim() === "gif-static-poster") return false;
+  if (isIntentionalVisibleGifAutoload(url, { source, reason, kind: kindValue }) && shouldLoadGifOnVisible(source)) return false;
   return isLikelySupabaseStorageMediaUrl(url);
 }
 
@@ -39607,6 +40352,26 @@ function isInsideChatTranscript(el) {
       || el.closest("[data-msg-id]")
     )
   );
+}
+
+function isVisibleChatGifAutoloadElement(el, rawUrl = "") {
+  if (!(el instanceof Element)) return false;
+  const url = String(
+    rawUrl
+    || el.getAttribute("data-media-src")
+    || el.getAttribute("src")
+    || ""
+  ).trim();
+  if (!url || (!isGifLikeUrl(url) && getMediaDomUrlKind(url) !== "gif")) return false;
+  const reason = String(el.getAttribute("data-media-load-reason") || "").trim();
+  if (reason !== "visible-gif-autoload") return false;
+  const source = String(el.getAttribute("data-media-source") || inferMediaEgressSource(el) || "").trim();
+  if (source !== "chat-message" && source !== "server-message") return false;
+  if (!isInsideChatTranscript(el)) return false;
+  if (el.closest("#dmPinsPanel,.dmPinRow,.msgInviteCard,.dmServerInviteCard,#gifModal,#dmProfilePanel,#userCardModal,.userCard,.profileWidgetCard,.dmProfileWidgetPreviewCard")) {
+    return false;
+  }
+  return true;
 }
 
 function getUsefulMediaDomContainers(el) {
@@ -39967,17 +40732,30 @@ function recordMediaEgressLoad(rawUrl = "", {
   const resolvedKind = String(kind || "src");
   const resolvedAutomatic = !!automatic;
   const resolvedReason = String(reason || inferMediaEgressReason(el, !!automatic));
+  const mediaKind = getMediaDomUrlKind(url);
+  const isGifMedia = isGifLikeUrl(url) || mediaKind === "gif";
+  const gifContext = isGifMedia ? normalizeGifPolicyContext(resolvedSource) : "";
+  const policyProblem = isGifMediaEgressPolicyProblem(url, {
+    source: resolvedSource,
+    reason: resolvedReason,
+    automatic: resolvedAutomatic,
+    kind: resolvedKind,
+  });
   const event = {
     at: new Date().toISOString(),
     kind: resolvedKind,
     source: resolvedSource,
+    context: gifContext || normalizeGifPolicyContext(resolvedSource),
     reason: resolvedReason,
     automatic: resolvedAutomatic,
-    problem: resolvedReason === "lightweight-preview" ? false : isAutomaticChatMediaEgressProblem(url, {
+    mediaKind,
+    settings: isGifMedia ? getGifPolicySettingsSnapshot() : undefined,
+    problem: (resolvedReason === "lightweight-preview" || resolvedReason === "gif-static-poster") ? false : (policyProblem || isAutomaticChatMediaEgressProblem(url, {
       source: resolvedSource,
+      reason: resolvedReason,
       automatic: resolvedAutomatic,
       kind: resolvedKind,
-    }),
+    })),
     url,
   };
   mediaEgressDebugEvents.push(event);
@@ -40089,11 +40867,40 @@ function isChatMessagePreviewMediaElement(img) {
   );
 }
 
+function isGifPolicyImage(img, rawSrc = "") {
+  if (!(img instanceof HTMLImageElement)) return false;
+  const src = String(rawSrc || img.dataset?.mediaSrc || img.getAttribute("data-media-src") || img.getAttribute("src") || img.dataset?.avatarSrc || "").trim();
+  return !!(
+    src
+    && (isGifLikeUrl(src) || getMediaDomUrlKind(src) === "gif" || img.getAttribute("data-media-kind") === "gif")
+  );
+}
+
+function shouldBlockAutomaticGifPolicyImageLoad(img, rawSrc = "") {
+  if (!isGifPolicyImage(img, rawSrc)) return false;
+  const context = getGifPolicyContextFromElement(img);
+  return !shouldLoadGifOnVisible(context);
+}
+
+function recordBlockedGifPolicyLoad(img, rawSrc = "", reason = "blocked-hidden-panel") {
+  const url = String(rawSrc || img?.dataset?.mediaSrc || img?.getAttribute?.("data-media-src") || "").trim();
+  if (!url) return;
+  if (!isGifLikeUrl(url) && getMediaDomUrlKind(url) !== "gif") return;
+  recordMediaEgressLoad(url, {
+    element: img instanceof HTMLElement ? img : null,
+    source: getGifPolicyContextFromElement(img),
+    reason,
+    automatic: true,
+    kind: "gif-policy",
+  });
+}
+
 function shouldBlockAutomaticChatMediaImageLoad(img, rawSrc = "") {
   if (!(img instanceof HTMLImageElement)) return false;
   if (!isChatMessagePreviewMediaElement(img)) return false;
   const src = String(rawSrc || img.dataset?.mediaSrc || img.getAttribute("data-media-src") || img.getAttribute("src") || "").trim();
   if (!src) return true;
+  if (isVisibleChatGifAutoloadElement(img, src)) return !shouldLoadGifOnVisible(getGifPolicyContextFromElement(img));
   if (isLikelySupabaseStorageMediaUrl(src)) return true;
   return img.classList.contains("msg__attachmentImage")
     || img.classList.contains("msg__gif")
@@ -40112,7 +40919,12 @@ function loadLazyMediaImage(img, {
   const rawSrc = String(img.dataset?.mediaSrc || img.getAttribute("data-media-src") || "").trim();
   if (!rawSrc) return false;
   const automaticLoad = automatic === null ? !force : !!automatic;
+  if (shouldBlockAutomaticGifPolicyImageLoad(img, rawSrc) && automaticLoad) {
+    recordBlockedGifPolicyLoad(img, rawSrc, isForbiddenAutoGifContext(getGifPolicyContextFromElement(img)) ? "blocked-hidden-panel" : "blocked-by-gif-settings");
+    return false;
+  }
   if (shouldBlockAutomaticChatMediaImageLoad(img, rawSrc) && automaticLoad) {
+    recordBlockedGifPolicyLoad(img, rawSrc, "blocked-hidden-panel");
     return false;
   }
   if (!force && img.dataset.mediaLoaded === "1") return true;
@@ -40168,18 +40980,26 @@ function bindLazyMediaImages(root = document) {
   if (root instanceof HTMLImageElement && root.hasAttribute("data-media-src")) images.push(root);
   scope?.querySelectorAll?.("img[data-media-src]").forEach((img) => images.push(img));
   if (!images.length) return;
+  try { bindGifPolicyInteractionLoaders(root); } catch (_) {}
 
   const observer = getLazyMediaImageObserver();
   images.forEach((img) => {
     if (!(img instanceof HTMLImageElement)) return;
     img.loading = "lazy";
     img.decoding = "async";
-    if (img.dataset.mediaLoaded === "1" || String(img.getAttribute("src") || "").trim()) return;
-    if (shouldBlockAutomaticChatMediaImageLoad(img)) return;
+    const rawSrc = String(img.dataset?.mediaSrc || img.getAttribute("data-media-src") || "").trim();
+    const currentSrc = String(img.getAttribute("src") || "").trim();
+    if (!rawSrc) return;
+    if (img.dataset.mediaLoaded === "1" && currentSrc === rawSrc) return;
+    if (currentSrc && (!isGifPolicyImage(img, rawSrc) || currentSrc === rawSrc)) return;
+    if (shouldBlockAutomaticGifPolicyImageLoad(img, rawSrc)) return;
+    if (shouldBlockAutomaticChatMediaImageLoad(img, rawSrc)) return;
     if (img.closest?.(".msg__attachmentMedia--deferred") && img.closest?.(".msg__attachmentPreview")?.hidden) return;
     if (img.closest?.(".msg__gifDeferred") && img.closest?.(".msg__gifWrap")?.hidden) return;
     if (!observer) {
-      loadLazyMediaImage(img, { force: true, automatic: true, reason: "intersection-observer-unavailable" });
+      const fallbackReason = String(img.getAttribute("data-media-load-reason") || "").trim() || "intersection-observer-unavailable";
+      const fallbackSource = String(img.getAttribute("data-media-source") || "").trim();
+      loadLazyMediaImage(img, { force: true, automatic: true, source: fallbackSource, reason: fallbackReason });
       return;
     }
     observer.observe(img);
@@ -40201,12 +41021,169 @@ function lazyMediaImageHtml(url = "", {
 }
 
 function getManagedGifPausedLabel() {
-  return shouldUseHoverOnlyGifPlayback()
-    ? t("settings.performance.gif_placeholder_hover", "Hover to play")
-    : t("settings.performance.gif_placeholder_paused", "Paused to save resources");
+  if (shouldUseHoverOnlyGifPlayback()) return "";
+  return t("settings.performance.gif_placeholder_paused", "Paused to save resources");
 }
 
-function cacheManagedGifStillFrame(liveUrl = "", stillFrame = "") {
+function getManagedGifStaticPreviewUrl(root, img) {
+  const liveUrl = getManagedGifLiveUrl(root, img);
+  const candidates = [
+    root?.getAttribute?.("data-gif-preview"),
+    img?.getAttribute?.("data-gif-preview"),
+    img?.getAttribute?.("data-media-preview-url"),
+    img?.dataset?.mediaPreviewUrl,
+  ];
+  for (const candidate of candidates) {
+    const url = String(candidate || "").trim();
+    if (!url || url === liveUrl || isGifLikeUrl(url)) continue;
+    return url;
+  }
+  return "";
+}
+
+function getManagedGifPolicyContext(root, img) {
+  return getGifPolicyContextFromElement(
+    img instanceof HTMLElement ? img : root,
+    inferMediaEgressSource(root instanceof HTMLElement ? root : img)
+  );
+}
+
+function isGifPolicyInteractionActive(root, img) {
+  const host = root instanceof HTMLElement ? root : img;
+  if (!(host instanceof HTMLElement)) return false;
+  try {
+    if (host.matches(":hover")) return true;
+  } catch (_) {}
+  return false;
+}
+
+function pauseManagedGifElement(root, img, reason = "") {
+  if (!(root instanceof HTMLElement) || !(img instanceof HTMLImageElement)) return;
+  const liveUrl = getManagedGifLiveUrl(root, img);
+  if (!liveUrl) return;
+
+  root.classList.add("is-gif-paused");
+  root.setAttribute("data-gif-playback", "paused");
+  const pausedLabel = getManagedGifPausedLabel();
+  if (pausedLabel) {
+    root.setAttribute("data-gif-paused-label", pausedLabel);
+    img.title = pausedLabel;
+  } else {
+    root.removeAttribute("data-gif-paused-label");
+    img.title = "";
+  }
+
+  const srcNow = String(img.getAttribute("src") || img.currentSrc || "").trim();
+  if (srcNow && srcNow !== liveUrl && !isGifLikeUrl(srcNow)) {
+    img.setAttribute("data-media-poster", "1");
+    return;
+  }
+
+  const previewUrl = getManagedGifStaticPreviewUrl(root, img);
+  if (previewUrl) {
+    img.setAttribute("data-media-poster", "1");
+    if (String(img.getAttribute("src") || "") !== previewUrl) img.src = previewUrl;
+  } else {
+    const pausedSrc = resolveManagedGifPausedSrc(root, img);
+    if (pausedSrc) {
+      img.setAttribute("data-media-poster", "1");
+      if (String(img.getAttribute("src") || "") !== pausedSrc) img.src = pausedSrc;
+    } else {
+      const context = getManagedGifPolicyContext(root, img);
+      if (isAvatarContext(context)) {
+        scheduleManagedGifStillFrameCapture(root, img, liveUrl);
+        img.removeAttribute("data-media-poster");
+        img.removeAttribute("src");
+        img.removeAttribute("srcset");
+        const clip = img.closest(".profileAvatarMediaClip");
+        if (clip) {
+          clip.classList.remove("is-loaded");
+          clip.classList.remove("is-error");
+        }
+        img.style.removeProperty("display");
+        return;
+      }
+      img.removeAttribute("data-media-poster");
+      img.removeAttribute("src");
+      img.removeAttribute("srcset");
+      const clip = img.closest(".profileAvatarMediaClip");
+      if (clip) clip.classList.remove("is-loaded");
+    }
+  }
+
+  recordMediaEgressLoad(liveUrl, {
+    element: img,
+    source: getManagedGifPolicyContext(root, img),
+    reason: reason || (shouldPauseGifInBackground() ? "background-paused" : "hover-ended"),
+    automatic: false,
+    kind: "gif-policy",
+  });
+}
+
+function getManagedGifStillFrameStorageKey(liveUrl = "") {
+  const raw = String(liveUrl || "").trim();
+  if (!raw) return "";
+  let hash = 2166136261;
+  for (let i = 0; i < raw.length; i += 1) {
+    hash ^= raw.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${MANAGED_GIF_STILL_STORAGE_PREFIX}${(hash >>> 0).toString(36)}_${raw.length.toString(36)}`;
+}
+
+function rememberManagedGifStillStorageKey(key = "") {
+  const safeKey = String(key || "").trim();
+  if (!safeKey) return;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MANAGED_GIF_STILL_STORAGE_INDEX_KEY) || "[]");
+    const list = Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string" && x !== safeKey) : [];
+    list.unshift(safeKey);
+    while (list.length > MANAGED_GIF_STILL_STORAGE_MAX_ITEMS) {
+      const oldKey = list.pop();
+      if (oldKey) {
+        try { localStorage.removeItem(oldKey); } catch (_) {}
+      }
+    }
+    localStorage.setItem(MANAGED_GIF_STILL_STORAGE_INDEX_KEY, JSON.stringify(list));
+  } catch (_) {}
+}
+
+function readStoredManagedGifStillFrame(liveUrl = "") {
+  const rawUrl = String(liveUrl || "").trim();
+  const key = getManagedGifStillFrameStorageKey(rawUrl);
+  if (!key) return "";
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return "";
+    const parsed = JSON.parse(raw);
+    const still = String(parsed?.still || "").trim();
+    if (!still || String(parsed?.url || "").trim() !== rawUrl) return "";
+    rememberManagedGifStillStorageKey(key);
+    return still;
+  } catch (_) {
+    try { localStorage.removeItem(key); } catch (_) {}
+    return "";
+  }
+}
+
+function writeStoredManagedGifStillFrame(liveUrl = "", stillFrame = "") {
+  const rawUrl = String(liveUrl || "").trim();
+  const still = String(stillFrame || "").trim();
+  if (!rawUrl || !still) return;
+  if (still.length > MANAGED_GIF_STILL_STORAGE_MAX_VALUE_LENGTH) return;
+  const key = getManagedGifStillFrameStorageKey(rawUrl);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      url: rawUrl,
+      still,
+      ts: Date.now(),
+    }));
+    rememberManagedGifStillStorageKey(key);
+  } catch (_) {}
+}
+
+function cacheManagedGifStillFrame(liveUrl = "", stillFrame = "", { persist = false } = {}) {
   const key = String(liveUrl || "").trim();
   const value = String(stillFrame || "").trim();
   if (!key || !value) return;
@@ -40217,6 +41194,7 @@ function cacheManagedGifStillFrame(liveUrl = "", stillFrame = "") {
     if (!oldestKey) break;
     managedGifStillFrameCache.delete(oldestKey);
   }
+  if (persist) writeStoredManagedGifStillFrame(key, value);
 }
 
 function buildManagedGifStaticUrlCandidates(liveUrl = "") {
@@ -40233,7 +41211,25 @@ function buildManagedGifStaticUrlCandidates(liveUrl = "") {
     const url = new URL(raw, window.location.href);
     const host = String(url.hostname || "").toLowerCase();
     const path = String(url.pathname || "");
-    if (/\.gif$/i.test(path)) {
+    const shouldProbeExtensionStill = !isLikelySupabaseStorageMediaUrl(raw);
+    if (host.includes("media.tenor.com") && /\.gif$/i.test(path)) {
+      const parts = path.split("/").filter(Boolean);
+      if (parts.length >= 2) {
+        const token = parts[0];
+        const stillToken = token
+          ? `${token.slice(0, -1)}${String.fromCharCode(token.charCodeAt(token.length - 1) + 1)}`
+          : token;
+        if (stillToken && stillToken !== token) {
+          const stillUrl = new URL(url.href);
+          const stillParts = parts.slice();
+          stillParts[0] = stillToken;
+          stillParts[stillParts.length - 1] = stillParts[stillParts.length - 1].replace(/\.gif$/i, ".png");
+          stillUrl.pathname = `/${stillParts.join("/")}`;
+          push(stillUrl.href);
+        }
+      }
+    }
+    if (shouldProbeExtensionStill && /\.gif$/i.test(path)) {
       const pngUrl = new URL(url.href);
       pngUrl.pathname = pngUrl.pathname.replace(/\.gif$/i, ".png");
       push(pngUrl.href);
@@ -40276,8 +41272,48 @@ function probeManagedGifStaticImageUrl(url = "") {
   });
 }
 
-async function captureManagedGifStillFrameFromBlob(liveUrl = "") {
-  if (!liveUrl || typeof fetch !== "function" || typeof createImageBitmap !== "function") return "";
+async function captureManagedGifStillFrameFromImageBlob(blob, { maxSide = 1200 } = {}) {
+  if (!blob || !String(blob.type || "").toLowerCase().startsWith("image/")) return "";
+  const safeMaxSide = clampInt(maxSide, 64, 1200, 1200);
+  const drawBitmap = (bitmap) => {
+    const width = Math.max(1, Number(bitmap.naturalWidth || bitmap.width || 0));
+    const height = Math.max(1, Number(bitmap.naturalHeight || bitmap.height || 0));
+    if (!width || !height) return "";
+    const scale = Math.min(1, safeMaxSide / Math.max(width, height));
+    const outWidth = Math.max(1, Math.round(width * scale));
+    const outHeight = Math.max(1, Math.round(height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = outWidth;
+    canvas.height = outHeight;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) return "";
+    ctx.drawImage(bitmap, 0, 0, outWidth, outHeight);
+    return canvas.toDataURL("image/png");
+  };
+
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      const still = drawBitmap(bitmap);
+      try { bitmap.close?.(); } catch (_) {}
+      if (still) return still;
+    } catch (_) {}
+  }
+
+  let objectUrl = "";
+  try {
+    objectUrl = URL.createObjectURL(blob);
+    const img = await loadImageFromUrl(objectUrl);
+    return drawBitmap(img);
+  } catch (_) {
+    return "";
+  } finally {
+    safeRevokeObjectUrl(objectUrl);
+  }
+}
+
+async function captureManagedGifStillFrameFromBlob(liveUrl = "", { maxSide = 1200 } = {}) {
+  if (!liveUrl || typeof fetch !== "function") return "";
   try {
     const response = await fetch(liveUrl, {
       mode: "cors",
@@ -40286,50 +41322,64 @@ async function captureManagedGifStillFrameFromBlob(liveUrl = "") {
     });
     if (!response?.ok) return "";
     const blob = await response.blob();
-    if (!blob || !String(blob.type || "").toLowerCase().startsWith("image/")) return "";
-    const bitmap = await createImageBitmap(blob);
-    const width = Math.max(1, Number(bitmap.width || 0));
-    const height = Math.max(1, Number(bitmap.height || 0));
-    if (!width || !height) {
-      try { bitmap.close?.(); } catch (_) {}
-      return "";
-    }
-    const maxSide = 1200;
-    const scale = Math.min(1, maxSide / Math.max(width, height));
-    const outWidth = Math.max(1, Math.round(width * scale));
-    const outHeight = Math.max(1, Math.round(height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = outWidth;
-    canvas.height = outHeight;
-    const ctx = canvas.getContext("2d", { alpha: true });
-    if (!ctx) {
-      try { bitmap.close?.(); } catch (_) {}
-      return "";
-    }
-    ctx.drawImage(bitmap, 0, 0, outWidth, outHeight);
-    try { bitmap.close?.(); } catch (_) {}
-    return canvas.toDataURL("image/png");
+    return captureManagedGifStillFrameFromImageBlob(blob, { maxSide });
   } catch (_) {
     return "";
   }
 }
 
+function primeManagedGifStillFrameCache(liveUrl = "", { persist = false, maxSide = 192 } = {}) {
+  const key = String(liveUrl || "").trim();
+  if (!key || managedGifStillFrameCache.has(key) || managedGifStillFrameCaptureInFlight.has(key)) return;
+  const storedStill = readStoredManagedGifStillFrame(key);
+  if (storedStill) {
+    cacheManagedGifStillFrame(key, storedStill);
+    return;
+  }
+
+  const run = captureManagedGifStillFrameFromBlob(key, { maxSide })
+    .then((stillFrame) => {
+      if (!stillFrame) return "";
+      cacheManagedGifStillFrame(key, stillFrame, { persist });
+      queueManagedGifPlaybackSync(document);
+      return stillFrame;
+    })
+    .catch(() => "")
+    .finally(() => {
+      managedGifStillFrameCaptureInFlight.delete(key);
+    });
+
+  managedGifStillFrameCaptureInFlight.set(key, run);
+}
+
 function scheduleManagedGifStillFrameCapture(root, img, liveUrl = "") {
   const key = String(liveUrl || "").trim();
   if (!key || managedGifStillFrameCache.has(key) || managedGifStillFrameCaptureInFlight.has(key)) return;
+  const context = getManagedGifPolicyContext(root, img);
+  const avatarContext = isAvatarContext(context);
+  const storedStill = avatarContext ? readStoredManagedGifStillFrame(key) : "";
+  if (storedStill) {
+    cacheManagedGifStillFrame(key, storedStill);
+    queueManagedGifPlaybackSync(root instanceof HTMLElement ? root : (img || document));
+    return;
+  }
 
   const run = (async () => {
+    if (avatarContext) {
+      const captured = await captureManagedGifStillFrameFromBlob(key, { maxSide: 192 });
+      if (captured) return captured;
+    }
     for (const candidate of buildManagedGifStaticUrlCandidates(key)) {
       const loaded = await probeManagedGifStaticImageUrl(candidate);
       if (loaded) return loaded;
     }
-    return captureManagedGifStillFrameFromBlob(key);
+    return captureManagedGifStillFrameFromBlob(key, { maxSide: avatarContext ? 192 : 1200 });
   })();
 
   managedGifStillFrameCaptureInFlight.set(key, run);
   run.then((stillFrame) => {
     if (!stillFrame) return;
-    cacheManagedGifStillFrame(key, stillFrame);
+    cacheManagedGifStillFrame(key, stillFrame, { persist: avatarContext });
     if (root instanceof HTMLElement && root.isConnected) {
       queueManagedGifPlaybackSync(root);
     } else if (img instanceof HTMLImageElement && img.isConnected) {
@@ -40340,7 +41390,7 @@ function scheduleManagedGifStillFrameCapture(root, img, liveUrl = "") {
   });
 }
 
-function captureManagedGifStillFrame(img, liveUrl = "") {
+function captureManagedGifStillFrame(img, liveUrl = "", { maxSide = 1200 } = {}) {
   if (!(img instanceof HTMLImageElement)) return "";
   if (liveUrl && managedGifStillFrameCache.has(liveUrl)) {
     return String(managedGifStillFrameCache.get(liveUrl) || "");
@@ -40349,8 +41399,8 @@ function captureManagedGifStillFrame(img, liveUrl = "") {
   const naturalHeight = Number(img.naturalHeight || 0);
   if (naturalWidth <= 0 || naturalHeight <= 0) return "";
   try {
-    const maxSide = 1200;
-    const scale = Math.min(1, maxSide / Math.max(naturalWidth, naturalHeight));
+    const safeMaxSide = clampInt(maxSide, 64, 1200, 1200);
+    const scale = Math.min(1, safeMaxSide / Math.max(naturalWidth, naturalHeight));
     const width = Math.max(1, Math.round(naturalWidth * scale));
     const height = Math.max(1, Math.round(naturalHeight * scale));
     const canvas = document.createElement("canvas");
@@ -40370,31 +41420,39 @@ function captureManagedGifStillFrame(img, liveUrl = "") {
 function resolveManagedGifPausedSrc(root, img) {
   if (!(root instanceof HTMLElement) || !(img instanceof HTMLImageElement)) return "";
   const liveUrl = getManagedGifLiveUrl(root, img);
+  const context = getManagedGifPolicyContext(root, img);
+  const avatarContext = isAvatarContext(context);
   const cached = String((liveUrl ? managedGifStillFrameCache.get(liveUrl) : "") || "").trim();
   if (cached) return cached;
+  const stored = avatarContext ? readStoredManagedGifStillFrame(liveUrl) : "";
+  if (stored) {
+    if (liveUrl) cacheManagedGifStillFrame(liveUrl, stored);
+    return stored;
+  }
 
   const previewUrl = String(root.getAttribute("data-gif-preview") || "").trim();
   if (previewUrl && previewUrl !== liveUrl && !isGifLikeUrl(previewUrl)) {
-    if (liveUrl) cacheManagedGifStillFrame(liveUrl, previewUrl);
+    if (liveUrl) cacheManagedGifStillFrame(liveUrl, previewUrl, { persist: avatarContext });
     return previewUrl;
   }
 
-  const stillFrame = captureManagedGifStillFrame(img, liveUrl);
+  const stillFrame = captureManagedGifStillFrame(img, liveUrl, { maxSide: avatarContext ? 192 : 1200 });
   if (!stillFrame) {
     scheduleManagedGifStillFrameCapture(root, img, liveUrl);
     return "";
   }
+  if (avatarContext && liveUrl) writeStoredManagedGifStillFrame(liveUrl, stillFrame);
   return stillFrame;
 }
 
 function shouldPlayManagedGif(root) {
   if (!(root instanceof HTMLElement)) return true;
   if (!shouldApplyManagedGifPerformanceRules(root)) return true;
-  const rootType = getManagedGifRootType(root);
-  const hoverOnly = shouldUseHoverOnlyGifPlayback();
-  const allowFocusDrivenPlayback = rootType !== "banner";
-  return !shouldPauseMessageGifsForBackground()
-    && (!hoverOnly || root.matches(":hover") || (allowFocusDrivenPlayback && root.contains(document.activeElement)));
+  const img = getManagedGifMediaElement(root);
+  const context = getManagedGifPolicyContext(root, img);
+  if (shouldPauseGifInBackground()) return false;
+  if (shouldLoadGifOnHover(context)) return isGifPolicyInteractionActive(root, img);
+  return shouldAutoPlayGif(context);
 }
 
 function setMessageGifPlaybackState(wrap, shouldPlay) {
@@ -40405,26 +41463,38 @@ function setMessageGifPlaybackState(wrap, shouldPlay) {
   const liveUrl = getManagedGifLiveUrl(wrap, img);
   if (!liveUrl) return;
   const srcNow = String(img.getAttribute("src") || img.currentSrc || "").trim();
-  if (shouldBlockAutomaticChatMediaImageLoad(img, liveUrl) && img.dataset.mediaLoaded !== "1" && !srcNow) return;
-  if (img.hasAttribute("data-media-src") && !srcNow) return;
+  const context = getManagedGifPolicyContext(wrap, img);
+  if (
+    shouldBlockAutomaticChatMediaImageLoad(img, liveUrl)
+    && img.dataset.mediaLoaded !== "1"
+    && !srcNow
+    && !shouldLoadGifOnHover(context)
+  ) {
+    return;
+  }
+  if (img.hasAttribute("data-media-src") && !srcNow) {
+    if (!shouldPlay) pauseManagedGifElement(wrap, img, shouldPauseGifInBackground() ? "background-paused" : "hover-ended");
+    return;
+  }
 
   if (shouldPlay) {
     wrap.classList.remove("is-gif-paused");
     wrap.removeAttribute("data-gif-playback");
     wrap.removeAttribute("data-gif-paused-label");
     img.title = "";
+    if (
+      img.hasAttribute("data-media-src")
+      && srcNow
+      && srcNow !== liveUrl
+      && img.dataset.mediaLoaded !== "1"
+    ) {
+      return;
+    }
     if (img.src !== liveUrl) img.src = liveUrl;
     return;
   }
 
-  wrap.classList.add("is-gif-paused");
-  wrap.setAttribute("data-gif-playback", "paused");
-  const pausedLabel = getManagedGifPausedLabel();
-  wrap.setAttribute("data-gif-paused-label", pausedLabel);
-  img.title = pausedLabel;
-  const pausedSrc = resolveManagedGifPausedSrc(wrap, img);
-  if (pausedSrc && img.src !== pausedSrc) img.src = pausedSrc;
-  else if (!pausedSrc && img.src !== liveUrl) img.src = liveUrl;
+  pauseManagedGifElement(wrap, img, shouldPauseGifInBackground() ? "background-paused" : "hover-ended");
 }
 
 function syncMessageGifPlaybackState(wrap) {
@@ -40436,10 +41506,12 @@ function bindMessageGifPlaybackForWrap(wrap) {
   if (!(wrap instanceof HTMLElement) || wrap.dataset.gifPlaybackBound === "1") return;
   const img = getManagedGifMediaElement(wrap);
   if (!(img instanceof HTMLImageElement)) return;
+  const context = getManagedGifPolicyContext(wrap, img);
   if (
     shouldBlockAutomaticChatMediaImageLoad(img)
     && img.dataset.mediaLoaded !== "1"
     && !String(img.getAttribute("src") || "").trim()
+    && !shouldLoadGifOnHover(context)
   ) {
     return;
   }
@@ -40449,14 +41521,8 @@ function bindMessageGifPlaybackForWrap(wrap) {
   if (liveUrl) img.dataset.gifLiveSrc = liveUrl;
 
   img.addEventListener("load", () => {
-    const currentLiveUrl = String(img.dataset.gifLiveSrc || "").trim();
-    const currentSrc = String(img.currentSrc || img.src || "").trim();
-    if (currentLiveUrl && currentSrc === currentLiveUrl) {
-      resolveManagedGifPausedSrc(wrap, img);
-    }
     if (!shouldPlayManagedGif(wrap)) {
-      const pausedSrc = resolveManagedGifPausedSrc(wrap, img);
-      if (pausedSrc && img.src !== pausedSrc) img.src = pausedSrc;
+      pauseManagedGifElement(wrap, img, shouldPauseGifInBackground() ? "background-paused" : "hover-ended");
     }
   });
 
@@ -40478,7 +41544,72 @@ function bindMessageGifPlaybackForWrap(wrap) {
   });
 }
 
+function bindGifPolicyInteractionLoaders(root = document) {
+  const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+  const images = [];
+  const add = (img) => {
+    if (img instanceof HTMLImageElement && isGifPolicyImage(img)) images.push(img);
+  };
+  if (root instanceof HTMLImageElement) add(root);
+  scope.querySelectorAll?.("img[data-media-src], img[data-managed-gif-media]").forEach(add);
+
+  images.forEach((img) => {
+    if (img.dataset.gifPolicyInteractionBound === "1") return;
+    const host = img.closest("[data-managed-gif-root]") || img.closest(".profileAvatarMediaClip") || img;
+    if (!(host instanceof HTMLElement)) return;
+    img.dataset.gifPolicyInteractionBound = "1";
+
+    const loadForInteraction = () => {
+      const url = getManagedGifInteractionUrl(host, img);
+      if (!url) return;
+      const context = getManagedGifPolicyContext(host, img);
+      if (!shouldLoadGifOnHover(context) && !shouldAutoPlayGif(context)) return;
+      if (shouldLoadGifOnHover(context)) {
+        let hoverActive = false;
+        try { hoverActive = host.matches(":hover"); } catch (_) {}
+        if (!hoverActive) return;
+      }
+      img.dataset.gifUserActivated = "1";
+      img.dataset.gifLiveSrc = url;
+      if (host.hasAttribute("data-managed-gif-root") && !host.getAttribute("data-gif-url")) {
+        host.setAttribute("data-gif-url", url);
+      }
+      if (img.hasAttribute("data-media-src")) {
+        loadLazyMediaImage(img, {
+          force: true,
+          source: context,
+          reason: "hover-gif-load",
+          automatic: false,
+        });
+      }
+      queueManagedGifPlaybackSync(host);
+    };
+
+    const pauseIfInactive = () => {
+      window.setTimeout(() => {
+        const context = getManagedGifPolicyContext(host, img);
+        if (!shouldLoadGifOnHover(context)) return;
+        let hoverActive = false;
+        try { hoverActive = host.matches(":hover"); } catch (_) {}
+        if (!hoverActive) delete img.dataset.gifUserActivated;
+        if (isGifPolicyInteractionActive(host, img)) return;
+        pauseManagedGifElement(host, img, shouldPauseGifInBackground() ? "background-paused" : "hover-ended");
+      }, 40);
+    };
+
+    host.addEventListener("mouseenter", loadForInteraction);
+    host.addEventListener("focusin", loadForInteraction);
+    host.addEventListener("touchstart", loadForInteraction, { passive: true });
+    host.addEventListener("click", loadForInteraction);
+    host.addEventListener("mouseleave", pauseIfInactive);
+    host.addEventListener("focusout", pauseIfInactive);
+  });
+}
+
 function syncAllMessageGifPlaybackStates(root = document) {
+  bindGifPolicyInteractionLoaders(root);
+  bindLazyMediaImages(root);
+  syncManagedGifBackgrounds(root);
   getManagedGifRoots(root).forEach((wrap) => {
     bindMessageGifPlaybackForWrap(wrap);
     syncMessageGifPlaybackState(wrap);
@@ -40527,7 +41658,7 @@ function bindManagedGifPlaybackObserverOnce() {
           schedule(target);
           continue;
         }
-        if (target instanceof HTMLElement && target.hasAttribute("data-managed-gif-root")) {
+        if (target instanceof HTMLElement && (target.hasAttribute("data-managed-gif-root") || target.hasAttribute("data-managed-gif-bg"))) {
           schedule(target);
         }
         continue;
@@ -40538,7 +41669,8 @@ function bindManagedGifPlaybackObserverOnce() {
         if (
           node instanceof HTMLImageElement
           || node.hasAttribute("data-managed-gif-root")
-          || node.querySelector?.("img,[data-managed-gif-root]")
+          || node.hasAttribute("data-managed-gif-bg")
+          || node.querySelector?.("img,[data-managed-gif-root],[data-managed-gif-bg]")
         ) {
           schedule(node);
           return;
@@ -40551,34 +41683,34 @@ function bindManagedGifPlaybackObserverOnce() {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["src", "data-managed-gif-root", "data-gif-url"],
+    attributeFilter: ["src", "data-managed-gif-root", "data-gif-url", "data-managed-gif-bg", "data-gif-bg-src"],
   });
 }
 
 function bindDmGifAutoscroll(container) {
   if (!container) return;
   bindLazyMediaImages(container);
-  const shouldStickOnReady = () => {
-    if (canForceDmOpenAutoScroll()) return true;
-    return isDmNearBottom(container, 120);
-  };
-
+  bindChatMediaLayoutAndFallbacks(container);
   const onMediaReady = (mediaEl) => {
-    const stickLatest = String(mediaEl?.dataset?.dmStickLatest || "") === "1";
-    if (stickLatest || canForceDmOpenAutoScroll()) {
+    const shouldFollowLatest = !dmUserScrolledAwayFromBottom && (
+      isDmInitialLatestActive()
+      || canForceDmOpenAutoScroll()
+      || shouldHonorDmStickToBottom()
+      || isDmNearBottom(container, 120)
+    );
+    const anchor = shouldFollowLatest ? null : captureDmScrollAnchor(container);
+    syncLoadedChatMediaDimensions(mediaEl);
+    if (shouldFollowLatest && !dmUserScrolledAwayFromBottom) {
       scrollDmToLatest();
       scheduleDmScrollToLatestAfterRender();
       return;
     }
-    if (isDmNearBottom(container, 84)) {
-      scrollDmToLatest();
-      scheduleDmScrollToLatestAfterRender();
-    }
+    restoreDmScrollAnchorSoon(container, anchor);
+    updateDmJumpLatestButton(container);
   };
   container.querySelectorAll("img.msg__gif").forEach((img) => {
     if (img.dataset.dmGifBound === "1") return;
     img.dataset.dmGifBound = "1";
-    img.dataset.dmStickLatest = shouldStickOnReady() ? "1" : "0";
     if (String(img.getAttribute("src") || "").trim() && img.complete) {
       onMediaReady(img);
       return;
@@ -40590,7 +41722,6 @@ function bindDmGifAutoscroll(container) {
   container.querySelectorAll("img.msg__attachmentImage").forEach((img) => {
     if (img.dataset.dmMediaBound === "1") return;
     img.dataset.dmMediaBound = "1";
-    img.dataset.dmStickLatest = shouldStickOnReady() ? "1" : "0";
     if (String(img.getAttribute("src") || "").trim() && img.complete) {
       onMediaReady(img);
       return;
@@ -40602,7 +41733,6 @@ function bindDmGifAutoscroll(container) {
   container.querySelectorAll("video.msg__attachmentVideo").forEach((video) => {
     if (video.dataset.dmMediaBound === "1") return;
     video.dataset.dmMediaBound = "1";
-    video.dataset.dmStickLatest = shouldStickOnReady() ? "1" : "0";
     if (Number(video.readyState || 0) >= 1) {
       onMediaReady(video);
     }
@@ -41263,6 +42393,15 @@ function formatCallDurationLabel(durationMs) {
   return seconds === 1 ? "1 segundo" : `${seconds} segundos`;
 }
 
+function formatCallElapsedClockLabel(durationMs) {
+  const totalSeconds = Math.max(0, Math.floor(Number(durationMs || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
 function getCallEventDisplayText(message, parsed) {
   const author = getMessageAuthorName(message);
   if (parsed?.event === "ended") {
@@ -41653,7 +42792,7 @@ async function refreshGroupDmCallState(conversationId, { rerender = true } = {})
         connectedIds.includes(meId)
       );
       if (staleSelfConnected) {
-        // localmente nÃ£o hÃ¡ call, mas o backend ainda acha que estamos connected
+        // localmente não há call, mas o backend ainda acha que estamos connected
         suppressGroupDmConnectedUser(convId, meId);
         connectedIds = connectedIds.filter((uid) => uid !== meId);
         void leaveGroupDmCallSession(convId).catch((e) => {
@@ -41669,8 +42808,8 @@ async function refreshGroupDmCallState(conversationId, { rerender = true } = {})
           effectiveIds.unshift(meId);
         }
       } else {
-        // Fora de contexto local de call, nÃ£o semeia o palco com "connected" do backend.
-        // SÃ³ mantÃ©m membros vistos por sinais de presenÃ§a e ainda conectados na sessÃ£o.
+        // Fora de contexto local de call, não semeia o palco com "connected" do backend.
+        // Só mantém membros vistos por sinais de presença e ainda conectados na sessão.
         const presenceConvId = normId(groupCallActiveMembersConversationId || "");
         if (presenceConvId === convId) {
           pruneStaleGroupCallActiveMembers();
@@ -42061,10 +43200,10 @@ function syncPublicGroupCallJoinHint(conversationId = null) {
     if (!author && joinability.targetUserId) {
       author = getGroupMemberIdentity(convId, joinability.targetUserId)?.label || "";
     }
-    if (!author) author = "AlguÃ©m";
+    if (!author) author = "Alguém";
     const publicJoinText = isServerVoice
-      ? `?? ${author} estÃ¡ no canal de voz. Clica no telefone para entrar.`
-      : `?? ${author} estÃ¡ numa chamada. Clica no telefone para entrar.`;
+      ? `?? ${author} está no canal de voz. Clica no telefone para entrar.`
+      : `?? ${author} está numa chamada. Clica no telefone para entrar.`;
     setCallStatus(publicJoinText, true, { publicHint: true });
     return;
   }
@@ -42230,9 +43369,12 @@ function renderMessagesFromCache({ keepBottom = true } = {}) {
   if (!msgsBox) return;
   bindDmJumpLatestButtonOnce(msgsBox);
   const nearBottom = isDmNearBottom(msgsBox, 90);
-  const shouldStickToBottom = !!(keepBottom && (nearBottom || shouldHonorDmStickToBottom()));
-  const prevScrollTop = Number(msgsBox.scrollTop || 0);
-  const prevScrollHeight = Number(msgsBox.scrollHeight || 0);
+  const shouldStickToBottom = !!(
+    keepBottom
+    && !dmUserScrolledAwayFromBottom
+    && (nearBottom || shouldHonorDmStickToBottom() || isDmInitialLatestActive())
+  );
+  const scrollAnchor = shouldStickToBottom ? null : captureDmScrollAnchor(msgsBox);
 
   if (!dmMessagesCache.length) {
     msgsBox.innerHTML = `<div class="hint">${t("dm.no_messages", "No messages yet. Say hi.")}</div>`;
@@ -42252,10 +43394,10 @@ function renderMessagesFromCache({ keepBottom = true } = {}) {
   if (shouldStickToBottom) {
     scrollDmToLatest();
     scheduleDmScrollToLatestAfterRender();
+  } else if (isDmInitialLatestActive()) {
+    scheduleDmInitialLatestScrollPasses();
   } else {
-    const nextScrollHeight = Number(msgsBox.scrollHeight || 0);
-    const growth = Math.max(0, nextScrollHeight - prevScrollHeight);
-    msgsBox.scrollTop = Math.max(0, prevScrollTop + growth);
+    restoreDmScrollAnchorSoon(msgsBox, scrollAnchor);
   }
   updateDmJumpLatestButton(msgsBox);
   syncPublicGroupCallJoinHint(activeDmId);
@@ -44158,7 +45300,7 @@ function renderDmReplyBar() {
           <span class="dmReplyBar__title">A editar mensagem de ${esc(author)}</span>
           <span class="dmReplyBar__body">${esc(preview)}</span>
         </div>
-        <button class="dmReplyBar__close" type="button" id="btnDmReplyCancel" aria-label="Cancelar edicao">Ã—</button>
+        <button class="dmReplyBar__close" type="button" id="btnDmReplyCancel" aria-label="Cancelar edicao">×</button>
       `;
       document.getElementById("btnDmReplyCancel")?.addEventListener("click", () => {
         clearDmEditTarget({ clearInput: true, focusInput: true, render: true });
@@ -44185,7 +45327,7 @@ function renderDmReplyBar() {
       <span class="dmReplyBar__title">A responder a ${esc(author)}</span>
       <span class="dmReplyBar__body">${esc(preview)}</span>
     </div>
-    <button class="dmReplyBar__close" type="button" id="btnDmReplyCancel" aria-label="Cancelar reply">Ã—</button>
+    <button class="dmReplyBar__close" type="button" id="btnDmReplyCancel" aria-label="Cancelar reply">×</button>
   `;
 
   document.getElementById("btnDmReplyCancel")?.addEventListener("click", () => {
@@ -44432,7 +45574,7 @@ async function ringGroupMember(memberUserId) {
 
   const activeMeta = getActiveConversationMeta(convId) || {};
   if (!isGroupConversationMeta(activeMeta)) {
-    alert("Ring sÃ³ funciona em Group DM.");
+    alert("Ring só funciona em Group DM.");
     return;
   }
 
@@ -44969,7 +46111,7 @@ function ensureDmFriendNicknameModal() {
     <div class="modalCard dmFriendNicknameModalCard" role="dialog" aria-modal="true" aria-labelledby="dmFriendNicknameTitle">
       <div class="modalTop">
         <div class="modalTitle" id="dmFriendNicknameTitle">Change Friend Nickname</div>
-        <button class="icon-btn" type="button" id="btnDmFriendNicknameClose" aria-label="Close">Ã—</button>
+        <button class="icon-btn" type="button" id="btnDmFriendNicknameClose" aria-label="Close">×</button>
       </div>
       <div class="modal__body dmFriendNicknameModalBody">
         <label class="dmFriendNicknameFieldLabel" for="dmFriendNicknameInput">Nickname</label>
@@ -45597,7 +46739,7 @@ function ensureDmUserListMenu() {
     }).filter(Boolean);
 
     return [
-      `<div class="msgMenu__meta">${esc(displayName)} â€¢ Roles</div>`,
+      `<div class="msgMenu__meta">${esc(displayName)} • Roles</div>`,
       `<div class="msgMenu__divider"></div>`,
       rows.length
         ? rows.join("")
@@ -45844,7 +46986,7 @@ function ensureDmUserListMenu() {
         username: resolvedUname,
       });
 
-      // â”€â”€ TRUE OPTIMISTIC: patch immediately after confirm, before RPC â”€â”€
+      // ── TRUE OPTIMISTIC: patch immediately after confirm, before RPC ──
       const snapshot = relationshipTraceMeasureSync(trace, "snapshotRelationshipState", () => (
         snapshotRelationshipState({ targetUserId: resolvedUid })
       ));
@@ -45860,7 +47002,7 @@ function ensureDmUserListMenu() {
         affectedUsername: resolvedUname,
       });
       relationshipTraceSchedulePaint(trace, "optimisticPaint");
-      // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ──────────────────────────────────────────────────────────────────
 
       const { error } = await relationshipTraceMeasureAsync(trace, "rpc:remove_friend", () => (
         removeFriendRpc(resolvedUid)
@@ -45911,7 +47053,7 @@ function ensureDmUserListMenu() {
         username: resolvedUname,
       });
 
-      // â”€â”€ TRUE OPTIMISTIC: patch immediately after confirm, before RPC â”€â”€
+      // ── TRUE OPTIMISTIC: patch immediately after confirm, before RPC ──
       const snapshot = relationshipTraceMeasureSync(trace, "snapshotRelationshipState", () => (
         snapshotRelationshipState({ targetUserId: resolvedUid, includeBlockedUsers: true })
       ));
@@ -45935,7 +47077,7 @@ function ensureDmUserListMenu() {
         affectedUsername: resolvedUname,
       });
       relationshipTraceSchedulePaint(trace, "optimisticPaint");
-      // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ──────────────────────────────────────────────────────────────────
 
       const { error } = await relationshipTraceMeasureAsync(trace, "rpc:block_user", () => (
         blockUserRpc(resolvedUid)
@@ -46401,18 +47543,13 @@ function renderDmProfileWidgetsPreview(userId = "", widgets = [], {
   el.setAttribute("aria-hidden", "false");
 }
 
-function getDmProfileMutualServers(userId = "") {
-  const uid = normId(userId || "");
-  if (!uid) return [];
+function getDmProfileCandidateServerRows() {
   const seen = new Set();
   const servers = [];
   (Array.isArray(state.servers) ? state.servers : []).forEach((serverRow) => {
     const sid = normId(serverRow?.serverId || serverRow?.server_id || serverRow?.id || "");
-    if (!sid || seen.has(sid)) return;
-    const members = Array.isArray(serverMemberListByServerId.get(sid))
-      ? (serverMemberListByServerId.get(sid) || [])
-      : [];
-    if (!members.some((member) => normId(member?.userId || member?.user_id || member?.id || "") === uid)) return;
+    const kind = String(serverRow?.kind || "server").trim().toLowerCase();
+    if (!sid || seen.has(sid) || (kind && kind !== "server")) return;
     seen.add(sid);
     servers.push({
       serverId: sid,
@@ -46421,7 +47558,107 @@ function getDmProfileMutualServers(userId = "") {
       memberCount: Number(serverRow?.memberCount || serverRow?.member_count || 0),
     });
   });
-  return servers.slice(0, 3);
+  return servers;
+}
+
+function getDmProfileMutualServerSnapshot(userId = "") {
+  const uid = normId(userId || "");
+  if (!uid) {
+    return { status: "unavailable", items: [], count: null, missingServerIds: [] };
+  }
+  const items = [];
+  const missingServerIds = [];
+  getDmProfileCandidateServerRows().forEach((serverRow) => {
+    const sid = normId(serverRow?.serverId || "");
+    if (!sid) return;
+    if (!serverMemberListByServerId.has(sid)) {
+      missingServerIds.push(sid);
+      return;
+    }
+    const members = Array.isArray(serverMemberListByServerId.get(sid))
+      ? (serverMemberListByServerId.get(sid) || [])
+      : [];
+    if (!members.some((member) => normId(member?.userId || member?.user_id || member?.id || "") === uid)) return;
+    items.push(serverRow);
+  });
+  return {
+    status: missingServerIds.length ? "loading" : "loaded",
+    items,
+    count: missingServerIds.length ? null : items.length,
+    missingServerIds,
+  };
+}
+
+function getDmProfileMutualServers(userId = "") {
+  return getDmProfileMutualServerSnapshot(userId).items;
+}
+
+function ensureDmProfileMutualExpandedState(userId = "") {
+  const uid = normId(userId || "");
+  if (dmProfileMutualExpandedState.userId !== uid) {
+    dmProfileMutualExpandedState = { userId: uid, servers: false, friends: false };
+  }
+  return dmProfileMutualExpandedState;
+}
+
+function normalizeDmProfileMutualFriendEntries(candidate = []) {
+  const seen = new Set();
+  const friends = [];
+  (Array.isArray(candidate) ? candidate : []).forEach((entry) => {
+    const id = normId(entry?.id || entry?.user_id || entry?.userId || entry || "");
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    const cached = getCachedProfile(id) || {};
+    const displayName = String(entry?.display_name || entry?.displayName || cached?.display_name || cached?.username || "").trim();
+    const username = String(entry?.username || cached?.username || "").trim();
+    const avatarUrl = resolveProfileAvatarUrl(entry?.avatar_url || entry?.avatarUrl || cached?.avatar_url || cached?.avatarUrl || "", "");
+    friends.push({
+      userId: id,
+      displayName: displayName || username || "User",
+      username,
+      avatarUrl,
+      status: getPresenceStatusForUser(id) || "offline",
+    });
+  });
+  return friends;
+}
+
+function getDmProfileMutualFriendsSnapshot(profile = {}) {
+  const source = profile && typeof profile === "object" ? profile : {};
+  const listCandidates = [
+    source?.mutual_friends,
+    source?.mutualFriends,
+    source?.shared_friends,
+    source?.sharedFriends,
+  ];
+  for (const candidate of listCandidates) {
+    if (!Array.isArray(candidate)) continue;
+    const items = normalizeDmProfileMutualFriendEntries(candidate);
+    return { status: "loaded", items, count: items.length, hasList: true };
+  }
+  const countCandidates = [
+    source?.mutual_friend_count,
+    source?.mutualFriendCount,
+    source?.shared_friend_count,
+    source?.sharedFriendCount,
+  ];
+  for (const candidate of countCandidates) {
+    if (candidate === null || typeof candidate === "undefined" || String(candidate).trim() === "") continue;
+    const count = Number(candidate);
+    if (Number.isFinite(count) && count >= 0) {
+      return { status: "loaded", items: [], count: Math.floor(count), hasList: false };
+    }
+  }
+  return { status: "unavailable", items: [], count: null, hasList: false };
+}
+
+function getDmProfileMutualFriends(profile = {}) {
+  return getDmProfileMutualFriendsSnapshot(profile).items;
+}
+
+function getDmProfileMutualFriendCount(profile = {}) {
+  const snapshot = getDmProfileMutualFriendsSnapshot(profile);
+  return Number.isFinite(Number(snapshot.count)) ? Math.max(0, Math.floor(Number(snapshot.count))) : 0;
 }
 
 function buildDmProfileMutualServerEntryHtml(entry = {}) {
@@ -46433,62 +47670,219 @@ function buildDmProfileMutualServerEntryHtml(entry = {}) {
     ? (memberCount === 1
       ? t("dm.group_member_count_one", "1 member")
       : t("dm.group_member_count", "{n} members").replace("{n}", String(memberCount)))
-    : t("usercard.recently_loaded", "recently loaded");
+    : "";
   const iconHtml = iconUrl
     ? lazyMediaImageHtml(iconUrl, { alt: name })
     : `<span>${esc(initial)}</span>`;
   return `
-    <div class="dmProfileContextRow">
+    <div class="dmProfileMutualItemRow">
       <span class="dmProfileContextIcon">${iconHtml}</span>
       <span class="dmProfileContextMeta">
         <span class="dmProfileContextName">${esc(name)}</span>
-        <span class="dmProfileContextSub">${esc(sub)}</span>
+        ${sub ? `<span class="dmProfileContextSub">${esc(sub)}</span>` : ""}
       </span>
     </div>
   `;
 }
 
-function buildDmProfileMutualSectionHtml(userId = "") {
-  const servers = getDmProfileMutualServers(userId);
-  const sectionLabel = t("dm.mutual_servers", "Mutual Servers");
-  if (!servers.length) {
+function buildDmProfileMutualFriendEntryHtml(entry = {}) {
+  const uid = normId(entry?.userId || "");
+  const name = String(entry?.displayName || entry?.username || "User").trim();
+  const username = String(entry?.username || "").trim();
+  const avatarUrl = String(entry?.avatarUrl || "").trim();
+  const status = String(entry?.status || getPresenceStatusForUser(uid) || "offline").trim();
+  const initial = name.charAt(0).toUpperCase() || "?";
+  const avatarHtml = avatarUrl
+    ? buildAvatarMediaHtml(avatarUrl, { userId: uid, alt: name, loading: "lazy", deferAnimatedStorage: true })
+    : `<span class="groupDmAvatarFallback">${esc(initial)}</span>`;
+  return `
+    <div class="dmProfileMutualItemRow">
+      <span class="dmProfileMutualFriendAvatar">${avatarHtml}<span class="statusDot" data-status="${escAttr(status)}"></span></span>
+      <span class="dmProfileContextMeta">
+        <span class="dmProfileContextName">${esc(name)}</span>
+        ${username ? `<span class="dmProfileContextSub">@${esc(username)}</span>` : ""}
+      </span>
+    </div>
+  `;
+}
+
+function buildDmProfileMutualExpandedContentHtml({
+  kind = "",
+  items = [],
+  count = 0,
+  status = "loaded",
+  emptyText = "",
+  loadingText = "",
+  unavailableText = "",
+} = {}) {
+  const safeKind = String(kind || "").trim();
+  const safeStatus = String(status || "loaded").trim().toLowerCase();
+  const list = Array.isArray(items) ? items : [];
+  if (safeStatus === "loading" || safeStatus === "unavailable") {
+    const text = safeStatus === "loading"
+      ? (loadingText || t("app.loading", "Loading..."))
+      : (unavailableText || t("usercard.unavailable", "Unavailable"));
     return `
-      <section class="dmProfileContextShell" aria-label="${escAttr(sectionLabel)}">
-        <div class="dmProfileContextHeader">
-          <div class="dmProfileContextTitle">${esc(sectionLabel)}</div>
-        </div>
-        <div class="dmProfileEmptyState">
-          <span class="dmProfileEmptyState__mark" aria-hidden="true"></span>
-          <span class="dmProfileEmptyState__body">
-            <span class="dmProfileEmptyState__title">${esc(t("dm.mutual_servers_empty", "No mutual servers yet."))}</span>
-          </span>
-        </div>
-      </section>
+      <div class="dmProfileMutualExpanded" data-dm-profile-mutual-expanded="${escAttr(safeKind)}" data-state="${escAttr(safeStatus)}">
+        <div class="dmProfileMutualEmpty">${esc(text)}</div>
+      </div>
     `;
   }
-  const countLabel = servers.length === 1
-    ? t("dm.mutual_server_count_one", "1 shared server")
-    : t("dm.mutual_server_count", "{n} shared servers").replace("{n}", String(servers.length));
+  const total = Math.max(0, Math.floor(Number(count) || list.length || 0));
+  const shown = list.slice(0, 5);
+  if (!total) {
+    return `
+      <div class="dmProfileMutualExpanded" data-dm-profile-mutual-expanded="${escAttr(safeKind)}">
+        <div class="dmProfileMutualEmpty">${esc(emptyText || "Nothing to show yet.")}</div>
+      </div>
+    `;
+  }
+  const rows = shown.map((entry) => (
+    safeKind === "friends"
+      ? buildDmProfileMutualFriendEntryHtml(entry)
+      : buildDmProfileMutualServerEntryHtml(entry)
+  )).join("");
+  const remaining = Math.max(0, total - shown.length);
+  const moreHtml = remaining > 0
+    ? `<button class="dmProfileMutualMoreRow" type="button" data-dm-profile-mutual-view-all="${escAttr(safeKind)}">+${esc(String(remaining))} more</button>`
+    : "";
+  return `
+    <div class="dmProfileMutualExpanded" data-dm-profile-mutual-expanded="${escAttr(safeKind)}">
+      ${rows}
+      ${moreHtml}
+    </div>
+  `;
+}
+
+function buildDmProfileMutualActionRowHtml({
+  kind = "",
+  label = "",
+  count = 0,
+  countLabel = "",
+  badgeLabel = "",
+  status = "loaded",
+  disabled = false,
+  expanded = false,
+} = {}) {
+  const safeKind = String(kind || "").trim() || "mutual";
+  const safeLabel = String(label || "").trim() || "Mutual";
+  const safeStatus = String(status || "loaded").trim().toLowerCase();
+  const safeCount = Math.max(0, Math.floor(Number(count) || 0));
+  const safeCountLabel = String(countLabel || "").trim() || String(safeCount);
+  const safeBadgeLabel = String(badgeLabel || "").trim();
+  const isDisabled = !!disabled;
+  const stateClass = safeStatus && safeStatus !== "loaded" ? ` is-${safeStatus}` : "";
+  const disabledClass = isDisabled ? " is-disabled" : "";
+  const trailingHtml = safeBadgeLabel
+    ? `<span class="dmProfileMutualActionBadge">${esc(safeBadgeLabel)}</span>`
+    : `<span class="dmProfileMutualActionChevron" aria-hidden="true">&rsaquo;</span>`;
+  const disabledAttr = isDisabled ? ` disabled aria-disabled="true"` : "";
+  return `
+    <button class="dmProfileMutualActionRow${expanded ? " is-expanded" : ""}${stateClass}${disabledClass}" type="button" data-dm-profile-mutual-row="${escAttr(safeKind)}" aria-expanded="${expanded ? "true" : "false"}" aria-label="${escAttr(`${safeLabel} - ${safeBadgeLabel || safeCountLabel}`)}"${disabledAttr}>
+      <span class="dmProfileMutualActionText">
+        <span class="dmProfileMutualActionLabel">${esc(safeLabel)}</span>
+        ${safeBadgeLabel ? "" : `<span class="dmProfileMutualActionCount">&mdash; ${esc(safeCountLabel)}</span>`}
+      </span>
+      ${trailingHtml}
+    </button>
+  `;
+}
+
+function buildDmProfileMutualSectionHtml(userId = "", profile = {}) {
+  const serverSnapshot = getDmProfileMutualServerSnapshot(userId);
+  const friendSnapshot = getDmProfileMutualFriendsSnapshot(profile);
+  const expanded = ensureDmProfileMutualExpandedState(userId);
+  const sectionLabel = t("usercard.tab.shared", "Connections");
+  const serverCount = Number.isFinite(Number(serverSnapshot.count))
+    ? Math.max(0, Math.floor(Number(serverSnapshot.count)))
+    : 0;
+  const friendCount = Number.isFinite(Number(friendSnapshot.count))
+    ? Math.max(0, Math.floor(Number(friendSnapshot.count)))
+    : 0;
+  const loadingLabel = t("app.loading", "Loading...");
+  const unavailableLabel = t("usercard.unavailable", "Unavailable");
+  const serverCountLabel = serverSnapshot.status === "loading"
+    ? loadingLabel
+    : (serverSnapshot.status === "unavailable" ? unavailableLabel : String(serverCount));
+  const friendCountLabel = friendSnapshot.status === "unavailable"
+    ? unavailableLabel
+    : String(friendCount);
+  const friendsExpanded = !!expanded.friends && friendSnapshot.status !== "unavailable";
   return `
     <section class="dmProfileContextShell" aria-label="${escAttr(sectionLabel)}">
-      <div class="dmProfileContextHeader">
-        <div class="dmProfileContextTitle">${esc(sectionLabel)}</div>
-        <div class="dmProfileContextCount">${esc(countLabel)}</div>
-      </div>
-      <div class="dmProfileContextList">
-        ${servers.map((server) => buildDmProfileMutualServerEntryHtml(server)).join("")}
+      <div class="dmProfileMutualActionList">
+        ${buildDmProfileMutualActionRowHtml({
+          kind: "servers",
+          label: t("dm.mutual_servers", "Mutual Servers"),
+          count: serverCount,
+          countLabel: serverCountLabel,
+          status: serverSnapshot.status,
+          expanded: !!expanded.servers,
+        })}
+        ${expanded.servers ? buildDmProfileMutualExpandedContentHtml({
+          kind: "servers",
+          items: serverSnapshot.items,
+          count: serverCount,
+          status: serverSnapshot.status,
+          emptyText: t("dm.mutual_servers_empty", "No mutual servers yet."),
+          loadingText: t("dm.mutual_servers_loading", "Loading mutual servers..."),
+          unavailableText: t("dm.mutual_servers_unavailable", "Mutual servers unavailable."),
+        }) : ""}
+        ${buildDmProfileMutualActionRowHtml({
+          kind: "friends",
+          label: t("dm.mutual_friends", "Mutual Friends"),
+          count: friendCount,
+          countLabel: friendCountLabel,
+          badgeLabel: friendSnapshot.status === "unavailable" ? t("dm.mutual_friends_soon", "Soon") : "",
+          status: friendSnapshot.status,
+          disabled: friendSnapshot.status === "unavailable",
+          expanded: friendsExpanded,
+        })}
+        ${friendsExpanded ? buildDmProfileMutualExpandedContentHtml({
+          kind: "friends",
+          items: friendSnapshot.items,
+          count: friendCount,
+          status: friendSnapshot.status,
+          emptyText: t("dm.mutual_friends_empty", "No mutual friends yet."),
+          unavailableText: t("dm.mutual_friends_unavailable", "Mutual friends unavailable."),
+        }) : ""}
       </div>
     </section>
   `;
 }
 
-function renderDmProfileMutualSection(userId = "") {
+function ensureDmProfileMutualServersLoaded(userId = "", profile = {}) {
+  const uid = normId(userId || "");
+  if (!uid) return;
+  const snapshot = getDmProfileMutualServerSnapshot(uid);
+  const missingServerIds = normalizeUuidArray(snapshot.missingServerIds || []);
+  if (!missingServerIds.length) return;
+  const loadKey = `${uid}|${missingServerIds.slice().sort().join(",")}`;
+  if (dmProfileMutualServersLoadKey === loadKey && dmProfileMutualServersLoadPromise) return;
+  const requestId = ++dmProfileMutualServersLoadSeq;
+  dmProfileMutualServersLoadKey = loadKey;
+  dmProfileMutualServersLoadPromise = Promise.all(
+    missingServerIds.map((sid) => fetchServerMembersForSidebar(sid, { force: false }).catch(() => []))
+  ).finally(() => {
+    if (requestId === dmProfileMutualServersLoadSeq) {
+      dmProfileMutualServersLoadKey = "";
+      dmProfileMutualServersLoadPromise = null;
+    }
+    if (!dmProfilePanelOpen || uid !== getActiveDmPeerUserId()) return;
+    renderDmProfileMutualSection(uid, dmProfileMutualProfileSnapshot || profile || getCachedProfile(uid) || {});
+  });
+}
+
+function renderDmProfileMutualSection(userId = "", profile = {}) {
   const el = document.getElementById("dmProfileMutualSection");
   if (!el) return;
-  const html = buildDmProfileMutualSectionHtml(userId);
+  dmProfileMutualProfileSnapshot = profile && typeof profile === "object" ? profile : {};
+  const html = buildDmProfileMutualSectionHtml(userId, profile);
   el.innerHTML = html;
   el.classList.remove("hidden");
   el.setAttribute("aria-hidden", "false");
+  bindLazyMediaImages(el);
+  ensureDmProfileMutualServersLoaded(userId, profile);
 }
 
 async function openDmGroupMembersPanel({ force = false } = {}) {
@@ -46551,7 +47945,7 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
   if (identityWrap) identityWrap.style.display = "";
   if (nameEl) nameEl.style.display = "";
   if (handleEl) handleEl.style.display = "";
-  if (statusWrap) statusWrap.style.display = "";
+  if (statusWrap) statusWrap.style.display = "none";
   if (bioWrap) bioWrap.style.display = "";
   if (widgetsPreviewEl) widgetsPreviewEl.style.display = "";
   if (mutualSectionEl) mutualSectionEl.style.display = "";
@@ -46567,17 +47961,18 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
     const start = mixHex(base, "#111827", 0.74);
     const end = mixHex(base, "#0b1018", 0.9);
     const glow = rgbaFromHex(base, 0.24);
-    applyBannerStyle(bannerEl, "", start, end, glow, {
+    applyBannerStyle(bannerEl, bannerUrl, start, end, glow, {
       overlay: "none",
       userId: uid,
       profile,
     });
-    bannerEl.classList.remove("has-image");
+    bannerEl.classList.toggle("has-image", !!bannerUrl);
   }
   if (avatarEl) {
+    const avatarStatusDotHtml = `<span class="statusDot dmProfileAvatarStatusDot" data-status="${escAttr(status || "offline")}"></span>`;
     avatarEl.innerHTML = avatarUrl
-      ? buildAvatarMediaHtml(avatarUrl, { userId: uid, profile, alt: "avatar", loading: "lazy", controlledGif: true })
-      : `<span class="msg__avatarFallback">${esc(initial)}</span>`;
+      ? `${buildAvatarMediaHtml(avatarUrl, { userId: uid, profile, alt: "avatar", loading: "lazy", controlledGif: true })}${avatarStatusDotHtml}`
+      : `<span class="msg__avatarFallback">${esc(initial)}</span>${avatarStatusDotHtml}`;
     queueManagedGifPlaybackSync(avatarEl);
   }
   if (nameEl) {
@@ -46592,7 +47987,7 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
       const canonicalLower = String(canonicalName || "").trim().toLowerCase();
       const usernameLower = String(username || "").trim().toLowerCase();
       const showCanonical = !!(canonicalLower && canonicalLower !== usernameLower);
-      if (showCanonical && username) handleEl.textContent = `${canonicalName} â€¢ @${username}`;
+      if (showCanonical && username) handleEl.textContent = `${canonicalName} • @${username}`;
       else if (showCanonical) handleEl.textContent = canonicalName;
       else handleEl.textContent = `@${username || "user"}`;
       handleEl.classList.add("is-nickname");
@@ -46601,11 +47996,12 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
       handleEl.classList.remove("is-nickname");
     }
   }
+  if (statusWrap) statusWrap.style.display = "none";
   if (statusDotEl) statusDotEl.setAttribute("data-status", status || "offline");
   if (statusTextEl) statusTextEl.textContent = dmStatusLabel(status);
   if (bioEl) bioEl.textContent = bio || (loading ? t("app.loading", "Loading...") : t("dm.profile_no_bio", "No bio yet."));
   renderDmProfileWidgetsPreview(uid, getCachedProfileWidgetsForUser(uid), { loading });
-  renderDmProfileMutualSection(uid);
+  renderDmProfileMutualSection(uid, profile);
 }
 
 function refreshDmProfilePanel() {
@@ -47048,6 +48444,32 @@ function bindDmProfilePanelOnce() {
         presentation: "overlay",
         initialTab: "widgets",
       });
+      return;
+    }
+    const mutualViewAll = target.closest("[data-dm-profile-mutual-view-all]");
+    if (mutualViewAll) {
+      const uid = getActiveDmPeerUserId();
+      if (!uid) return;
+      await openUserCardModal(uid, { username: state.activeDm?.username || "" }, {
+        conversationId: normId(activeDmId || state.activeDm?.conversationId || ""),
+        conversationLabel: String(state.activeDm?.displayName || state.activeDm?.username || "").trim(),
+        serverId: normId(state.activeDm?.serverId || ""),
+        kind: normId(state.activeDm?.serverId || "") ? "server" : String(state.activeDm?.kind || "").trim().toLowerCase(),
+        presentation: "overlay",
+        initialTab: "shared",
+        anchorEl: mutualViewAll,
+      });
+      return;
+    }
+    const mutualRow = target.closest("[data-dm-profile-mutual-row]");
+    if (mutualRow) {
+      const uid = getActiveDmPeerUserId();
+      if (!uid) return;
+      const kind = String(mutualRow.getAttribute("data-dm-profile-mutual-row") || "").trim();
+      const expanded = ensureDmProfileMutualExpandedState(uid);
+      if (kind === "servers") expanded.servers = !expanded.servers;
+      else if (kind === "friends") expanded.friends = !expanded.friends;
+      renderDmProfileMutualSection(uid, dmProfileMutualProfileSnapshot || getCachedProfile(uid) || {});
       return;
     }
     const row = target.closest("[data-group-member-id]");
@@ -47559,7 +48981,7 @@ function buildUserCardSharedPanelHtml(profile = {}, insights = {}, { relation = 
             const sub = [
               server?.isCurrent ? t("usercard.current_server", "current server") : t("usercard.recently_loaded", "recently loaded"),
               server?.memberCount ? (server.memberCount === 1 ? t("dm.group_member_count_one", "1 member") : t("dm.group_member_count", "{n} members").replace("{n}", server.memberCount)) : "",
-            ].filter(Boolean).join(" â€¢ ");
+            ].filter(Boolean).join(" • ");
             return `
               <div class="userCardServerItem">
                 <div class="userCardServerOrb">
@@ -47941,7 +49363,7 @@ function getProfileWidgetVisibilityLabel(visibilityInput = "") {
 function formatProfileWidgetStars(ratingInput = null) {
   if (!Number.isFinite(Number(ratingInput))) return "";
   const rating = clampInt(ratingInput, 1, 5, 1);
-  return `${"★".repeat(rating)}${"☆".repeat(5 - rating)}`;
+  return `${"?".repeat(rating)}${"?".repeat(5 - rating)}`;
 }
 
 function getProfileWidgetFeaturedItem(widget) {
@@ -48189,7 +49611,7 @@ function renderProfileWidgetItemReadonlyPreview(item = null, { visible = false }
     : `<div class="profileWidgetItemReadonlyPreviewFallback">${esc(initial)}</div>`;
   bindLazyMediaImages(mediaEl);
   titleEl.textContent = title;
-  metaEl.textContent = metaParts.join(" • ");
+  metaEl.textContent = metaParts.join(" � ");
   metaEl.style.display = metaParts.length ? "" : "none";
   wrap.classList.remove("hidden");
   wrap.setAttribute("aria-hidden", "false");
@@ -50927,7 +52349,7 @@ function getEmojiButtonTitle(item) {
   const aliases = Array.isArray(item?.aliases) ? item.aliases : [];
   const primaryAlias = aliases.length ? `:${aliases[0]}:` : "";
   const keywords = String(item?.keywords || "").trim();
-  if (primaryAlias && keywords) return `${primaryAlias} â€¢ ${keywords}`;
+  if (primaryAlias && keywords) return `${primaryAlias} • ${keywords}`;
   return primaryAlias || keywords || String(item?.emoji || "");
 }
 
@@ -51536,6 +52958,267 @@ function attachmentDataAttrs(att) {
   ].join(" ");
 }
 
+function getConstrainedChatMediaWidth(widthInput = 0, heightInput = 0, {
+  modal = false,
+} = {}) {
+  const width = Math.max(1, Math.round(Number(widthInput) || 0));
+  const height = Math.max(1, Math.round(Number(heightInput) || 0));
+  if (!width || !height) return 0;
+  const maxWidth = modal ? 960 : 640;
+  const maxHeight = modal ? 920 : 760;
+  const maxScale = Math.min(maxWidth / width, maxHeight / height);
+  const desiredMinWidth = modal ? 420 : 0;
+  const scale = desiredMinWidth > 0 && width < desiredMinWidth
+    ? Math.min(maxScale, Math.max(1, desiredMinWidth / width))
+    : Math.min(1, maxScale);
+  return Math.max(1, Math.round(width * Math.max(0.01, scale)));
+}
+
+function buildChatMediaSizingAttrs(widthInput = 0, heightInput = 0, {
+  modal = false,
+} = {}) {
+  const width = Math.max(1, Math.round(Number(widthInput) || 0));
+  const height = Math.max(1, Math.round(Number(heightInput) || 0));
+  if (!width || !height) return "";
+  const displayWidth = getConstrainedChatMediaWidth(width, height, { modal });
+  return [
+    `width="${escAttr(String(width))}"`,
+    `height="${escAttr(String(height))}"`,
+    `style="--chat-media-ratio:${escAttr(`${width} / ${height}`)};--chat-media-width:${escAttr(`${displayWidth}px`)};"`,
+  ].join(" ");
+}
+
+function getAttachmentMediaSizingAttrs(att, opts = {}) {
+  const safe = sanitizeAttachmentPayload(att);
+  if (!safe?.width || !safe?.height) return "";
+  return buildChatMediaSizingAttrs(safe.width, safe.height, opts);
+}
+
+function readStoredChatMediaDisplayWidth(mediaEl, hosts = []) {
+  const candidates = [mediaEl, ...hosts].filter((node) => node instanceof HTMLElement);
+  let width = 0;
+  candidates.forEach((node) => {
+    const datasetWidth = Number(node.dataset?.chatMediaDisplayWidth || 0);
+    if (Number.isFinite(datasetWidth) && datasetWidth > width) width = datasetWidth;
+    const cssWidth = Number.parseFloat(String(node.style?.getPropertyValue("--chat-media-width") || "").replace("px", ""));
+    if (Number.isFinite(cssWidth) && cssWidth > width) width = cssWidth;
+  });
+  return width;
+}
+
+function shouldPreserveMessageGifDisplayWidth(mediaEl, {
+  modal = false,
+} = {}) {
+  if (modal || !(mediaEl instanceof HTMLImageElement)) return false;
+  return mediaEl.classList.contains("msg__gif")
+    || mediaEl.closest(".msg__gifWrap")
+    || mediaEl.closest(".msg__attachmentMedia[data-managed-gif-root='message']");
+}
+
+function applyChatMediaDimensions(mediaEl, widthInput = 0, heightInput = 0, {
+  modal = false,
+} = {}) {
+  const el = mediaEl instanceof HTMLElement ? mediaEl : null;
+  const width = Math.max(1, Math.round(Number(widthInput) || 0));
+  const height = Math.max(1, Math.round(Number(heightInput) || 0));
+  if (!el || !width || !height) return false;
+  const hosts = [
+    el.closest(".msg__attachmentMedia"),
+    el.closest(".msg__gifWrap"),
+    el.closest(".dmAttachmentGifWrap"),
+  ].filter(Boolean);
+  let displayWidth = getConstrainedChatMediaWidth(width, height, { modal });
+  if (shouldPreserveMessageGifDisplayWidth(el, { modal })) {
+    const previousDisplayWidth = readStoredChatMediaDisplayWidth(el, hosts);
+    if (previousDisplayWidth > displayWidth) {
+      displayWidth = Math.min(640, Math.round(previousDisplayWidth));
+    }
+  }
+  el.style.setProperty("--chat-media-ratio", `${width} / ${height}`);
+  el.style.setProperty("--chat-media-width", `${displayWidth}px`);
+  el.dataset.chatMediaDisplayWidth = String(displayWidth);
+  if (el instanceof HTMLImageElement || el instanceof HTMLVideoElement) {
+    if (!el.hasAttribute("width")) el.setAttribute("width", String(width));
+    if (!el.hasAttribute("height")) el.setAttribute("height", String(height));
+  }
+  hosts.forEach((host) => {
+    if (!(host instanceof HTMLElement)) return;
+    host.style.setProperty("--chat-media-ratio", `${width} / ${height}`);
+    host.style.setProperty("--chat-media-width", `${displayWidth}px`);
+    host.dataset.chatMediaDisplayWidth = String(displayWidth);
+  });
+  const attachmentHost = el.closest("[data-att-url]");
+  if (attachmentHost instanceof HTMLElement) {
+    attachmentHost.setAttribute("data-att-width", String(width));
+    attachmentHost.setAttribute("data-att-height", String(height));
+  }
+  return true;
+}
+
+function applyKnownChatMediaDimensions(mediaEl, {
+  modal = false,
+} = {}) {
+  const el = mediaEl instanceof HTMLElement ? mediaEl : null;
+  if (!el) return false;
+  const widthAttr = Number(el.getAttribute("width") || 0);
+  const heightAttr = Number(el.getAttribute("height") || 0);
+  if (Number.isFinite(widthAttr) && widthAttr > 0 && Number.isFinite(heightAttr) && heightAttr > 0) {
+    return applyChatMediaDimensions(el, widthAttr, heightAttr, { modal });
+  }
+  const attachmentHost = el.closest("[data-att-url]");
+  const hostWidth = Number(attachmentHost?.getAttribute("data-att-width") || 0);
+  const hostHeight = Number(attachmentHost?.getAttribute("data-att-height") || 0);
+  if (Number.isFinite(hostWidth) && hostWidth > 0 && Number.isFinite(hostHeight) && hostHeight > 0) {
+    return applyChatMediaDimensions(el, hostWidth, hostHeight, { modal });
+  }
+  return false;
+}
+
+function syncLoadedChatMediaDimensions(mediaEl, {
+  modal = false,
+} = {}) {
+  const el = mediaEl instanceof HTMLElement ? mediaEl : null;
+  if (!el) return false;
+  const width = el instanceof HTMLVideoElement
+    ? Number(el.videoWidth || 0)
+    : Number(el.naturalWidth || 0);
+  const height = el instanceof HTMLVideoElement
+    ? Number(el.videoHeight || 0)
+    : Number(el.naturalHeight || 0);
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) return false;
+  el.classList.add("is-media-ready");
+  return applyChatMediaDimensions(el, width, height, { modal });
+}
+
+function buildAttachmentPreviewFallbackHtml(att, {
+  label = "",
+  actionLabel = "Download",
+} = {}) {
+  const safe = sanitizeAttachmentPayload(att);
+  const name = formatAttachmentDisplayName(safe?.name || "media", safe?.kind || "file");
+  const meta = attachmentMetaLabel(safe) || label || "Preview unavailable";
+  const icon = safe?.kind === "image" && isGifLikeAttachment(safe) ? "GIF" : (safe?.kind === "image" ? "IMG" : "FILE");
+  return `
+    <div class="msg__attachmentFallback" data-att-fallback="1">
+      <span class="msg__attachmentFallbackIcon" aria-hidden="true">${esc(icon)}</span>
+      <span class="msg__attachmentFallbackBody">
+        <span class="msg__attachmentFallbackTitle">${esc(name)}</span>
+        <span class="msg__attachmentFallbackMeta">${esc(meta || "Preview unavailable")}</span>
+      </span>
+      <span class="msg__attachmentFallbackActions">
+        <button class="msg__attachmentOpen" type="button" data-att-download="1">${esc(actionLabel)}</button>
+      </span>
+    </div>
+  `;
+}
+
+function showAttachmentPreviewFallbackFromImage(img) {
+  if (!(img instanceof HTMLImageElement)) return false;
+  const media = img.closest(".msg__attachmentMedia");
+  if (!(media instanceof HTMLElement)) return false;
+  const att = readAttachmentFromNode(img);
+  if (!att) return false;
+  media.classList.add("is-error");
+  media.classList.remove("is-loading");
+  const preview = media.querySelector(".msg__attachmentPreview");
+  if (preview instanceof HTMLElement) preview.hidden = true;
+  media.querySelectorAll("[data-att-load-preview]").forEach((btn) => {
+    if (btn instanceof HTMLElement) btn.hidden = true;
+  });
+  if (!media.querySelector("[data-att-fallback]")) {
+    media.insertAdjacentHTML("afterbegin", buildAttachmentPreviewFallbackHtml(att, {
+      label: "Preview unavailable",
+    }));
+  }
+  return true;
+}
+
+function showMessageGifFallbackFromImage(img) {
+  if (!(img instanceof HTMLImageElement)) return false;
+  const wrap = img.closest(".msg__gifWrap");
+  if (!(wrap instanceof HTMLElement)) return false;
+  const url = String(wrap.getAttribute("data-gif-url") || img.dataset?.mediaSrc || img.getAttribute("src") || "").trim();
+  if (!url) return false;
+  const title = String(wrap.getAttribute("data-gif-title") || img.getAttribute("alt") || "GIF").trim() || "GIF";
+  wrap.classList.add("is-error");
+  if (!wrap.querySelector("[data-gif-fallback]")) {
+    wrap.insertAdjacentHTML("afterbegin", `
+      <span class="msg__attachmentFallback msg__attachmentFallback--gif" data-gif-fallback="1">
+        <span class="msg__attachmentFallbackIcon" aria-hidden="true">GIF</span>
+        <span class="msg__attachmentFallbackBody">
+          <span class="msg__attachmentFallbackTitle">${esc(title)}</span>
+          <span class="msg__attachmentFallbackMeta">${esc("Preview unavailable")}</span>
+        </span>
+        <span class="msg__attachmentFallbackActions">
+          <a class="msg__attachmentOpen" href="${escAttr(url)}" target="_blank" rel="noopener noreferrer">Open</a>
+        </span>
+      </span>
+    `);
+  }
+  return true;
+}
+
+function showModalAttachmentFallbackFromImage(img) {
+  if (!(img instanceof HTMLImageElement)) return false;
+  const body = img.closest("#dmAttachmentModalBody");
+  if (!(body instanceof HTMLElement)) return false;
+  const title = document.getElementById("dmAttachmentModalTitle")?.textContent?.trim() || img.getAttribute("alt") || "media";
+  const info = document.getElementById("dmAttachmentModalInfo")?.textContent?.trim() || "Preview unavailable";
+  const url = String(img.currentSrc || img.getAttribute("src") || img.dataset?.mediaSrc || "").trim();
+  body.innerHTML = `
+    <div class="dmAttachmentFilePreview dmAttachmentFilePreview--error">
+      <div class="dmAttachmentFileIcon" aria-hidden="true">IMG</div>
+      <div class="dmAttachmentFileMeta">
+        <div class="dmAttachmentFileName">${esc(title)}</div>
+        <div class="hint">${esc(info || "Preview unavailable")}</div>
+      </div>
+      ${url ? `<a class="btn ghost" href="${escAttr(url)}" target="_blank" rel="noopener noreferrer">Open original</a>` : ""}
+    </div>
+  `;
+  return true;
+}
+
+function bindChatMediaLayoutAndFallbacks(root = document, {
+  modal = false,
+} = {}) {
+  const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+  const items = [];
+  if (root instanceof HTMLImageElement || root instanceof HTMLVideoElement) items.push(root);
+  scope?.querySelectorAll?.("img.msg__attachmentImage,img.msg__gif,img.dmAttachmentPreview--image,video.msg__attachmentVideo,video.dmAttachmentPreview--video").forEach((el) => items.push(el));
+  items.forEach((el) => {
+    if (!(el instanceof HTMLImageElement) && !(el instanceof HTMLVideoElement)) return;
+    applyKnownChatMediaDimensions(el, { modal });
+    if (el.dataset.chatMediaLayoutBound !== "1") {
+      el.dataset.chatMediaLayoutBound = "1";
+      const ready = () => syncLoadedChatMediaDimensions(el, { modal });
+      const failed = () => {
+        if (el instanceof HTMLImageElement) {
+          if (!showAttachmentPreviewFallbackFromImage(el) && !showMessageGifFallbackFromImage(el)) {
+            showModalAttachmentFallbackFromImage(el);
+          }
+        }
+      };
+      el.addEventListener("load", ready);
+      el.addEventListener("loadedmetadata", ready);
+      el.addEventListener("error", failed);
+    }
+    if (el instanceof HTMLImageElement) {
+      const hasSrc = !!String(el.getAttribute("src") || el.currentSrc || "").trim();
+      if (hasSrc && el.complete) {
+        if (Number(el.naturalWidth || 0) > 0 && Number(el.naturalHeight || 0) > 0) {
+          syncLoadedChatMediaDimensions(el, { modal });
+        } else {
+          if (!showAttachmentPreviewFallbackFromImage(el) && !showMessageGifFallbackFromImage(el)) {
+            showModalAttachmentFallbackFromImage(el);
+          }
+        }
+      }
+    } else if (Number(el.videoWidth || 0) > 0 && Number(el.videoHeight || 0) > 0) {
+      syncLoadedChatMediaDimensions(el, { modal });
+    }
+  });
+}
+
 function readAttachmentFromNode(node) {
   const host = node?.closest?.("[data-att-url]");
   if (!host) return null;
@@ -51609,12 +53292,13 @@ function loadDeferredGifPreviewFromButton(buttonEl) {
     btn.disabled = false;
     if (!loaded) {
       root.classList.add("is-error");
-      wrap.hidden = true;
+      showMessageGifFallbackFromImage(img);
       return;
     }
     root.classList.add("is-loaded");
     root.classList.remove("is-error");
     btn.hidden = true;
+    syncLoadedChatMediaDimensions(img);
     queueManagedGifPlaybackSync(wrap);
   };
 
@@ -51653,12 +53337,14 @@ function loadDeferredAttachmentPreviewFromButton(buttonEl) {
     btn.disabled = false;
     if (!loaded) {
       media.classList.add("is-error");
+      showAttachmentPreviewFallbackFromImage(img);
       return;
     }
     media.classList.add("is-loaded");
     media.classList.remove("is-error");
     btn.hidden = true;
     if (previewBtn instanceof HTMLElement) previewBtn.hidden = false;
+    syncLoadedChatMediaDimensions(img);
     if (deferredIsGif) queueManagedGifPlaybackSync(img.closest("[data-managed-gif-root]") || img);
   };
 
@@ -51711,7 +53397,24 @@ function openDmAttachmentModal(att) {
   downloadBtn.setAttribute("download", safe.name || displayName || "ficheiro");
 
   if (safe.kind === "image") {
-    body.innerHTML = `<img class="dmAttachmentPreview dmAttachmentPreview--image" src="${esc(safe.url)}" alt="${escAttr(displayName)}" loading="lazy" decoding="async" />`;
+    const isGif = isGifLikeAttachment(safe) || isGifLikeUrl(safe.url);
+    const modalSizingAttrs = getAttachmentMediaSizingAttrs(safe, { modal: true });
+    if (isGif) {
+      const previewUrl = String(safe.previewUrl || "").trim();
+      const gifPreview = resolveGifStaticPreviewUrl(previewUrl, safe.url) || previewUrl || safe.url;
+      const posterAttrs = gifPreview && gifPreview !== safe.url && !isGifLikeUrl(gifPreview) && shouldLoadGifOnHover("chat-message")
+        ? ` src="${escAttr(gifPreview)}" data-media-preview="1" data-media-poster="1"`
+        : "";
+      body.innerHTML = `
+        <span class="dmAttachmentGifWrap" data-managed-gif-root="message" data-gif-url="${escAttr(safe.url)}" data-gif-preview="${escAttr(gifPreview)}">
+          <img class="dmAttachmentPreview dmAttachmentPreview--image lazyMediaImage"${posterAttrs} data-media-src="${escAttr(safe.url)}" data-managed-gif-media="1" crossorigin="anonymous" referrerpolicy="no-referrer" data-media-source="chat-message" data-media-load-reason="visible-gif-autoload" data-media-kind="gif" alt="${escAttr(displayName)}" loading="lazy" decoding="async"${modalSizingAttrs ? ` ${modalSizingAttrs}` : ""} />
+        </span>
+      `;
+      bindLazyMediaImages(body);
+      queueManagedGifPlaybackSync(body);
+    } else {
+      body.innerHTML = `<img class="dmAttachmentPreview dmAttachmentPreview--image" src="${esc(safe.url)}" alt="${escAttr(displayName)}" loading="lazy" decoding="async"${modalSizingAttrs ? ` ${modalSizingAttrs}` : ""} />`;
+    }
   } else if (safe.kind === "video") {
     body.innerHTML = `<video class="dmAttachmentPreview dmAttachmentPreview--video" src="${esc(safe.url)}" controls preload="none" playsinline></video>`;
   } else if (safe.kind === "audio") {
@@ -51729,6 +53432,7 @@ function openDmAttachmentModal(att) {
     `;
   }
 
+  bindChatMediaLayoutAndFallbacks(body, { modal: true });
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
 }
@@ -51832,7 +53536,7 @@ function bindReportUserModalOnce() {
       metadata,
     });
 
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Enviar denÃºncia"; }
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Enviar denúncia"; }
 
     if (submitBtn) {
       submitBtn.disabled = false;
@@ -51852,20 +53556,20 @@ function bindReportUserModalOnce() {
       return;
 
       const msgMap = {
-        rate_limited: "Enviaste demasiadas denÃºncias recentemente. Tenta mais tarde.",
-        missing_target: "Utilizador invÃ¡lido.",
+        rate_limited: "Enviaste demasiadas denúncias recentemente. Tenta mais tarde.",
+        missing_target: "Utilizador inválido.",
         reason_too_short: "Motivo demasiado curto.",
-        cannot_report_self: "NÃ£o podes denunciar a tua prÃ³pria conta.",
+        cannot_report_self: "Não podes denunciar a tua própria conta.",
       };
-      const msg = msgMap[result.error] || `Erro ao enviar denÃºncia: ${result.error || "desconhecido"}`;
-      await requestAppAlert(msg, { title: "DenÃºncia", okText: "OK" });
+      const msg = msgMap[result.error] || `Erro ao enviar denúncia: ${result.error || "desconhecido"}`;
+      await requestAppAlert(msg, { title: "Denúncia", okText: "OK" });
       return;
     }
 
     closeReportUserModal();
     await requestAppAlert(
-      "A tua denÃºncia foi recebida. Obrigado por contribuÃ­res para uma comunidade mais segura.",
-      { title: "DenÃºncia enviada", okText: "OK" }
+      "A tua denúncia foi recebida. Obrigado por contribuíres para uma comunidade mais segura.",
+      { title: "Denúncia enviada", okText: "OK" }
     );
   });
 }
@@ -51896,22 +53600,47 @@ function attachmentBodyHtml(att, {
   if (safe.kind === "image") {
     const isGif = isGifLikeAttachment(safe) || isGifLikeUrl(safe.url);
     const previewUrl = String(safe.previewUrl || "").trim();
+    const mediaSizingAttrs = getAttachmentMediaSizingAttrs(safe);
+    if (isGif && (!isSpoilerMedia || isRevealed)) {
+      const gifPreview = resolveGifStaticPreviewUrl(previewUrl, safe.url) || previewUrl || safe.url;
+      const posterAttrs = gifPreview && gifPreview !== safe.url && !isGifLikeUrl(gifPreview) && shouldLoadGifOnHover(mediaSource)
+        ? ` src="${escAttr(gifPreview)}" data-media-preview="1" data-media-poster="1"`
+        : "";
+      const imageHtml = `<img class="msg__attachmentImage msg__gif lazyMediaImage" alt="${escAttr(name)}" loading="lazy" decoding="async"${posterAttrs} data-media-src="${escAttr(safe.url)}" data-media-source="${escAttr(mediaSource)}" data-media-load-reason="visible-gif-autoload" data-media-kind="gif" data-managed-gif-media="1" crossorigin="anonymous" referrerpolicy="no-referrer"${mediaSizingAttrs ? ` ${mediaSizingAttrs}` : ""} />`;
+      return `
+        <div class="msg__attachment msg__attachment--image msg__attachment--gif" ${dataAttrs}>
+          <div class="msg__attachmentMedia is-loaded ${isSpoilerMedia ? "is-spoiler" : ""} ${isRevealed ? "is-revealed" : ""}" data-managed-gif-root="message" data-gif-url="${escAttr(safe.url)}" data-gif-preview="${escAttr(gifPreview)}" data-gif-title="${escAttr(name)}">
+            <button class="msg__attachmentPreview msg__attachmentPreview--gif" type="button" data-att-open="1" aria-label="Abrir GIF">
+              ${imageHtml}
+            </button>
+            ${deleteCornerBtnHtml}
+            <button class="msg__attachmentCornerBtn" type="button" data-att-download="1" title="Download">Download</button>
+          </div>
+          <div class="msg__attachmentCaption">
+            <span class="msg__attachmentInfo">${safe.spoiler ? "Blur - " : ""}${esc(meta)}</span>
+          </div>
+        </div>
+      `;
+    }
     const hasLightweightPreview = !!previewUrl && !forceDeferredPreview && !safe.spoiler;
+    const hasInlineStaticImage = !isGif && !!safe.url;
+    const shouldRenderInlineImage = hasLightweightPreview || hasInlineStaticImage;
+    const inlineImageUrl = hasLightweightPreview ? previewUrl : safe.url;
     const gifAttrs = isGif && !hasLightweightPreview
       ? ' data-managed-gif-media="1" crossorigin="anonymous" referrerpolicy="no-referrer"'
       : "";
-    const previewAttrs = hasLightweightPreview
-      ? ` src="${escAttr(previewUrl)}" data-media-preview="1" data-media-loaded="1" data-media-load-reason="lightweight-preview"`
+    const previewAttrs = shouldRenderInlineImage
+      ? ` src="${escAttr(inlineImageUrl)}" data-media-preview="1" data-media-loaded="1" data-media-load-reason="lightweight-preview"`
       : ' data-media-load-reason="user-clicked-load-preview"';
-    const imageHtml = `<img class="msg__attachmentImage" alt="${escAttr(name)}" loading="lazy" decoding="async" data-media-source="${escAttr(mediaSource)}"${previewAttrs}${gifAttrs} />`;
+    const imageHtml = `<img class="msg__attachmentImage" alt="${escAttr(name)}" loading="lazy" decoding="async" data-media-source="${escAttr(mediaSource)}"${previewAttrs}${gifAttrs}${mediaSizingAttrs ? ` ${mediaSizingAttrs}` : ""} />`;
     const loadOriginalBtnHtml = hasLightweightPreview && isGif
       ? `<button class="msg__attachmentCornerBtn msg__attachmentCornerBtn--loadFull" type="button" data-att-load-preview="1" title="Play GIF">Play GIF</button>`
       : "";
     return `
       <div class="msg__attachment msg__attachment--image" ${dataAttrs}>
-        <div class="msg__attachmentMedia ${hasLightweightPreview ? "is-loaded" : "msg__attachmentMedia--deferred"} ${isSpoilerMedia ? "is-spoiler" : ""} ${isRevealed ? "is-revealed" : ""}">
-          ${hasLightweightPreview ? "" : attachmentDeferredPreviewHtml(safe, { name, meta })}
-          <button class="msg__attachmentPreview" type="button" data-att-open="1" aria-label="Abrir imagem" ${hasLightweightPreview ? "" : "hidden"}>
+        <div class="msg__attachmentMedia ${shouldRenderInlineImage ? "is-loaded" : "msg__attachmentMedia--deferred"} ${isSpoilerMedia ? "is-spoiler" : ""} ${isRevealed ? "is-revealed" : ""}">
+          ${shouldRenderInlineImage ? "" : attachmentDeferredPreviewHtml(safe, { name, meta })}
+          <button class="msg__attachmentPreview" type="button" data-att-open="1" aria-label="Abrir imagem" ${shouldRenderInlineImage ? "" : "hidden"}>
             ${imageHtml}
           </button>
           ${isSpoilerMedia && !isRevealed ? `<button class="msg__attachmentSpoilerMask" type="button" data-att-reveal="1">Blur - clicar para revelar</button>` : ""}
@@ -51927,11 +53656,12 @@ function attachmentBodyHtml(att, {
   }
 
   if (safe.kind === "video") {
+    const videoSizingAttrs = getAttachmentMediaSizingAttrs(safe);
     return `
       <div class="msg__attachment" ${dataAttrs}>
         <div class="msg__attachmentMedia ${isSpoilerMedia ? "is-spoiler" : ""} ${isRevealed ? "is-revealed" : ""}">
           <div class="msg__videoPlayer" data-video-player>
-            <video class="msg__attachmentVideo" data-media-src="${escAttr(safe.url)}" data-media-source="${escAttr(mediaSource)}" preload="none" playsinline></video>
+            <video class="msg__attachmentVideo" data-media-src="${escAttr(safe.url)}" data-media-source="${escAttr(mediaSource)}" preload="none" playsinline${videoSizingAttrs ? ` ${videoSizingAttrs}` : ""}></video>
             <div class="msg__videoUi" data-video-ui>
               <button class="msgVideoBtn msgVideoBtn--play" type="button" data-video-play aria-label="Play" title="Play">${UI_GLYPHS.play}</button>
               <span class="msgVideoTime" data-video-current>0:00</span>
@@ -52069,6 +53799,7 @@ function sanitizeChatMessageMediaHtml(html = "") {
       && (isGifLikeUrl(url) || getMediaDomUrlKind(url) === "image")
     ));
     if (!mediaUrl) return;
+    if (isVisibleChatGifAutoloadElement(node, mediaUrl)) return;
 
     const name = getDisplayFileNameFromUrl(mediaUrl, isGifLikeUrl(mediaUrl) ? "gif" : "image");
     const sourceArea = node.closest("[data-message-area=\"server-message\"], [data-server-message=\"1\"]")
@@ -52095,6 +53826,7 @@ function isServerMessageMediaGuardTarget(el) {
   if (!(el instanceof Element)) return false;
   if (!el.closest("[data-server-message=\"1\"], [data-message-area=\"server-message\"]")) return false;
   if (el.closest(".msg__avatar,.msg__avatarBtn,.profileAvatarMediaClip,.msg__emojiFlag")) return false;
+  if (isVisibleChatGifAutoloadElement(el)) return false;
   if (el.getAttribute("data-media-preview") === "1") return false;
   if (el.getAttribute("data-media-load-reason") === "lightweight-preview") return false;
   if (el.closest(".msg__attachmentMedia--deferred,.msg__gifDeferred")) return false;
@@ -52178,41 +53910,34 @@ function deferredGifMessageBodyHtml(gif, safeUrl = "", {
   if (!url) return "";
   const mediaSource = String(sourceArea || "chat-message").trim() || "chat-message";
   const gifId = String(gif?.id || url).trim();
-  const gifPreview = String(gif?.preview || url).trim();
+  const rawPreview = String(gif?.preview || "").trim();
+  const gifPreview = resolveGifStaticPreviewUrl(rawPreview, url) || rawPreview || url;
   const gifTitle = String(gif?.title || "").trim();
   const fav = isFav(gif);
   const favTitle = fav ? "Remover dos favoritos" : "Guardar nos favoritos";
-  const imgHtml = `<img class="msg__gif" alt="gif" loading="lazy" decoding="async" data-managed-gif-media="1" crossorigin="anonymous" referrerpolicy="no-referrer" data-media-source="${escAttr(mediaSource)}" data-media-load-reason="user-clicked-load-preview" />`;
+  const posterAttrs = gifPreview && gifPreview !== url && !isGifLikeUrl(gifPreview) && shouldLoadGifOnHover(mediaSource)
+    ? ` src="${escAttr(gifPreview)}" data-media-preview="1" data-media-poster="1"`
+    : "";
+  const imgHtml = `<img class="msg__gif lazyMediaImage" alt="${escAttr(gifTitle || "GIF")}" loading="lazy" decoding="async"${posterAttrs} data-media-src="${escAttr(url)}" data-managed-gif-media="1" crossorigin="anonymous" referrerpolicy="no-referrer" data-media-source="${escAttr(mediaSource)}" data-media-load-reason="visible-gif-autoload" data-media-kind="gif" />`;
 
   return `
-    <span class="msg__gifDeferred" data-msg-gif-deferred="1">
-      <button class="msg__attachmentDeferredPreview msg__attachmentDeferredPreview--gif" type="button" data-msg-gif-load-preview="1" aria-label="Load preview">
-        <span class="msg__attachmentDeferredIcon" aria-hidden="true">GIF</span>
-        <span class="msg__attachmentDeferredBody">
-          <span class="msg__attachmentDeferredTitle">${esc(gifTitle || "GIF")}</span>
-          <span class="msg__attachmentDeferredMeta">GIF</span>
-          <span class="msg__attachmentDeferredAction">Load preview</span>
-        </span>
-      </button>
-      <span
-        class="msg__gifWrap"
-        data-msg-gif-wrap="1"
-        data-managed-gif-root="message"
-        data-gif-id="${escAttr(gifId)}"
-        data-gif-url="${escAttr(url)}"
-        data-gif-preview="${escAttr(gifPreview)}"
-        data-gif-title="${escAttr(gifTitle)}"
-        hidden
-      >
-        ${imgHtml}
-        <button
-          class="msg__gifFavBtn${fav ? " is-fav" : ""}"
-          type="button"
-          data-msg-gif-fav="1"
-          title="${escAttr(favTitle)}"
-          aria-label="${escAttr(favTitle)}"
-        >&#9733;</button>
-      </span>
+    <span
+      class="msg__gifWrap"
+      data-msg-gif-wrap="1"
+      data-managed-gif-root="message"
+      data-gif-id="${escAttr(gifId)}"
+      data-gif-url="${escAttr(url)}"
+      data-gif-preview="${escAttr(gifPreview)}"
+      data-gif-title="${escAttr(gifTitle)}"
+    >
+      ${imgHtml}
+      <button
+        class="msg__gifFavBtn${fav ? " is-fav" : ""}"
+        type="button"
+        data-msg-gif-fav="1"
+        title="${escAttr(favTitle)}"
+        aria-label="${escAttr(favTitle)}"
+      >&#9733;</button>
     </span>
   `;
 }
@@ -52346,10 +54071,6 @@ async function hydrateOneInviteCard(card) {
   const iconWrap = card.querySelector(".msgInviteCard__iconWrap");
   const heroEl = card.querySelector(".dmServerInviteHero");
   const scrollContainer = card.closest?.("#dmMessages") || null;
-  const shouldStickAfterHydrate = !!(
-    scrollContainer
-    && (isDmNearBottom(scrollContainer, 140) || shouldHonorDmStickToBottom())
-  );
 
   try {
     // Try direct table query first (works when RLS policy is applied via SUPABASE_PATCH_INVITE_PREVIEW.sql)
@@ -52378,6 +54099,13 @@ async function hydrateOneInviteCard(card) {
     }
 
     if (!serverName) return;
+
+    const shouldStickAfterHydrate = !!(
+      scrollContainer
+      && !dmUserScrolledAwayFromBottom
+      && (isDmInitialLatestActive() || isDmNearBottom(scrollContainer, 140) || shouldHonorDmStickToBottom())
+    );
+    const scrollAnchor = shouldStickAfterHydrate ? null : captureDmScrollAnchor(scrollContainer);
 
     card.classList.add("dmServerInviteCard--ready");
     if (nameEl) nameEl.textContent = serverName;
@@ -52411,9 +54139,14 @@ async function hydrateOneInviteCard(card) {
       card.setAttribute("data-invite-state", "member");
     }
     if (serverId) card.setAttribute("data-invite-server-id", serverId);
-    if (shouldStickAfterHydrate) scheduleDmScrollToLatestAfterRender();
+    if (shouldStickAfterHydrate && !dmUserScrolledAwayFromBottom) {
+      scheduleDmScrollToLatestAfterRender();
+    } else {
+      restoreDmScrollAnchorSoon(scrollContainer, scrollAnchor);
+      updateDmJumpLatestButton(scrollContainer);
+    }
   } catch (_) {
-    // Silently ignore â€” card stays in loading state, Join still works
+    // Silently ignore — card stays in loading state, Join still works
   }
 }
 
@@ -52476,6 +54209,7 @@ function renderMessageTextHtml(text) {
 
 function gifMessageBodyHtml(gifUrl = "", {
   title = "",
+  preview = "",
   attachment = null,
   messageId = "",
   sourceArea = "chat-message",
@@ -52484,7 +54218,7 @@ function gifMessageBodyHtml(gifUrl = "", {
   const gif = normalizeGifFavoriteEntry({
     id: gifUrl,
     url: gifUrl,
-    preview: gifUrl,
+    preview: preview || gifUrl,
     title: title || "",
   });
   const safeUrl = String(gif?.url || gifUrl || "").trim();
@@ -52496,27 +54230,6 @@ function gifMessageBodyHtml(gifUrl = "", {
       forceDeferredPreview: !String(safeAttachment.previewUrl || "").trim(),
       sourceArea,
     });
-  }
-
-  if (!safeAttachment && isGifLikeUrl(safeUrl) && isLikelySupabaseStorageMediaUrl(safeUrl)) {
-    const fallbackName = (() => {
-      try {
-        const parsed = new URL(safeUrl, window.location.href);
-        const leaf = decodeURIComponent(String(parsed.pathname || "").split("/").filter(Boolean).pop() || "");
-        return leaf || "gif";
-      } catch (_) {
-        return "gif";
-      }
-    })();
-    const syntheticAttachment = sanitizeAttachmentPayload({
-      url: safeUrl,
-      name: fallbackName,
-      mime: "image/gif",
-      kind: "image",
-    });
-    if (syntheticAttachment) {
-      return attachmentBodyHtml(syntheticAttachment, { messageId, forceDeferredPreview: true, sourceArea });
-    }
   }
 
   return deferredGifMessageBodyHtml(gif, safeUrl, { sourceArea });
@@ -52617,7 +54330,13 @@ function messageHtml(m, opts = {}) {
     ? rawTextHtml
     : `<span>${rawTextHtml}</span>`;
   const bodyHtml = (parsed.type === "gif")
-    ? gifMessageBodyHtml(parsed.url, { title: "GIF", attachment: parsed.attachment || null, messageId: mid, sourceArea: messageSourceArea })
+    ? gifMessageBodyHtml(parsed.url, {
+      title: parsed.title || "GIF",
+      preview: parsed.preview || parsed.preview_url || "",
+      attachment: parsed.attachment || null,
+      messageId: mid,
+      sourceArea: messageSourceArea,
+    })
     : ((parsed.type === "attachment" || parsed.type === "attachments"))
       ? attachmentCollectionBodyHtml(parsed, { messageId: mid, sourceArea: messageSourceArea })
       : textBodyHtml;
@@ -52751,7 +54470,13 @@ function appendMessage(m) {
   if (mid && dmMessageIds.has(mid)) return;
   const dmMessages = document.getElementById("dmMessages");
   const wasNearBottom = isDmNearBottom(dmMessages, 118);
-  const shouldStickToLatest = !!(dmMessages && (wasNearBottom || canForceDmOpenAutoScroll()));
+  const isOutgoingOwnMessage = !!(isOwnMessage(m) || isOptimisticDmMessage(m));
+  const shouldStickToLatest = !!(dmMessages && (
+    isOutgoingOwnMessage
+    || (!dmUserScrolledAwayFromBottom && wasNearBottom)
+    || canForceDmOpenAutoScroll()
+    || shouldHonorDmStickToBottom()
+  ));
   if (shouldStickToLatest) requestDmStickToBottom();
   const previousMessage = dmMessagesCache.length ? dmMessagesCache[dmMessagesCache.length - 1] : null;
   const shouldCue = shouldPlayIncomingMessageCue(m);
@@ -52826,7 +54551,7 @@ function appendMessage(m) {
   bindDmAudioPlayerUi(dmMessages);
   hydrateInviteCards(dmMessages);
   const shouldForceLatest = canForceDmOpenAutoScroll();
-  if (shouldForceLatest || wasNearBottom || shouldHonorDmStickToBottom()) {
+  if (shouldForceLatest || isOutgoingOwnMessage || (!dmUserScrolledAwayFromBottom && wasNearBottom) || shouldHonorDmStickToBottom()) {
     scrollDmToLatest();
     scheduleDmScrollToLatestAfterRender();
   }
@@ -52908,7 +54633,7 @@ async function deleteSingleAttachmentFromMessage(messageId, attachmentInput) {
   const mid = String(messageId || "").trim();
   if (!mid || !activeDmId || !state.user?.id) return;
   if (!canDeleteSingleAttachmentFromMessage(mid)) {
-    showDmComposerNotice("SÃ³ podes apagar anexos das tuas mensagens.", { title: "Messages" });
+    showDmComposerNotice("Só podes apagar anexos das tuas mensagens.", { title: "Messages" });
     return;
   }
 
@@ -52928,7 +54653,7 @@ async function deleteSingleAttachmentFromMessage(messageId, attachmentInput) {
   );
   const isLastAttachment = attachments.length === 1;
   const confirmMessage = isLastAttachment
-    ? `Este Ã© o Ãºltimo anexo (${targetName}). Apagar a mensagem toda?`
+    ? `Este é o último anexo (${targetName}). Apagar a mensagem toda?`
     : `Apagar este anexo (${targetName})?`;
   const confirmed = await requestAppConfirm(confirmMessage, {
     title: "Messages",
@@ -52986,10 +54711,10 @@ async function editDmMessage(messageId) {
   const mid = String(messageId || "");
   const m = getMessageById(mid);
   if (!m) return;
-  if (!isOwnMessage(m)) return alert("SÃ³ podes editar mensagens tuas.");
+  if (!isOwnMessage(m)) return alert("Só podes editar mensagens tuas.");
 
   const parsed = safeParseMessageContent(m.content);
-  if (isSystemChipMessage(parsed) || parsed.type !== "text") return alert("SÃ³ dÃ¡ para editar mensagens de texto.");
+  if (isSystemChipMessage(parsed) || parsed.type !== "text") return alert("Só dá para editar mensagens de texto.");
   if (isDmMessageEditWindowExpired(m)) {
     return alert("Nos canais de servidor so podes editar mensagens durante 30 minutos.");
   }
@@ -53019,7 +54744,7 @@ async function togglePinMessage(messageId) {
   const mid = String(messageId || "");
   const m = getMessageById(mid);
   if (!m) return;
-  if (!isOwnMessage(m)) return alert("Por agora sÃ³ podes pinar mensagens tuas.");
+  if (!isOwnMessage(m)) return alert("Por agora só podes pinar mensagens tuas.");
 
   const nextPinned = !m.is_pinned;
   if (nextPinned) {
@@ -53083,7 +54808,7 @@ async function toggleMessageReaction(messageId, emoji) {
       .eq("emoji", em)
       .eq("user_id", state.user.id);
     if (error) {
-      alert("Erro a remover reaÃ§Ã£o: " + error.message);
+      alert("Erro a remover reação: " + error.message);
       return;
     }
     applyReactionDelta(mid, em, state.user.id, false);
@@ -53433,7 +55158,7 @@ function bindDmMessageActions() {
   });
 }
 
-async function fetchMessages(conversationId) {
+async function fetchMessages(conversationId, { initialLatest = false } = {}) {
   const msgsBox = document.getElementById("dmMessages");
   const convId = normId(conversationId || "");
   if (msgsBox) {
@@ -53492,7 +55217,10 @@ async function fetchMessages(conversationId) {
 
   if (msgsBox) {
     renderMessagesFromCache({ keepBottom: false });
-    scrollDmToLatest();
+    if (initialLatest || isDmInitialLatestActive(convId)) {
+      if (!isDmInitialLatestActive(convId)) armDmInitialLatestStick(convId);
+      scheduleDmInitialLatestScrollPasses();
+    }
     scheduleDmOpenAutoscroll(DM_OPEN_AUTOSCROLL_MS);
   }
 }
@@ -53585,6 +55313,14 @@ function clearPendingDmAttachments() {
   renderDmPendingAttachments();
 }
 
+const DM_PENDING_ICON_SVGS = Object.freeze({
+  paperclip: `<svg class="altaraIcon dmPendingSvgIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48"></path></svg>`,
+  file: `<svg class="altaraIcon dmPendingSvgIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path><path d="M14 2v5h5"></path><path d="M9 13h6"></path><path d="M9 17h4"></path></svg>`,
+  audio: `<svg class="altaraIcon dmPendingSvgIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11 5 6 9H3v6h3l5 4z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`,
+  eyeOff: `<svg class="altaraIcon dmPendingSvgIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c5 0 9 4.5 10 7a11.8 11.8 0 0 1-2.05 3.19"></path><path d="M6.61 6.61C4.62 7.95 3.12 10 2 12c1 2.5 5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><path d="M14.12 14.12a3 3 0 0 1-4.24-4.24"></path><path d="M4 4l16 16"></path></svg>`,
+  x: `<svg class="altaraIcon dmPendingSvgIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>`,
+});
+
 function pendingAttachmentCardHtml(item) {
   const kind = String(item?.kind || "file");
   const canSpoiler = canAttachmentUseSpoiler(kind);
@@ -53595,7 +55331,13 @@ function pendingAttachmentCardHtml(item) {
   const modeSummary = getPendingAttachmentModeSummary(item);
   const metaBase = [attachmentKindLabel(kind), formatBytesLabel(item?.size || 0), modeSummary].filter(Boolean).join(" - ");
   const meta = isSpoiler ? `Blur - ${metaBase}` : metaBase;
-  let previewHtml = `<div class="dmPendingCard__fileIcon" aria-hidden="true">&#x1F4CE;</div>`;
+  const rawExt = String(item?.name || "").split(".").pop()?.trim().toUpperCase() || "";
+  const typeLabel = kind === "image" && fileLooksGifLike(item?.file)
+    ? "GIF"
+    : (rawExt && rawExt.length <= 6 && rawExt !== String(item?.name || "").toUpperCase()
+      ? rawExt
+      : (kind === "image" ? "IMG" : (kind === "video" ? "VIDEO" : (kind === "audio" ? "AUDIO" : "FILE"))));
+  let previewHtml = `<div class="dmPendingCard__fileIcon" aria-hidden="true">${DM_PENDING_ICON_SVGS.file}</div>`;
   if (kind === "image" && item?.previewUrl) {
     previewHtml = lazyMediaImageHtml(item.previewUrl, { className: "dmPendingCard__image", alt: name });
   } else if (kind === "video" && item?.previewUrl) {
@@ -53604,7 +55346,7 @@ function pendingAttachmentCardHtml(item) {
     previewHtml = `
       <div class="dmPendingAudioPreview">
         <div class="dmPendingAudioPreview__head">
-          <span class="dmPendingAudioPreview__icon" aria-hidden="true">&#x1F50A;</span>
+          <span class="dmPendingAudioPreview__icon" aria-hidden="true">${DM_PENDING_ICON_SVGS.audio}</span>
           <span class="dmPendingAudioPreview__name" title="${escAttr(item?.name || "")}">${esc(name)}</span>
         </div>
         <audio class="dmPendingCard__audio" src="${esc(item.previewUrl)}" controls preload="none"></audio>
@@ -53613,14 +55355,14 @@ function pendingAttachmentCardHtml(item) {
   }
 
   return `
-    <article class="dmPendingCard" data-dm-pending-id="${escAttr(item?.id || "")}">
+    <article class="dmPendingCard" data-dm-pending-id="${escAttr(item?.id || "")}" data-dm-pending-kind="${escAttr(kind)}">
       <div class="dmPendingCard__preview ${isSpoiler ? "dmPendingCard__preview--spoiler" : ""} ${kind === "audio" ? "dmPendingCard__preview--audio" : ""}">
         ${previewHtml}
-        ${isSpoiler ? `<div class="dmPendingCard__spoilerLabel">Blur</div>` : ""}
+        ${isSpoiler ? `<div class="dmPendingCard__spoilerLabel"><span class="dmPendingCard__spoilerIcon" aria-hidden="true">${DM_PENDING_ICON_SVGS.eyeOff}</span><span>Blur</span></div>` : ""}
       </div>
       <div class="dmPendingCard__meta">
         <div class="dmPendingCard__name" title="${escAttr(item?.name || "")}">${esc(name)}</div>
-        <div class="dmPendingCard__info">${esc(meta)}</div>
+        <div class="dmPendingCard__info"><span class="dmPendingCard__typePill">${esc(typeLabel)}</span><span class="dmPendingCard__infoText">${esc(meta)}</span></div>
       </div>
       ${canCompress ? `
         <div class="dmPendingCard__controls">
@@ -53632,8 +55374,8 @@ function pendingAttachmentCardHtml(item) {
           >${isOriginalMode ? "Original" : "Leve"}</button>
         </div>
       ` : ""}
-      ${canSpoiler ? `<button class="dmPendingCard__spoilerToggle ${isSpoiler ? "is-on" : ""}" type="button" data-dm-pending-spoiler="${escAttr(item?.id || "")}" title="Blur">${isSpoiler ? "Blur ON" : "Blur"}</button>` : ""}
-      <button class="dmPendingCard__remove" type="button" data-dm-pending-remove="${escAttr(item?.id || "")}" title="Remover">Ã—</button>
+      ${canSpoiler ? `<button class="dmPendingCard__spoilerToggle ${isSpoiler ? "is-on" : ""}" type="button" data-dm-pending-spoiler="${escAttr(item?.id || "")}" title="Blur"><span class="dmPendingCard__spoilerIcon" aria-hidden="true">${DM_PENDING_ICON_SVGS.eyeOff}</span><span>${isSpoiler ? "Blur ON" : "Blur"}</span></button>` : ""}
+      <button class="dmPendingCard__remove" type="button" data-dm-pending-remove="${escAttr(item?.id || "")}" title="Remover" aria-label="Remover anexo">${DM_PENDING_ICON_SVGS.x}</button>
     </article>
   `;
 }
@@ -53690,12 +55432,15 @@ function renderDmPendingAttachments() {
   }
 
   const totalBytes = dmPendingAttachments.reduce((acc, item) => acc + Number(item?.size || 0), 0);
-  box.style.display = "block";
+  box.style.display = "grid";
+  const count = dmPendingAttachments.length;
+  const attachmentLabel = count === 1 ? "1 anexo" : `${count} anexos`;
   box.innerHTML = `
     <div class="dmPendingHead">
+      <span class="dmPendingHead__icon" aria-hidden="true">${DM_PENDING_ICON_SVGS.paperclip}</span>
       <div>
-        <div class="dmPendingTitle">Pre-visualizacao antes de enviar</div>
-        <div class="dmPendingSub">${dmPendingAttachments.length} anexo(s) - ${esc(formatBytesLabel(totalBytes))}</div>
+        <div class="dmPendingTitle">Pr�-visualiza��o antes de enviar</div>
+        <div class="dmPendingSub">${esc(attachmentLabel)} &bull; ${esc(formatBytesLabel(totalBytes))}</div>
       </div>
       <div class="dmPendingHead__actions">
         <button class="btn ghost btn-mini" type="button" data-dm-pending-clear>Cancelar</button>
@@ -54341,7 +56086,7 @@ function wireDmComposer() {
     if (isSending) return;
 
     if (String(expandedInputText || "").trim().length > 1000) {
-      showDmComposerNotice("Mensagem demasiado grande (mÃ¡x 1000 caracteres)", { title: "Messages" });
+      showDmComposerNotice("Mensagem demasiado grande (máx 1000 caracteres)", { title: "Messages" });
       return;
     }
 
@@ -55013,12 +56758,23 @@ function positionGifPicker(anchorEl = gifPickerAnchorEl, point = gifPickerAnchor
   let left = Math.round((Number(rect.right || rect.left) || 0) - cardWidth);
   left = Math.max(margin, Math.min(left, Math.max(margin, vw - cardWidth - margin)));
 
+  let placedBelow = false;
   let top = Math.round((Number(rect.top || 0) || 0) - cardHeight - 10);
-  if (top < margin) top = Math.round((Number(rect.bottom || 0) || 0) + 10);
+  if (top < margin) {
+    top = Math.round((Number(rect.bottom || 0) || 0) + 10);
+    placedBelow = true;
+  }
   if (top + cardHeight > vh - margin) top = Math.max(margin, vh - cardHeight - margin);
+
+  const anchorCenter = point
+    ? Number(point.x || 0)
+    : ((Number(rect.left || 0) + Number(rect.right || rect.left || 0)) / 2);
+  const arrowLeft = Math.max(24, Math.min(cardWidth - 24, anchorCenter - left));
 
   modal.style.left = `${left}px`;
   modal.style.top = `${top}px`;
+  modal.dataset.placement = placedBelow ? "below" : "above";
+  modal.style.setProperty("--gif-popover-arrow-left", `${Math.round(arrowLeft)}px`);
 }
 
 function queueGifPickerPosition() {
@@ -55055,6 +56811,8 @@ function closeGifModal() {
   modal.setAttribute("aria-hidden", "true");
   modal.style.left = "";
   modal.style.top = "";
+  modal.style.removeProperty("--gif-popover-arrow-left");
+  delete modal.dataset.placement;
   if (grid) grid.innerHTML = "";
   if (quickTags) quickTags.innerHTML = "";
   gifPickerAnchorEl = null;
@@ -55108,7 +56866,15 @@ function mapTenorToGifObj(item) {
   const tiny = media?.tinygif || media?.nanogif;
   const gif = media?.gif || media?.mediumgif || tiny;
   const url = gif?.url || tiny?.url || "";
-  const preview = tiny?.url || gif?.preview || gif?.url || url;
+  const preview = tiny?.preview
+    || media?.tinymp4?.preview
+    || media?.tinywebm?.preview
+    || gif?.preview
+    || media?.webp?.preview
+    || media?.mp4?.preview
+    || buildManagedGifStaticUrlCandidates(tiny?.url || gif?.url || url)[0]
+    || tiny?.url
+    || url;
   if (!url) return null;
 
   return {
@@ -55160,21 +56926,44 @@ function normalizeGifDiscoveryCache(items = []) {
     .filter(Boolean);
 }
 
+function resolveGifStaticPreviewUrl(previewUrl = "", liveUrl = "") {
+  const preview = String(previewUrl || "").trim();
+  if (preview && !isGifLikeUrl(preview) && getMediaDomUrlKind(preview) !== "gif") return preview;
+  const live = String(liveUrl || preview || "").trim();
+  return buildManagedGifStaticUrlCandidates(live)[0] || "";
+}
+
 function setGifDiscoveryCardImage(el, imageUrl = "") {
   if (!el) return;
-  const raw = String(imageUrl || "").trim();
+  const rawInput = String(imageUrl || "").trim();
+  const raw = resolveGifStaticPreviewUrl(rawInput, rawInput) || rawInput;
   if (!raw) {
     el.classList.remove("has-image");
-    el.style.removeProperty("--gif-card-image");
+    clearManagedGifBackgroundElement(el, { clearUrl: true });
     delete el.dataset.bgSrc;
     return;
   }
   if (isLikelySupabaseStorageMediaUrl(raw)) {
     el.classList.remove("has-image");
-    el.style.removeProperty("--gif-card-image");
+    clearManagedGifBackgroundElement(el, { clearUrl: true });
     el.dataset.bgSrc = raw;
     return;
   }
+  if (isManagedGifBackgroundUrl(raw)) {
+    el.classList.add("has-image");
+    el.setAttribute("data-managed-gif-bg", "1");
+    el.setAttribute("data-managed-gif-bg-var", "--gif-card-image");
+    el.setAttribute("data-gif-bg-src", raw);
+    el.setAttribute("data-media-source", "gif-picker");
+    bindManagedGifBackgroundElement(el);
+    syncManagedGifBackgroundElement(el);
+    return;
+  }
+  el.removeAttribute("data-managed-gif-bg");
+  el.removeAttribute("data-managed-gif-bg-var");
+  el.removeAttribute("data-gif-bg-src");
+  el.classList.remove("is-gif-paused");
+  el.removeAttribute("data-gif-playback");
   const safe = raw.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
   el.classList.add("has-image");
   el.style.setProperty("--gif-card-image", `url("${safe}")`);
@@ -55351,6 +57140,8 @@ function renderGifGrid(list) {
   list.forEach((gifObj, idx) => {
     if (!gifObj?.url) return;
 
+    const gifUrl = String(gifObj.url || "").trim();
+    const previewUrl = resolveGifStaticPreviewUrl(gifObj.preview || "", gifUrl);
     const item = document.createElement("div");
     item.className = "gif-item";
     item.tabIndex = 0;
@@ -55358,20 +57149,31 @@ function renderGifGrid(list) {
     item.setAttribute("aria-label", gifObj.title ? `Enviar GIF: ${gifObj.title}` : "Enviar GIF");
 
     const img = document.createElement("img");
-    img.setAttribute("data-media-src", gifObj.preview || gifObj.url);
+    if (previewUrl) {
+      img.src = previewUrl;
+      img.setAttribute("data-media-preview", "1");
+      img.setAttribute("data-media-poster", "1");
+      img.setAttribute("data-gif-preview", previewUrl);
+      img.setAttribute("data-media-preview-url", previewUrl);
+      img.dataset.mediaLoaded = "1";
+    }
+    img.setAttribute("data-media-src", gifUrl);
+    img.setAttribute("data-managed-gif-media", "1");
+    img.dataset.gifLiveSrc = gifUrl;
     img.setAttribute("data-media-source", "gif-picker");
     img.setAttribute("data-media-load-reason", "gif-picker-open");
+    img.setAttribute("data-media-kind", "gif");
     img.alt = gifObj.title || "GIF";
     img.loading = "lazy";
     img.decoding = "async";
     img.referrerPolicy = "no-referrer";
     img.title = gifObj.title || "GIF";
     img.addEventListener("error", () => {
-      if (!img.dataset.retryWithMain && gifObj.url && String(img.dataset.mediaSrc || "") !== gifObj.url) {
+      if (!img.dataset.retryWithMain && gifUrl && String(img.dataset.mediaSrc || "") !== gifUrl) {
         img.dataset.retryWithMain = "1";
         img.removeAttribute("src");
         img.removeAttribute("data-media-loaded");
-        img.setAttribute("data-media-src", gifObj.url);
+        img.setAttribute("data-media-src", gifUrl);
         loadLazyMediaImage(img, {
           force: true,
           source: "gif-picker",
@@ -55385,7 +57187,10 @@ function renderGifGrid(list) {
 
     const sendSelectedGif = () => {
       closeGifModal();
-      void sendGifMessage(gifObj.url).catch((err) => {
+      void sendGifMessage(gifObj.url, {
+        preview: previewUrl || gifObj.preview || "",
+        title: gifObj.title || "",
+      }).catch((err) => {
         console.warn("gif send failed", err);
       });
     };
@@ -55933,6 +57738,8 @@ async function sendAttachmentMessage(file, { conversationId = activeDmId, spoile
 async function sendGifMessage(gifUrl, {
   conversationId = activeDmId,
   replyToId = null,
+  preview = "",
+  title = "",
 } = {}) {
   const targetConversationId = normId(conversationId);
   if (!gifUrl || !targetConversationId || !state.user) return null;
@@ -55945,7 +57752,13 @@ async function sendGifMessage(gifUrl, {
     && targetConversationId === normId(activeDmId || "")
     && dmReplyTarget?.id
   ) ? dmReplyTarget.id : null;
-  const payloadObj = { type: "gif", url: gifUrl };
+  const previewUrl = resolveGifStaticPreviewUrl(preview, gifUrl) || String(preview || "").trim();
+  const payloadObj = {
+    type: "gif",
+    url: gifUrl,
+    ...(previewUrl ? { preview: previewUrl } : {}),
+    ...(String(title || "").trim() ? { title: String(title || "").trim() } : {}),
+  };
   const payloadText = JSON.stringify(payloadObj);
   const optimisticMessage = createOptimisticOutgoingMessage({
     conversationId: targetConversationId,
@@ -55955,6 +57768,8 @@ async function sendGifMessage(gifUrl, {
       kind: "gif",
       conversationId: targetConversationId,
       gifUrl,
+      preview: previewUrl || "",
+      title: String(title || "").trim(),
       replyToId: effectiveReplyToId || null,
     },
   });
@@ -56057,7 +57872,7 @@ const DISCONNECT_GRACE_MS = 18 * 1000;
 let micMuted = false;
 let deafened = false;
 let micMutedBeforeDeafen = false; // saves mic state when deafening, to restore on undeafen
-let stageOpen = true; // jÃ¡ que queres palco grande
+let stageOpen = true; // já que queres palco grande
 
 // screenshare state
 let screenStream = null;
@@ -56231,8 +58046,6 @@ let desktopBehaviorSettingsUpdateInFlight = null;
 const DESKTOP_BEHAVIOR_SETTINGS_CACHE_KEY = "altara_desktop_behavior_cache_v2";
 let desktopGifPlaybackLifecycleBound = false;
 let managedGifPlaybackObserverBound = false;
-const managedGifStillFrameCache = new Map();
-const managedGifStillFrameCaptureInFlight = new Map();
 let desktopBehaviorSettingsCache = readStoredDesktopBehaviorSettingsCache() || {
   closeToTrayOnClose: true,
   launchOnStartup: true,
@@ -57626,7 +59439,7 @@ function getShareRemoteViewerCount(conversationId = null) {
 
 function shouldUseSharePerformanceMode(sourceKind = "", { requestedQuality = "" } = {}) {
   if (getShareProfileValue() !== "balanced") return false;
-  // Respect the user's quality choice â€” only auto-limit when many remote viewers
+  // Respect the user's quality choice — only auto-limit when many remote viewers
   const requested = String(requestedQuality || getShareQualityValue() || "").trim();
   if (requested === "1080p60" || requested === "1080p30") return false;
   const remoteViewers = getShareRemoteViewerCount();
@@ -63776,53 +65589,98 @@ function enforceScreenshareStageTileDomInvariant(conversationId = "", {
       prunedCount: 0,
     };
   }
-  const byParticipant = new Map();
+  const participantIds = new Set();
+  const byShareKey = new Map();
   stage.querySelectorAll(".participantTile, .stageGridTile").forEach((tileEl) => {
     if (!isScreenshareStageTileCandidateForParticipant(tileEl)) return;
     const identity = getStageTileIdentityFromEl(tileEl);
     const uid = normId(identity.participantId || tileEl.getAttribute("data-call-user-id") || "");
     if (!uid) return;
-    const existing = byParticipant.get(uid);
-    if (existing) {
-      existing.push(tileEl);
-      return;
+    participantIds.add(uid);
+    const trackIdentity = normId(
+      tileEl.getAttribute("data-call-video-track-id")
+      || tileEl.getAttribute("data-call-track-identity")
+      || ""
+    );
+    const entryKey = String(tileEl.getAttribute("data-call-entry-key") || "").trim();
+    const tileId = String(identity.tileId || tileEl.getAttribute("data-call-tile-id") || "").trim();
+    const shareKey = `${uid}:${trackIdentity || entryKey || tileId || byShareKey.size}`;
+    if (!byShareKey.has(shareKey)) {
+      byShareKey.set(shareKey, {
+        uid,
+        trackIdentity,
+        tiles: [],
+      });
     }
-    byParticipant.set(uid, [tileEl]);
+    byShareKey.get(shareKey).tiles.push(tileEl);
   });
 
   let prunedCount = 0;
-  const activeShare = shouldUseServerVoiceLiveKitTransport(convId)
-    ? getServerVoiceActiveScreenshare(convId)
-    : null;
-  const activeOwnerId = normId(activeShare?.ownerUserId || "");
-  const activeVideoTrack = pickLiveVideoTrackFromStream(activeShare?.stream || null, { allowMuted: true })
-    || getAnyVideoTrackFromStream(activeShare?.stream || null)
-    || null;
-  const activeTrackIdentity = normId(
-    activeVideoTrack?.sid
-    || activeVideoTrack?.id
-    || activeShare?.trackSid
-    || ""
-  );
-  for (const [uid, tiles] of byParticipant.entries()) {
+  for (const shareGroup of byShareKey.values()) {
+    const uid = normId(shareGroup?.uid || "");
+    const tiles = Array.isArray(shareGroup?.tiles) ? shareGroup.tiles : [];
     const beforeCount = tiles.length;
-    const preferredTrackIdentity = uid === activeOwnerId
-      ? activeTrackIdentity
-      : "";
+    const preferredTrackIdentity = normId(shareGroup?.trackIdentity || newTrackSid || "");
     if (beforeCount > 1) {
-      const pruned = pruneScreenshareStageTilesForParticipant({
-        conversationId: convId,
-        participantId: uid,
-        removeAll: false,
-        preferredTrackIdentity,
-        reason: "screenshare_dom_invariant_after_render",
-        triggerReason,
-        callerFunction,
-        oldTrackSid,
-        newTrackSid,
-        logDomCount: true,
+      const scored = tiles
+        .map((tileEl) => ({
+          tileEl,
+          ...scoreScreenshareStageTileCandidate(tileEl, {
+            preferredTrackIdentity,
+          }),
+        }))
+        .sort((left, right) => {
+          if (right.score !== left.score) return right.score - left.score;
+          return 0;
+        });
+      const keepTile = scored[0]?.tileEl || tiles[0] || null;
+      const keepIdentity = keepTile ? getStageTileIdentityFromEl(keepTile) : null;
+      const keptTileId = String(keepIdentity?.tileId || keepTile?.getAttribute?.("data-call-tile-id") || "").trim();
+      const removedTileIds = [];
+      tiles.forEach((tileEl) => {
+        if (keepTile && tileEl === keepTile) return;
+        const identity = getStageTileIdentityFromEl(tileEl);
+        const tileId = String(identity.tileId || buildStageParticipantTileId(uid, "screenshare") || "").trim();
+        const tileTrackSid = normId(
+          tileEl.getAttribute("data-call-video-track-id")
+          || tileEl.getAttribute("data-call-track-identity")
+          || ""
+        );
+        resetScreenshareGridTileDomState(tileEl);
+        try { tileEl.remove(); } catch (_) {}
+        prunedCount += 1;
+        if (tileId) removedTileIds.push(tileId);
+        logScreenshareRestartEvent("screenshare.duplicate_tile_pruned", {
+          conversationId: convId,
+          participantId: uid,
+          oldTileId: tileId || buildStageParticipantTileId(uid, "screenshare"),
+          newTileId: keptTileId || buildStageParticipantTileId(uid, "screenshare"),
+          activeShareOwnerId: uid,
+          tileCountBefore: beforeCount,
+          tileCountAfter: Math.max(0, beforeCount - removedTileIds.length),
+          oldTrackSid: tileTrackSid || normId(oldTrackSid || "") || null,
+          newTrackSid: preferredTrackIdentity || normId(newTrackSid || "") || null,
+          focusedTileId: String(stageFocusedTileId || "").trim() || null,
+          renderReason: String(reason || "").trim() || "render_group_stage_members",
+          triggerReason: String(triggerReason || "").trim() || "render_group_stage_members",
+          callerFunction: String(callerFunction || "").trim() || "renderGroupCallStageMembers",
+          removedTileId: tileId || null,
+        });
       });
-      prunedCount += Number(pruned?.removedCount || 0);
+      logServerVoiceStageTilesEvent("stage.screenshare_tile_dom_count", convId, {
+        participantId: uid,
+        oldTrackSid: normId(oldTrackSid || "") || null,
+        newTrackSid: preferredTrackIdentity || normId(newTrackSid || "") || null,
+        tileCountBefore: beforeCount,
+        tileCountAfter: Math.max(1, beforeCount - removedTileIds.length),
+        focusedTileId: String(stageFocusedTileId || "").trim() || null,
+        renderReason: String(reason || "").trim() || "render_group_stage_members",
+        triggerReason: String(triggerReason || "").trim() || "render_group_stage_members",
+        callerFunction: String(callerFunction || "").trim() || "renderGroupCallStageMembers",
+        removedCount: removedTileIds.length,
+        removedTileIds,
+        keptTileId: keptTileId || null,
+      });
       continue;
     }
     logServerVoiceStageTilesEvent("stage.screenshare_tile_dom_count", convId, {
@@ -63839,11 +65697,10 @@ function enforceScreenshareStageTileDomInvariant(conversationId = "", {
   }
 
   return {
-    participantCount: byParticipant.size,
+    participantCount: participantIds.size,
     prunedCount,
   };
 }
-
 function pruneScreenshareGridTilesForParticipant({
   conversationId = "",
   participantId = "",
@@ -64802,7 +66659,7 @@ function getShareVideoConstraints(sourceKind = "") {
   if (q === "2160p60") {
     return { width: { ideal: 3840, max: 3840 }, height: { ideal: 2160, max: 2160 }, frameRate: { ideal: targetFps, max: targetFps } };
   }
-  // Source: deixa o browser manter resoluÃ§Ã£o nativa da janela/ecrÃ£.
+  // Source: deixa o browser manter resolução nativa da janela/ecrã.
   if (profile === "clarity") return { frameRate: { ideal: 60, max: 60 } };
   return { frameRate: { ideal: targetFps, max: targetFps } };
 }
@@ -66547,7 +68404,7 @@ function syncDesktopSharePickerModeUi() {
 }
 
 function syncDesktopSharePickerAudioToggle() {
-  // Audio is always selectable â€” user decides whether they want it
+  // Audio is always selectable — user decides whether they want it
   const audioToggle = document.getElementById("desktopSharePickerAudioToggle");
   if (!(audioToggle instanceof HTMLInputElement)) return;
   audioToggle.disabled = false;
@@ -66740,7 +68597,7 @@ async function reloadDesktopSharePickerSources({
     if (!silent) {
       desktopSharePickerSources = [];
       desktopSharePickerSelectedSourceId = "";
-      if (meta) meta.textContent = "Falhou ao listar janelas/ecrÃ£s. Tenta novamente.";
+      if (meta) meta.textContent = "Falhou ao listar janelas/ecrãs. Tenta novamente.";
     }
     if (silent) shouldRender = false;
   } finally {
@@ -67124,7 +68981,7 @@ async function openDesktopSharePicker({
       audioToggle.checked = !!desktopSharePickerServerVoiceWithAudio;
       audioToggle.disabled = false;
     } else {
-      audioToggle.checked = getShareAudioEnabled(); // always from localStorage â€” stays in sync with menu
+      audioToggle.checked = getShareAudioEnabled(); // always from localStorage — stays in sync with menu
       audioToggle.disabled = false;
     }
   }
@@ -67171,7 +69028,7 @@ function isShareCaptureCancelledError(error) {
 
 async function captureDisplayStreamWithDesktopSource(sourceId, withAudio, options = {}) {
   const sid = String(sourceId || "").trim();
-  if (!sid) throw new Error("Fonte de partilha invÃ¡lida.");
+  if (!sid) throw new Error("Fonte de partilha inválida.");
 
   const sourceKind = normalizeShareSourceKind(
     options?.sourceKind
@@ -67374,8 +69231,8 @@ function getShareQualityLimitLabel(track = null, qualityValue = getShareQualityV
   const autoPerformance = shouldUseSharePerformanceMode(sourceKind, { requestedQuality: requested });
   if (autoPerformance && requested !== "1080p60") {
     return normalizeShareSourceKind(sourceKind || "") === "window"
-      ? " • modo jogo automÃ¡tico"
-      : " • modo estabilidade automÃ¡tico";
+      ? " � modo jogo automático"
+      : " � modo estabilidade automático";
   }
   if (q !== "2160p60") return "";
   const settings = track?.getSettings?.() || {};
@@ -67383,7 +69240,7 @@ function getShareQualityLimitLabel(track = null, qualityValue = getShareQualityV
   const height = Number(settings?.height) || 0;
   if (width <= 0 || height <= 0) return "";
   if (width >= 3200 || height >= 1800) return "";
-  return " • fonte nÃ£o Ã© 4K";
+  return " � fonte não é 4K";
 }
 
 function getShareVideoSender() {
@@ -67757,7 +69614,7 @@ async function replaceDisplayStreamForSharing(withAudio, reason = "share_update"
   const nextVideoTrack = nextStream.getVideoTracks()[0];
   if (!nextVideoTrack) {
     try { nextStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
-    throw new Error("Sem track de vÃ­deo no ecrÃ£ partilhado.");
+    throw new Error("Sem track de vídeo no ecrã partilhado.");
   }
   const nextSourceKind = normalizeShareSourceKind(
     options?.sourceKindOverride
@@ -67788,7 +69645,7 @@ async function replaceDisplayStreamForSharing(withAudio, reason = "share_update"
   const sender = getShareVideoSender();
   if (!sender) {
     try { nextStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
-    throw new Error("Canal de vÃ­deo nÃ£o estÃ¡ pronto para partilha.");
+    throw new Error("Canal de vídeo não está pronto para partilha.");
   }
   let createdShareAudioSender = false;
 
@@ -67819,7 +69676,7 @@ async function replaceDisplayStreamForSharing(withAudio, reason = "share_update"
     isScreenSharing = !!getLiveScreenTrack();
     try { nextStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
     setLocalSharePreviewStream(getPreferredLocalPreviewStream());
-    throw new Error("Falhou ao ligar o vÃ­deo da partilha.");
+    throw new Error("Falhou ao ligar o vídeo da partilha.");
   }
 
   if (nextAudioTrack) {
@@ -67938,10 +69795,10 @@ async function applyShareSettingsLive(mode = "all") {
         includeQuality: true,
         includeApplied: false,
         includeAudio: true,
-      })].filter(Boolean).join(" • ");
-      const qualitySuffix = qualityApplied ? "" : " • " + t("call.share.quality_limited", "(limited by browser)");
-      const appliedSuffix = appliedLabel ? ` • ${appliedLabel}` : "";
-      const recaptureSuffix = qualityReacquired ? " • " + t("call.share.quality_recaptured", "updated") : "";
+      })].filter(Boolean).join(" � ");
+      const qualitySuffix = qualityApplied ? "" : " � " + t("call.share.quality_limited", "(limited by browser)");
+      const appliedSuffix = appliedLabel ? ` � ${appliedLabel}` : "";
+      const recaptureSuffix = qualityReacquired ? " � " + t("call.share.quality_recaptured", "updated") : "";
       setCallStatus(t("call.share.quality_updated", "Share quality: {quality}").replace("{quality}", qualityLabel + appliedSuffix + limitLabel + recaptureSuffix + qualitySuffix), true);
       setTimeout(() => setCallStatus("", false), 1500);
     }
@@ -68612,10 +70469,20 @@ function syncGroupCallMemberTileVideo(tile, track = null) {
   let activeShareOwnerId = "";
   let activeShareTrack = null;
   if (convId && shouldUseServerVoiceLiveKitTransport(convId)) {
-    const activeShare = getServerVoiceActiveScreenshare(convId);
+    const preferredShareTrackIdentity = normId(
+      tile.getAttribute("data-call-track-identity")
+      || effectiveCurrentTrackId
+      || nextTrackId
+      || ""
+    );
+    const matchingShare = isScreenshareTile && tileUserId
+      ? getServerVoiceScreenshareForParticipant(convId, tileUserId, preferredShareTrackIdentity)
+      : null;
+    const activeShare = matchingShare || getServerVoiceActiveScreenshare(convId);
     activeShareOwnerId = normId(activeShare?.ownerUserId || "");
     activeShareTrack = pickLiveVideoTrackFromStream(activeShare?.stream || null, { allowMuted: true })
       || getAnyVideoTrackFromStream(activeShare?.stream || null)
+      || (isLiveVideoTrack(activeShare?.track, { allowMuted: true }) ? activeShare.track : null)
       || null;
   } else {
     const preferredRemoteShareState = getPreferredRemoteShareState(convId);
@@ -68751,6 +70618,7 @@ function syncGroupCallMemberTileVideo(tile, track = null) {
     tile.removeAttribute(screenshareFallbackBlockedAttr);
     tile.removeAttribute("data-call-keep-mounted");
     tile.classList.remove("is-share-reconnecting");
+    setCallTileLoadingPrompt(tile, false);
   };
   if (screenshareOwnerReplacing) {
     clearScreenshareTransientState();
@@ -68784,8 +70652,53 @@ function syncGroupCallMemberTileVideo(tile, track = null) {
     tile.setAttribute(screenshareMissingUntilAttr, String(nextMissingUntil));
     tile.setAttribute(screenshareReconnectAttr, "1");
     tile.setAttribute("data-call-keep-mounted", "1");
-    tile.classList.add("has-video");
+    const hasVisibleFrame = !!(
+      hasRenderableVideoFrame(videoEl)
+      || tile.classList.contains("has-watch-snapshot")
+    );
+    const canPreserveVideoSurface = hasVisibleFrame;
+    if (canPreserveVideoSurface) {
+      tile.classList.add("has-video");
+    } else {
+      tile.classList.remove("has-video");
+    }
     tile.classList.add("is-share-reconnecting");
+    setCallTileLoadingPrompt(tile, !hasVisibleFrame);
+    if (isServerVoiceDebugLoggingEnabled()) {
+      const videoRect = videoEl?.getBoundingClientRect?.();
+      const tileRect = tile?.getBoundingClientRect?.();
+      logServerVoiceDebug("server_voice_screenshare_render_debug", {
+        conversationId: convId || null,
+        participantId: tileUserId || null,
+        isLocal: !!(tileUserId && meId && tileUserId === meId),
+        tileId: tileId || null,
+        trackSid: nextTrackId || activeShareTrackId || effectiveCurrentTrackId || null,
+        trackSource: tileMediaType || null,
+        trackKind: String(nextTrack?.kind || activeShareTrack?.kind || "") || null,
+        publicationMuted: typeof nextTrack?.muted === "boolean" ? nextTrack.muted : null,
+        publicationSubscribed: null,
+        videoElementExists: !!videoEl,
+        videoRect: videoRect ? {
+          x: Math.round(videoRect.x),
+          y: Math.round(videoRect.y),
+          width: Math.round(videoRect.width),
+          height: Math.round(videoRect.height),
+        } : null,
+        videoReadyState: Number(videoEl?.readyState || 0),
+        videoPaused: typeof videoEl?.paused === "boolean" ? videoEl.paused : null,
+        videoCurrentTime: Number(videoEl?.currentTime || 0),
+        tileRect: tileRect ? {
+          x: Math.round(tileRect.x),
+          y: Math.round(tileRect.y),
+          width: Math.round(tileRect.width),
+          height: Math.round(tileRect.height),
+        } : null,
+        preserveVideoSurface: canPreserveVideoSurface,
+        hasRenderableFrame: hasVisibleFrame,
+        hasExistingVideoElement,
+        fallbackReason,
+      });
+    }
     if (!tile.getAttribute(screenshareGapStartedAtAttr)) {
       tile.setAttribute(screenshareGapStartedAtAttr, String(Date.now()));
       logScreenshareTileRenderEvent("screenshare.tile_track_temporarily_missing", {
@@ -68828,6 +70741,7 @@ function syncGroupCallMemberTileVideo(tile, track = null) {
     const hasTrack = hasRenderableVideoFrame(videoEl);
     if (hasTrack) {
       tile.classList.add("has-video");
+      setCallTileLoadingPrompt(tile, false);
       tile.removeAttribute(holdUntilAttr);
       if (isSelfShareTile) {
         tile.setAttribute(seenFrameAttr, "1");
@@ -69299,7 +71213,16 @@ function renderGroupCallStageMembers() {
   if (!grid) return;
   const stageViewport = document.querySelector("#callStage .callStageViewport");
   const convId = normId(callConversationId || activeDmId || state.activeDm?.conversationId || "");
-  const useParticipantStageModel = !!(groupCallMode || isPrivateDmLiveKitTransportConversation(convId));
+  const useServerVoiceStageModel = !!(
+    convId
+    && isServerVoiceConversationUiContext(convId)
+    && isActiveServerVoiceCallJoined(convId)
+  );
+  const useParticipantStageModel = !!(
+    groupCallMode
+    || isPrivateDmLiveKitTransportConversation(convId)
+    || useServerVoiceStageModel
+  );
   if (!useParticipantStageModel) {
     if (convId) clearServerVoiceStageTileDerivationState(convId);
     clearExtraCallStageMembers();
@@ -69349,7 +71272,23 @@ function renderGroupCallStageMembers() {
       ? getSecondaryOutgoingVideoTrack()
       : null);
 
-  let memberIds = sortGroupCallMemberIdsForLayout(convId, getEffectiveGroupCallActiveUserIds(convId));
+  const serverVoiceStageParticipants = useServerVoiceStageModel
+    ? getServerVoiceStageParticipants(convId, {
+      triggerReason: "render_group_stage_members",
+      callerFunction: "renderGroupCallStageMembers",
+    })
+    : [];
+  const serverVoiceParticipantByUserId = new Map();
+  serverVoiceStageParticipants.forEach((participant) => {
+    const uid = normId(participant?.userId || "");
+    if (uid) serverVoiceParticipantByUserId.set(uid, participant);
+  });
+  let memberIds = sortGroupCallMemberIdsForLayout(
+    convId,
+    useServerVoiceStageModel
+      ? serverVoiceStageParticipants.map((participant) => participant?.userId || "")
+      : getEffectiveGroupCallActiveUserIds(convId)
+  );
   if (meId && !memberIds.includes(meId)) memberIds.push(meId);
   if (!memberIds.length && meId) memberIds = [meId];
 
@@ -69370,8 +71309,44 @@ function renderGroupCallStageMembers() {
   };
 
   const entries = [];
+  const serverVoiceScreenshares = serverVoiceAudioOnlyMode
+    ? getServerVoiceScreenshares(convId)
+    : [];
+  const serverVoiceScreensharesByOwner = new Map();
+  serverVoiceScreenshares.forEach((share, shareIndex) => {
+    const ownerId = normId(share?.ownerUserId || "");
+    if (!ownerId) return;
+    const shareTrack = pickLiveVideoTrackFromStream(share?.stream || null, { allowMuted: true })
+      || getAnyVideoTrackFromStream(share?.stream || null)
+      || (isLiveVideoTrack(share?.track, { allowMuted: true }) ? share.track : null)
+      || null;
+    const trackIdentity = normId(
+      share?.trackSid
+      || share?.trackId
+      || shareTrack?.sid
+      || shareTrack?.id
+      || share?.key
+      || shareIndex
+      || ""
+    );
+    const normalizedShare = {
+      ...share,
+      ownerUserId: ownerId,
+      track: shareTrack,
+      trackIdentity,
+      listIndex: shareIndex,
+    };
+    if (!serverVoiceScreensharesByOwner.has(ownerId)) serverVoiceScreensharesByOwner.set(ownerId, []);
+    serverVoiceScreensharesByOwner.get(ownerId).push(normalizedShare);
+  });
+  if (serverVoiceAudioOnlyMode && serverVoiceScreenshares.length) {
+    serverVoiceScreenshares.forEach((share) => {
+      const ownerId = normId(share?.ownerUserId || "");
+      if (ownerId && !memberIds.includes(ownerId)) memberIds.push(ownerId);
+    });
+  }
   const serverVoiceActiveScreenshare = serverVoiceAudioOnlyMode
-    ? getServerVoiceActiveScreenshare(convId)
+    ? (serverVoiceScreenshares[0] || getServerVoiceActiveScreenshare(convId))
     : null;
   const serverVoiceActiveShareOwnerId = serverVoiceAudioOnlyMode
     ? normId(serverVoiceActiveScreenshare?.ownerUserId || "")
@@ -69380,13 +71355,16 @@ function renderGroupCallStageMembers() {
     ? (
       pickLiveVideoTrackFromStream(serverVoiceActiveScreenshare?.stream || null, { allowMuted: true })
       || getAnyVideoTrackFromStream(serverVoiceActiveScreenshare?.stream || null)
+      || (isLiveVideoTrack(serverVoiceActiveScreenshare?.track, { allowMuted: true }) ? serverVoiceActiveScreenshare.track : null)
       || null
     )
     : null;
   const serverVoiceActiveShareTrackIdentity = normId(
-    serverVoiceActiveShareTrack?.sid
+    serverVoiceActiveScreenshare?.trackSid
+    || serverVoiceActiveScreenshare?.trackId
+    || serverVoiceActiveShareTrack?.sid
     || serverVoiceActiveShareTrack?.id
-    || serverVoiceActiveScreenshare?.trackSid
+    || serverVoiceActiveScreenshare?.key
     || ""
   );
   const nowMs = Date.now();
@@ -69413,58 +71391,51 @@ function renderGroupCallStageMembers() {
   if (serverVoiceAudioOnlyMode) {
     memberIds.forEach((uid) => {
       const identity = getGroupMemberIdentity(convId, uid);
-      const baseLabel = identity?.label || t("call.member", "member");
+      const serverVoiceParticipant = serverVoiceParticipantByUserId.get(uid) || null;
+      const baseLabel = serverVoiceParticipant?.displayName || identity?.label || t("call.member", "member");
       const transportStatusLabel = getServerVoiceTransportParticipantStatusLabel(convId, uid, { includeSelf: true });
-      const stageBaseLabel = transportStatusLabel ? `${baseLabel} • ${transportStatusLabel}` : baseLabel;
-      const baseAvatar = identity?.avatar || null;
+      const stageBaseLabel = transportStatusLabel ? `${baseLabel} � ${transportStatusLabel}` : baseLabel;
+      const baseAvatar = serverVoiceParticipant?.avatarUrl || identity?.avatar || null;
       const remoteEntry = uid !== meId ? (remoteVideoByUser.get(uid) || {}) : {};
       const remotePrimaryTrack = isLiveVideoTrack(remoteEntry.primary, { allowMuted: true }) ? remoteEntry.primary : null;
       const remoteSecondaryTrack = isLiveVideoTrack(remoteEntry.secondary, { allowMuted: true }) ? remoteEntry.secondary : null;
-      let primaryTrack = uid === meId
+      const primaryTrack = uid === meId
         ? (isLiveVideoTrack(localServerVoiceCameraTrack, { allowMuted: true }) ? localServerVoiceCameraTrack : null)
         : (remotePrimaryTrack || remoteSecondaryTrack || null);
-      let screenshareTrack = (
-        serverVoiceActiveShareOwnerId
-        && uid === serverVoiceActiveShareOwnerId
-        && isLiveVideoTrack(serverVoiceActiveShareTrack, { allowMuted: true })
-      )
-        ? serverVoiceActiveShareTrack
-        : null;
-      if (screenshareTrack && primaryTrack && String(screenshareTrack.id || "") === String(primaryTrack.id || "")) {
-        screenshareTrack = null;
-      }
+      const ownerScreenshares = Array.isArray(serverVoiceScreensharesByOwner.get(uid))
+        ? serverVoiceScreensharesByOwner.get(uid)
+        : [];
       const hadForceRemovedScreenshareTile = isStageScreenshareForceRemovedOwner(convId, uid);
-      if (screenshareTrack && hadForceRemovedScreenshareTile) {
+      if (ownerScreenshares.some((share) => isLiveVideoTrack(share?.track, { allowMuted: true })) && hadForceRemovedScreenshareTile) {
         clearStageScreenshareForceRemovedOwner(convId, uid);
       }
       const suppressScreenshareTileAfterStop = isStageScreenshareForceRemovedOwner(convId, uid);
-      const keepScreenshareTileForActiveOwner = !!(serverVoiceActiveShareOwnerId && uid === serverVoiceActiveShareOwnerId);
       const keepScreenshareTileForGrace = !!(
         serverVoiceGraceOwnerId
         && uid === serverVoiceGraceOwnerId
         && serverVoiceGraceExpiresAt > nowMs
       );
       const keepScreenshareTileForLocalStableSlot = !!(uid === meId && serverVoiceLocalScreenshareActive);
-      const showScreenshareTile = !!(
-        !suppressScreenshareTileAfterStop
-        && (
-          screenshareTrack
-          || keepScreenshareTileForActiveOwner
-          || keepScreenshareTileForGrace
-          || keepScreenshareTileForLocalStableSlot
-        )
-      );
-      const screenshareRenderReason = screenshareTrack
-        ? "active_share_track"
-        : (
-          keepScreenshareTileForActiveOwner
-            ? "active_share_owner_missing_track"
-            : (
-              keepScreenshareTileForGrace
-                ? "active_share_owner_grace_window"
-                : (keepScreenshareTileForLocalStableSlot ? "local_share_slot_stable" : "share_slot_hidden")
-            )
-        );
+      const fallbackScreenshares = [];
+      if (!ownerScreenshares.length && keepScreenshareTileForGrace) {
+        fallbackScreenshares.push({
+          ownerUserId: uid,
+          track: null,
+          trackIdentity: serverVoiceGraceTrackIdentity,
+          key: `grace:${uid}:${serverVoiceGraceTrackIdentity || "missing"}`,
+          renderReason: "active_share_owner_grace_window",
+        });
+      }
+      if (!ownerScreenshares.length && !fallbackScreenshares.length && keepScreenshareTileForLocalStableSlot) {
+        fallbackScreenshares.push({
+          ownerUserId: uid,
+          track: null,
+          trackIdentity: "local-stable",
+          key: `local:${uid}:stable`,
+          renderReason: "local_share_slot_stable",
+        });
+      }
+      const screenshareEntriesForOwner = ownerScreenshares.length ? ownerScreenshares : fallbackScreenshares;
       const primaryMode = primaryTrack ? "camera" : "avatar";
       entries.push({
         key: `${uid}:primary`,
@@ -69473,7 +71444,7 @@ function renderGroupCallStageMembers() {
           ? (resolveOutgoingVideoTrackOwnerUserId(primaryTrack, { fallbackUserId: uid }) || uid)
           : uid,
         label: primaryTrack
-          ? `${stageBaseLabel} • ${t("call.feed.camera", "Camera")}`
+          ? `${stageBaseLabel} � ${t("call.feed.camera", "Camera")}`
           : stageBaseLabel,
         avatar: baseAvatar,
         track: primaryTrack,
@@ -69481,28 +71452,42 @@ function renderGroupCallStageMembers() {
         tileType: "primary",
         primaryMode,
       });
-      if (showScreenshareTile) {
-        entries.push({
-          key: `${uid}:screenshare`,
-          userId: uid,
-          speakingUserId: screenshareTrack
-            ? (resolveOutgoingVideoTrackOwnerUserId(screenshareTrack, { fallbackUserId: uid }) || uid)
-            : uid,
-          label: `${stageBaseLabel} • ${t("call.feed.share", "Share")}`,
-          avatar: baseAvatar,
-          track: screenshareTrack || null,
-          mediaType: "share",
-          tileType: "screenshare",
-          primaryMode: "",
-          activeShareOwnerId: serverVoiceActiveShareOwnerId || serverVoiceGraceOwnerId || "",
-          trackIdentity: normId(
-            screenshareTrack?.sid
+      if (!suppressScreenshareTileAfterStop) {
+        screenshareEntriesForOwner.forEach((share, shareIndex) => {
+          let screenshareTrack = isLiveVideoTrack(share?.track, { allowMuted: true }) ? share.track : null;
+          if (screenshareTrack && primaryTrack && String(screenshareTrack.id || "") === String(primaryTrack.id || "")) {
+            screenshareTrack = null;
+          }
+          const shareTrackIdentity = normId(
+            share?.trackIdentity
+            || share?.trackSid
+            || share?.trackId
+            || screenshareTrack?.sid
             || screenshareTrack?.id
-            || serverVoiceActiveShareTrackIdentity
-            || serverVoiceGraceTrackIdentity
+            || share?.key
+            || shareIndex
             || ""
-          ),
-          renderReason: screenshareRenderReason,
+          );
+          const shareKey = String(share?.key || `${uid}:${shareTrackIdentity || shareIndex}`).trim();
+          const screenshareRenderReason = screenshareTrack
+            ? "active_share_track"
+            : (String(share?.renderReason || "active_share_owner_missing_track").trim() || "active_share_owner_missing_track");
+          entries.push({
+            key: `${uid}:screenshare:${shareTrackIdentity || shareKey || shareIndex}`,
+            userId: uid,
+            speakingUserId: screenshareTrack
+              ? (resolveOutgoingVideoTrackOwnerUserId(screenshareTrack, { fallbackUserId: uid }) || uid)
+              : uid,
+            label: `${stageBaseLabel} � ${t("call.feed.share", "Share")}`,
+            avatar: baseAvatar,
+            track: screenshareTrack || null,
+            mediaType: "share",
+            tileType: "screenshare",
+            primaryMode: "",
+            activeShareOwnerId: uid,
+            trackIdentity: shareTrackIdentity,
+            renderReason: screenshareRenderReason,
+          });
         });
       }
     });
@@ -69510,16 +71495,39 @@ function renderGroupCallStageMembers() {
       triggerReason: "render_stage_members",
       callerFunction: "renderGroupCallStageMembers",
     });
+    if (isServerVoiceDebugLoggingEnabled()) {
+      const renderedShareEntries = entries.filter((entry) => entry?.mediaType === "share" || entry?.tileType === "screenshare");
+      logServerVoiceDebug("server_voice_multi_screenshare_debug", {
+        conversationId: convId,
+        totalScreenSharePublications: serverVoiceScreenshares.length,
+        shares: serverVoiceScreenshares.map((share) => ({
+          participantId: normId(share?.ownerUserId || ""),
+          name: String(share?.ownerDisplayName || "").trim() || null,
+          trackSid: normId(share?.trackSid || share?.trackId || share?.track?.sid || share?.track?.id || share?.key || "") || null,
+          isLocal: !!share?.isLocal,
+          hasTrack: !!isLiveVideoTrack(share?.track, { allowMuted: true }),
+        })),
+        renderedScreenShareTileCount: renderedShareEntries.length,
+        renderedScreenShareTiles: renderedShareEntries.map((entry) => ({
+          key: String(entry?.key || ""),
+          participantId: normId(entry?.userId || ""),
+          trackIdentity: normId(entry?.trackIdentity || entry?.track?.sid || entry?.track?.id || "") || null,
+          hasTrack: !!isLiveVideoTrack(entry?.track, { allowMuted: true }),
+          renderReason: String(entry?.renderReason || "").trim() || null,
+        })),
+      });
+    }
   } else {
     clearServerVoiceStageTileDerivationState(convId);
     memberIds.forEach((uid) => {
       const identity = getGroupMemberIdentity(convId, uid);
-      const baseLabel = identity?.label || t("call.member", "member");
+      const serverVoiceParticipant = serverVoiceParticipantByUserId.get(uid) || null;
+      const baseLabel = serverVoiceParticipant?.displayName || identity?.label || t("call.member", "member");
       const transportStatusLabel = shouldUseServerVoiceLiveKitTransport(convId)
         ? getServerVoiceTransportParticipantStatusLabel(convId, uid, { includeSelf: true })
         : "";
-      const stageBaseLabel = transportStatusLabel ? `${baseLabel} • ${transportStatusLabel}` : baseLabel;
-      const baseAvatar = identity?.avatar || null;
+      const stageBaseLabel = transportStatusLabel ? `${baseLabel} � ${transportStatusLabel}` : baseLabel;
+      const baseAvatar = serverVoiceParticipant?.avatarUrl || identity?.avatar || null;
 
       entries.push({
         key: `${uid}:base`,
@@ -69577,7 +71585,7 @@ function renderGroupCallStageMembers() {
           key: `${uid}:primary`,
           userId: uid,
           speakingUserId: resolveOutgoingVideoTrackOwnerUserId(primaryTrack, { fallbackUserId: uid }) || uid,
-          label: `${baseLabel} • ${suffix}`,
+          label: `${baseLabel} � ${suffix}`,
           avatar: baseAvatar,
           track: primaryTrack,
           mediaType: normalizeRelayMediaKind(primaryKind || (suffix.toLowerCase().includes("partilha") ? "share" : "video")) || "video",
@@ -69588,7 +71596,7 @@ function renderGroupCallStageMembers() {
           key: `${uid}:primary`,
           userId: uid,
           speakingUserId: uid,
-          label: `${baseLabel} • Partilha`,
+          label: `${baseLabel} � Partilha`,
           avatar: baseAvatar,
           track: null,
           mediaType: "share",
@@ -69604,7 +71612,7 @@ function renderGroupCallStageMembers() {
           key: `${uid}:secondary`,
           userId: uid,
           speakingUserId: resolveOutgoingVideoTrackOwnerUserId(secondaryTrack, { fallbackUserId: uid }) || uid,
-          label: `${baseLabel} • ${relayMediaKindToLabel(secondaryKind)}`,
+          label: `${baseLabel} � ${relayMediaKindToLabel(secondaryKind)}`,
           avatar: baseAvatar,
           track: secondaryTrack,
           mediaType: secondaryKind,
@@ -70166,7 +72174,7 @@ async function startCamera() {
   }
 
   const sender = getShareVideoSender();
-  if (!sender) return alert("Canal de vÃ­deo ainda nÃ£o estÃ¡ pronto.");
+  if (!sender) return alert("Canal de vídeo ainda não está pronto.");
   const cameraSender = getCameraVideoSender();
   const hadVideoBefore = !!getCurrentBroadcastVideoTrack();
   const wasScreenSharing = !!isScreenSharing;
@@ -70186,7 +72194,7 @@ async function startCamera() {
     }
 
     const track = getLiveCameraTrack();
-    if (!track) throw new Error("Sem track de vÃ­deo da cÃ¢mara.");
+    if (!track) throw new Error("Sem track de vídeo da câmara.");
 
     track.onended = () => {
       stopCamera({ silent: true }).catch(() => {});
@@ -70196,7 +72204,7 @@ async function startCamera() {
     if (!wasScreenSharing) originalVideoTrack = track;
     const outgoingTrack = await syncPreferredOutgoingVideoTrackOnSender(sender);
     const secondaryTrack = await syncSecondaryOutgoingVideoTrackOnSender(cameraSender);
-    if (!outgoingTrack && !secondaryTrack) throw new Error("Falhou ao enviar a cÃ¢mara.");
+    if (!outgoingTrack && !secondaryTrack) throw new Error("Falhou ao enviar a câmara.");
     setLocalSharePreviewStream(getPreferredLocalPreviewStream());
     await sendShareStateSignal(true, wasScreenSharing ? "share" : "camera");
     await syncRelayVideoBroadcastTargets(callConversationId || activeDmId || "");
@@ -70482,10 +72490,10 @@ function syncCallShareMenuUiLegacyAudioOnly() {
     infoEl.hidden = !infoText;
     infoEl.style.whiteSpace = "";
   }
-  // Audio toggle button state â€” reconcile with actual stream when sharing is active
+  // Audio toggle button state — reconcile with actual stream when sharing is active
   let audioOn = getShareAudioEnabled();
   if (isScreenSharing && getActiveShareHasAudio() && !audioOn) {
-    // Stream actually has audio â€” localStorage was incorrectly "0", fix it
+    // Stream actually has audio — localStorage was incorrectly "0", fix it
     localStorage.setItem(SHARE_AUDIO_KEY, "1");
     audioOn = true;
   }
@@ -73184,7 +75192,7 @@ async function teardownLegacyServerVoiceMeshState(conversationId = null, { reaso
   return true;
 }
 
-async function recoverGroupCallAfterPeerDrop(conversationId, message = "A ligaÃ§Ã£o caiu. A reconectar...") {
+async function recoverGroupCallAfterPeerDrop(conversationId, message = "A ligação caiu. A reconectar...") {
   const convId = normId(conversationId || "");
   if (!convId) {
     if (inCall) await endCallUI("A chamada terminou.");
@@ -73236,7 +75244,7 @@ async function recoverGroupCallAfterPeerDrop(conversationId, message = "A ligaÃ
     callPc = null;
     // Keep local audio capture alive so relay peers can continue sending audio
     // during the brief window while the direct peer reconnects.
-    // stopLocalAudioCapture() â€” intentionally skipped for group call soft recovery.
+    // stopLocalAudioCapture() — intentionally skipped for group call soft recovery.
     callVideoSender = null;
     callCameraSender = null;
     callPrimaryVideoTransceiver = null;
@@ -73249,8 +75257,8 @@ async function recoverGroupCallAfterPeerDrop(conversationId, message = "A ligaÃ
     callOtherUserId = null;
     callMediaPeerUserId = null;
     groupCallOfferTargetUserId = null;
-    // Keep relay audio peers alive â€” they may still be carrying audio for other pairs.
-    // closeAllRelayAudioPeers() â€” intentionally skipped for group call soft recovery.
+    // Keep relay audio peers alive — they may still be carrying audio for other pairs.
+    // closeAllRelayAudioPeers() — intentionally skipped for group call soft recovery.
     // Refresh relay senders in case the mic track ref changed.
     void syncRelayAudioPeers(convId);
     inCall = true;
@@ -73322,10 +75330,10 @@ function scheduleDisconnectGraceEnd() {
       const convId = normId(callConversationId || activeDmId || "");
       const wasGroup = !!(groupCallMode && convId);
       if (wasGroup) {
-        void recoverGroupCallAfterPeerDrop(convId, "A ligaÃ§Ã£o caiu. A reconectar...");
+        void recoverGroupCallAfterPeerDrop(convId, "A ligação caiu. A reconectar...");
         return;
       }
-      endCallUI("A ligaÃ§Ã£o caiu. SaÃ­ste da chamada.");
+      endCallUI("A ligação caiu. Saíste da chamada.");
     }
   }, graceMs);
 }
@@ -76009,9 +78017,78 @@ function isServerVoiceLocalScreenshareActive(conversationId = null) {
   return !!layer.isLocalShareActive();
 }
 
+function normalizeServerVoiceScreenshareStateEntry(entry = null, index = 0) {
+  if (!entry || typeof entry !== "object") return null;
+  const ownerUserId = normId(entry?.ownerUserId || entry?.participantId || entry?.userId || "");
+  if (!ownerUserId) return null;
+  const stream = entry?.stream || null;
+  const track = isLiveVideoTrack(entry?.track, { allowMuted: true })
+    ? entry.track
+    : (
+      pickLiveVideoTrackFromStream(stream, { allowMuted: true })
+      || getAnyVideoTrackFromStream(stream)
+      || null
+    );
+  const trackIdentity = normId(
+    entry?.trackSid
+    || entry?.trackId
+    || track?.sid
+    || track?.id
+    || ""
+  );
+  const key = String(
+    entry?.key
+    || `share:${ownerUserId}:${trackIdentity || index}`
+  ).trim();
+  return {
+    ...entry,
+    key,
+    ownerUserId,
+    ownerDisplayName: String(entry?.ownerDisplayName || entry?.displayName || "").trim(),
+    isLocal: !!entry?.isLocal,
+    track: track || null,
+    trackId: normId(entry?.trackId || track?.id || ""),
+    trackSid: trackIdentity,
+    stream,
+  };
+}
+
+function getServerVoiceScreenshares(conversationId = null) {
+  const state = getServerVoiceScreenshareState(conversationId);
+  const rawShares = Array.isArray(state?.shares) ? state.shares : [];
+  const normalized = [];
+  const seen = new Set();
+  rawShares.forEach((entry, index) => {
+    const share = normalizeServerVoiceScreenshareStateEntry(entry, index);
+    if (!share) return;
+    const uniqueKey = `${share.ownerUserId}:${share.trackSid || share.trackId || share.key || index}`;
+    if (seen.has(uniqueKey)) return;
+    seen.add(uniqueKey);
+    normalized.push(share);
+  });
+  if (!normalized.length && state?.activeShare) {
+    const active = normalizeServerVoiceScreenshareStateEntry(state.activeShare, 0);
+    if (active) normalized.push(active);
+  }
+  return normalized;
+}
+
 function getServerVoiceActiveScreenshare(conversationId = null) {
   const state = getServerVoiceScreenshareState(conversationId);
-  return state?.activeShare || null;
+  return state?.activeShare || getServerVoiceScreenshares(conversationId)[0] || null;
+}
+
+function getServerVoiceScreenshareForParticipant(conversationId = null, participantId = "", trackIdentity = "") {
+  const uid = normId(participantId || "");
+  if (!uid) return null;
+  const preferredTrack = normId(trackIdentity || "");
+  const shares = getServerVoiceScreenshares(conversationId).filter((share) => normId(share?.ownerUserId || "") === uid);
+  if (!shares.length) return null;
+  if (preferredTrack) {
+    const exact = shares.find((share) => normId(share?.trackSid || share?.trackId || share?.track?.sid || share?.track?.id || "") === preferredTrack);
+    if (exact) return exact;
+  }
+  return shares[0] || null;
 }
 
 function bindServerVoiceCameraLayer(conversationId, controller = null) {
@@ -76850,7 +78927,7 @@ function getServerVoiceTransportStageStatusText(conversationId = null) {
   const connectionState = String(snapshot.connectionState || "").trim().toLowerCase();
   if (localState?.state === SERVER_VOICE_PARTICIPANT_RUNTIME_STATE.FAILED) {
     return localState.failureReason
-      ? `Audio failed • ${localState.failureReason}`
+      ? `Audio failed � ${localState.failureReason}`
       : "Audio failed";
   }
   if (connectionState === "reconnecting" || connectionState === "signalreconnecting") {
@@ -76860,9 +78937,9 @@ function getServerVoiceTransportStageStatusText(conversationId = null) {
     return "Joining voice...";
   }
   if (localState?.state === SERVER_VOICE_PARTICIPANT_RUNTIME_STATE.CONNECTED) {
-    if (!snapshot.local?.audioTrackCreated) return "Connected • Preparing microphone...";
-    if (!snapshot.local?.audioTrackPublished) return "Connected • Publishing microphone...";
-    return "Connected • Waiting for audio...";
+    if (!snapshot.local?.audioTrackCreated) return "Connected � Preparing microphone...";
+    if (!snapshot.local?.audioTrackPublished) return "Connected � Publishing microphone...";
+    return "Connected � Waiting for audio...";
   }
 
   const participantUiStateByUserId = new Map();
@@ -76894,21 +78971,21 @@ function getServerVoiceTransportStageStatusText(conversationId = null) {
     waitingCount += 1;
   });
   if (audioLiveCount > 0 && waitingCount > 0) {
-    return `Connected • ${audioLiveCount} audio live • ${waitingCount} waiting audio`;
+    return `Connected � ${audioLiveCount} audio live � ${waitingCount} waiting audio`;
   }
   if (audioLiveCount > 0 && failedCount > 0) {
-    return `Connected • ${audioLiveCount} audio live • ${failedCount} failed`;
+    return `Connected � ${audioLiveCount} audio live � ${failedCount} failed`;
   }
   if (audioLiveCount > 0) {
-    return `Connected • ${audioLiveCount} audio live`;
+    return `Connected � ${audioLiveCount} audio live`;
   }
   if (waitingCount > 0) {
-    return `Connected • ${waitingCount} joining`;
+    return `Connected � ${waitingCount} joining`;
   }
   if (failedCount > 0) {
-    return `Connected • ${failedCount} failed`;
+    return `Connected � ${failedCount} failed`;
   }
-  return "Connected • Waiting for others";
+  return "Connected � Waiting for others";
 }
 
 function updateActiveServerVoiceTransportLocalControls(conversationId = null) {
@@ -77225,19 +79302,19 @@ function renderServerVoiceDebugOverlay(conversationId = null, {
     <div class="serverVoiceDebugOverlay__summary">
       <div class="serverVoiceDebugOverlay__summaryLine">
         in_channel: <code>${participantStates.filter((participantUiState) => participantUiState?.inChannel).length}</code>
-        • in_room: <code>${roomParticipantCount}</code>
-        • media_ready: <code>${mediaReadyCount}</code>
+        � in_room: <code>${roomParticipantCount}</code>
+        � media_ready: <code>${mediaReadyCount}</code>
       </div>
       <div class="serverVoiceDebugOverlay__summaryLine">
         room_state: <code>${esc(String(snapshot.connectionState || "disconnected"))}</code>
-        • reconnecting: <code>${snapshot.reconnecting ? "yes" : "no"}</code>
-        • reconnected_at: <code>${esc(formatServerVoiceDebugTime(snapshot.reconnectedAt))}</code>
+        � reconnecting: <code>${snapshot.reconnecting ? "yes" : "no"}</code>
+        � reconnected_at: <code>${esc(formatServerVoiceDebugTime(snapshot.reconnectedAt))}</code>
       </div>
       <div class="serverVoiceDebugOverlay__summaryLine">
         last_failure: <code>${esc(String(lastJoinFailure?.kind || "--"))}</code>
-        • reason: <code>${esc(getServerVoiceDebugReasonText(lastJoinFailure))}</code>
-        • edge: <code>${esc(String(lastJoinFailure?.edgeFunctionName || "--"))}</code>
-        • status: <code>${esc(lastJoinFailure?.httpStatus == null ? "--" : String(lastJoinFailure.httpStatus))}</code>
+        � reason: <code>${esc(getServerVoiceDebugReasonText(lastJoinFailure))}</code>
+        � edge: <code>${esc(String(lastJoinFailure?.edgeFunctionName || "--"))}</code>
+        � status: <code>${esc(lastJoinFailure?.httpStatus == null ? "--" : String(lastJoinFailure.httpStatus))}</code>
       </div>
     </div>
     <div class="serverVoiceDebugOverlay__table">
@@ -79655,7 +81732,7 @@ function normalizeRemoteShareMode(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) return "";
   if (raw === "share" || raw === "screen" || raw === "screenshare" || raw === "partilha") return "share";
-  if (raw === "camera" || raw === "cam" || raw === "webcam" || raw === "camara" || raw === "cÃ¢mara") return "camera";
+  if (raw === "camera" || raw === "cam" || raw === "webcam" || raw === "camara" || raw === "câmara") return "camera";
   if (raw === "video") return "video";
   if (raw === "none" || raw === "off") return "none";
   return "";
@@ -79816,7 +81893,7 @@ function ensureCallTileLoadingPrompt(tile) {
   prompt.hidden = true;
   prompt.innerHTML = `
     <span class="callTileLoadingSpinner" aria-hidden="true"></span>
-    <span class="callTileLoadingHint">A atualizar streamâ€¦</span>
+    <span class="callTileLoadingHint">A atualizar stream…</span>
   `;
   tile.appendChild(prompt);
   return prompt;
@@ -80243,7 +82320,7 @@ async function sendCallUiCueSignal(cueName) {
     });
   if (!safeTargetIds.length) return;
 
-  const fromLabel = state.me?.display_name || state.me?.username || "AlguÃ©m";
+  const fromLabel = state.me?.display_name || state.me?.username || "Alguém";
   const fromAvatar = state.me?.avatar_url || null;
   const cueEventId = `cue_evt_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
   rememberLocalCallCueEventId(cueEventId);
@@ -82060,7 +84137,7 @@ function createPeerConnection() {
       if (inCall && groupCallMode) {
         const convId = normId(callConversationId || activeDmId || "");
         if (convId) {
-          void recoverGroupCallAfterPeerDrop(convId, "LigaÃ§Ã£o ao peer perdida. A reconectar...");
+          void recoverGroupCallAfterPeerDrop(convId, "Ligação ao peer perdida. A reconectar...");
           return;
         }
       }
@@ -82096,7 +84173,7 @@ function createPeerConnection() {
       if (inCall && groupCallMode) {
         const convId = normId(callConversationId || activeDmId || "");
         if (convId) {
-          void recoverGroupCallAfterPeerDrop(convId, "LigaÃ§Ã£o ao peer perdida. A reconectar...");
+          void recoverGroupCallAfterPeerDrop(convId, "Ligação ao peer perdida. A reconectar...");
           return;
         }
       }
@@ -82437,7 +84514,7 @@ async function maybeRecoverCallAudioTracks() {
     await ensureOutgoingLocalMicHealthy();
     const isServerVoiceCall = isServerVoiceConversationById(convId);
     if (groupCallMode && isServerVoiceCall) {
-      await recoverGroupCallAfterPeerDrop(convId, "A reconectar Ã¡udio...");
+      await recoverGroupCallAfterPeerDrop(convId, "A reconectar áudio...");
       return;
     }
     await renegotiateCall("recover_no_remote_audio_track");
@@ -82574,14 +84651,18 @@ function setCallButtonA11y(btn, label) {
   if (sr) sr.textContent = text;
 }
 
-function syncServerVoiceCallLayout(enabled = false, { hideHeader = false } = {}) {
+function syncServerVoiceCallLayout(enabled = false, { hideHeader = false, activeCall = false } = {}) {
   const dmMain = document.getElementById("dmMain");
   if (!dmMain) return;
   const midPanel = dmMain.closest(".panel.mid") || document.querySelector("main.panel.mid");
   const voiceLayout = !!enabled;
   dmMain.classList.toggle("is-server-voice-call-layout", voiceLayout);
+  dmMain.classList.toggle("is-server-voice-in-call", !!(voiceLayout && activeCall));
   dmMain.classList.toggle("is-server-voice-hide-header", !!(voiceLayout && hideHeader));
-  if (midPanel) midPanel.classList.toggle("is-server-voice-call-layout", voiceLayout);
+  if (midPanel) {
+    midPanel.classList.toggle("is-server-voice-call-layout", voiceLayout);
+    midPanel.classList.toggle("is-server-voice-in-call", !!(voiceLayout && activeCall));
+  }
   if (voiceLayout) setCallStatus("", false);
 }
 
@@ -82627,7 +84708,7 @@ function syncServerVoiceEmptyState({
     card.innerHTML = `
       <div class="voiceChannelEmptyState__card">
         <div class="voiceChannelEmptyState__title" data-voice-empty-title>Canal de voz</div>
-        <div class="voiceChannelEmptyState__sub" data-voice-empty-sub>NinguÃ©m no canal de voz agora.</div>
+        <div class="voiceChannelEmptyState__sub" data-voice-empty-sub>Ninguem no canal de voz agora.</div>
         <button class="btn primary voiceChannelEmptyState__join" type="button" data-voice-empty-join>Entrar no canal</button>
       </div>
     `;
@@ -82671,7 +84752,7 @@ function syncServerVoiceEmptyState({
   if (subEl) {
     subEl.textContent = count > 0
       ? `${count} pessoa${count === 1 ? "" : "s"} no canal agora.`
-      : "NinguÃ©m no canal de voz agora.";
+      : "Ninguem no canal de voz agora.";
   }
   if (joinBtn) {
     joinBtn.disabled = !convId;
@@ -82717,7 +84798,7 @@ function refreshCallUI() {
     ) ||
     isServerVoiceTransportSessionActive(activeCallLikeConversationId)
   );
-  syncRightSidebarForCall(callActive);
+  syncRightSidebarForCall(callActive, { conversationId: activeCallLikeConversationId });
   applyDmStageHeightPref();
 
   hydrateCallPeerMeta();
@@ -82728,13 +84809,26 @@ function refreshCallUI() {
   const stageConvId = normId(callConversationId || activeDmId || state.activeDm?.conversationId || "");
   const activeViewedConvId = normId(activeDmId || state.activeDm?.conversationId || "");
   const activeCallConvId = normId(callConversationId || "");
+  const serverVoiceViewedConversationId = !!(
+    isDmOpen
+    && activeViewedConvId
+    && isServerVoiceConversationUiContext(activeViewedConvId)
+  ) ? activeViewedConvId : "";
+
   const viewingCallConversation = !!(
     activeCallConvId &&
     activeViewedConvId &&
     activeCallConvId === activeViewedConvId
   );
-  const canRenderCallUiInCurrentView = !activeCallConvId || viewingCallConversation;
-  const shouldDockCallUiInDm = !!(isDmOpen && viewingCallConversation);
+  const viewingServerVoiceConversation = !!(
+    isDmOpen &&
+    activeViewedConvId &&
+    stageConvId &&
+    activeViewedConvId === stageConvId &&
+    isServerVoiceConversationUiContext(stageConvId)
+  );
+  const canRenderCallUiInCurrentView = !!(!activeCallConvId || viewingCallConversation || viewingServerVoiceConversation);
+  const shouldDockCallUiInDm = !!(isDmOpen && (viewingCallConversation || (callActive && viewingServerVoiceConversation)));
   const stageMeta = getActiveConversationMeta(stageConvId) || getConversationMeta(stageConvId) || {};
   const isServerVoiceCallUi = isServerVoiceConversationMeta(stageMeta);
   const privateLiveKitCallUi = isPrivateDmLiveKitTransportConversation(stageConvId);
@@ -82782,6 +84876,13 @@ function refreshCallUI() {
     && effectiveActiveMemberIds.some((uid) => uid && uid !== meId);
   const publicGroupStageActive = !!(isGroupCallUi && !callActive && hasRemoteActivePresence);
   const publicGroupPreviewOnly = !!publicGroupStageActive;
+  const serverVoiceStageShouldOpen = !!(
+    callActive &&
+    canRenderCallUiInCurrentView &&
+    isServerVoiceConversationUiContext(stageConvId) &&
+    isActiveServerVoiceCallJoined(stageConvId)
+  );
+  if (serverVoiceStageShouldOpen) stageOpen = true;
   const callUiVisible = canRenderCallUiInCurrentView && (callActive || publicGroupStageActive);
   const callStageLayoutOpen = !!(callUiVisible && (stageOpen || callActive || publicGroupStageActive));
   syncCallStageLayoutState(callStageLayoutOpen);
@@ -82892,29 +84993,47 @@ function refreshCallUI() {
   const remoteShareIsFromMe = !!(remoteShareState && normId(remoteShareState.userId || "") === meId);
   const shareBits = [];
   if (!serverVoiceAudioOnlyMode && remoteIsSharing && !remoteShareIsFromMe) {
-    shareBits.push(remoteShareMetaText ? `${remoteLabel} a partilhar • ${remoteShareMetaText}` : `${remoteLabel} em video`);
+    shareBits.push(remoteShareMetaText ? `${remoteLabel} a partilhar � ${remoteShareMetaText}` : `${remoteLabel} em video`);
   }
   if (!serverVoiceAudioOnlyMode && isScreenSharing && isCameraOn) {
-    shareBits.push(localShareMetaText ? `Tu a partilhar + camara ligada • ${localShareMetaText}` : "Tu a partilhar + camara ligada");
+    shareBits.push(localShareMetaText ? `Tu a partilhar + camara ligada � ${localShareMetaText}` : "Tu a partilhar + camara ligada");
   } else if (!serverVoiceAudioOnlyMode && isScreenSharing) {
-    shareBits.push(localShareMetaText ? `${t("call.stage.sharing", "You are sharing")} • ${localShareMetaText}` : t("call.stage.sharing", "You are sharing"));
+    shareBits.push(localShareMetaText ? `${t("call.stage.sharing", "You are sharing")} � ${localShareMetaText}` : t("call.stage.sharing", "You are sharing"));
   } else if (!serverVoiceAudioOnlyMode && isCameraOn) {
     shareBits.push(t("call.stage.camera_on", "Your camera is on"));
   }
   const serverVoiceTransportStageText = serverVoiceLiveKitActive
     ? getServerVoiceTransportStageStatusText(stageConvId)
     : "";
-  const stageSubText = serverVoiceTransportStageText
+  const serverVoiceHeaderConversationId = stageConvId;
+  const serverVoiceInCallParticipantCount = isServerVoiceCallUi
+    ? Math.max(
+      1,
+      Number(effectiveActiveMemberIds?.length || 0),
+      getServerVoiceChannelConnectedCount(serverVoiceHeaderConversationId, {
+        triggerReason: "server_voice_call_header",
+        callerFunction: "refreshCallUI",
+      }),
+    )
+    : 0;
+  const serverVoiceCallElapsedText = formatCallElapsedClockLabel(
+    callEventConnectedAtMs ? (nowMs - callEventConnectedAtMs) : 0,
+  );
+  const stageSubText = (isServerVoiceCallUi && callActive)
+    ? `${groupCallLabel} � ${serverVoiceInCallParticipantCount} ${serverVoiceInCallParticipantCount === 1 ? "participante" : "participantes"} � ${serverVoiceCallElapsedText}`
+    : (serverVoiceTransportStageText
     || (inCall
-      ? (shareBits.length ? shareBits.join(" • ") : t("call.stage.connected", "Connected"))
+      ? (shareBits.length ? shareBits.join(" � ") : t("call.stage.connected", "Connected"))
       : (publicGroupStageActive
         ? t("call.stage.not_joined", "Not joined yet. Click the phone to join.")
-        : (callActive ? ((isGroupCallUi && !privateLiveKitCallUi) ? t("call.stage.calling_group", "Calling group...") : t("call.stage.calling", "Calling...")) : "â€¦")));
-  const callHeaderTitle = (isGroupCallUi && !privateLiveKitCallUi)
+        : (callActive ? ((isGroupCallUi && !privateLiveKitCallUi) ? t("call.stage.calling_group", "Calling group...") : t("call.stage.calling", "Calling...")) : "…"))));
+  const callHeaderTitle = (isServerVoiceCallUi && callActive)
+    ? `Em chamada no grupo ${groupCallLabel}`
+    : ((isGroupCallUi && !privateLiveKitCallUi)
     ? (publicGroupStageActive
       ? `Chamada em curso no grupo ${groupCallLabel}`
       : `Em chamada no grupo ${groupCallLabel}`)
-    : `Em chamada com ${remoteLabel}`;
+    : `Em chamada com ${remoteLabel}`);
 
   if (stageTitle) stageTitle.textContent = callHeaderTitle;
   if (stageSub) stageSub.textContent = stageSubText;
@@ -83163,6 +85282,7 @@ function refreshCallUI() {
   applyCallTileColorToEl(gridSelf, state.user?.id, meTileColor);
   applyCallTileColorToEl(gridSelfAux, state.user?.id, meTileColor);
   renderGroupCallStageMembers();
+
   applyCallTileColorToEl(stageViewport, mainUserId, mainTileColor);
   applyCallTileColorToEl(stagePlaceholder, mainUserId, mainTileColor);
   applyUserNameColorToEl(stageLabel, mainUserId, mainNameColor);
@@ -83450,7 +85570,7 @@ function refreshCallUI() {
   }
   const stageGridHasScreenshareTile = !!(
     document.querySelector("#callStageGrid [data-call-grid-entry='1'][data-call-media-type='share']")
-    || document.querySelector("#callStageGrid [data-call-grid-entry='1'][data-call-tile-type='screenshare']")
+    || document.querySelector("#callStageGrid [data-call-entry-key$=':screenshare']")
   );
   const screenshareReplacingInProgress = hasStageScreenshareReplacingOwners(stageConvId);
   renderServerVoiceScreensharePanel(stageConvId, stageViewport, {
@@ -83695,7 +85815,7 @@ function refreshCallUI() {
     }
   }
 
-  // Durante chamada, controla tudo pelo palco (sem botÃµes no topo da DM).
+  // Durante chamada, controla tudo pelo palco (sem botões no topo da DM).
   if (callActive && callUiVisible) {
     if (isServerVoiceCallUi) {
       if (btnCall) btnCall.style.display = "none";
@@ -83729,12 +85849,20 @@ function refreshCallUI() {
       callerFunction: "refreshCallUI",
     })
     : 0;
-  // Server voice channels should always hide the right members panel.
-  const hideServerMembersOnRight = !!serverVoiceConversationOpen;
-  syncServerVoiceStageRightSidebar({ hideMembers: hideServerMembersOnRight });
-  const shouldHideVoiceHeader = !!serverVoiceConversationOpen;
-  const shouldUseSidebarMiniPanel = !!(serverVoiceConversationOpen && callActive);
-  syncServerVoiceCallLayout(serverVoiceConversationOpen, { hideHeader: shouldHideVoiceHeader });
+  const serverVoiceCallJoinedInView = !!(
+    serverVoiceConversationOpen
+    && callActive
+    && isActiveServerVoiceCallJoined(activeViewedConvId)
+  );
+
+  const shouldHideVoiceHeader = !!serverVoiceCallJoinedInView;
+  const shouldHideServerVoiceMiniPanel = !!serverVoiceCallJoinedInView;
+  const shouldUseSidebarMiniPanel = false;
+
+  syncServerVoiceCallLayout(serverVoiceConversationOpen, {
+    hideHeader: shouldHideVoiceHeader,
+    activeCall: serverVoiceCallJoinedInView,
+  });
   syncServerVoiceEmptyState({
     enabled: serverVoiceConversationOpen,
     show: serverVoiceConversationOpen && !callActive && !inCall,
@@ -83745,6 +85873,12 @@ function refreshCallUI() {
 
   syncCallAudioMenuUi();
   dockStageIntoDm(shouldDockCallUiInDm, { barInSidebar: shouldUseSidebarMiniPanel });
+  if (bar && shouldHideServerVoiceMiniPanel) {
+    bar.hidden = true;
+    bar.classList.remove("is-open");
+    bar.setAttribute("aria-hidden", "true");
+  }
+
   syncLeftSidebarCallbarInset();
   pushDesktopCallThumbarState();
   refreshOpenUserCard();
@@ -86287,7 +88421,7 @@ async function startGroupOfferToMember(userId, conversationId, options = {}) {
           if (!groupCallMode || normId(callConversationId) !== convId) return;
           if (normId(groupCallOfferTargetUserId) !== uid) return;
           await sendCallSignal("cancel", { group_call: true }, uid, convId);
-          await enterGroupSoloCall("?? NinguÃ©m atendeu. Continuas na call do grupo sozinho.");
+          await enterGroupSoloCall("?? Ninguém atendeu. Continuas na call do grupo sozinho.");
         }, offerTimeoutMs);
       } else {
         if (channelConnectProbeTimer) {
@@ -86328,7 +88462,7 @@ async function startGroupOfferToMember(userId, conversationId, options = {}) {
     } catch (e) {
       console.error(e);
       if (!channelMode) {
-        await enterGroupSoloCall("?? Falhou a ligaÃ§Ã£o ao membro. Continuas sozinho.");
+        await enterGroupSoloCall("?? Falhou a ligação ao membro. Continuas sozinho.");
       } else {
         if (!inCall) await enterGroupSoloCall("? Entraste no canal de voz.");
         else refreshCallUI();
@@ -86422,7 +88556,7 @@ async function startGroupCall(conversationId, { joinExistingOnly = false } = {})
     targetIds = await getGroupConversationMemberIds(convId, { includeSelf: false, force: true });
   }
   if (!targetIds.length && !isServerVoiceCall) {
-    alert("Este Group DM nÃ£o tem membros para chamar.");
+    alert("Este Group DM não tem membros para chamar.");
     return;
   }
 
@@ -86444,7 +88578,7 @@ async function startGroupCall(conversationId, { joinExistingOnly = false } = {})
       }
       if (groupDmCallBackendAvailable === true && !sessionCallId) {
         setCallButtons("idle");
-        setCallStatus("?? Esta chamada jÃ¡ terminou (ou falhou o join).", true);
+        setCallStatus("?? Esta chamada já terminou (ou falhou o join).", true);
         await refreshGroupDmCallState(convId, { rerender: true });
         refreshCallUI();
         if (!callAlreadyActive) await teardownActiveCallRealtimeChannel();
@@ -86467,7 +88601,7 @@ async function startGroupCall(conversationId, { joinExistingOnly = false } = {})
       }
       if (groupDmCallBackendAvailable === true && !sessionCallId) {
         setCallButtons("idle");
-        setCallStatus("? Falhou ao criar a sessÃ£o da chamada.", true);
+        setCallStatus("? Falhou ao criar a sessão da chamada.", true);
         refreshCallUI();
         if (!callAlreadyActive) await teardownActiveCallRealtimeChannel();
         return;
@@ -86600,7 +88734,7 @@ async function startGroupCall(conversationId, { joinExistingOnly = false } = {})
           }
         }
         setCallButtons("idle");
-        setCallStatus("?? NÃ£o encontrei participantes ativos nessa call. Inicia uma nova chamada.", true);
+        setCallStatus("?? Não encontrei participantes ativos nessa call. Inicia uma nova chamada.", true);
         if (useSessionBackend) await refreshGroupDmCallState(convId, { rerender: true });
         refreshCallUI();
         if (!callAlreadyActive) await teardownActiveCallRealtimeChannel();
@@ -86628,7 +88762,7 @@ async function startGroupCall(conversationId, { joinExistingOnly = false } = {})
           return;
         }
         setCallButtons("idle");
-        setCallStatus("?? NÃ£o consegui encontrar um peer ativo para entrar na chamada.", true);
+        setCallStatus("?? Não consegui encontrar um peer ativo para entrar na chamada.", true);
         refreshCallUI();
         if (!callAlreadyActive) await teardownActiveCallRealtimeChannel();
         return;
@@ -86678,12 +88812,12 @@ async function startGroupCall(conversationId, { joinExistingOnly = false } = {})
         cleanupPeer();
         await teardownActiveCallRealtimeChannel();
         setCallButtons("idle");
-        setCallStatus("?? NÃ£o consegui entrar na call em curso. Tenta novamente.", true);
+        setCallStatus("?? Não consegui entrar na call em curso. Tenta novamente.", true);
         if (useSessionBackend) await refreshGroupDmCallState(convId, { rerender: true });
         refreshCallUI();
         return;
       }
-      await enterGroupSoloCall("? Entraste na call sozinho. Vai desligar em 3 minutos se ninguÃ©m entrar.");
+      await enterGroupSoloCall("? Entraste na call sozinho. Vai desligar em 3 minutos se ninguém entrar.");
     }, GROUP_CALL_RING_TIMEOUT_MS);
     refreshCallUI();
   } catch (e) {
@@ -86708,7 +88842,7 @@ async function acceptPendingGroupRing() {
     clearTimers();
     showOverlay(false);
     setCallButtons("idle");
-    setCallStatus("?? Esta chamada jÃ¡ terminou.", true);
+    setCallStatus("?? Esta chamada já terminou.", true);
     await refreshGroupDmCallState(convId, { rerender: true });
     refreshCallUI();
     return false;
@@ -86782,7 +88916,7 @@ async function acceptPendingGroupRing() {
     from_avatar: state.me?.avatar_url || null,
   }, fromUserId, convId);
 
-  // fallback: se o caller nÃ£o mandar offer a tempo, entra automaticamente no fluxo de join
+  // fallback: se o caller não mandar offer a tempo, entra automaticamente no fluxo de join
   if (groupRingAcceptJoinFallbackTimer) {
     clearTimeout(groupRingAcceptJoinFallbackTimer);
     groupRingAcceptJoinFallbackTimer = null;
@@ -86977,7 +89111,7 @@ async function startCall(conversationId, otherUserId, otherLabel) {
       });
     }
     if (!resolvedOtherUserId) {
-      setCallStatus("NÃ£o consegui resolver o ID do amigo para a chamada.", true);
+      setCallStatus("Não consegui resolver o ID do amigo para a chamada.", true);
       return;
     }
     otherUserId = resolvedOtherUserId;
@@ -87001,7 +89135,7 @@ async function startCall(conversationId, otherUserId, otherLabel) {
     const canCall = await checkCanCallUserRpc(state.user.id, resolvedOtherUserId);
     if (!canCall) {
       await requestAppAlert(
-        "NÃ£o podes ligar para este utilizador.",
+        "Não podes ligar para este utilizador.",
         { title: "Chamada bloqueada", okText: "OK" }
       );
       return;
@@ -87207,7 +89341,7 @@ async function startCall(conversationId, otherUserId, otherLabel) {
     ringTimeout = setTimeout(async () => {
       ringTimeout = null;
       await sendCallSignal("cancel", {}, otherUserId, conversationId);
-      await endCallUI("?? NinguÃ©m atendeu.");
+      await endCallUI("?? Ninguém atendeu.");
     }, 30 * 1000);
 
     let offer;
@@ -87368,7 +89502,7 @@ async function answerCall() {
     clearGroupCallSoloTimeout();
     const joinedSessionId = await joinGroupDmCallSession(callConversationId, { allowStart: false });
     if (groupDmCallBackendAvailable === true && !joinedSessionId) {
-      setCallStatus("?? Esta chamada jÃ¡ terminou.", true);
+      setCallStatus("?? Esta chamada já terminou.", true);
       setTimeout(() => setCallStatus("", false), 1500);
       pendingOffer = null;
       pendingCallInfo = null;
@@ -87396,7 +89530,7 @@ async function answerCall() {
     ""
   );
   if (!answerTargetUserId) {
-    setCallStatus("? Falhou ao atender (destino da resposta invÃ¡lido).", true);
+    setCallStatus("? Falhou ao atender (destino da resposta inválido).", true);
     setTimeout(() => setCallStatus("", false), 1800);
     return;
   }
@@ -87945,7 +90079,7 @@ async function onCallSignal(sig) {
   const isPrivateCallSignalConversation = !!(!signalLooksGroup && shouldRoutePrivateDmCallViaLiveKit(conversationId));
   const shouldHandlePrivateControlSignal = !!(isPrivateCallControlPayload && !signalLooksGroup && !isServerVoiceSignal);
 
-  const fromLabel = payload.from_label || "AlguÃ©m";
+  const fromLabel = payload.from_label || "Alguém";
   const fromAvatar = payload.from_avatar || null;
   if (isPrivateCallControlPayload && !shouldHandlePrivateControlSignal) {
     logPrivateCallDebug("private_call.invite_filter_rejected", {
@@ -88050,7 +90184,7 @@ async function onCallSignal(sig) {
     }
   }
 
-  // ? suporta offer tambÃ©m durante chamada (renegociaÃ§Ã£o simples)
+  // ? suporta offer também durante chamada (renegociação simples)
   if (kind === "offer") {
     if (isServerVoiceSignal) {
       touchServerVoicePeerDebug(conversationId, sig.from_user_id, {
@@ -88060,7 +90194,7 @@ async function onCallSignal(sig) {
     }
     if (!inCall && !callPc) queuedIceCandidates = [];
 
-    // se jÃ¡ estÃ¡s em chamada e tens pc, trata como renegociaÃ§Ã£o
+    // se já estás em chamada e tens pc, trata como renegociação
     if (inCall && callPc) {
       if (isServerVoiceSignal && shouldIgnoreServerVoiceDirectSignalFrom(sig.from_user_id, conversationId)) {
         return;
@@ -88433,7 +90567,7 @@ async function onCallSignal(sig) {
           micMutedValue: nextValue,
         });
         if (changed) {
-          setCallStatus(nextValue ? "??? Microfone silenciado por moderaÃ§Ã£o." : "??? Microfone reativado por moderaÃ§Ã£o.", true);
+          setCallStatus(nextValue ? "??? Microfone silenciado por moderação." : "??? Microfone reativado por moderação.", true);
           setTimeout(() => {
             if (inCall) setCallStatus("", false);
           }, 1800);
@@ -88446,7 +90580,7 @@ async function onCallSignal(sig) {
           deafenedValue: nextValue,
         });
         if (changed) {
-          setCallStatus(nextValue ? "?? Ãudio recebido silenciado por moderaÃ§Ã£o." : "?? Ãudio recebido reativado por moderaÃ§Ã£o.", true);
+          setCallStatus(nextValue ? "?? Áudio recebido silenciado por moderação." : "?? Áudio recebido reativado por moderação.", true);
           setTimeout(() => {
             if (inCall) setCallStatus("", false);
           }, 1800);
@@ -88817,7 +90951,7 @@ async function onCallSignal(sig) {
       }
 
       if (payload?.manual && !hasActiveCall) {
-        // pedido de entrada em call ativa: nunca deve tocar/chamar quem nÃ£o estÃ¡ na call
+        // pedido de entrada em call ativa: nunca deve tocar/chamar quem não está na call
         return;
       }
       if (!sessionState && groupDmCallBackendAvailable !== false) {
@@ -89125,8 +91259,8 @@ async function onCallSignal(sig) {
         return;
       }
 
-      // Em Group DM, hangup/cancel/missed de um membro nunca deve matar a sessÃ£o global.
-      // Apenas remove o membro localmente e mantÃ©m quem jÃ¡ estava na call.
+      // Em Group DM, hangup/cancel/missed de um membro nunca deve matar a sessão global.
+      // Apenas remove o membro localmente e mantém quem já estava na call.
       if (currentPeerId && currentPeerId === fromUserId) {
         callOtherUserId = null;
         callMediaPeerUserId = null;
@@ -89719,13 +91853,13 @@ function startGlobalMessageRequestListener() {
     });
 }
 
-// â”€â”€â”€ USER BLOCKS REALTIME â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── USER BLOCKS REALTIME ────────────────────────────────────────────────────
 // Blocks are the only relationship table with no realtime subscription.
 // Without this, blocking/unblocking only takes effect after a full restart.
 //
 // What we handle:
-//  INSERT â†’ A just blocked someone: remove them from A's friends/DM lists live
-//  DELETE â†’ A just unblocked someone: re-render so they can appear again
+//  INSERT → A just blocked someone: remove them from A's friends/DM lists live
+//  DELETE → A just unblocked someone: re-render so they can appear again
 
 function onGlobalModerationActionChanged(row, eventType = "UPDATE") {
   if (!state.user?.id) return;
@@ -89859,7 +91993,7 @@ function startGlobalUserBlocksListener() {
       }
     });
 }
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function runFriendRequestsSyncFallback() {
   if (friendRequestsSyncFallbackInFlight || !state.user?.id) return;
@@ -91859,6 +93993,9 @@ async function showDm(conversationId, opts = {}) {
   stopDmOpenAutoScroll();
   stopDmReactionsSync();
   activeDmId = conversationId;
+  dmUserScrolledAwayFromBottom = false;
+  dmJumpToLatestUntilMs = 0;
+  armDmInitialLatestStick(conversationId);
   dmOpenAutoScrollUserInterrupted = false;
   dmOpenAutoScrollStartedAt = Date.now();
   dmOpenAutoScrollUntil = Date.now() + DM_OPEN_AUTOSCROLL_MS;
@@ -92079,6 +94216,7 @@ async function showDm(conversationId, opts = {}) {
   }
   if (btnDmProfilePanel) {
     const profileLabel = isGroupConversation ? t("dm.members", "Members") : t("dm.profile", "Profile");
+    const profileTitle = isGroupConversation ? profileLabel : t("dm.profile_shortcut", "Profile (Alt+S)");
     const profileSr = btnDmProfilePanel.querySelector(".sr-only");
     if (isServerConversation) {
       const membersLabel = t("dm.members", "Members");
@@ -92110,8 +94248,8 @@ async function showDm(conversationId, opts = {}) {
       btnDmProfilePanel.classList.remove("is-members-mode");
       btnDmProfilePanel.style.display = "";
       btnDmProfilePanel.disabled = false;
-      btnDmProfilePanel.title = profileLabel;
-      btnDmProfilePanel.setAttribute("aria-label", profileLabel);
+      btnDmProfilePanel.title = profileTitle;
+      btnDmProfilePanel.setAttribute("aria-label", profileTitle);
       if (profileSr) profileSr.textContent = profileLabel;
       btnDmProfilePanel.onclick = async () => {
         if (dmProfilePanelOpen) closeDmProfilePanel();
@@ -92164,7 +94302,7 @@ async function showDm(conversationId, opts = {}) {
     leaveActiveDmView({ captureHistory: true });
   };
 
-  await fetchMessages(conversationId);
+  await fetchMessages(conversationId, { initialLatest: true });
   if (isShowRequestStale()) return;
   startDmReactionsSync(conversationId);
   if (dmPinsPanelOpen) await openDmPinsModal();
@@ -92333,7 +94471,7 @@ async function showDm(conversationId, opts = {}) {
           triggerReason: "dm_call_button_click",
         });
       }
-      if (!resolvedPeerUserId) return alert("NÃ£o consegui resolver o ID do amigo para a chamada.");
+      if (!resolvedPeerUserId) return alert("Não consegui resolver o ID do amigo para a chamada.");
       callOtherUserId = resolvedPeerUserId;
       callMediaPeerUserId = resolvedPeerUserId;
       await startCall(conversationId, resolvedPeerUserId, callOtherLabel);
@@ -92388,7 +94526,12 @@ async function showDm(conversationId, opts = {}) {
   // garante palco na DM
   dockStageIntoDm(true);
   refreshCallUI();
-  scrollDmToLatest();
+  {
+    const dmMessages = document.getElementById("dmMessages");
+    if (dmMessages && !dmUserScrolledAwayFromBottom && (isDmNearBottom(dmMessages, 140) || shouldHonorDmStickToBottom())) {
+      scrollDmToLatest();
+    }
+  }
 }
 
 /* ========================= INIT + Call UI bindings ========================= */
@@ -93185,7 +95328,7 @@ function bindCallUIButtons() {
       ".participantTile, .stageGridTile, .callTileWatchCta, .callTileLoadingCta, #btnFullscreenStage, .callStageViewportFsBtn, #remoteWatchGate, .callWatchBtn"
     );
     if (clickedInteractiveInsideTile) return;
-    // Clicar no palco em destaque volta para grelha (2 pessoas), com ou sem vÃ­deo.
+    // Clicar no palco em destaque volta para grelha (2 pessoas), com ou sem vídeo.
     if (stageLayoutMode === "focus") {
       const focusedIdentity = parseStageParticipantTileId(stageFocusedTileId || "");
       const transitionSerial = beginStageFocusTransition({
@@ -93712,7 +95855,7 @@ async function openAvatarEditor(file, user, { gifMode = false } = {}) {
 
 async function exportAvatarBlob(size = 512) {
   const src = document.getElementById("avatarEditorCanvas");
-  if (!src || !AE.img) throw new Error("Editor nÃ£o pronto");
+  if (!src || !AE.img) throw new Error("Editor não pronto");
   const rect = src.getBoundingClientRect();
   const info = { cssW: Math.max(1, rect.width), cssH: Math.max(1, rect.height) };
   const crop = getAvatarCropMetrics(info);
@@ -94057,6 +96200,9 @@ function resolveAvatarMimeAndExt(ext = "", contentTypeOverride = "") {
 async function uploadAvatarBlob(blob, user, ext, contentTypeOverride = "", crop = undefined) {
   const { ext: safeExt, mime } = resolveAvatarMimeAndExt(ext, contentTypeOverride);
   const path = `${user.id}/avatar_${Date.now()}.${safeExt}`;
+  const uploadedGifStillFrame = safeExt === "gif"
+    ? await captureManagedGifStillFrameFromImageBlob(blob, { maxSide: 192 }).catch(() => "")
+    : "";
 
   const up = await supabase.storage.from("avatars").upload(path, blob, {
     upsert: true,
@@ -94069,6 +96215,9 @@ async function uploadAvatarBlob(blob, user, ext, contentTypeOverride = "", crop 
 
   const { data } = supabase.storage.from("avatars").getPublicUrl(path);
   const url = data.publicUrl;
+  if (uploadedGifStillFrame) {
+    cacheManagedGifStillFrame(url, uploadedGifStillFrame, { persist: true });
+  }
 
   const saved = await saveAvatarUrlForUser(user.id, url, crop);
 
@@ -94521,7 +96670,7 @@ function buildMeProfilePopoutHtml(profileInput = null, { loading = false } = {})
   const username = profile?.username || "";
   const pronouns = normalizePronouns(profile?.pronouns || "");
   const handleText = username ? `@${username}` : "@user";
-  const handleLine = pronouns ? `${handleText} · ${pronouns}` : handleText;
+  const handleLine = pronouns ? `${handleText} � ${pronouns}` : handleText;
   const bio = String(profile?.bio || "").trim();
   const nameColor = resolveUserNameColor(uid, profile?.name_color || "");
   const nameClass = nameColor ? " userNameCustom" : "";
@@ -95385,7 +97534,7 @@ function updatePresenceRender() {
     });
 
     const activeRows = activeNowEl.querySelectorAll(".presenceRow").length;
-    if (!activeRows) activeNowEl.innerHTML = `<div class="hint">NinguÃ©m online agora.</div>`;
+    if (!activeRows) activeNowEl.innerHTML = `<div class="hint">Ninguém online agora.</div>`;
     if (onlineCountEl) onlineCountEl.textContent = String(activeRows);
   }
 
@@ -95583,6 +97732,7 @@ async function startPresence() {
   bindLeftSidebarResizerOnce();
   bindRightSidebarResizerOnce();
   bindRightSidebarOverlayOnce();
+  bindAppPanelShortcutsOnce();
   wireDmComposer();
   bindGifPickerOnce();
   bindUserCardModalOnce();
