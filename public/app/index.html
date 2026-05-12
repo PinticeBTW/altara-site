@@ -204,52 +204,56 @@
     <!-- LEFT -->
     <aside class="panel left">
       <div class="leftTop">
-        <div id="meProfileCard" class="meRow">
-          <div class="meAvatarWrap">
-            <div id="meAvatar" class="meAvatar" role="button" tabindex="0" aria-label="Open profile"></div>
-          </div>
+        <div id="leftBottomVoiceStack" class="leftBottomVoiceStack">
+          <div id="voiceMiniDockSlot" class="voiceMiniDockSlot" aria-live="polite"></div>
 
-          <div class="meText">
-            <div id="meName" class="meName">...</div>
-            <div id="meTag" class="meTag">@...</div>
+          <div id="meProfileCard" class="meRow">
+            <div class="meAvatarWrap">
+              <div id="meAvatar" class="meAvatar" role="button" tabindex="0" aria-label="Open profile"></div>
+            </div>
 
-            <button id="meStatusBtn" class="statusPill" type="button">
-              <span class="dotMini" data-status-mini="online"></span>
-              <span id="meStatusLabel">online</span>
-            </button>
-          </div>
+            <div class="meText">
+              <div id="meName" class="meName">...</div>
+              <div id="meTag" class="meTag">@...</div>
 
-          <div class="meControls" role="group" aria-label="Quick controls">
-            <button id="btnHeaderMicToggle" class="btn ghost meCtrlBtn" type="button" title="Mute microphone" aria-label="Mute microphone">
-              <span class="meCtrlBtn__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"></path>
-                  <path d="M5 10a7 7 0 0 0 14 0"></path>
-                  <path d="M12 17v3"></path>
-                  <path d="M9 20h6"></path>
-                </svg>
-              </span>
-              <span class="sr-only" id="btnHeaderMicSrOnly">Mute microphone</span>
-            </button>
-            <button id="btnHeaderDeafenToggle" class="btn ghost meCtrlBtn" type="button" title="Mute incoming audio" aria-label="Mute incoming audio">
-              <span class="meCtrlBtn__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M4 12a8 8 0 0 1 16 0"></path>
-                  <rect x="3" y="12" width="4" height="8" rx="2"></rect>
-                  <rect x="17" y="12" width="4" height="8" rx="2"></rect>
-                </svg>
-              </span>
-              <span class="sr-only" id="btnHeaderDeafenSrOnly">Mute incoming audio</span>
-            </button>
-            <button id="btnHeaderSettings" class="btn ghost meCtrlBtn" type="button" title="Open settings" aria-label="Open settings">
-              <span class="meCtrlBtn__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="3.2"></circle>
-                  <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.9 1.9 0 0 1 0 2.7 1.9 1.9 0 0 1-2.7 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9v.3a1.9 1.9 0 0 1-1.9 1.9 1.9 1.9 0 0 1-1.9-1.9v-.2a1 1 0 0 0-.7-1 1 1 0 0 0-1.1.2l-.1.1a1.9 1.9 0 0 1-2.7 0 1.9 1.9 0 0 1 0-2.7l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6h-.3A1.9 1.9 0 0 1 2 12.7a1.9 1.9 0 0 1 1.9-1.9h.2a1 1 0 0 0 1-.7 1 1 0 0 0-.2-1.1l-.1-.1a1.9 1.9 0 0 1 0-2.7 1.9 1.9 0 0 1 2.7 0l.1.1a1 1 0 0 0 1.1.2h.1a1 1 0 0 0 .6-.9v-.3A1.9 1.9 0 0 1 12.1 2a1.9 1.9 0 0 1 1.9 1.9v.2a1 1 0 0 0 .7 1 1 1 0 0 0 1.1-.2l.1-.1a1.9 1.9 0 0 1 2.7 0 1.9 1.9 0 0 1 0 2.7l-.1.1a1 1 0 0 0-.2 1.1v.1a1 1 0 0 0 .9.6h.3A1.9 1.9 0 0 1 22 12.1a1.9 1.9 0 0 1-1.9 1.9h-.2a1 1 0 0 0-1 .7z"></path>
-                </svg>
-              </span>
-              <span class="sr-only" id="btnHeaderSettingsSrOnly">Open settings</span>
-            </button>
+              <button id="meStatusBtn" class="statusPill" type="button">
+                <span class="dotMini" data-status-mini="online"></span>
+                <span id="meStatusLabel">online</span>
+              </button>
+            </div>
+
+            <div class="meControls" role="group" aria-label="Quick controls">
+              <button id="btnHeaderMicToggle" class="btn ghost meCtrlBtn" type="button" title="Mute microphone" aria-label="Mute microphone">
+                <span class="meCtrlBtn__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"></path>
+                    <path d="M5 10a7 7 0 0 0 14 0"></path>
+                    <path d="M12 17v3"></path>
+                    <path d="M9 20h6"></path>
+                  </svg>
+                </span>
+                <span class="sr-only" id="btnHeaderMicSrOnly">Mute microphone</span>
+              </button>
+              <button id="btnHeaderDeafenToggle" class="btn ghost meCtrlBtn" type="button" title="Mute incoming audio" aria-label="Mute incoming audio">
+                <span class="meCtrlBtn__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M4 12a8 8 0 0 1 16 0"></path>
+                    <rect x="3" y="12" width="4" height="8" rx="2"></rect>
+                    <rect x="17" y="12" width="4" height="8" rx="2"></rect>
+                  </svg>
+                </span>
+                <span class="sr-only" id="btnHeaderDeafenSrOnly">Mute incoming audio</span>
+              </button>
+              <button id="btnHeaderSettings" class="btn ghost meCtrlBtn" type="button" title="Open settings" aria-label="Open settings">
+                <span class="meCtrlBtn__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="3.2"></circle>
+                    <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.9 1.9 0 0 1 0 2.7 1.9 1.9 0 0 1-2.7 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9v.3a1.9 1.9 0 0 1-1.9 1.9 1.9 1.9 0 0 1-1.9-1.9v-.2a1 1 0 0 0-.7-1 1 1 0 0 0-1.1.2l-.1.1a1.9 1.9 0 0 1-2.7 0 1.9 1.9 0 0 1 0-2.7l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6h-.3A1.9 1.9 0 0 1 2 12.7a1.9 1.9 0 0 1 1.9-1.9h.2a1 1 0 0 0 1-.7 1 1 0 0 0-.2-1.1l-.1-.1a1.9 1.9 0 0 1 0-2.7 1.9 1.9 0 0 1 2.7 0l.1.1a1 1 0 0 0 1.1.2h.1a1 1 0 0 0 .6-.9v-.3A1.9 1.9 0 0 1 12.1 2a1.9 1.9 0 0 1 1.9 1.9v.2a1 1 0 0 0 .7 1 1 1 0 0 0 1.1-.2l.1-.1a1.9 1.9 0 0 1 2.7 0 1.9 1.9 0 0 1 0 2.7l-.1.1a1 1 0 0 0-.2 1.1v.1a1 1 0 0 0 .9.6h.3A1.9 1.9 0 0 1 22 12.1a1.9 1.9 0 0 1-1.9 1.9h-.2a1 1 0 0 0-1 .7z"></path>
+                  </svg>
+                </span>
+                <span class="sr-only" id="btnHeaderSettingsSrOnly">Open settings</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1759,79 +1763,266 @@
 
   <!-- SERVER SETTINGS MODAL -->
   <div id="serverSettingsModal" class="modal hidden" aria-hidden="true" data-close="1">
-    <div class="modalCard serverCreateCard serverSettingsCard" role="dialog" aria-modal="true" aria-labelledby="serverSettingsTitle">
-      <div class="modalTop serverCreateTop">
-        <div>
-          <div id="serverSettingsTitle" class="modalTitle">Server Settings</div>
-          <div id="serverSettingsSub" class="hint">Change server name, icon and roles.</div>
-        </div>
-        <button id="btnServerSettingsClose" class="btn ghost" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="serverCreateBody">
-        <div class="serverCreateIconRow">
-          <button id="serverSettingsIconPreview" class="serverCreateIconPreview" type="button" aria-label="Choose server icon">
+    <div class="modalCard serverSettingsCard" role="dialog" aria-modal="true" aria-labelledby="serverSettingsTitle">
+      <aside class="serverSettingsSidebar">
+        <div class="serverSettingsSidebarServer">
+          <div id="serverSettingsSidebarIcon" class="serverSettingsSidebarIcon">
             <span class="groupDmAvatarFallback">S</span>
-            <span class="serverCreateIconPlus" aria-hidden="true">+</span>
+          </div>
+          <div class="serverSettingsSidebarMeta">
+            <div id="serverSettingsSidebarName" class="serverSettingsSidebarName">Server</div>
+            <div class="serverSettingsSidebarTag">Server management</div>
+          </div>
+        </div>
+
+        <div class="serverSettingsSidebarSection">
+          <div class="serverSettingsGroupLabel">Overview</div>
+          <nav class="serverSettingsNav" aria-label="Server settings navigation">
+            <button class="serverSettingsNavItem is-active" type="button" data-server-settings-nav="profile" aria-current="page">
+              <span>Server Profile</span>
+            </button>
+            <button class="serverSettingsNavItem" type="button" data-server-settings-nav="roles">
+              <span>Roles</span>
+            </button>
+            <button class="serverSettingsNavItem" type="button" data-server-settings-nav="channels">
+              <span>Channels</span>
+              <small>soon</small>
+            </button>
+            <button class="serverSettingsNavItem" type="button" data-server-settings-nav="access">
+              <span>Permissions / Access</span>
+              <small>soon</small>
+            </button>
+          </nav>
+        </div>
+
+        <div class="serverSettingsSidebarSection">
+          <div class="serverSettingsGroupLabel">Community</div>
+          <nav class="serverSettingsNav" aria-label="Server community settings navigation">
+            <button class="serverSettingsNavItem" type="button" data-server-settings-nav="invites">
+              <span>Invites</span>
+              <small>soon</small>
+            </button>
+            <button class="serverSettingsNavItem" type="button" data-server-settings-nav="moderation">
+              <span>Moderation / Safety</span>
+              <small>soon</small>
+            </button>
+          </nav>
+        </div>
+
+        <div class="serverSettingsSidebarSection serverSettingsSidebarSection--danger">
+          <button class="serverSettingsNavItem serverSettingsNavItem--danger" type="button" data-server-settings-nav="danger">
+            <span>Danger Zone</span>
           </button>
-          <div class="serverCreateIconActions">
-            <button id="btnServerSettingsIconPick" class="btn ghost" type="button">Upload</button>
-            <button id="btnServerSettingsIconClear" class="btn ghost" type="button">Remove</button>
+        </div>
+      </aside>
+
+      <section class="serverSettingsMain">
+        <div class="serverSettingsMainTop">
+          <div>
+            <div id="serverSettingsTitle" class="serverSettingsTitle">Server Settings</div>
+            <div id="serverSettingsSub" class="serverSettingsSubtitle">Change server name, icon and roles.</div>
           </div>
-          <input id="serverSettingsIconFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+          <button id="btnServerSettingsClose" class="btn ghost serverSettingsCloseBtn" type="button" aria-label="Close server settings">&times;</button>
         </div>
 
-        <div class="field">
-          <label for="serverSettingsName">Server Name</label>
-          <input id="serverSettingsName" class="input" placeholder="Server name" maxlength="60" />
-        </div>
-
-        <div class="field">
-          <label for="serverSettingsWelcomeChannel">Welcome Channel</label>
-          <select id="serverSettingsWelcomeChannel" class="input">
-            <option value="">Loading channels...</option>
-          </select>
-          <div id="serverSettingsWelcomeHint" class="hint">Member join/leave messages are posted in this channel.</div>
-        </div>
-
-        <section class="serverSettingsRolesSection" aria-label="Server Roles">
-          <div class="serverSettingsRolesHead">
-            <div class="label">Roles</div>
-            <div class="hint">Create roles and assign members.</div>
-          </div>
-
-          <div class="serverSettingsRoleCreateRow">
-            <input id="serverSettingsRoleName" class="input" placeholder="New role name" maxlength="40" />
-            <input
-              id="serverSettingsRoleColor"
-              class="serverSettingsRoleColorInput"
-              type="color"
-              value="#5865f2"
-              aria-label="Role color"
-            />
-            <select id="serverSettingsRolePreset" class="input serverSettingsRolePresetSelect" aria-label="Role preset">
-              <option value="custom">Custom Permissions</option>
-              <option value="staff">STAFF Preset</option>
-            </select>
-            <button id="btnServerSettingsRoleCreate" class="btn ghost" type="button">Create Role</button>
-          </div>
-
-          <div id="serverSettingsRolesMeta" class="hint serverSettingsRolesMeta">Loading roles...</div>
-
-          <div class="serverSettingsRolesGrid">
-            <div id="serverSettingsRolesList" class="serverSettingsRolesList">
-              <div class="hint">Loading roles...</div>
+        <div class="serverCreateBody serverSettingsBody">
+          <div class="serverSettingsPanel is-active" data-server-settings-panel="profile">
+            <div class="serverSettingsPanelIntro">
+              <div>
+                <h2>Server Profile</h2>
+                <p>Control how this server appears in the sidebar, system messages, and invite context.</p>
+              </div>
             </div>
-            <div id="serverSettingsRoleMembers" class="serverSettingsRoleMembers">
-              <div class="hint">Select a role to manage members.</div>
+
+            <div class="serverSettingsProfileGrid">
+              <div class="serverSettingsSectionCard">
+                <div class="serverCreateIconRow serverSettingsIconRow">
+                  <button id="serverSettingsIconPreview" class="serverCreateIconPreview" type="button" aria-label="Choose server icon">
+                    <span class="groupDmAvatarFallback">S</span>
+                    <span class="serverCreateIconPlus" aria-hidden="true">+</span>
+                  </button>
+                  <div class="serverCreateIconActions">
+                    <div class="serverSettingsFieldLabel">Server Icon</div>
+                    <div class="serverSettingsFieldHint">Use a square image for the cleanest crop.</div>
+                    <div class="serverSettingsButtonRow">
+                      <button id="btnServerSettingsIconPick" class="btn ghost" type="button">Upload</button>
+                      <button id="btnServerSettingsIconClear" class="btn ghost" type="button">Remove</button>
+                    </div>
+                  </div>
+                  <input id="serverSettingsIconFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+                </div>
+
+                <div class="field">
+                  <label for="serverSettingsName">Server Name</label>
+                  <input id="serverSettingsName" class="input" placeholder="Server name" maxlength="60" />
+                </div>
+
+                <div class="field">
+                  <label for="serverSettingsWelcomeChannel">Welcome Channel</label>
+                  <select id="serverSettingsWelcomeChannel" class="input">
+                    <option value="">Loading channels...</option>
+                  </select>
+                  <div id="serverSettingsWelcomeHint" class="hint">Member join/leave messages are posted in this channel.</div>
+                </div>
+              </div>
+
+              <aside class="serverSettingsPreviewCard" aria-label="Server preview">
+                <div class="serverSettingsPreviewBanner"></div>
+                <div class="serverSettingsPreviewBody">
+                  <div id="serverSettingsPreviewIcon" class="serverSettingsPreviewIcon">
+                    <span class="groupDmAvatarFallback">S</span>
+                  </div>
+                  <div id="serverSettingsPreviewName" class="serverSettingsPreviewName">Server</div>
+                  <div class="serverSettingsPreviewMeta">ALTARA server preview</div>
+                  <div id="serverSettingsPreviewChannel" class="serverSettingsPreviewChannel">Welcome channel</div>
+                </div>
+              </aside>
             </div>
           </div>
-        </section>
+
+          <div class="serverSettingsPanel" data-server-settings-panel="roles">
+            <div class="serverSettingsPanelIntro">
+              <div>
+                <h2>Roles</h2>
+                <p>Create roles, tune permissions, and assign members without leaving server settings.</p>
+              </div>
+            </div>
+
+            <section class="serverSettingsRolesSection" aria-label="Server Roles">
+              <div class="serverSettingsRolesHead">
+                <div>
+                  <div class="label">Create Role</div>
+                  <div class="hint">Choose a name, color, and permission preset.</div>
+                </div>
+              </div>
+
+              <div class="serverSettingsRoleCreateRow">
+                <input id="serverSettingsRoleName" class="input" placeholder="New role name" maxlength="40" />
+                <input
+                  id="serverSettingsRoleColor"
+                  class="serverSettingsRoleColorInput"
+                  type="color"
+                  value="#d8b98f"
+                  aria-label="Role color"
+                />
+                <select id="serverSettingsRolePreset" class="input serverSettingsRolePresetSelect" aria-label="Role preset">
+                  <option value="custom">Custom Permissions</option>
+                  <option value="staff">STAFF Preset</option>
+                </select>
+                <button id="btnServerSettingsRoleCreate" class="btn ghost" type="button">Create Role</button>
+              </div>
+
+              <div id="serverSettingsRolesMeta" class="hint serverSettingsRolesMeta">Loading roles...</div>
+
+              <div class="serverSettingsRolesGrid">
+                <div id="serverSettingsRolesList" class="serverSettingsRolesList">
+                  <div class="hint">Loading roles...</div>
+                </div>
+                <div id="serverSettingsRoleMembers" class="serverSettingsRoleMembers">
+                  <div class="hint">Select a role to manage members.</div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="serverSettingsPanel" data-server-settings-panel="channels">
+            <div class="serverSettingsPlaceholder">
+              <h2>Channels</h2>
+              <p>Channel creation and editing remain available from the existing channel menus. This section is reserved for a fuller channel management surface.</p>
+            </div>
+          </div>
+
+          <div class="serverSettingsPanel" data-server-settings-panel="access">
+            <div class="serverSettingsPlaceholder">
+              <h2>Permissions / Access</h2>
+              <p>Access controls are currently managed through roles and existing channel settings. No new permission behavior has been added here.</p>
+            </div>
+          </div>
+
+          <div class="serverSettingsPanel" data-server-settings-panel="invites">
+            <div class="serverSettingsPlaceholder">
+              <h2>Invites</h2>
+              <p>Invite creation still uses the existing server invite flow. This section is prepared for future invite management.</p>
+            </div>
+          </div>
+
+          <div class="serverSettingsPanel" data-server-settings-panel="moderation">
+            <div class="serverSettingsPlaceholder">
+              <h2>Moderation / Safety</h2>
+              <p>Moderation tools are not changed by this redesign. Existing server permissions continue to apply.</p>
+            </div>
+          </div>
+
+          <div class="serverSettingsPanel" data-server-settings-panel="danger">
+            <div class="serverSettingsDangerLayout">
+              <div class="serverSettingsPanelIntro">
+                <div>
+                  <h2>Danger Zone</h2>
+                  <p>This is the only place where this server can be deleted.</p>
+                </div>
+              </div>
+
+              <section class="serverSettingsDangerNotice" aria-label="Server deletion rules">
+                <p>Only the server owner can delete this server.</p>
+                <p>Roles and permissions cannot grant access to this action.</p>
+                <p>Deleting a server removes it from ALTARA immediately. For safety, deleted server data is retained internally for 7 days before permanent deletion.</p>
+              </section>
+
+              <section class="serverSettingsDeleteBox" aria-labelledby="serverSettingsDeleteTitle">
+                <div class="serverSettingsDeleteCopy">
+                  <h3 id="serverSettingsDeleteTitle">Delete Server</h3>
+                  <p>Deleting this server removes access for all members immediately. Its data is retained internally for 7 days before permanent deletion.</p>
+                  <p id="serverSettingsDeleteOwnerNote" class="serverSettingsDangerOwnerNote">Checking owner access...</p>
+                </div>
+                <button id="btnServerSettingsDeleteServer" class="btn serverSettingsDangerButton" type="button" disabled>
+                  Delete Server
+                </button>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <div class="serverCreateFooter serverSettingsFooter">
+          <button id="btnServerSettingsCancel" class="btn ghost" type="button">Back</button>
+          <button id="btnServerSettingsSave" class="btn primary" type="button">Save</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="serverDeleteConfirmModal" class="modal hidden serverDeleteConfirmModal altaraConfirmDialog altaraConfirmDialog--destructive" aria-hidden="true" data-close-server-delete="1">
+    <div class="modalCard serverDeleteConfirmCard altaraConfirmDialog__card" role="dialog" aria-modal="true" aria-labelledby="serverDeleteConfirmTitle">
+      <div class="modalTop serverDeleteConfirmTop">
+        <div>
+          <div id="serverDeleteConfirmTitle" class="modalTitle">Delete Server</div>
+          <div class="hint">This destructive action is owner-only and cannot be granted by roles.</div>
+        </div>
+        <button id="btnServerDeleteConfirmClose" class="btn ghost" type="button" aria-label="Close">&times;</button>
       </div>
 
-      <div class="serverCreateFooter">
-        <button id="btnServerSettingsCancel" class="btn ghost" type="button">Back</button>
-        <button id="btnServerSettingsSave" class="btn primary" type="button">Save</button>
+      <div class="serverDeleteConfirmBody">
+        <div class="serverDeleteConfirmWarning">
+          <strong>This server will disappear immediately for all members.</strong>
+          <span>For safety, its data is retained internally for 7 days before permanent deletion.</span>
+        </div>
+
+        <div class="serverDeleteConfirmNameBlock">
+          <span>Server name</span>
+          <strong id="serverDeleteConfirmName">Server</strong>
+        </div>
+
+        <div class="field">
+          <label for="serverDeleteConfirmInput">Type the exact server name to confirm</label>
+          <input id="serverDeleteConfirmInput" class="input" autocomplete="off" spellcheck="false" />
+          <div id="serverDeleteConfirmHint" class="hint">Delete is disabled until the name matches exactly.</div>
+        </div>
+      </div>
+
+      <div class="serverDeleteConfirmFooter">
+        <button id="btnServerDeleteConfirmCancel" class="btn ghost" type="button">Cancel</button>
+        <button id="btnServerDeleteConfirmDelete" class="btn serverDeleteConfirmDanger" type="button" disabled>
+          Delete Server
+        </button>
       </div>
     </div>
   </div>
@@ -2150,7 +2341,10 @@
           <circle cx="13.5" cy="12" r="1.5"></circle>
         </svg>
       </span>
-      <div id="callBarText" class="callBarText">Em chamada...</div>
+      <div class="callBarCopy">
+        <div id="callBarText" class="callBarText">Em chamada...</div>
+        <div id="callBarSub" class="callBarSub" hidden>Canal de voz</div>
+      </div>
       <span id="callBarShareBadge" class="callBarShareBadge" hidden>Balanced • 1080p 60fps</span>
       <span id="callBarPing" class="callBarPing" hidden>-- ms</span>
     </div>
@@ -2199,6 +2393,16 @@
           <span class="sr-only">Camera options</span>
         </button>
       </div>
+      <button id="btnOpenCallSmall" class="btn ghost callMiniBtn callMiniBtn--view" type="button" title="Abrir chamada" aria-label="Abrir chamada">
+        <span class="callMiniBtn__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+            <path d="M8 11h8"></path>
+            <path d="M12 7v8"></path>
+          </svg>
+        </span>
+        <span class="sr-only">Abrir chamada</span>
+      </button>
       <button id="btnMicToggleSmall" class="btn ghost callMiniBtn" type="button" title="Silenciar microfone" aria-label="Silenciar microfone">
         <span class="callMiniBtn__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24">
@@ -2381,9 +2585,9 @@
     </div>
   </div>
 
-  <div id="appConfirmModal" class="modal hidden" aria-hidden="true">
+  <div id="appConfirmModal" class="modal hidden altaraConfirmDialog" aria-hidden="true">
     <div class="modal__backdrop" data-app-confirm-close="1"></div>
-    <div class="modalCard appConfirmModalCard" role="dialog" aria-modal="true" aria-labelledby="appConfirmTitle">
+    <div class="modalCard appConfirmModalCard altaraConfirmDialog__card" role="dialog" aria-modal="true" aria-labelledby="appConfirmTitle" aria-describedby="appConfirmMessage">
       <div class="modalTop">
         <div id="appConfirmTitle" class="modalTitle">Confirm action</div>
         <button id="btnAppConfirmClose" class="icon-btn" type="button" aria-label="Close">&times;</button>

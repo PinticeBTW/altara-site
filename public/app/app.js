@@ -973,7 +973,7 @@ function getDesktopInboxUnreadEntries() {
     })
     .filter(Boolean);
 
-  const serverEntries = (Array.isArray(state.servers) ? state.servers : [])
+  const serverEntries = filterDeletedServerRows(Array.isArray(state.servers) ? state.servers : [])
     .map((row) => {
       const serverId = normId(row?.serverId || row?.server_id || "");
       if (!serverId) return null;
@@ -3080,7 +3080,7 @@ const SERVER_ICON_MAX_BYTES = 8 * 1024 * 1024;
 const SERVER_ROLE_NAME_MAX_LEN = 40;
 const PROFILE_PRONOUNS_MAX_LEN = 40;
 const PROFILE_BIO_MAX_LEN = 280;
-const SERVER_ROLE_DEFAULT_COLOR = "#5865f2";
+const SERVER_ROLE_DEFAULT_COLOR = "#d8b98f";
 const CUSTOM_COLOR_SWATCHES = Object.freeze([
   "#f5f3e7",
   "#e5b8cf",
@@ -9562,6 +9562,28 @@ function stopRemoteVideoWatchdog() {
   resetRemoteVideoHealth();
 }
 
+function syncCallStageMediaAspectRatioFromVideo(videoEl = null, targetEl = null) {
+  if (!(videoEl instanceof HTMLVideoElement)) return false;
+  const width = Math.round(Number(videoEl.videoWidth || 0));
+  const height = Math.round(Number(videoEl.videoHeight || 0));
+  if (!(width > 0 && height > 0)) return false;
+  const ratio = width / height;
+  if (!Number.isFinite(ratio) || ratio < 0.35 || ratio > 4.5) return false;
+  const ratioValue = `${width} / ${height}`;
+  const heightFitWidthVh = `${Math.max(48, Math.min(180, ratio * 80)).toFixed(3)}vh`;
+  const targets = [];
+  if (targetEl instanceof HTMLElement) targets.push(targetEl);
+  if (targetEl?.classList?.contains?.("callStage")) {
+    const viewport = targetEl.querySelector?.(".callStageViewport");
+    if (viewport instanceof HTMLElement) targets.push(viewport);
+  }
+  targets.forEach((el) => {
+    el.style.setProperty("--call-stage-screenshare-aspect-ratio", ratioValue);
+    el.style.setProperty("--call-stage-screenshare-vh-width", heightFitWidthVh);
+  });
+  try { queueCallStageLayoutSync?.(); } catch (_) {}
+  return true;
+}
 function syncRemoteStageVideoVisibility() {
   const v = document.getElementById("callRemoteVideo");
   const stage = document.getElementById("callStage");
@@ -9580,6 +9602,10 @@ function syncRemoteStageVideoVisibility() {
     t.readyState === "live" && (focusMemberIsSelf || !t.muted)
   ));
   const hasDimensions = v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0;
+  const focusedTileType = normalizeStageTileType(stage?.getAttribute?.("data-focused-tile-type") || "");
+  if (focusedTileType === "screenshare" && hasDimensions) {
+    syncCallStageMediaAspectRatioFromVideo(v, stage);
+  }
   const hasPlaybackTime = Number(v.currentTime || 0) > 0.01;
   const hasFrames = !!(
     v.srcObject
@@ -10279,24 +10305,139 @@ function applyDmTitleNameStyle() {
   applyUserNameColorToEl(dmTitle, targetUserId, fallback);
 }
 
-function applyCallTileColorToEl(el, userId, fallbackColor = "") {
+function clearCallTileColorFromEl(el) {
   if (!el) return;
-  const color = resolveCallTileColor(userId, fallbackColor);
-  if (!color) {
-    el.style.removeProperty("--call-tile-bg-start");
-    el.style.removeProperty("--call-tile-bg-end");
-    el.style.removeProperty("--call-tile-bg-glow");
-    return;
-  }
-
-  const start = mixHex(color, "#131620", 0.46);
-  const end = mixHex(color, "#0d1018", 0.60);
-  const glow = rgbaFromHex(color, 0.20);
-  el.style.setProperty("--call-tile-bg-start", start);
-  el.style.setProperty("--call-tile-bg-end", end);
-  el.style.setProperty("--call-tile-bg-glow", glow);
+  el.classList?.remove?.("has-custom-call-bg");
+  el.removeAttribute?.("data-call-custom-bg");
+  el.style?.removeProperty?.("--participant-call-bg");
+  el.style?.removeProperty?.("--call-tile-bg-start");
+  el.style?.removeProperty?.("--call-tile-bg-end");
+  el.style?.removeProperty?.("--call-tile-bg-glow");
 }
 
+function applyCallTileColorToEl(el, userId, fallbackColor = "", options = {}) {
+  if (!el) return "";
+  const opts = options && typeof options === "object" && !Array.isArray(options) ? options : {};
+  const isTileColorSurface = !!(
+    el.classList?.contains?.("stageGridTile")
+    || el.classList?.contains?.("participantTile")
+    || el.classList?.contains?.("callStagePlaceholder")
+  );
+  if (!isTileColorSurface) {
+    clearCallTileColorFromEl(el);
+    return "";
+  }
+  const uid = normId(userId || "");
+  const profile = uid ? (getCachedProfile(uid) || null) : null;
+  const suppressPersonalColor = !!opts.suppressPersonalColor;
+  const profileColor = suppressPersonalColor ? "" : normalizeCallTileColor(profile?.call_tile_color);
+  const fallback = suppressPersonalColor ? "" : normalizeCallTileColor(fallbackColor);
+  const hasCustomColor = !!profileColor;
+  const color = profileColor || fallback;
+  const source = suppressPersonalColor
+    ? "screenshare_media_default"
+    : (profileColor ? "profile/custom" : (fallback ? "fallback" : "default"));
+
+  el.classList.toggle("has-custom-call-bg", hasCustomColor);
+  if (hasCustomColor) {
+    el.setAttribute("data-call-custom-bg", profileColor);
+    el.style.setProperty("--participant-call-bg", profileColor);
+    el.style.setProperty("--call-tile-bg-start", profileColor);
+    el.style.setProperty("--call-tile-bg-end", profileColor);
+    el.style.setProperty("--call-tile-bg-glow", "transparent");
+  } else {
+    el.removeAttribute("data-call-custom-bg");
+    el.style.removeProperty("--participant-call-bg");
+    if (!color) {
+      el.style.removeProperty("--call-tile-bg-start");
+      el.style.removeProperty("--call-tile-bg-end");
+      el.style.removeProperty("--call-tile-bg-glow");
+    } else {
+      const start = mixHex(color, "#131620", 0.46);
+      const end = mixHex(color, "#0d1018", 0.60);
+      const glow = rgbaFromHex(color, 0.20);
+      el.style.setProperty("--call-tile-bg-start", start);
+      el.style.setProperty("--call-tile-bg-end", end);
+      el.style.setProperty("--call-tile-bg-glow", glow);
+    }
+  }
+
+  if (isServerVoiceDebugLoggingEnabled()) {
+    const convId = normId(opts.conversationId || callConversationId || activeDmId || state.activeDm?.conversationId || "");
+    const isServerVoiceTile = !!(
+      convId
+      && isServerVoiceConversationById(convId)
+      && (
+        opts.forceServerVoiceLog
+        || el.closest?.("#callStage")
+        || el.id === "callStageViewport"
+        || el.classList?.contains?.("callStageViewport")
+        || el.classList?.contains?.("callStagePlaceholder")
+        || el.classList?.contains?.("stageGridTile")
+        || el.classList?.contains?.("participantTile")
+      )
+    );
+    if (isServerVoiceTile) {
+      const tileVariant = String(
+        opts.tileVariant
+        || el.getAttribute?.("data-call-tile-type")
+        || el.getAttribute?.("data-call-media-type")
+        || el.id
+        || "call_tile"
+      ).trim() || "call_tile";
+      logServerVoiceDebug("server_voice_tile_color_resolution", {
+        conversationId: convId,
+        participantUserId: uid || null,
+        participantUsername: String(profile?.username || profile?.display_name || el.getAttribute?.("data-call-user-label") || "").trim() || null,
+        resolvedCallTileColor: color || null,
+        source,
+        tileVariant,
+        elementId: el.id || null,
+        fallbackColor: fallback || null,
+        profileCallTileColor: profileColor || null,
+      });
+      const writeFinalLog = () => {
+        let computed = null;
+        let beforeStyle = null;
+        let afterStyle = null;
+        try { computed = window.getComputedStyle?.(el) || null; } catch (_) { computed = null; }
+        try { beforeStyle = window.getComputedStyle?.(el, "::before") || null; } catch (_) { beforeStyle = null; }
+        try { afterStyle = window.getComputedStyle?.(el, "::after") || null; } catch (_) { afterStyle = null; }
+        const beforeActive = !!(beforeStyle && beforeStyle.display !== "none" && beforeStyle.content && beforeStyle.content !== "none" && beforeStyle.content !== "normal");
+        const afterActive = !!(afterStyle && afterStyle.display !== "none" && afterStyle.content && afterStyle.content !== "none" && afterStyle.content !== "normal");
+        const tileStates = [];
+        try { if (el.matches?.(":hover")) tileStates.push("hover"); } catch (_) {}
+        if (el.classList?.contains?.("is-active")) tileStates.push("active");
+        if (el.classList?.contains?.("is-speaking")) tileStates.push("speaking");
+        if (el.classList?.contains?.("is-selected")) tileStates.push("selected");
+        if (el.classList?.contains?.("is-focused")) tileStates.push("focused");
+        if (el.classList?.contains?.("callStageViewport") || el.classList?.contains?.("callStagePlaceholder")) {
+          if (stageLayoutMode === "focus") tileStates.push("focused");
+        }
+        logServerVoiceDebug("server_voice_tile_color_final", {
+          conversationId: convId,
+          participantUserId: uid || null,
+          participantUsername: String(profile?.username || profile?.display_name || el.getAttribute?.("data-call-user-label") || "").trim() || null,
+          profileCallBackground: profileColor || null,
+          finalCssVariableValue: String(el.style.getPropertyValue("--participant-call-bg") || "").trim() || null,
+          computedBackgroundColor: computed?.backgroundColor || null,
+          computedBackgroundImage: computed?.backgroundImage || null,
+          computedFilter: computed?.filter || null,
+          tileState: tileStates.length ? tileStates.join("|") : "normal",
+          tileVariant,
+          hasCustomColor,
+          overlaysActive: beforeActive || afterActive,
+          beforeOverlayActive: beforeActive,
+          afterOverlayActive: afterActive,
+          source,
+        });
+      };
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(writeFinalLog);
+      else setTimeout(writeFinalLog, 0);
+    }
+  }
+  return color;
+}
 function hydrateCallPeerMeta() {
   if (!callOtherUserId) return;
   const f = (state.friends || []).find((x) => x.other_user_id === callOtherUserId);
@@ -18533,6 +18674,7 @@ function dockStageIntoDm(yes, { barInSidebar = false } = {}) {
   const stage = document.getElementById("callStage");
   const bar = document.getElementById("callBar");
   const dock = document.getElementById("dmCallDock");
+  const miniDockSlot = document.getElementById("voiceMiniDockSlot");
   const leftSidebar = document.querySelector(".panel.left");
   if (!stage || !bar) return;
 
@@ -18540,8 +18682,9 @@ function dockStageIntoDm(yes, { barInSidebar = false } = {}) {
   if (!callBarRootParent) callBarRootParent = bar.parentElement || document.body;
   if (!callBarSidebarParent) callBarSidebarParent = leftSidebar || null;
 
+  const sidebarBarParent = (barInSidebar && miniDockSlot) ? miniDockSlot : (callBarSidebarParent || leftSidebar || null);
   const shouldDockStageInDm = !!yes && !!dock;
-  const shouldDockBarInSidebar = (!!barInSidebar || !shouldDockStageInDm) && !!callBarSidebarParent;
+  const shouldDockBarInSidebar = (!!barInSidebar || !shouldDockStageInDm) && !!sidebarBarParent;
   const shouldDockBarInDm = shouldDockStageInDm && !shouldDockBarInSidebar;
   stage.classList.toggle("is-docked-in-dm", shouldDockStageInDm);
   bar.classList.toggle("is-docked-in-dm", shouldDockBarInDm);
@@ -18558,7 +18701,7 @@ function dockStageIntoDm(yes, { barInSidebar = false } = {}) {
     return;
   }
   if (shouldDockBarInSidebar) {
-    if (bar.parentElement !== callBarSidebarParent) callBarSidebarParent.appendChild(bar);
+    if (bar.parentElement !== sidebarBarParent) sidebarBarParent.appendChild(bar);
     return;
   }
   if (bar.parentElement !== callBarRootParent) callBarRootParent.appendChild(bar);
@@ -18597,7 +18740,15 @@ function setMidMode(mode) {
     dockStageIntoDm(true);
     updateDmJumpLatestButton(document.getElementById("dmMessages"));
   } else {
+    const leavingServerVoiceCallView = !!(
+      dmMain.classList.contains("is-server-voice-call-layout")
+      || midPanel?.classList?.contains?.("is-server-voice-call-layout")
+    );
     stageOpen = false;
+    if (leavingServerVoiceCallView) {
+      syncCallStageLayoutState(false);
+      clearServerVoiceCallViewVisualState({ hideStage: true });
+    }
     midPanel?.classList.remove("is-dm-conversation-open");
     dmMain.style.display = "none";
     midBody?.classList.remove("is-dm-open");
@@ -18612,6 +18763,9 @@ function setMidMode(mode) {
 
     // fora da DM, volta ao normal
     dockStageIntoDm(false);
+    if (leavingServerVoiceCallView) {
+      clearServerVoiceCallViewVisualState({ hideStage: true });
+    }
     setDmJumpLatestVisible(false);
     setRightSidebarInteractionModeForConversation({
       serverMode: false,
@@ -18714,8 +18868,12 @@ function normalizeGroupDmRow(row = {}) {
 
 function normalizeServerRow(row = {}) {
   const serverId = normId(row?.server_id || row?.id);
+  if (!serverId || isServerRowDeleted(row) || isServerDeletedLocally(serverId)) {
+    if (serverId && isServerRowDeleted(row)) markServerDeletedLocally(serverId, { persist: true });
+    return null;
+  }
   const defaultConversationId = normId(row?.default_conversation_id || row?.conversation_id);
-  if (!serverId || !defaultConversationId) return null;
+  if (!defaultConversationId) return null;
   const name = normalizeConversationLabel(row?.name, "Server");
   const iconUrl = sanitizeServerIconUrl(row?.icon_url || "");
   const welcomeConversationId = normId(
@@ -18723,7 +18881,7 @@ function normalizeServerRow(row = {}) {
     || row?.welcome_conversation_id
     || ""
   );
-  const ownerUserId = normId(row?.owner_user_id || "");
+  const ownerUserId = normId(row?.owner_user_id || row?.owner_id || row?.created_by || "");
   const memberCountRaw = Number(row?.member_count);
   const memberCount = Number.isFinite(memberCountRaw) && memberCountRaw > 0 ? Math.round(memberCountRaw) : 1;
   return {
@@ -19309,7 +19467,17 @@ async function loadGroupAndServerCollections({ force = false, hydrateGroupMetada
     const { data: serversData, error: serversError } = serversRes || {};
     if (!serversError) {
       serverRpcAvailable = true;
-      nextServers = (serversData || []).map(normalizeServerRow).filter(Boolean);
+      const rawServerRows = Array.isArray(serversData) ? serversData : [];
+      const hiddenReturnedServerIds = rawServerRows
+        .map((row) => getServerRowId(row))
+        .filter((sid) => !!sid && isServerDeletedLocally(sid));
+      if (hiddenReturnedServerIds.length) {
+        logServerDeleteUiCleanup({
+          event: "list_my_servers_returned_locally_deleted_server",
+          returnedDeletedServerIds: Array.from(new Set(hiddenReturnedServerIds)),
+        });
+      }
+      nextServers = filterDeletedServerRows(rawServerRows).map(normalizeServerRow).filter(Boolean);
     } else if (isMissingRpcError(serversError)) {
       serverRpcAvailable = false;
     } else {
@@ -19829,6 +19997,10 @@ function renderGroupsRail() {
     const openFromOrb = async () => {
       const fallbackConvId = normId(btn.getAttribute("data-open-group-conversation"));
       const serverId = normId(btn.getAttribute("data-open-group-server-id"));
+      if (serverId && isServerDeletedLocally(serverId)) {
+        applyServerDeletionLocally(serverId, { source: "rail_open_guard" });
+        return;
+      }
       const convId = await resolveServerConversationForEntry(serverId, fallbackConvId);
       if (!convId) return;
       const convMeta = getConversationMeta(convId) || {};
@@ -19855,7 +20027,7 @@ function renderGroupsRail() {
     });
     btn.addEventListener("contextmenu", (e) => {
       const sid = normId(btn.getAttribute("data-open-group-server-id") || "");
-      if (!sid) return;
+      if (!sid || isServerDeletedLocally(sid)) return;
       e.preventDefault();
       openServerPanelMenuAt({
         serverId: sid,
@@ -20552,8 +20724,8 @@ async function uploadServerIconFile(file, { serverId = "" } = {}) {
 
 function getServerRowById(serverId = "") {
   const sid = normId(serverId);
-  if (!sid) return null;
-  return (state.servers || []).find((row) => normId(row?.serverId || "") === sid) || null;
+  if (!sid || isServerDeletedLocally(sid)) return null;
+  return (state.servers || []).find((row) => normId(row?.serverId || "") === sid && !isServerDeletedLocally(row?.serverId || "")) || null;
 }
 
 async function readServerWelcomeChannelFromTable(serverId = "") {
@@ -20837,6 +21009,7 @@ async function renderServerSettingsWelcomeChannelOptions(serverId = "") {
     selectEl.innerHTML = `<option value="">No text channels available</option>`;
     selectEl.disabled = true;
     if (hintEl) hintEl.textContent = "Create a text channel first to enable welcome logs.";
+    renderServerSettingsProfilePreview();
     return;
   }
 
@@ -20865,6 +21038,7 @@ async function renderServerSettingsWelcomeChannelOptions(serverId = "") {
 
   selectEl.disabled = false;
   if (hintEl) hintEl.textContent = "If empty, welcome logs use the default chat created by the server.";
+  renderServerSettingsProfilePreview();
 }
 
 function getServerMyRole(serverId = "") {
@@ -20877,6 +21051,15 @@ function getServerMyRole(serverId = "") {
   return String(meRow?.role || "").trim().toLowerCase();
 }
 
+function isServerActualOwner(serverId = "") {
+  const sid = normId(serverId);
+  const meId = normId(state.user?.id || "");
+  if (!sid || !meId) return false;
+  const row = getServerRowById(sid);
+  const ownerUserId = normId(row?.ownerUserId || "");
+  return !!(ownerUserId && ownerUserId === meId);
+}
+
 function getServerCapabilityMeta(serverId = "") {
   const sid = normId(serverId);
   const meId = normId(state.user?.id || "");
@@ -20884,16 +21067,18 @@ function getServerCapabilityMeta(serverId = "") {
   const ownerUserId = normId(row?.ownerUserId || "");
   const role = getServerMyRole(sid);
   const isMember = !!(sid && row);
-  const isOwner = !!(meId && ((ownerUserId && ownerUserId === meId) || role === "owner"));
+  const isActualOwner = !!(meId && ownerUserId && ownerUserId === meId);
+  const isOwner = !!(meId && (isActualOwner || role === "owner"));
   const isAdmin = role === "admin" || isOwner;
   return {
     isMember,
     isOwner,
+    isActualOwner,
     isAdmin,
     canInvite: isAdmin || isOwner,
     canSettings: isAdmin || isOwner,
     canLeave: isMember && !isOwner,
-    canDelete: isOwner,
+    canDelete: isActualOwner,
   };
 }
 
@@ -21874,16 +22059,42 @@ async function updateServerProfileRpc(serverId, { name = "", iconUrl = "" } = {}
   return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
 }
 
-async function deleteServerRpc(serverId) {
+async function requestDeleteServerRpc(serverId, confirmationName = "") {
   const sid = normId(serverId);
+  const name = String(confirmationName ?? "");
   if (!sid) return { data: null, error: { message: "server_id invalido" } };
   const payloads = [
-    { p_server_id: sid },
-    { server_id: sid },
+    { p_server_id: sid, p_confirmation_name: name },
+    { server_id: sid, confirmation_name: name },
   ];
   let lastMissingErr = null;
   for (const payload of payloads) {
-    const res = await supabase.rpc("delete_server_safe", payload);
+    const res = await supabase.rpc("request_delete_server", payload);
+    if (!res?.error) return res;
+    if (!isMissingRpcError(res.error)) return res;
+    lastMissingErr = res.error;
+  }
+  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
+}
+
+async function deleteServerRpc() {
+  return {
+    data: null,
+    error: { message: "Server deletion must be requested from Server Settings > Danger Zone." },
+  };
+}
+
+async function softDeleteMessageRpc(messageId, conversationId) {
+  const mid = normId(messageId);
+  const convId = normId(conversationId);
+  if (!mid || !convId) return { data: null, error: { message: "mensagem invalida" } };
+  const payloads = [
+    { p_message_id: mid, p_conversation_id: convId },
+    { message_id: mid, conversation_id: convId },
+  ];
+  let lastMissingErr = null;
+  for (const payload of payloads) {
+    const res = await supabase.rpc("soft_delete_message", payload);
     if (!res?.error) return res;
     if (!isMissingRpcError(res.error)) return res;
     lastMissingErr = res.error;
@@ -24367,7 +24578,8 @@ function ensureServerPanelMenu() {
       return;
     }
     if (action === "delete") {
-      await deleteServerById(sid, { serverName });
+      await openServerSettingsModal({ serverId: sid, name: serverName, iconUrl });
+      setServerSettingsActivePanel("danger");
       return;
     }
     if (action === "copy_server_id") {
@@ -24441,14 +24653,13 @@ function openServerPanelMenuAt(serverCtx, point, {
     `<button class="msgMenu__item${caps.canSettings ? "" : " is-disabled"}" data-server-panel-act="settings" data-server-panel-id="${escAttr(sid)}" data-server-panel-name="${escAttr(serverName)}" data-server-panel-icon="${escAttr(iconUrl)}" ${caps.canSettings ? "" : "disabled"}><span>Server Settings</span></button>`,
     `<div class="msgMenu__divider"></div>`,
     `<button class="msgMenu__item msgMenu__item--danger${caps.canLeave ? "" : " is-disabled"}" data-server-panel-act="leave" data-server-panel-id="${escAttr(sid)}" data-server-panel-name="${escAttr(serverName)}" ${caps.canLeave ? "" : "disabled"}><span>Leave Server</span></button>`,
-    `<button class="msgMenu__item msgMenu__item--danger${caps.canDelete ? "" : " is-disabled"}" data-server-panel-act="delete" data-server-panel-id="${escAttr(sid)}" data-server-panel-name="${escAttr(serverName)}" ${caps.canDelete ? "" : "disabled"}><span>Delete Server</span></button>`,
     `<div class="msgMenu__divider"></div>`,
     `<button class="msgMenu__item" data-server-panel-act="copy_server_id" data-server-panel-id="${escAttr(sid)}"><span>Copy Server ID</span><span class="msgMenu__kbd">ID</span></button>`,
   ].join("");
 
   menu.classList.add("is-open");
   serverPanelMenuTargetServerId = sid;
-  positionMenuAtPoint(menu, point, { width: 240, minHeight: 206 });
+  positionMenuAtPoint(menu, point, { width: 240, minHeight: 172 });
 }
 
 function closeServerFolderMenu() {
@@ -26340,12 +26551,356 @@ async function submitServerSettingsRoleMemberToggle(roleId, userId, enabled) {
   renderServerSettingsRolesUi();
 }
 
+function renderServerSettingsProfilePreview() {
+  const nameInput = document.getElementById("serverSettingsName");
+  const selectEl = document.getElementById("serverSettingsWelcomeChannel");
+  const sidebarName = document.getElementById("serverSettingsSidebarName");
+  const sidebarIcon = document.getElementById("serverSettingsSidebarIcon");
+  const previewIcon = document.getElementById("serverSettingsPreviewIcon");
+  const previewName = document.getElementById("serverSettingsPreviewName");
+  const previewChannel = document.getElementById("serverSettingsPreviewChannel");
+  const label = normalizeConversationLabel(String(nameInput?.value || serverSettingsName || "").trim(), "Server");
+  const effectiveIcon = serverSettingsIconPreviewUrl || (serverSettingsIconRemoved ? "" : serverSettingsIconUrl);
+  const initial = getGroupOrbFallbackChar(label, "S");
+  const iconHtml = effectiveIcon
+    ? `<img src="${esc(effectiveIcon)}" alt="${escAttr(label || "Server icon")}" />`
+    : `<span class="groupDmAvatarFallback">${esc(initial)}</span>`;
+  const selectedChannelText = String(selectEl?.selectedOptions?.[0]?.textContent || "").replace(/\s+/g, " ").trim();
+
+  if (sidebarName) sidebarName.textContent = label;
+  if (previewName) previewName.textContent = label;
+  if (sidebarIcon) sidebarIcon.innerHTML = iconHtml;
+  if (previewIcon) previewIcon.innerHTML = iconHtml;
+  if (previewChannel) previewChannel.textContent = selectedChannelText ? `Welcome: ${selectedChannelText}` : "Welcome channel";
+}
+
+function setServerSettingsActivePanel(panelName = "profile") {
+  const modal = document.getElementById("serverSettingsModal");
+  if (!modal) return;
+  const panels = Array.from(modal.querySelectorAll("[data-server-settings-panel]"));
+  const wanted = String(panelName || "profile").trim().toLowerCase();
+  const resolved = panels.some((panel) => String(panel.getAttribute("data-server-settings-panel") || "") === wanted)
+    ? wanted
+    : "profile";
+
+  panels.forEach((panel) => {
+    panel.classList.toggle("is-active", String(panel.getAttribute("data-server-settings-panel") || "") === resolved);
+  });
+  modal.querySelectorAll("[data-server-settings-nav]").forEach((btn) => {
+    const isActive = String(btn.getAttribute("data-server-settings-nav") || "") === resolved;
+    btn.classList.toggle("is-active", isActive);
+    if (isActive) btn.setAttribute("aria-current", "page");
+    else btn.removeAttribute("aria-current");
+  });
+  if (resolved === "danger") renderServerSettingsDangerZone();
+}
+
+function getServerDeleteConfirmationName(serverId = "", fallbackName = "") {
+  const sid = normId(serverId || serverSettingsServerId || "");
+  const row = getServerRowById(sid);
+  return String(row?.name || fallbackName || serverSettingsName || "Server").trim() || "Server";
+}
+
+function renderServerSettingsDangerZone() {
+  const sid = normId(serverSettingsServerId || "");
+  const btn = document.getElementById("btnServerSettingsDeleteServer");
+  const note = document.getElementById("serverSettingsDeleteOwnerNote");
+  const caps = getServerCapabilityMeta(sid);
+  const canDelete = !!(sid && caps.canDelete);
+  if (btn) {
+    btn.disabled = !canDelete;
+    btn.title = canDelete
+      ? "Delete this server after exact-name confirmation."
+      : "Only the real server owner can delete this server.";
+  }
+  if (note) {
+    note.classList.toggle("is-blocked", !canDelete);
+    note.textContent = canDelete
+      ? "You are the server owner. Deletion removes the server immediately for members and retains data internally for 7 days."
+      : "Only the real server owner can delete this server. Admin roles and custom permissions do not grant access.";
+  }
+}
+
+function closeServerDeleteConfirmModal() {
+  const modal = document.getElementById("serverDeleteConfirmModal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  serverDeleteConfirmServerId = "";
+  serverDeleteConfirmServerName = "";
+  serverDeleteConfirmSubmitting = false;
+  const input = document.getElementById("serverDeleteConfirmInput");
+  if (input) input.value = "";
+  updateServerDeleteConfirmState();
+}
+
+function updateServerDeleteConfirmState() {
+  const input = document.getElementById("serverDeleteConfirmInput");
+  const btn = document.getElementById("btnServerDeleteConfirmDelete");
+  const hint = document.getElementById("serverDeleteConfirmHint");
+  const typed = String(input?.value || "");
+  const matches = !!serverDeleteConfirmServerName && typed === serverDeleteConfirmServerName;
+  const canSubmit = !!serverDeleteConfirmServerId && matches && !serverDeleteConfirmSubmitting;
+  if (btn) btn.disabled = !canSubmit;
+  if (hint) {
+    hint.textContent = matches
+      ? "Name matches exactly. This will delete the server immediately for members."
+      : "Delete is disabled until the name matches exactly.";
+  }
+}
+
+function openServerDeleteConfirmModal(serverId = "", { serverName = "" } = {}) {
+  const sid = normId(serverId || serverSettingsServerId || "");
+  if (!sid) return;
+  const caps = getServerCapabilityMeta(sid);
+  if (!caps.canDelete) {
+    void requestAppAlert("Only the real server owner can delete this server. Roles and permissions cannot grant this action.", {
+      title: "Danger Zone",
+      okText: "OK",
+    });
+    return;
+  }
+  const modal = document.getElementById("serverDeleteConfirmModal");
+  const input = document.getElementById("serverDeleteConfirmInput");
+  const nameEl = document.getElementById("serverDeleteConfirmName");
+  if (!modal || !input || !nameEl) return;
+  const exactName = getServerDeleteConfirmationName(sid, serverName);
+  serverDeleteConfirmServerId = sid;
+  serverDeleteConfirmServerName = exactName;
+  serverDeleteConfirmSubmitting = false;
+  nameEl.textContent = exactName;
+  input.value = "";
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  updateServerDeleteConfirmState();
+  requestAnimationFrame(() => {
+    try { input.focus(); } catch (_) {}
+  });
+}
+
+function applyServerDeletionLocally(serverId = "", { source = "client" } = {}) {
+  const sid = normId(serverId);
+  if (!sid) return;
+  ensureDeletedServersLoaded();
+
+  const previousSelectedServerId = normId(state.activeDm?.serverId || "");
+  const previousSelectedChannelId = normId(activeDmId || state.activeDm?.conversationId || "");
+  const serversBefore = (state.servers || []).map((row) => normId(row?.serverId || "")).filter(Boolean);
+  const serverRow = (state.servers || []).find((row) => normId(row?.serverId || "") === sid) || null;
+  const relatedConversationIds = new Set();
+  const defaultConvId = normId(serverRow?.defaultConversationId || "");
+  if (defaultConvId) relatedConversationIds.add(defaultConvId);
+  (serverChannelListByServerId.get(sid) || []).forEach((ch) => {
+    const convId = normId(ch?.conversationId || "");
+    if (convId) relatedConversationIds.add(convId);
+  });
+  for (const [convIdRaw, metaRaw] of dmConversationMetaById.entries()) {
+    const convId = normId(convIdRaw);
+    const metaServerId = normId(metaRaw?.serverId || metaRaw?.server_id || "");
+    if (metaServerId === sid && convId) relatedConversationIds.add(convId);
+  }
+
+  markServerDeletedLocally(sid, { persist: true });
+  invalidateGroupAndServerCollectionsCache({ resetGroupMetadata: false });
+  closeServerPanelMenu();
+  closeServerFolderMenu();
+  closeServerChannelItemMenu();
+  closeServerVoiceMemberMenu({ force: true });
+  if (normId(serverSettingsServerId || "") === sid) closeServerSettingsModal();
+
+  forgetServerLastChannel(sid, { persist: true });
+  state.servers = filterDeletedServerRows(Array.isArray(state.servers) ? state.servers : []);
+  serverChannelListByServerId.delete(sid);
+  serverChannelCategoryListByServerId.delete(sid);
+  serverChannelCategoryCollapsedByServerId.delete(sid);
+  serverMemberListByServerId.delete(sid);
+  serverMembersSearchByServerId.delete(sid);
+  serverRoleListByServerId.delete(sid);
+  serverRoleMemberMapByServerId.delete(sid);
+  serverUnreadSenderByServerId.delete(sid);
+  serverHideMutedChannelsByServerId.delete(sid);
+  serverMutedByServerId.delete(sid);
+  serverNotificationModeByServerId.delete(sid);
+
+  relatedConversationIds.forEach((convId) => {
+    dmConversationMetaById.delete(convId);
+    serverConversationMemberIdsByConversationId.delete(convId);
+    serverVoicePresenceByConversation.delete(convId);
+    serverVoicePresenceProbeAtByConversation.delete(convId);
+    serverVoiceLastVisibleMembersByConversation.delete(convId);
+    serverVoiceLastChannelOccupantsByConversation.delete(convId);
+    serverVoiceUiVisibilityByConversation.delete(convId);
+    serverVoiceUiForcedRemovedByConversation.delete(convId);
+    serverVoiceUiPreserveRemoteAfterLocalLeaveByConversation.delete(convId);
+  });
+
+  const validServerIds = new Set((state.servers || []).map((row) => normId(row?.serverId || "")).filter(Boolean));
+  pruneServerHideMutedChannels(validServerIds);
+  pruneServerMuted(validServerIds);
+  pruneServerNotificationModes(validServerIds);
+  pruneRememberedServerLastChannels(validServerIds);
+  syncServerOrbOrderWithServers(state.servers || [], { persist: true });
+
+  const wasActiveServer = previousSelectedServerId === sid
+    || relatedConversationIds.has(previousSelectedChannelId)
+    || normId(state.activeDm?.serverId || "") === sid;
+  if (wasActiveServer) {
+    activeDmId = null;
+    state.activeDm = null;
+    dmMessagesCache = [];
+    dmMessageIds = new Set();
+  }
+
+  setRightSidebarToServerMembers({ active: false });
+  syncDmActiveListHighlight();
+  navigateToHomeView({ captureHistory: true });
+  renderGroupsRail();
+  scheduleCallRealtimeSubscriptionSync(0);
+
+  logServerDeleteUiCleanup({
+    event: "local_cleanup",
+    source,
+    deletedServerId: sid,
+    previousSelectedServerId,
+    previousSelectedChannelId,
+    relatedConversationIds: Array.from(relatedConversationIds),
+    serversBefore,
+    serversAfter: (state.servers || []).map((row) => normId(row?.serverId || "")).filter(Boolean),
+    localStorageKeysTouched: [
+      getDeletedServersStorageKey(),
+      getServerLastChannelStorageKey(),
+      getServerOrbOrderStorageKey(),
+      getServerOrbFoldersStorageKey(),
+      getServerHideMutedChannelsStorageKey(),
+      getServerMutedStorageKey(),
+      getServerNotificationModeStorageKey(),
+    ],
+  });
+}
+function getServerDeleteErrorKind(error = null) {
+  const msg = String(error?.message || error || "").trim().toLowerCase();
+  if (!msg) return "unknown";
+  if (msg.includes("ja esta agendado") || msg.includes("already deleted") || (msg.includes("already") && msg.includes("delete"))) return "already_deleted";
+  if (msg.includes("server nao encontrado") || msg.includes("server not found") || msg.includes("not found")) return "not_found";
+  if (msg.includes("so o dono real") || msg.includes("only the server owner") || (msg.includes("owner") && msg.includes("delete"))) return "not_owner";
+  if (msg.includes("nome do server nao corresponde") || msg.includes("server name does not match") || (msg.includes("name") && msg.includes("match"))) return "name_mismatch";
+  return "unknown";
+}
+
+async function resolveDeletedServerUiState(serverId = "", {
+  message = "Server deleted.",
+  title = "Danger Zone",
+} = {}) {
+  const sid = normId(serverId);
+  closeServerDeleteConfirmModal();
+  closeServerSettingsModal();
+  applyServerDeletionLocally(sid, { source: "delete_rpc" });
+  await loadGroupAndServerCollections({ force: true, hydrateGroupMetadata: true }).catch(() => {});
+  const refetchedServerIds = (state.servers || []).map((row) => normId(row?.serverId || "")).filter(Boolean);
+  logServerDeleteUiCleanup({
+    event: "post_refetch",
+    deletedServerId: sid,
+    listMyServersRefetchResult: refetchedServerIds,
+    deletedServerStillPresentAfterRefetch: refetchedServerIds.includes(sid),
+  });
+  renderGroupsRail();
+  await requestAppAlert(message, {
+    title,
+    okText: "OK",
+  });
+}
+async function submitServerDeleteConfirm() {
+  if (serverDeleteConfirmSubmitting) return;
+  const sid = normId(serverDeleteConfirmServerId || "");
+  const expectedName = String(serverDeleteConfirmServerName || "");
+  const input = document.getElementById("serverDeleteConfirmInput");
+  const btn = document.getElementById("btnServerDeleteConfirmDelete");
+  const typed = String(input?.value || "");
+  if (!sid || !expectedName || typed !== expectedName) {
+    updateServerDeleteConfirmState();
+    return;
+  }
+  if (!getServerCapabilityMeta(sid).canDelete) {
+    await requestAppAlert("Only the real server owner can delete this server.", {
+      title: "Danger Zone",
+      okText: "OK",
+    });
+    closeServerDeleteConfirmModal();
+    renderServerSettingsDangerZone();
+    return;
+  }
+
+  serverDeleteConfirmSubmitting = true;
+  const previousText = btn?.textContent || "Delete Server";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Deleting...";
+  }
+  try {
+    const { error } = await requestDeleteServerRpc(sid, expectedName);
+    if (error) {
+      if (isMissingRpcError(error)) {
+        await requestAppAlert("Falta SQL no Supabase: executa os patches de server soft-delete.", {
+          title: "Danger Zone",
+          okText: "OK",
+        });
+        return;
+      }
+
+      const kind = getServerDeleteErrorKind(error);
+      if (kind === "already_deleted") {
+        await resolveDeletedServerUiState(sid, { message: "Server already deleted." });
+        return;
+      }
+      if (kind === "not_found") {
+        await resolveDeletedServerUiState(sid, { message: "Server not found." });
+        return;
+      }
+      if (kind === "not_owner") {
+        await requestAppAlert("Only the server owner can delete this server.", {
+          title: "Danger Zone",
+          okText: "OK",
+        });
+        closeServerDeleteConfirmModal();
+        renderServerSettingsDangerZone();
+        return;
+      }
+      if (kind === "name_mismatch") {
+        await requestAppAlert("Server name does not match.", {
+          title: "Danger Zone",
+          okText: "OK",
+        });
+        try { input?.focus(); input?.select(); } catch (_) {}
+        updateServerDeleteConfirmState();
+        return;
+      }
+
+      await requestAppAlert("Could not delete server. Please try again.", {
+        title: "Danger Zone",
+        okText: "OK",
+      });
+      return;
+    }
+
+    await resolveDeletedServerUiState(sid, {
+      message: "Server deleted. Recoverable internally for 7 days.",
+    });
+  } finally {
+    serverDeleteConfirmSubmitting = false;
+    if (btn) {
+      btn.textContent = previousText;
+      updateServerDeleteConfirmState();
+    }
+  }
+}
+
 function renderServerSettingsIconPreview() {
   const previewBtn = document.getElementById("serverSettingsIconPreview");
   const nameInput = document.getElementById("serverSettingsName");
   const label = normalizeConversationLabel(String(nameInput?.value || "").trim(), "Server");
   const effectiveIcon = serverSettingsIconPreviewUrl || (serverSettingsIconRemoved ? "" : serverSettingsIconUrl);
   setServerCreateIconPreviewButton(previewBtn, { iconUrl: effectiveIcon, label });
+  renderServerSettingsProfilePreview();
 }
 
 function closeServerSettingsModal() {
@@ -26398,6 +26953,8 @@ async function openServerSettingsModal(serverCtx = null) {
   subEl.textContent = `Editing ${serverName}.`;
   renderServerSettingsIconPreview();
   renderServerSettingsRolesUi();
+  renderServerSettingsDangerZone();
+  setServerSettingsActivePanel("profile");
 
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
@@ -26593,48 +27150,9 @@ async function deleteServerChannelCategoryById(serverId, {
 async function deleteServerById(serverId, { serverName = "Server" } = {}) {
   const sid = normId(serverId);
   if (!sid) return;
-  const caps = getServerCapabilityMeta(sid);
-  if (!caps.canDelete) {
-    alert("So o dono do server pode apagar.");
-    return;
-  }
-
-  const safeName = normalizeConversationLabel(serverName, "Server");
-  const ok = await requestAppConfirm(`Apagar o server "${safeName}"?\n\nIsto remove canais e mensagens desse server.`, {
-    title: "Server Settings",
-    okText: t("dialog.confirm.ok", "Confirm"),
-    cancelText: t("dialog.confirm.cancel", "Cancel"),
-    danger: true,
-  });
-  if (!ok) return;
-
-  const { error } = await deleteServerRpc(sid);
-  if (error) {
-    if (isMissingRpcError(error)) {
-      alert("Falta SQL no Supabase: executa SQL/SUPABASE_PATCH_SERVER_MANAGEMENT.sql");
-      return;
-    }
-    alert(`Erro ao apagar server: ${error.message}`);
-    return;
-  }
-
-  const wasActiveServer = normId(state.activeDm?.serverId || "") === sid;
-  forgetServerLastChannel(sid, { persist: true });
-  serverChannelListByServerId.delete(sid);
-  serverChannelCategoryListByServerId.delete(sid);
-  serverChannelCategoryCollapsedByServerId.delete(sid);
-  serverMemberListByServerId.delete(sid);
-  serverRoleListByServerId.delete(sid);
-  serverRoleMemberMapByServerId.delete(sid);
-  await refresh();
-
-  if (wasActiveServer) {
-    activeDmId = null;
-    setMidMode("friends");
-    syncDmActiveListHighlight();
-    renderGroupsRail();
-    setRightSidebarToServerMembers({ active: false });
-  }
+  await openServerSettingsModal({ serverId: sid, name: serverName, iconUrl: getServerRowById(sid)?.iconUrl || "" });
+  setServerSettingsActivePanel("danger");
+  openServerDeleteConfirmModal(sid, { serverName });
 }
 
 async function leaveServerById(serverId, { serverName = "Server" } = {}) {
@@ -26858,14 +27376,44 @@ function bindServerSettingsModalOnce() {
   const btnRoleCreate = document.getElementById("btnServerSettingsRoleCreate");
   const roleList = document.getElementById("serverSettingsRolesList");
   const roleMembers = document.getElementById("serverSettingsRoleMembers");
+  const btnDangerDelete = document.getElementById("btnServerSettingsDeleteServer");
+  const deleteModal = document.getElementById("serverDeleteConfirmModal");
+  const deleteInput = document.getElementById("serverDeleteConfirmInput");
+  const btnDeleteClose = document.getElementById("btnServerDeleteConfirmClose");
+  const btnDeleteCancel = document.getElementById("btnServerDeleteConfirmCancel");
+  const btnDeleteConfirm = document.getElementById("btnServerDeleteConfirmDelete");
 
   btnClose?.addEventListener("click", closeServerSettingsModal);
   btnCancel?.addEventListener("click", closeServerSettingsModal);
   btnSave?.addEventListener("click", async () => {
     await submitServerSettingsModal();
   });
+  btnDangerDelete?.addEventListener("click", () => {
+    openServerDeleteConfirmModal(serverSettingsServerId, { serverName: serverSettingsName });
+  });
+  btnDeleteClose?.addEventListener("click", closeServerDeleteConfirmModal);
+  btnDeleteCancel?.addEventListener("click", closeServerDeleteConfirmModal);
+  btnDeleteConfirm?.addEventListener("click", () => {
+    void submitServerDeleteConfirm();
+  });
+  deleteInput?.addEventListener("input", updateServerDeleteConfirmState);
+  deleteInput?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    void submitServerDeleteConfirm();
+  });
+  deleteModal?.addEventListener("click", (e) => {
+    if (e.target?.dataset?.closeServerDelete) closeServerDeleteConfirmModal();
+  });
 
   modal?.addEventListener("click", (e) => {
+    const target = eventTargetElement(e);
+    const navBtn = target?.closest?.("[data-server-settings-nav]");
+    if (navBtn) {
+      e.preventDefault();
+      setServerSettingsActivePanel(navBtn.getAttribute("data-server-settings-nav") || "profile");
+      return;
+    }
     if (e.target?.dataset?.close) closeServerSettingsModal();
   });
 
@@ -26875,6 +27423,7 @@ function bindServerSettingsModalOnce() {
   });
   welcomeSelect?.addEventListener("change", () => {
     serverSettingsWelcomeChannelId = normId(welcomeSelect.value || "");
+    renderServerSettingsProfilePreview();
   });
 
   btnRoleCreate?.addEventListener("click", async () => {
@@ -26983,6 +27532,11 @@ function bindServerSettingsModalOnce() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (deleteModal && !deleteModal.classList.contains("hidden")) {
+      e.preventDefault();
+      closeServerDeleteConfirmModal();
+      return;
+    }
     if (!modal || modal.classList.contains("hidden")) return;
     e.preventDefault();
     closeServerSettingsModal();
@@ -27193,6 +27747,11 @@ async function resolveServerChannelForServer(serverId, {
 async function fetchServerChannelsForSidebar(serverId, { force = false } = {}) {
   const sid = normId(serverId);
   if (!sid) return [];
+  if (isServerDeletedLocally(sid)) {
+    serverChannelListByServerId.delete(sid);
+    serverChannelCategoryListByServerId.delete(sid);
+    return [];
+  }
   if (!force && serverChannelListByServerId.has(sid)) {
     return serverChannelListByServerId.get(sid) || [];
   }
@@ -28411,6 +28970,86 @@ function splitCallParticipantLabelAndSuffix(rawLabel) {
   };
 }
 
+function getCallParticipantPreviewText(anchorEl = null, selectors = "") {
+  if (!anchorEl || !selectors || typeof anchorEl.querySelector !== "function") return "";
+  const node = anchorEl.querySelector(selectors);
+  return String(node?.textContent || "").trim();
+}
+
+function getCallParticipantPreviewAvatarUrl(anchorEl = null) {
+  if (!anchorEl || typeof anchorEl.querySelector !== "function") return "";
+  const img = anchorEl.querySelector(".profileAvatarMedia, .serverVoiceMember__avatar img, .serverMemberRow__avatar img, .stageGridAvatar img, .participantAvatar img, img");
+  return resolveProfileAvatarUrl(
+    img?.getAttribute?.("data-avatar-src")
+      || img?.getAttribute?.("src")
+      || "",
+    ""
+  );
+}
+
+function getCallParticipantProfilePreviewClickAnchor(ev, rootEl = null) {
+  const target = eventTargetElement(ev);
+  if (!target || typeof target.closest !== "function") return null;
+  const root = rootEl && typeof rootEl.contains === "function"
+    ? rootEl
+    : target.closest(".stageGridTile, .participantTile");
+  if (!root || (target !== root && !root.contains(target))) return null;
+  const anchor = target.closest("[data-call-profile-target='1'], .stageGridAvatar, .participantAvatar, .callParticipantLabel__name, .stageGridLabel, .participantLabel");
+  if (!anchor || (anchor !== root && !root.contains(anchor))) return null;
+  return anchor;
+}
+function buildCallParticipantProfilePreviewSeed(userId, seed = {}, anchorEl = null) {
+  const uid = normId(userId || "");
+  if (!uid) return null;
+  const rawLabel = String(
+    seed?.display_name
+      || seed?.displayName
+      || anchorEl?.getAttribute?.("data-call-user-label")
+      || anchorEl?.getAttribute?.("data-server-voice-member-label")
+      || anchorEl?.getAttribute?.("data-server-right-display")
+      || getCallParticipantPreviewText(anchorEl, ".callParticipantLabel__name, .serverVoiceMember__name, .serverMemberRow__name, .stageGridLabel, .participantLabel")
+      || ""
+  ).trim();
+  const parsedLabel = splitCallParticipantLabelAndSuffix(rawLabel);
+  const avatarUrl = resolveProfileAvatarUrl(
+    seed?.avatar_url
+      || seed?.avatarUrl
+      || anchorEl?.getAttribute?.("data-server-voice-member-avatar")
+      || anchorEl?.getAttribute?.("data-server-right-avatar")
+      || getCallParticipantPreviewAvatarUrl(anchorEl)
+      || "",
+    ""
+  );
+  return {
+    id: uid,
+    username: String(seed?.username || "").trim(),
+    display_name: parsedLabel.label || rawLabel || "",
+    avatar_url: avatarUrl,
+    name_color: seed?.name_color || seed?.nameColor || "",
+    call_tile_color: seed?.call_tile_color || seed?.callTileColor || "",
+  };
+}
+
+async function openCallParticipantProfilePreview(userId, anchorEl = null, seed = {}, opts = {}) {
+  const uid = normId(userId || "");
+  if (!uid) return;
+  const conversationId = normId(opts?.conversationId || callConversationId || activeDmId || state.activeDm?.conversationId || "");
+  const serverId = normId(opts?.serverId || resolveServerVoiceServerIdByConversation(conversationId) || state.activeDm?.serverId || "");
+  closeCallAudioMenu();
+  closeCallShareMenu();
+  closeCallCameraMenu();
+  closeServerVoiceMemberMenu();
+  await openProfileMiniPopoutForUser(uid, buildCallParticipantProfilePreviewSeed(uid, seed, anchorEl) || { id: uid }, {
+    anchorEl: anchorEl && typeof anchorEl.getBoundingClientRect === "function" ? anchorEl : null,
+    point: opts?.point || null,
+    conversationId,
+    conversationLabel: String(opts?.conversationLabel || state.activeDm?.displayName || state.activeDm?.username || "").trim(),
+    serverId,
+    serverName: String(opts?.serverName || "").trim(),
+    kind: serverId ? "server" : String(opts?.kind || "").trim().toLowerCase(),
+  });
+}
+
 function isLocalServerVoiceCallContextActive(conversationId) {
   const convId = normId(conversationId || "");
   if (!convId || !isServerVoiceConversationById(convId)) return false;
@@ -28601,6 +29240,118 @@ function getServerVoiceControlPlaneOccupancySnapshot(conversationId, {
     contextJoined: !!activeContext?.joined,
     presenceSynced: !!activeContext?.presenceSynced,
   };
+}
+
+
+function isServerVoiceTransportSnapshotAuthoritativeForPresence(conversationId, snapshot = null) {
+  const convId = normId(conversationId || "");
+  if (!convId || !shouldUseServerVoiceLiveKitTransport(convId)) return false;
+  const resolvedSnapshot = snapshot || getServerVoiceTransportSnapshot(convId);
+  if (!resolvedSnapshot || typeof resolvedSnapshot !== "object" || Array.isArray(resolvedSnapshot)) return false;
+  const connectionState = String(resolvedSnapshot?.connectionState || "").trim().toLowerCase();
+  const joinPhase = String(resolvedSnapshot?.joinPhase || "").trim().toLowerCase();
+  return !!(
+    resolvedSnapshot?.local?.roomConnected === true
+    || resolvedSnapshot?.connected === true
+    || connectionState === "connected"
+    || connectionState === "reconnecting"
+    || connectionState === "signalreconnecting"
+    || joinPhase === "room_connected"
+    || joinPhase === "media_ready"
+    || joinPhase === "publishing_audio"
+    || joinPhase === "reconnecting"
+  );
+}
+
+function getServerVoicePresenceHeartbeatAgeMsByUser(conversationId, userIds = []) {
+  const convId = normId(conversationId || "");
+  const ids = normalizeUuidArray(userIds || []);
+  const ages = {};
+  if (!convId || !ids.length) return ages;
+  const now = Date.now();
+  const entry = getServerVoicePresenceEntry(convId, { create: false });
+  ids.forEach((uid) => {
+    const seenAt = Number(
+      entry?.seenAtByUser?.get?.(uid)
+      || groupCallPresenceSeenAtByUser.get(uid)
+      || 0
+    );
+    ages[uid] = Number.isFinite(seenAt) && seenAt > 0 ? Math.max(0, now - seenAt) : null;
+  });
+  return ages;
+}
+
+function pruneServerVoiceStaleVisibleParticipantCaches(conversationId, staleIds = [], {
+  finalVisibleIds = [],
+  triggerReason = "",
+  callerFunction = "",
+} = {}) {
+  const convId = normId(conversationId || "");
+  const ids = normalizeUuidArray(staleIds || []);
+  if (!convId || !ids.length) return [];
+  const finalSet = new Set(normalizeUuidArray(finalVisibleIds || []));
+  const forcedEntry = getServerVoiceUiForcedRemovedEntry(convId, { create: true });
+  const prunedIds = [];
+  ids.forEach((uid) => {
+    if (!uid || finalSet.has(uid)) return;
+    const transportState = getServerVoiceTransportParticipantState(convId, uid);
+    if (isServerVoiceTransportParticipantInChannel(convId, uid, transportState)) return;
+    forcedEntry?.add?.(uid);
+    removeServerVoiceUiCachedParticipantState(convId, uid);
+    prunedIds.push(uid);
+  });
+  if (prunedIds.length) {
+    logServerVoiceUiParticipantsEvent("ui.stale_participant_cache_pruned", convId, normalizeUuidArray(finalVisibleIds || []), triggerReason || "presence_resolution", {
+      callerFunction: callerFunction || "pruneServerVoiceStaleVisibleParticipantCaches",
+      prunedIds,
+      source: "livekit_authoritative_presence_resolution",
+    });
+  }
+  return prunedIds;
+}
+
+function logServerVoicePresenceResolution(conversationId, {
+  triggerReason = "",
+  callerFunction = "",
+  liveKitParticipantIds = [],
+  supabasePresenceIds = [],
+  localCacheIds = [],
+  stalePrunedIds = [],
+  finalVisibleIds = [],
+  sourceReasonsByUserId = {},
+  usedLiveKitAuthoritative = false,
+  transportConnectionState = "",
+  transportJoinPhase = "",
+} = {}) {
+  if (!isServerVoiceDebugLoggingEnabled()) return;
+  const convId = normId(conversationId || "");
+  if (!convId) return;
+  const meId = normId(state.user?.id || "");
+  const allIds = normalizeUuidArray([
+    ...normalizeUuidArray(liveKitParticipantIds || []),
+    ...normalizeUuidArray(supabasePresenceIds || []),
+    ...normalizeUuidArray(localCacheIds || []),
+    ...normalizeUuidArray(stalePrunedIds || []),
+    ...normalizeUuidArray(finalVisibleIds || []),
+  ]);
+  logServerVoiceDebug("server_voice_presence_resolution", {
+    currentUserId: meId || null,
+    channelId: convId,
+    conversationId: convId,
+    liveKitParticipantIds: normalizeUuidArray(liveKitParticipantIds || []),
+    supabasePresenceIds: normalizeUuidArray(supabasePresenceIds || []),
+    localCacheIds: normalizeUuidArray(localCacheIds || []),
+    stalePrunedIds: normalizeUuidArray(stalePrunedIds || []),
+    finalVisibleIds: normalizeUuidArray(finalVisibleIds || []),
+    reasonsByUserId: sourceReasonsByUserId || {},
+    heartbeatAgeMsByUserId: getServerVoicePresenceHeartbeatAgeMsByUser(convId, allIds),
+    usedLiveKitAuthoritative: !!usedLiveKitAuthoritative,
+    transportConnectionState: String(transportConnectionState || "").trim() || null,
+    transportJoinPhase: String(transportJoinPhase || "").trim() || null,
+    triggerReason: String(triggerReason || "").trim() || "unknown",
+    callerFunction: String(callerFunction || "").trim() || "unknown",
+    resolvedAt: new Date().toISOString(),
+  });
 }
 
 function areServerVoiceUiIdSetsEqual(left = [], right = []) {
@@ -28863,9 +29614,20 @@ function getServerVoiceVisibleParticipantIds(conversationId, {
   const nextSet = new Set(nextVisibleIds);
   const forcedRemovedIds = getServerVoiceUiForcedRemovedIds(convId);
   const forcedRemovedSet = new Set(forcedRemovedIds);
+  const transportSnapshot = useLiveKitTransport ? getServerVoiceTransportSnapshot(convId) : null;
+  const transportAuthoritativeForPresence = !!(
+    useLiveKitTransport
+    && String(derived?.source || "").startsWith("transport")
+    && derived?.hasEvidence
+    && isServerVoiceTransportSnapshotAuthoritativeForPresence(convId, transportSnapshot)
+  );
+  const transportOmittedAbsentIds = transportAuthoritativeForPresence
+    ? previousVisibleIds.filter((uid) => uid && !nextSet.has(uid))
+    : [];
   const explicitAbsentSet = new Set([
     ...normalizeUuidArray(derived.explicitAbsentIds || []),
     ...forcedRemovedIds,
+    ...transportOmittedAbsentIds,
   ]);
   const now = Date.now();
   const localUserId = normId(state.user?.id || "");
@@ -28873,6 +29635,7 @@ function getServerVoiceVisibleParticipantIds(conversationId, {
     useLiveKitTransport
     && derived?.source === "transport"
     && derived?.hasEvidence
+    && !transportAuthoritativeForPresence
   );
   const preserveRemoteAfterLocalLeave = !!serverVoiceUiPreserveRemoteAfterLocalLeaveByConversation.get(convId);
   if (nextVisibleIds.includes(localUserId)) {
@@ -29254,16 +30017,35 @@ function getServerVoiceChannelParticipantIds(conversationId, {
   const caller = String(callerFunction || "").trim() || "getServerVoiceChannelParticipantIds";
   const ids = [];
   const sourceByUserId = new Map();
+  const sourceReasonsByUserId = {};
   const seen = new Set();
   const forcedRemoved = new Set(getServerVoiceUiForcedRemovedIds(convId));
+  const addSourceReason = (value, reasonValue) => {
+    const uid = normId(value || "");
+    if (!uid) return;
+    if (!sourceReasonsByUserId[uid]) sourceReasonsByUserId[uid] = [];
+    const text = String(reasonValue || "").trim();
+    if (text && !sourceReasonsByUserId[uid].includes(text)) sourceReasonsByUserId[uid].push(text);
+  };
   const push = (value, source) => {
     const uid = normId(value || "");
-    if (!uid || seen.has(uid) || forcedRemoved.has(uid)) return;
+    if (!uid) return;
+    if (forcedRemoved.has(uid)) {
+      addSourceReason(uid, `excluded:${source || "unknown"}:forced_removed`);
+      return;
+    }
+    if (seen.has(uid)) {
+      addSourceReason(uid, `duplicate:${source || "unknown"}`);
+      return;
+    }
     seen.add(uid);
     ids.push(uid);
     sourceByUserId.set(uid, String(source || "").trim() || "unknown");
+    addSourceReason(uid, `included:${source || "unknown"}`);
   };
 
+  const transportSnapshot = getServerVoiceTransportSnapshot(convId);
+  const transportAuthoritativeForPresence = isServerVoiceTransportSnapshotAuthoritativeForPresence(convId, transportSnapshot);
   const liveKitParticipantIds = getServerVoiceInCallParticipantIds(convId, {
     triggerReason: reason,
     callerFunction: caller,
@@ -29274,15 +30056,54 @@ function getServerVoiceChannelParticipantIds(conversationId, {
     triggerReason: `${reason}:realtime_presence`,
     callerFunction: caller,
   });
-  realtimeParticipantIds.forEach((uid) => push(uid, "realtime_presence"));
-
   const legacyParticipantIds = getServerVoiceLegacyUiParticipantIds(convId);
-  legacyParticipantIds.forEach((uid) => push(uid, "legacy_visible_cache"));
+  if (!transportAuthoritativeForPresence) {
+    realtimeParticipantIds.forEach((uid) => push(uid, "realtime_presence"));
+    legacyParticipantIds.forEach((uid) => push(uid, "legacy_visible_cache"));
+  } else {
+    const liveKitSet = new Set(liveKitParticipantIds);
+    realtimeParticipantIds.forEach((uid) => {
+      if (!liveKitSet.has(uid)) addSourceReason(uid, "excluded:realtime_presence:not_in_livekit_transport");
+    });
+    legacyParticipantIds.forEach((uid) => {
+      if (!liveKitSet.has(uid)) addSourceReason(uid, "excluded:legacy_visible_cache:not_in_livekit_transport");
+    });
+  }
 
   const meId = normId(state.user?.id || "");
   if (meId && isActiveServerVoiceCallJoined(convId)) push(meId, "local_joined_fallback");
 
   const sortedIds = sortGroupCallMemberIdsForLayout(convId, ids);
+  const finalSet = new Set(sortedIds);
+  const staleCandidateIds = transportAuthoritativeForPresence
+    ? normalizeUuidArray([
+        ...realtimeParticipantIds,
+        ...legacyParticipantIds,
+      ]).filter((uid) => uid && !finalSet.has(uid))
+    : [];
+  const prunedStaleIds = transportAuthoritativeForPresence
+    ? pruneServerVoiceStaleVisibleParticipantCaches(convId, staleCandidateIds, {
+        finalVisibleIds: sortedIds,
+        triggerReason: reason,
+        callerFunction: caller,
+      })
+    : [];
+  prunedStaleIds.forEach((uid) => addSourceReason(uid, "pruned:stale_cache_absent_from_livekit_transport"));
+
+  logServerVoicePresenceResolution(convId, {
+    triggerReason: reason,
+    callerFunction: caller,
+    liveKitParticipantIds,
+    supabasePresenceIds: realtimeParticipantIds,
+    localCacheIds: legacyParticipantIds,
+    stalePrunedIds: prunedStaleIds,
+    finalVisibleIds: sortedIds,
+    sourceReasonsByUserId,
+    usedLiveKitAuthoritative: transportAuthoritativeForPresence,
+    transportConnectionState: transportSnapshot?.connectionState || "",
+    transportJoinPhase: transportSnapshot?.joinPhase || "",
+  });
+
   if (isServerVoiceDebugLoggingEnabled()) {
     const finalParticipants = buildServerVoiceParticipantsFromIds(convId, sortedIds, {
       includeTransportState: true,
@@ -29306,13 +30127,15 @@ function getServerVoiceChannelParticipantIds(conversationId, {
         liveKitParticipantIds.length + realtimeParticipantIds.length + legacyParticipantIds.length + (meId ? 1 : 0) - sortedIds.length
       ),
       forcedRemovedIds: Array.from(forcedRemoved),
+      staleCandidateIds,
+      prunedStaleIds,
+      liveKitAuthoritativeForPresence: transportAuthoritativeForPresence,
       triggerReason: reason,
       callerFunction: caller,
     });
   }
   return sortedIds;
 }
-
 function getServerVoiceStageParticipants(conversationId, {
   serverMembers = [],
   triggerReason = "",
@@ -29361,6 +30184,110 @@ function getServerVoiceChannelOccupants(conversationId, {
   });
 }
 
+function resetCallSidebarElapsedCache() {
+  callSidebarElapsedConnectedAtMs = 0;
+  callSidebarElapsedLabelUpdatedAtMs = 0;
+  callSidebarElapsedLabel = "";
+}
+
+function getCallSidebarElapsedLabel({ force = false } = {}) {
+  const connectedAtMs = Number(callEventConnectedAtMs || 0);
+  if (!Number.isFinite(connectedAtMs) || connectedAtMs <= 0) {
+    resetCallSidebarElapsedCache();
+    return "";
+  }
+  const now = Date.now();
+  if (callSidebarElapsedConnectedAtMs !== connectedAtMs) {
+    callSidebarElapsedConnectedAtMs = connectedAtMs;
+    callSidebarElapsedLabelUpdatedAtMs = 0;
+    callSidebarElapsedLabel = "";
+  }
+  if (
+    force
+    || !callSidebarElapsedLabel
+    || !callSidebarElapsedLabelUpdatedAtMs
+    || (now - callSidebarElapsedLabelUpdatedAtMs) >= CALL_SIDEBAR_ELAPSED_REFRESH_MS
+  ) {
+    callSidebarElapsedLabel = formatCallElapsedCompactLabel(now - connectedAtMs);
+    callSidebarElapsedLabelUpdatedAtMs = now;
+  }
+  return callSidebarElapsedLabel;
+}
+
+function shouldShowServerVoiceRoomElapsed(conversationId) {
+  const convId = normId(conversationId || "");
+  if (!convId || !callEventConnectedAtMs) return false;
+  if (!shouldUseServerVoiceLiveKitTransport(convId)) return false;
+  const connectedConvId = normId(getMiniCallDockConversationId());
+  if (connectedConvId && connectedConvId !== convId) return false;
+  return !!isActiveServerVoiceCallJoined(convId);
+}
+
+function getServerVoiceRoomElapsedLabel(conversationId, { force = false } = {}) {
+  if (!shouldShowServerVoiceRoomElapsed(conversationId)) return "";
+  return getCallSidebarElapsedLabel({ force });
+}
+
+function buildServerVoiceRoomElapsedHtml(conversationId) {
+  const convId = normId(conversationId || "");
+  const elapsedText = getServerVoiceRoomElapsedLabel(convId);
+  if (!elapsedText) return "";
+  return `<span class="serverVoiceRoom__elapsed" data-server-voice-call-elapsed="${escAttr(convId)}">${esc(elapsedText)}</span>`;
+}
+
+function syncServerVoiceRoomElapsedElement(btn, conversationId, { force = false } = {}) {
+  if (!btn) return;
+  const convId = normId(conversationId || btn.getAttribute?.("data-server-voice-channel") || "");
+  const elapsedText = getServerVoiceRoomElapsedLabel(convId, { force });
+  let elapsedEl = btn.querySelector?.(".serverVoiceRoom__elapsed") || null;
+  if (!elapsedText) {
+    elapsedEl?.remove?.();
+    return;
+  }
+  if (!elapsedEl) {
+    elapsedEl = document.createElement("span");
+    elapsedEl.className = "serverVoiceRoom__elapsed";
+    const metaEl = btn.querySelector?.(".serverVoiceRoom__meta") || btn;
+    const countEl = btn.querySelector?.(".serverVoiceRoom__count") || null;
+    if (countEl && countEl.parentElement === metaEl) metaEl.insertBefore(elapsedEl, countEl);
+    else metaEl.appendChild(elapsedEl);
+  }
+  elapsedEl.dataset.serverVoiceCallElapsed = convId;
+  if (elapsedEl.textContent !== elapsedText) elapsedEl.textContent = elapsedText;
+}
+
+function refreshServerVoiceRoomElapsedElements({ force = false } = {}) {
+  document.querySelectorAll(".serverVoiceRoom[data-server-voice-channel]").forEach((btn) => {
+    syncServerVoiceRoomElapsedElement(btn, btn.getAttribute("data-server-voice-channel"), { force });
+  });
+}
+
+function stopCallSidebarElapsedTimer() {
+  if (callSidebarElapsedTimer) {
+    clearInterval(callSidebarElapsedTimer);
+    callSidebarElapsedTimer = null;
+  }
+  resetCallSidebarElapsedCache();
+  document.querySelectorAll(".serverVoiceRoom__elapsed").forEach((el) => el.remove());
+}
+
+function ensureCallSidebarElapsedTimer(enabled = false) {
+  if (!enabled) {
+    stopCallSidebarElapsedTimer();
+    return;
+  }
+  if (callSidebarElapsedConnectedAtMs !== Number(callEventConnectedAtMs || 0)) {
+    resetCallSidebarElapsedCache();
+  }
+  getCallSidebarElapsedLabel({ force: !callSidebarElapsedLabel });
+  refreshServerVoiceRoomElapsedElements();
+  if (callSidebarElapsedTimer) return;
+  callSidebarElapsedTimer = setInterval(() => {
+    getCallSidebarElapsedLabel({ force: true });
+    refreshServerVoiceChannelBadges();
+    refreshServerVoiceRoomElapsedElements({ force: true });
+  }, CALL_SIDEBAR_ELAPSED_REFRESH_MS);
+}
 function getServerVoiceChannelConnectedCount(conversationId, {
   triggerReason = "",
   callerFunction = "",
@@ -29452,6 +30379,7 @@ function refreshServerVoiceChannelBadges() {
     });
     const countEl = btn.querySelector(".serverVoiceRoom__count");
     if (countEl) countEl.textContent = String(Math.max(0, count));
+    syncServerVoiceRoomElapsedElement(btn, convId);
     const unread = Number(dmUnreadByConversationId.get(convId) || 0);
     const hasUnread = unread > 0;
     btn.classList.toggle("has-live", count > 0);
@@ -29717,6 +30645,7 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
     const isActive = !!activeConversationId && convId === activeConversationId;
     const canDragChannel = !!caps.canSettings && !!channelId;
     const membersHtml = buildServerVoiceMemberRowsHtml(convId, members);
+    const elapsedHtml = buildServerVoiceRoomElapsedHtml(convId);
     return `
       <div
         class="serverVoiceRoomWrap${isActive ? " is-active" : ""}${count > 0 ? " has-live" : ""}${hasUnread ? " has-unread" : ""}"
@@ -29741,7 +30670,10 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
         >
           <span class="serverChannelItem__icon serverVoiceRoom__icon" aria-hidden="true">&#127911;</span>
           <span class="serverChannelItem__label serverVoiceRoom__label">${esc(label)}</span>
-          <span class="serverChannelItem__badge serverVoiceRoom__count">${count}</span>
+          <span class="serverVoiceRoom__meta">
+            ${elapsedHtml}
+            <span class="serverChannelItem__badge serverVoiceRoom__count">${count}</span>
+          </span>
         </button>
         ${membersHtml ? `<div class="serverVoiceRoomMembers">${membersHtml}</div>` : ``}
       </div>
@@ -29848,18 +30780,16 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
 
   panel.innerHTML = `
     <div class="serverChannelsPanel__top">
-      <div class="serverChannelsPanel__identity">
+      <button class="serverChannelsPanel__identity serverChannelsPanel__identityBtn" type="button" data-server-panel-menu-open="1" title="Server menu" aria-label="Open server menu for ${escAttr(serverName)}">
         <span class="serverChannelsPanel__icon">
           ${serverIconUrl ? `<img src="${esc(serverIconUrl)}" alt="server icon" />` : `<span>${esc(serverInitial)}</span>`}
         </span>
-        <div class="serverChannelsPanel__identityMeta">
-          <div class="serverChannelsPanel__name">${esc(serverName)}</div>
-          <div class="serverChannelsPanel__meta">Server Channels</div>
-        </div>
-      </div>
-      <div class="serverChannelsPanel__actions">
-        <button class="serverChannelsPanel__invite serverChannelsPanel__menuBtn" type="button" data-server-panel-menu-open="1" title="Server menu">&#9662;</button>
-      </div>
+        <span class="serverChannelsPanel__identityMeta">
+          <span class="serverChannelsPanel__name">${esc(serverName)}</span>
+          <span class="serverChannelsPanel__meta">Server Channels</span>
+        </span>
+        <span class="serverChannelsPanel__menuChevron" aria-hidden="true">&#9662;</span>
+      </button>
     </div>
     <div class="serverChannelsPanel__body">
       <section class="serverChannelsQuick">
@@ -29893,11 +30823,10 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
       if (!memberUserId) return;
       const displayName = memberRow.getAttribute("data-server-voice-member-label") || "";
       const avatarUrl = memberRow.getAttribute("data-server-voice-member-avatar") || "";
-      await openUserCardModal(memberUserId, {
+      await openCallParticipantProfilePreview(memberUserId, memberRow, {
         display_name: displayName,
         avatar_url: avatarUrl,
       }, {
-        anchorEl: memberRow,
         conversationId: normId(activeDmId || state.activeDm?.conversationId || ""),
         conversationLabel: String(state.activeDm?.displayName || "").trim(),
         serverId: sid,
@@ -30695,11 +31624,10 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
       if (!userId) return;
       const displayName = btn.getAttribute("data-server-right-display") || "member";
       const avatarUrl = btn.getAttribute("data-server-right-avatar") || "";
-      await openUserCardModal(userId, {
+      await openCallParticipantProfilePreview(userId, btn, {
         display_name: displayName,
         avatar_url: avatarUrl,
       }, {
-        anchorEl: btn,
         conversationId: normId(activeDmId || state.activeDm?.conversationId || ""),
         conversationLabel: String(state.activeDm?.displayName || "").trim(),
         serverId: sid,
@@ -34051,6 +34979,82 @@ function getServerNotificationModeStorageKey() {
   return `altara_server_notification_mode_${normId(state?.user?.id || "guest")}`;
 }
 
+function getDeletedServersStorageKey() {
+  return `altara_deleted_servers_${normId(state?.user?.id || "guest")}`;
+}
+
+function isServerDeleteDebugEnabled() {
+  try { return String(localStorage.getItem("altara.debug.server_voice") || "").trim() === "1"; } catch (_) { return false; }
+}
+
+function logServerDeleteUiCleanup(meta = {}) {
+  if (!isServerDeleteDebugEnabled()) return;
+  try {
+    console.debug("server_delete_ui_cleanup", {
+      ...(meta && typeof meta === "object" ? meta : {}),
+      at: new Date().toISOString(),
+    });
+  } catch (_) {}
+}
+
+function ensureDeletedServersLoaded() {
+  if (deletedServerStateLoaded) return;
+  deletedServerStateLoaded = true;
+  deletedServerIds.clear();
+  try {
+    const raw = localStorage.getItem(getDeletedServersStorageKey());
+    const parsed = raw ? JSON.parse(raw) : [];
+    (Array.isArray(parsed) ? parsed : []).forEach((value) => {
+      const sid = normId(value);
+      if (sid) deletedServerIds.add(sid);
+    });
+  } catch (_) {}
+}
+
+function persistDeletedServersToStorage() {
+  try {
+    localStorage.setItem(getDeletedServersStorageKey(), JSON.stringify(Array.from(deletedServerIds).slice(-500)));
+  } catch (_) {}
+}
+
+function isServerDeletedLocally(serverId = "") {
+  ensureDeletedServersLoaded();
+  const sid = normId(serverId);
+  return !!(sid && deletedServerIds.has(sid));
+}
+
+function markServerDeletedLocally(serverId = "", { persist = true } = {}) {
+  ensureDeletedServersLoaded();
+  const sid = normId(serverId);
+  if (!sid) return false;
+  const had = deletedServerIds.has(sid);
+  deletedServerIds.add(sid);
+  if (!had && persist) persistDeletedServersToStorage();
+  return !had;
+}
+
+function isServerRowDeleted(row = {}) {
+  if (!row || typeof row !== "object") return false;
+  const status = String(row.status || row.server_status || "").trim().toLowerCase();
+  return !!(row.deleted_at || row.deletedAt || status === "pending_deletion" || status === "deleted");
+}
+
+function getServerRowId(row = {}) {
+  return normId(row?.server_id || row?.serverId || row?.id || "");
+}
+
+function filterDeletedServerRows(rows = []) {
+  ensureDeletedServersLoaded();
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const sid = getServerRowId(row);
+    if (!sid) return false;
+    if (isServerRowDeleted(row)) {
+      markServerDeletedLocally(sid, { persist: true });
+      return false;
+    }
+    return !deletedServerIds.has(sid);
+  });
+}
 function normalizeServerFolderName(value = "") {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -34265,7 +35269,7 @@ function extractServerOrbFromLayout(serverId = "") {
 
 function syncServerOrbOrderWithServers(servers = state.servers, { persist = true } = {}) {
   ensureServerOrbOrderLoaded();
-  const rows = Array.isArray(servers) ? servers : [];
+  const rows = filterDeletedServerRows(Array.isArray(servers) ? servers : []);
   const validIds = rows
     .map((row) => normId(row?.serverId || ""))
     .filter(Boolean);
@@ -34394,7 +35398,7 @@ function syncServerOrbOrderWithServers(servers = state.servers, { persist = true
 }
 
 function getOrderedServerRailEntries(servers = state.servers) {
-  const rows = Array.isArray(servers) ? servers.slice() : [];
+  const rows = filterDeletedServerRows(Array.isArray(servers) ? servers.slice() : []);
   syncServerOrbOrderWithServers(rows, { persist: true });
   const rowsById = new Map(
     rows
@@ -35004,6 +36008,7 @@ function pruneRememberedServerLastChannels(validServerIds = new Set()) {
 async function resolveServerConversationForEntry(serverId, fallbackConversationId = "") {
   const sid = normId(serverId);
   const fallbackConvId = normId(fallbackConversationId || "");
+  if (sid && isServerDeletedLocally(sid)) return "";
   if (!sid) return fallbackConvId;
 
   let channels = [];
@@ -36391,8 +37396,9 @@ async function handleGroupDmMembershipAction(conversationId, {
   closeDmListMenus();
 
   const action = requestedAction === "delete" ? "delete" : "leave";
+  let shouldShowGroupDeleteScheduledNotice = false;
   const askMsg = action === "delete"
-    ? `Apagar o grupo "${groupName}" para todos? Esta acao nao pode ser desfeita.`
+    ? `Agendar a eliminacao do grupo "${groupName}" para todos? O grupo desaparece agora e fica retido durante 7 dias antes da eliminacao permanente.`
     : `Queres sair do grupo "${groupName}"?`;
   if (!(await requestAppConfirm(askMsg, {
     title: "Group DM",
@@ -36403,6 +37409,7 @@ async function handleGroupDmMembershipAction(conversationId, {
 
   const rpcName = action === "delete" ? "delete_group_dm" : "leave_group_dm";
   let { error } = await callGroupDmRpcCompat(rpcName, convId);
+  if (!error && action === "delete") shouldShowGroupDeleteScheduledNotice = true;
   if (error) {
     if (isMissingRpcError(error)) {
       const detail = String(error?.message || "").trim();
@@ -36425,7 +37432,7 @@ async function handleGroupDmMembershipAction(conversationId, {
     }
 
     if (error && action === "leave" && ownerNeedsDelete) {
-      if (!(await requestAppConfirm(`Es o dono de "${groupName}". Queres apagar o grupo para todos?`, {
+      if (!(await requestAppConfirm(`Es o dono de "${groupName}". Queres agendar a eliminacao do grupo para todos?`, {
         title: "Group DM",
         okText: t("dialog.confirm.ok", "Confirm"),
         cancelText: t("dialog.confirm.cancel", "Cancel"),
@@ -36441,6 +37448,7 @@ async function handleGroupDmMembershipAction(conversationId, {
         }
         return;
       }
+      shouldShowGroupDeleteScheduledNotice = true;
       error = null;
     } else if (error && action === "delete" && notOwnerDelete) {
       const failMsg = String(error?.message || "").trim();
@@ -36474,6 +37482,13 @@ async function handleGroupDmMembershipAction(conversationId, {
     renderGroupsRail();
     renderWidgets();
     updatePresenceRender();
+  }
+
+  if (shouldShowGroupDeleteScheduledNotice) {
+    await requestAppAlert("Group scheduled for deletion.", {
+      title: "Group DM",
+      okText: t("dialog.alert.ok", "OK"),
+    });
   }
 }
 
@@ -36587,7 +37602,7 @@ async function loadDmList(options = {}) {
       return Number(b?.lastMessageAt || 0) - Number(a?.lastMessageAt || 0);
     });
   pruneDmPinnedGroups(new Set(groupEntries.map((g) => normId(g?.conversationId)).filter(Boolean)));
-  const serverEntries = (state.servers || []).slice();
+  const serverEntries = filterDeletedServerRows(state.servers || []).slice();
   const knownConversationIds = new Set(
     [
       ...groupEntries.map((g) => normId(g?.conversationId)),
@@ -37214,6 +38229,9 @@ let serverSettingsRoleCreatePreset = "custom";
 let serverSettingsRolesMetaMessage = "";
 let serverSettingsRolesMetaIsError = false;
 const serverSettingsRoleMemberBusy = new Set();
+let serverDeleteConfirmServerId = "";
+let serverDeleteConfirmServerName = "";
+let serverDeleteConfirmSubmitting = false;
 let serverPanelMenuBound = false;
 let serverPanelMenuTargetServerId = "";
 let serverChannelItemMenuBound = false;
@@ -37250,6 +38268,8 @@ const serverMembersSearchByServerId = new Map();
 let serverMembersRightPanelRenderToken = 0;
 let serverMembersSearchRenderRaf = 0;
 const serverNotificationModeByServerId = new Map();
+const deletedServerIds = new Set();
+let deletedServerStateLoaded = false;
 const serverRoleListByServerId = new Map();
 const serverRoleMemberMapByServerId = new Map();
 const serverLastChannelByServerId = new Map();
@@ -42402,6 +43422,16 @@ function formatCallElapsedClockLabel(durationMs) {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
+function formatCallElapsedCompactLabel(durationMs) {
+  const totalSeconds = Math.max(0, Math.floor(Number(durationMs || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value) => String(value).padStart(2, "0");
+  if (hours > 0) return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+  return `${minutes}:${pad(seconds)}`;
+}
+
 function getCallEventDisplayText(message, parsed) {
   const author = getMessageAuthorName(message);
   if (parsed?.event === "ended") {
@@ -45772,7 +46802,14 @@ async function copyTextWithPromptFallback(text, label = "Valor") {
       return true;
     }
   } catch (_) {}
-  prompt(`Copia ${label}:`, value);
+  await requestAppPrompt(`Copia ${label}:`, {
+    title: "Copy",
+    label,
+    defaultValue: value,
+    okText: t("dialog.notice.ok", "OK"),
+    cancelText: t("dialog.confirm.cancel", "Cancel"),
+    selectText: true,
+  });
   return true;
 }
 
@@ -46153,7 +47190,18 @@ function requestDmFriendNickname(seedName = "user", currentValue = "") {
 
   if (!isDesktopApp) {
     try {
-      return Promise.resolve(window.prompt(`Nickname for ${seedName}`, currentValue || ""));
+      return requestAppPrompt(`Nickname for ${seedName}`, {
+        title: "Change Friend Nickname",
+        label: "Nickname",
+        defaultValue: currentValue || "",
+        placeholder: "Write a nickname...",
+        hint: "Leave empty to remove nickname.",
+        okText: "Save",
+        cancelText: t("dialog.confirm.cancel", "Cancel"),
+        maxLength: 48,
+        selectText: true,
+        preserveWhitespace: true,
+      });
     } catch (_) {
       return Promise.resolve(null);
     }
@@ -46265,7 +47313,18 @@ function requestServerFolderRename(seedName = "Folder", currentValue = "") {
 
   if (!isDesktopApp) {
     try {
-      return Promise.resolve(window.prompt(`Folder name for ${seedName}`, currentValue || ""));
+      return requestAppPrompt(`Folder name for ${seedName}`, {
+        title: "Rename Folder",
+        label: "Folder name",
+        defaultValue: currentValue || "",
+        placeholder: "Write a folder name...",
+        hint: "Leave empty to reset the name.",
+        okText: "Save",
+        cancelText: t("dialog.confirm.cancel", "Cancel"),
+        maxLength: 48,
+        selectText: true,
+        preserveWhitespace: true,
+      });
     } catch (_) {
       return Promise.resolve(null);
     }
@@ -46340,10 +47399,17 @@ function closeAppConfirmModal(result = false) {
   if (!modal) return;
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
+  modal.classList.remove(
+    "appConfirmModal--alert",
+    "appConfirmModal--confirm",
+    "appConfirmModal--prompt",
+    "appConfirmModal--danger"
+  );
 
   const promptMode = appConfirmPromptMode;
   const { wrap, input, hint } = getAppConfirmInputControls();
-  const inputValue = input instanceof HTMLTextAreaElement ? String(input.value || "").trim() : "";
+  const inputRawValue = input instanceof HTMLTextAreaElement ? String(input.value || "") : "";
+  const inputValue = appConfirmPromptOptions?.preserveWhitespace ? inputRawValue : inputRawValue.trim();
   if (wrap instanceof HTMLElement) {
     wrap.hidden = true;
     wrap.style.display = "none";
@@ -46409,9 +47475,9 @@ function requestAppConfirm(message = "", options = {}) {
   const danger = options?.danger === true;
   const titleText = String(options?.title || "").trim()
     || (mode === "alert"
-      ? t("dialog.confirm.title", "Confirm action")
+      ? t("dialog.notice.title", "Notice")
       : t("dialog.confirm.title", "Confirm action"));
-  const okText = String(options?.okText || "").trim()
+  const okText = String(options?.okText || options?.confirmText || "").trim()
     || (mode === "alert" ? t("dialog.notice.ok", "OK") : t("dialog.confirm.ok", "Confirm"));
   const cancelText = String(options?.cancelText || "").trim() || t("dialog.confirm.cancel", "Cancel");
 
@@ -46481,6 +47547,10 @@ function requestAppConfirm(message = "", options = {}) {
   btnClose.style.display = showCancel ? "" : "none";
   btnOk.classList.toggle("danger", danger);
   btnOk.classList.toggle("primary", !danger);
+  modal.classList.toggle("appConfirmModal--alert", mode === "alert");
+  modal.classList.toggle("appConfirmModal--confirm", mode === "confirm");
+  modal.classList.toggle("appConfirmModal--prompt", mode === "prompt");
+  modal.classList.toggle("appConfirmModal--danger", danger);
   if (inputWrap instanceof HTMLElement) {
     const showPromptInput = mode === "prompt";
     inputWrap.hidden = !showPromptInput;
@@ -46508,7 +47578,8 @@ function requestAppConfirm(message = "", options = {}) {
     if (mode === "prompt" && inputEl instanceof HTMLTextAreaElement) {
       try {
         inputEl.focus();
-        inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+        if (options?.selectText) inputEl.select();
+        else inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
         return;
       } catch (_) {}
     }
@@ -54604,15 +55675,14 @@ async function deleteDmMessage(messageId) {
     return;
   }
 
-  const { error } = await supabase
-    .from("messages")
-    .delete()
-    .eq("id", mid)
-    .eq("conversation_id", activeDmId)
-    .eq("user_id", state.user.id);
+  const { error } = await softDeleteMessageRpc(mid, activeDmId);
 
   if (error) {
-    showDmComposerNotice("Erro a apagar mensagem: " + error.message, { title: "Messages" });
+    if (isMissingRpcError(error)) {
+      showDmComposerNotice("Falta SQL no Supabase: executa SQL/SUPABASE_PATCH_SERVER_SOFT_DELETE_DANGER_ZONE.sql", { title: "Messages" });
+      return;
+    }
+    showDmComposerNotice("Erro a apagar mensagem: " + (error.message || error), { title: "Messages" });
     return;
   }
 
@@ -54736,7 +55806,14 @@ async function copyMessageText(messageId) {
     }
   } catch (_) {}
 
-  prompt("Copia o texto:", text);
+  await requestAppPrompt("Copia o texto:", {
+    title: "Messages",
+    label: "Text",
+    defaultValue: text,
+    okText: t("dialog.notice.ok", "OK"),
+    cancelText: t("dialog.confirm.cancel", "Cancel"),
+    selectText: true,
+  });
 }
 
 async function togglePinMessage(messageId) {
@@ -58140,6 +59217,11 @@ let callPingPollTimer = null;
 let callPingPollInFlight = false;
 const CALL_PING_POLL_MS = 2200;
 const CALL_PING_STALE_MS = 7000;
+const CALL_SIDEBAR_ELAPSED_REFRESH_MS = 60 * 1000;
+let callSidebarElapsedTimer = null;
+let callSidebarElapsedConnectedAtMs = 0;
+let callSidebarElapsedLabelUpdatedAtMs = 0;
+let callSidebarElapsedLabel = "";
 let callAudioTrackRecoveryInFlight = false;
 let callAudioTrackRecoveryLastAt = 0;
 const CALL_AUDIO_TRACK_RECOVERY_GRACE_MS = 3500;
@@ -64011,13 +65093,31 @@ function computeContextMenuPosition({
     fallbackSource: hasCursorPoint ? null : fallbackPoint.source,
   });
 
-  if ((finalX + menuWidth) > (vw - margin)) {
-    finalX = requestedX - menuWidth;
-    clampFlags.push("flip_left");
-  }
-  if ((finalY + menuHeight) > (vh - margin)) {
-    finalY = requestedY - menuHeight;
-    clampFlags.push("flip_up");
+  if (!hasCursorPoint && anchorRect) {
+    const offset = 8;
+    const anchorLeft = Number(anchorRect.left || 0);
+    const anchorRight = Number(anchorRect.right || anchorLeft);
+    const anchorTop = Number(anchorRect.top || 0);
+    const anchorBottom = Number(anchorRect.bottom || anchorTop);
+    finalX = anchorLeft;
+    finalY = anchorBottom + offset;
+    if ((finalX + menuWidth) > (vw - margin)) {
+      finalX = anchorRight - menuWidth;
+      clampFlags.push("align_right");
+    }
+    if ((finalY + menuHeight) > (vh - margin)) {
+      finalY = anchorTop - menuHeight - offset;
+      clampFlags.push("flip_up");
+    }
+  } else {
+    if ((finalX + menuWidth) > (vw - margin)) {
+      finalX = requestedX - menuWidth;
+      clampFlags.push("flip_left");
+    }
+    if ((finalY + menuHeight) > (vh - margin)) {
+      finalY = requestedY - menuHeight;
+      clampFlags.push("flip_up");
+    }
   }
   if (finalX < margin) {
     finalX = margin;
@@ -64089,6 +65189,92 @@ function computeContextMenuPosition({
     hasCursorPoint,
     clampFlags,
   };
+}
+
+function measureFloatingCallMenu(menu, {
+  fallbackWidth = 260,
+  fallbackHeight = 160,
+  minWidth = 180,
+  minHeight = 72,
+} = {}) {
+  if (!menu) {
+    return {
+      width: Math.max(minWidth, fallbackWidth),
+      height: Math.max(minHeight, fallbackHeight),
+    };
+  }
+  const wasOpen = menu.classList.contains("is-open");
+  const previousDisplay = menu.style.display;
+  const previousVisibility = menu.style.visibility;
+  const previousPointerEvents = menu.style.pointerEvents;
+  const previousLeft = menu.style.left;
+  const previousTop = menu.style.top;
+  if (!wasOpen) {
+    menu.style.display = "block";
+    menu.style.visibility = "hidden";
+    menu.style.pointerEvents = "none";
+    menu.style.left = "-10000px";
+    menu.style.top = "-10000px";
+  }
+  const rect = menu.getBoundingClientRect?.() || null;
+  const width = Math.max(minWidth, Math.ceil(Number(rect?.width || menu.offsetWidth || fallbackWidth)));
+  const height = Math.max(minHeight, Math.ceil(Number(rect?.height || menu.offsetHeight || fallbackHeight)));
+  if (!wasOpen) {
+    menu.style.display = previousDisplay;
+    menu.style.visibility = previousVisibility;
+    menu.style.pointerEvents = previousPointerEvents;
+    menu.style.left = previousLeft;
+    menu.style.top = previousTop;
+  }
+  return { width, height };
+}
+
+function clampFloatingCallMenuToViewport(menu, { margin = 10 } = {}) {
+  if (!menu || !menu.classList?.contains?.("is-open")) return;
+  const rect = menu.getBoundingClientRect?.();
+  if (!rect) return;
+  const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 720;
+  let left = Number.parseFloat(menu.style.left || `${rect.left}`);
+  let top = Number.parseFloat(menu.style.top || `${rect.top}`);
+  if (!Number.isFinite(left)) left = rect.left;
+  if (!Number.isFinite(top)) top = rect.top;
+  if (rect.right > vw - margin) left -= rect.right - (vw - margin);
+  if (rect.left < margin) left += margin - rect.left;
+  if (rect.bottom > vh - margin) top -= rect.bottom - (vh - margin);
+  if (rect.top < margin) top += margin - rect.top;
+  left = Math.max(margin, Math.min(left, Math.max(margin, vw - rect.width - margin)));
+  top = Math.max(margin, Math.min(top, Math.max(margin, vh - rect.height - margin)));
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+  syncFloatingCallSubmenuPlacement(menu, { margin });
+}
+
+function syncFloatingCallSubmenuPlacement(menu, { margin = 10 } = {}) {
+  if (!menu?.querySelectorAll) return;
+  const menuRect = menu.getBoundingClientRect?.();
+  if (!menuRect) return;
+  const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
+  menu.querySelectorAll(".callShareMenu__submenuAnchor").forEach((anchor) => {
+    const submenu = anchor.querySelector?.(".callShareMenu__submenu");
+    const submenuWidth = Math.max(180, Number(submenu?.offsetWidth || 224));
+    const shouldFlipLeft = (menuRect.right + 8 + submenuWidth) > (vw - margin);
+    anchor.classList.toggle("is-flip-left", shouldFlipLeft);
+  });
+}
+
+function queueClampFloatingCallMenu(menu) {
+  if (!menu) return;
+  clampFloatingCallMenuToViewport(menu);
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => clampFloatingCallMenuToViewport(menu));
+  }
+}
+
+function clampOpenCallFloatingMenus() {
+  ["callShareMenu", "callCameraMenu", "callCameraDeviceMenu", "callAudioMenu"].forEach((id) => {
+    queueClampFloatingCallMenu(document.getElementById(id));
+  });
 }
 
 function logContextMenuRoutingFailed({
@@ -70049,6 +71235,204 @@ function getCallStageGridRows(totalTiles, cols) {
   return Math.max(1, Math.ceil(count / safeCols));
 }
 
+function parseCallStageAspectRatioValue(value = "", fallback = 16 / 9) {
+  const raw = String(value || "").trim();
+  const slashMatch = raw.match(/^([0-9.]+)\s*\/\s*([0-9.]+)$/);
+  if (slashMatch) {
+    const width = Number(slashMatch[1]);
+    const height = Number(slashMatch[2]);
+    const ratio = height > 0 ? width / height : 0;
+    return Number.isFinite(ratio) && ratio > 0.25 && ratio < 5 ? ratio : fallback;
+  }
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) && numeric > 0.25 && numeric < 5 ? numeric : fallback;
+}
+
+function resolveCallStageSafeAreaMetrics(viewportEl = null) {
+  const viewport = viewportEl || document.querySelector("#callStage .callStageViewport");
+  const stage = viewport?.closest?.(".callStage") || document.getElementById("callStage");
+  const card = stage?.querySelector?.(".callStageCard") || null;
+  if (!stage || !card) {
+    const rect = viewport?.getBoundingClientRect?.();
+    return {
+      width: Math.max(0, Number(rect?.width || 0)),
+      height: Math.max(0, Number(rect?.height || 0)),
+    };
+  }
+  const cardRect = card.getBoundingClientRect?.();
+  const topRect = stage.querySelector?.(".callStageTop")?.getBoundingClientRect?.();
+  const controlsRect = stage.querySelector?.(".callStageControls")?.getBoundingClientRect?.();
+  const style = window.getComputedStyle ? window.getComputedStyle(card) : null;
+  const paddingLeft = Number.parseFloat(style?.paddingLeft || "0") || 0;
+  const paddingRight = Number.parseFloat(style?.paddingRight || "0") || 0;
+  const paddingTop = Number.parseFloat(style?.paddingTop || "0") || 0;
+  const paddingBottom = Number.parseFloat(style?.paddingBottom || "0") || 0;
+  const rowGap = Number.parseFloat(style?.rowGap || style?.gap || "0") || 0;
+  const cardWidth = Math.max(0, Number(cardRect?.width || 0));
+  const cardHeight = Math.max(0, Number(cardRect?.height || 0));
+  const headerBottom = topRect
+    ? Math.max(paddingTop, Number(topRect.bottom || 0) - Number(cardRect?.top || 0))
+    : paddingTop;
+  const bottomReserve = controlsRect && Number(controlsRect.height || 0) > 0
+    ? Math.max(82, Number(cardRect?.bottom || 0) - Number(controlsRect.top || 0) + 14)
+    : Math.max(96, paddingBottom + 72);
+  const stageInset = Math.max(12, Math.min(26, Math.min(cardWidth || 0, cardHeight || 0) * 0.024));
+  const width = Math.max(260, cardWidth - paddingLeft - paddingRight - (stageInset * 2));
+  const height = Math.max(220, cardHeight - headerBottom - bottomReserve - rowGap - (stageInset * 2));
+  return { width, height };
+}
+
+
+function getControlledCallGridColumnCandidates(count, width, height, gap, minTileWidth, minTileHeight) {
+  const compactTwoWidth = Math.min(280, minTileWidth);
+  const canFitTwo = width >= (minTileWidth * 2) + gap;
+  const canFitTwoCompact = width >= (compactTwoWidth * 2) + gap;
+  const canFitThree = width >= (minTileWidth * 3) + (gap * 2) && height >= minTileHeight;
+  if (count <= 1) return [1];
+  if (count === 2) return canFitTwo ? [2] : [1];
+  if (count === 3) return canFitThree ? [3, 2] : (canFitTwoCompact ? [2, 1] : [1]);
+  if (count === 4) return canFitTwoCompact ? [2] : [1];
+  const manyTileColumnWidth = width <= 820 ? 220 : 260;
+  const maxByWidth = Math.max(1, Math.floor((width + gap) / Math.max(1, manyTileColumnWidth + gap)));
+  const targetCols = Math.max(2, Math.ceil(Math.sqrt(count)));
+  const maxCols = Math.max(1, Math.min(count, 5, Math.max(targetCols, maxByWidth)));
+  const candidates = [];
+  for (let cols = maxCols; cols >= 1; cols -= 1) candidates.push(cols);
+  return candidates;
+}
+
+function computeBestCallGridLayout({
+  containerWidth = 0,
+  containerHeight = 0,
+  tileCount = 1,
+  gap = 12,
+  aspectRatio = 16 / 9,
+  mode = "grid",
+} = {}) {
+  const count = Math.max(1, Math.floor(Number(tileCount) || 1));
+  const width = Math.max(1, Math.floor(Number(containerWidth) || 1));
+  const height = Math.max(1, Math.floor(Number(containerHeight) || 1));
+  const safeGap = Math.max(0, Number(gap) || 0);
+  const ratio = Number.isFinite(Number(aspectRatio)) && Number(aspectRatio) > 0
+    ? Number(aspectRatio)
+    : 16 / 9;
+  const minTileWidth = width < 720 ? 260 : (width < 1040 ? 300 : 340);
+  const minTileHeight = Math.round(minTileWidth / ratio);
+  const candidates = [];
+  const addCandidate = (cols) => {
+    const safeCols = Math.max(1, Math.min(count, Math.floor(Number(cols) || 1)));
+    if (!candidates.includes(safeCols)) candidates.push(safeCols);
+  };
+  const maxColumnsByWidth = Math.max(1, Math.floor((width + safeGap) / (Math.max(220, minTileWidth) + safeGap)));
+  const maxColumns = Math.max(1, Math.min(count, 5, Math.max(maxColumnsByWidth, Math.ceil(Math.sqrt(count)))));
+
+  if (count === 1) {
+    addCandidate(1);
+  } else if (count === 2) {
+    addCandidate(2);
+    addCandidate(1);
+  } else if (count === 3) {
+    addCandidate(2);
+    addCandidate(3);
+    addCandidate(1);
+  } else if (count === 4) {
+    addCandidate(2);
+    addCandidate(3);
+    addCandidate(4);
+    addCandidate(1);
+  } else {
+    for (let cols = maxColumns; cols >= 1; cols -= 1) addCandidate(cols);
+  }
+
+  let best = null;
+  for (const cols of candidates) {
+    const rows = Math.max(1, Math.ceil(count / cols));
+    const innerWidth = width - (safeGap * Math.max(0, cols - 1));
+    const innerHeight = height - (safeGap * Math.max(0, rows - 1));
+    if (innerWidth <= 0 || innerHeight <= 0) continue;
+
+    const cellWidth = innerWidth / cols;
+    const cellHeight = innerHeight / rows;
+    let tileWidth = Math.floor(Math.min(cellWidth, cellHeight * ratio));
+    let tileHeight = Math.floor(tileWidth / ratio);
+
+    const maxTileWidth = count <= 1
+      ? Math.min(width * 0.92, 1280)
+      : count === 2
+        ? Math.min(width * 0.49, 1080)
+        : count <= 4
+          ? Math.min(width * 0.54, 980)
+          : Math.min(width * 0.42, 840);
+    const maxTileHeight = count <= 1
+      ? Math.min(height * 0.88, 720)
+      : count === 2
+        ? Math.min(height * 0.84, 620)
+        : count <= 4
+          ? Math.min(height * 0.52, 560)
+          : Math.min(height * 0.5, 480);
+
+    if (tileWidth > maxTileWidth) {
+      tileWidth = Math.floor(maxTileWidth);
+      tileHeight = Math.floor(tileWidth / ratio);
+    }
+    if (tileHeight > maxTileHeight) {
+      tileHeight = Math.floor(maxTileHeight);
+      tileWidth = Math.floor(tileHeight * ratio);
+    }
+    if (!(tileWidth > 0 && tileHeight > 0)) continue;
+
+    const layoutWidth = Math.ceil((tileWidth * cols) + (safeGap * Math.max(0, cols - 1)));
+    const layoutHeight = Math.ceil((tileHeight * rows) + (safeGap * Math.max(0, rows - 1)));
+    const stageArea = Math.max(1, width * height);
+    const visibleTileArea = tileWidth * tileHeight * count;
+    const layoutAreaRatio = Math.min(1, (layoutWidth * layoutHeight) / stageArea);
+    const visibleAreaRatio = Math.min(1, visibleTileArea / stageArea);
+    const emptySlots = Math.max(0, (cols * rows) - count);
+    const belowMinPenalty = tileWidth < minTileWidth || tileHeight < minTileHeight
+      ? (Math.max(0, minTileWidth - tileWidth) + Math.max(0, minTileHeight - tileHeight)) * 520
+      : 0;
+    const emptySlotPenalty = emptySlots * tileWidth * tileHeight * 0.08;
+    const shapePenalty = Math.abs((layoutWidth / Math.max(1, layoutHeight)) - (width / Math.max(1, height))) * 1800;
+    let countPreference = 0;
+    if (count === 2 && cols === 2) countPreference += 42000;
+    if (count === 3 && cols === 2) countPreference += 34000;
+    if (count === 3 && cols === 3 && tileHeight >= height * 0.42) countPreference += 14000;
+    if (count === 4 && cols === 2) countPreference += 42000;
+    if (count >= 5 && cols >= 3) countPreference += cols * 9000;
+
+    const score = visibleTileArea
+      + (layoutAreaRatio * 160000)
+      + (visibleAreaRatio * 110000)
+      + countPreference
+      - emptySlotPenalty
+      - belowMinPenalty
+      - shapePenalty;
+    const candidate = {
+      columns: cols,
+      rows,
+      tileWidth,
+      tileHeight,
+      layoutWidth: Math.min(width, layoutWidth),
+      layoutHeight: Math.min(height, layoutHeight),
+      layoutVariant: count === 3 && cols === 2 ? "balanced-3-fill" : (count === 3 && cols === 3 ? "three-row" : "fluid-fill"),
+      score,
+    };
+    if (!best || candidate.score > best.score) best = candidate;
+  }
+
+  const fallbackWidth = Math.floor(Math.min(width, height * ratio));
+  const fallbackHeight = Math.floor(fallbackWidth / ratio);
+  return best || {
+    columns: 1,
+    rows: count,
+    tileWidth: Math.max(220, fallbackWidth),
+    tileHeight: Math.max(124, fallbackHeight),
+    layoutWidth: Math.min(width, fallbackWidth),
+    layoutHeight: Math.min(height, fallbackHeight),
+    layoutVariant: "fallback",
+    score: 0,
+  };
+}
 function isCallStageGridTileVisible(tile) {
   if (!tile) return false;
   if (tile.hidden) return false;
@@ -70064,32 +71448,60 @@ function syncCallStageGridLayoutAttrs(grid = null, viewport = null) {
     1,
     Array.from(gridEl.querySelectorAll(".stageGridTile")).filter(isCallStageGridTileVisible).length,
   );
-  const cols = getCallStageGridCols(totalTiles);
-  const rows = getCallStageGridRows(totalTiles, cols);
+  const safeArea = resolveCallStageSafeAreaMetrics(viewportEl);
+  if (viewportEl) {
+    viewportEl.style.setProperty("--call-stage-safe-width", `${Math.floor(safeArea.width)}px`);
+    viewportEl.style.setProperty("--call-stage-safe-height", `${Math.floor(safeArea.height)}px`);
+  }
+  const gridEdgePadding = Math.max(10, Math.min(18, Math.floor(Math.min(safeArea.width || 0, safeArea.height || 0) * 0.018)));
+  const gridSafeWidth = Math.max(1, Math.floor((safeArea.width || 0) - (gridEdgePadding * 2)));
+  const gridSafeHeight = Math.max(1, Math.floor((safeArea.height || 0) - (gridEdgePadding * 2)));
+  const style = window.getComputedStyle ? window.getComputedStyle(gridEl) : null;
+  const cssGap = Number.parseFloat(style?.columnGap || style?.gap || "12") || 12;
+  const gap = Math.max(8, Math.min(22, cssGap));
+  const layout = computeBestCallGridLayout({
+    containerWidth: gridSafeWidth,
+    containerHeight: gridSafeHeight,
+    tileCount: totalTiles,
+    gap,
+    aspectRatio: 16 / 9,
+    mode: "grid",
+  });
+  const cols = layout.columns || getCallStageGridCols(totalTiles);
+  const rows = layout.rows || getCallStageGridRows(totalTiles, cols);
+  const maxTileWidthForGrid = Math.max(1, Math.floor((gridSafeWidth - (gap * Math.max(0, cols - 1))) / Math.max(1, cols)));
+  const maxTileHeightForGrid = Math.max(1, Math.floor((gridSafeHeight - (gap * Math.max(0, rows - 1))) / Math.max(1, rows)));
+  let resolvedTileWidth = Math.max(1, Math.floor(layout.tileWidth || 0));
+  let resolvedTileHeight = Math.max(1, Math.floor(layout.tileHeight || 0));
+  if (resolvedTileWidth > maxTileWidthForGrid) {
+    resolvedTileWidth = maxTileWidthForGrid;
+    resolvedTileHeight = Math.floor(resolvedTileWidth / (16 / 9));
+  }
+  if (resolvedTileHeight > maxTileHeightForGrid) {
+    resolvedTileHeight = maxTileHeightForGrid;
+    resolvedTileWidth = Math.floor(resolvedTileHeight * (16 / 9));
+  }
+  const resolvedLayoutWidth = Math.min(gridSafeWidth, Math.ceil((resolvedTileWidth * cols) + (gap * Math.max(0, cols - 1))));
+  const resolvedLayoutHeight = Math.min(gridSafeHeight, Math.ceil((resolvedTileHeight * rows) + (gap * Math.max(0, rows - 1))));
   gridEl.style.setProperty("--call-grid-cols", String(cols));
   gridEl.style.setProperty("--call-grid-rows", String(rows));
-  const rect = gridEl.getBoundingClientRect?.() || null;
-  const style = window.getComputedStyle ? window.getComputedStyle(gridEl) : null;
-  const gap = Number.parseFloat(style?.columnGap || style?.gap || "10") || 10;
-  const rowGap = Number.parseFloat(style?.rowGap || style?.gap || "10") || gap;
-  const paddingX = (Number.parseFloat(style?.paddingLeft || "0") || 0) + (Number.parseFloat(style?.paddingRight || "0") || 0);
-  const paddingY = (Number.parseFloat(style?.paddingTop || "0") || 0) + (Number.parseFloat(style?.paddingBottom || "0") || 0);
-  const gridWidth = Math.max(0, Number(rect?.width || 0) - paddingX - (gap * Math.max(0, cols - 1)));
-  const gridHeight = Math.max(0, Number(rect?.height || 0) - paddingY - (rowGap * Math.max(0, rows - 1)));
-  const cellWidth = gridWidth > 0 ? (gridWidth / cols) : 0;
-  const rowHeight = gridHeight > 0 ? (gridHeight / rows) : 0;
-  const ratioWidth = 16 / 9;
-  const tileWidth = Math.floor(Math.min(
-    cellWidth || 640,
-    rowHeight ? rowHeight * ratioWidth : (cellWidth || 640),
-  ));
-  if (tileWidth > 0) {
-    gridEl.style.setProperty("--call-grid-tile-width", `${Math.max(220, tileWidth)}px`);
+  gridEl.style.setProperty("--call-grid-gap", `${gap}px`);
+  gridEl.style.setProperty("--call-grid-edge-padding", `${gridEdgePadding}px`);
+  if (resolvedTileWidth > 0 && resolvedTileHeight > 0) {
+    gridEl.style.setProperty("--call-grid-tile-width", `${resolvedTileWidth}px`);
+    gridEl.style.setProperty("--call-grid-tile-height", `${resolvedTileHeight}px`);
+    gridEl.style.setProperty("--call-grid-layout-width", `${resolvedLayoutWidth}px`);
+    gridEl.style.setProperty("--call-grid-layout-height", `${resolvedLayoutHeight}px`);
   } else {
     gridEl.style.removeProperty("--call-grid-tile-width");
+    gridEl.style.removeProperty("--call-grid-tile-height");
+    gridEl.style.removeProperty("--call-grid-layout-width");
+    gridEl.style.removeProperty("--call-grid-layout-height");
   }
   gridEl.setAttribute("data-tile-count", String(totalTiles));
   gridEl.setAttribute("data-grid-rows", String(Math.min(rows, 5)));
+  gridEl.setAttribute("data-grid-cols", String(cols));
+  gridEl.setAttribute("data-layout-variant", layout.layoutVariant || "fluid");
   const rem = totalTiles % cols;
   let lastFillMode = "0";
   if (cols === 2 && totalTiles > cols && rem === 1) {
@@ -70102,29 +71514,84 @@ function syncCallStageGridLayoutAttrs(grid = null, viewport = null) {
   gridEl.setAttribute("aria-label", `Participantes (${totalTiles})`);
   viewportEl?.setAttribute("data-stage-tile-count", String(totalTiles));
 }
-
 function syncCallFocusStageLayoutAttrs(viewport = null) {
   const viewportEl = viewport || document.querySelector("#callStage .callStageViewport");
   if (!viewportEl) return;
-  const rect = viewportEl.getBoundingClientRect?.() || null;
-  const width = Number(rect?.width || 0);
-  const height = Number(rect?.height || 0);
+  const safeArea = resolveCallStageSafeAreaMetrics(viewportEl);
+  viewportEl.style.setProperty("--call-stage-safe-width", `${Math.floor(safeArea.width)}px`);
+  viewportEl.style.setProperty("--call-stage-safe-height", `${Math.floor(safeArea.height)}px`);
+  const width = Number(safeArea.width || 0);
+  const height = Number(safeArea.height || 0);
   if (!(width > 0 && height > 0)) {
     viewportEl.style.removeProperty("--call-focus-tile-width");
+    viewportEl.style.removeProperty("--call-focus-stage-width");
+    viewportEl.style.removeProperty("--call-focus-stage-height");
     return;
   }
   const stage = document.getElementById("callStage");
-  const reserveBottom = stage?.classList.contains("is-private-call-ui") ? 82 : 8;
-  const availableWidth = Math.max(0, width - 16);
-  const availableHeight = Math.max(0, height - reserveBottom - 16);
-  const tileWidth = Math.floor(Math.min(availableWidth, availableHeight * (16 / 9)));
+  const focusedTileType = normalizeStageTileType(stage?.getAttribute?.("data-focused-tile-type") || "");
+  const computed = window.getComputedStyle ? window.getComputedStyle(viewportEl) : null;
+  const mediaRatio = focusedTileType === "screenshare"
+    ? parseCallStageAspectRatioValue(computed?.getPropertyValue("--call-stage-screenshare-aspect-ratio") || "", 16 / 9)
+    : 16 / 9;
+  const availableWidth = Math.max(0, width);
+  const availableHeight = Math.max(0, height);
+  const focusMaxWidth = focusedTileType === "screenshare" ? 1180 : 860;
+  const focusMaxHeight = focusedTileType === "screenshare" ? 720 : 484;
+  let tileWidth = Math.floor(Math.min(availableWidth, availableHeight * mediaRatio, focusMaxWidth, focusMaxHeight * mediaRatio));
+  let tileHeight = Math.floor(tileWidth / mediaRatio);
+  if (tileHeight > focusMaxHeight) {
+    tileHeight = focusMaxHeight;
+    tileWidth = Math.floor(tileHeight * mediaRatio);
+  }
   if (tileWidth > 0) {
-    viewportEl.style.setProperty("--call-focus-tile-width", `${Math.max(280, tileWidth)}px`);
+    viewportEl.style.setProperty("--call-focus-tile-width", `${Math.max(220, tileWidth)}px`);
+    viewportEl.style.setProperty("--call-focus-stage-width", `${Math.max(220, tileWidth)}px`);
+    viewportEl.style.setProperty("--call-focus-stage-height", `${Math.max(124, tileHeight)}px`);
   } else {
     viewportEl.style.removeProperty("--call-focus-tile-width");
+    viewportEl.style.removeProperty("--call-focus-stage-width");
+    viewportEl.style.removeProperty("--call-focus-stage-height");
   }
 }
 
+let callStageLayoutResizeObserver = null;
+let callStageLayoutObservedElements = null;
+let callStageLayoutResizeFrame = 0;
+
+function queueCallStageLayoutSync() {
+  if (callStageLayoutResizeFrame) return;
+  const schedule = typeof requestAnimationFrame === "function"
+    ? requestAnimationFrame
+    : (fn) => setTimeout(fn, 16);
+  callStageLayoutResizeFrame = schedule(() => {
+    callStageLayoutResizeFrame = 0;
+    syncCallStageGridLayoutAttrs();
+    syncCallFocusStageLayoutAttrs();
+  });
+}
+
+function observeCallStageLayoutElement(el) {
+  if (!(el instanceof Element)) return;
+  if (!callStageLayoutResizeObserver) return;
+  if (!callStageLayoutObservedElements) callStageLayoutObservedElements = new WeakSet();
+  if (callStageLayoutObservedElements.has(el)) return;
+  callStageLayoutObservedElements.add(el);
+  callStageLayoutResizeObserver.observe(el);
+}
+
+function ensureCallStageLayoutResizeObserver() {
+  if (typeof ResizeObserver !== "function") return;
+  if (!callStageLayoutResizeObserver) {
+    callStageLayoutResizeObserver = new ResizeObserver(() => queueCallStageLayoutSync());
+  }
+  const stage = document.getElementById("callStage");
+  observeCallStageLayoutElement(document.getElementById("dmMain"));
+  observeCallStageLayoutElement(stage);
+  observeCallStageLayoutElement(stage?.querySelector?.(".callStageCard"));
+  observeCallStageLayoutElement(stage?.querySelector?.(".callStageViewport"));
+  observeCallStageLayoutElement(document.getElementById("callStageGrid"));
+}
 function getEffectiveGroupCallActiveUserIds(conversationId) {
   const convId = normId(conversationId || callConversationId || activeDmId || state.activeDm?.conversationId || "");
   if (!convId) return [];
@@ -70740,6 +72207,7 @@ function syncGroupCallMemberTileVideo(tile, track = null) {
   const updateVisibility = () => {
     const hasTrack = hasRenderableVideoFrame(videoEl);
     if (hasTrack) {
+      if (isScreenshareTile) syncCallStageMediaAspectRatioFromVideo(videoEl, tile);
       tile.classList.add("has-video");
       setCallTileLoadingPrompt(tile, false);
       tile.removeAttribute(holdUntilAttr);
@@ -71345,6 +72813,9 @@ function renderGroupCallStageMembers() {
       if (ownerId && !memberIds.includes(ownerId)) memberIds.push(ownerId);
     });
   }
+  if (useServerVoiceStageModel && memberIds.length) {
+    hydrateActiveCallMemberProfiles(convId, memberIds);
+  }
   const serverVoiceActiveScreenshare = serverVoiceAudioOnlyMode
     ? (serverVoiceScreenshares[0] || getServerVoiceActiveScreenshare(convId))
     : null;
@@ -71799,6 +73270,20 @@ function renderGroupCallStageMembers() {
         callerFunction: "renderGroupCallStageMembers.onclick",
       });
       const watchConvId = normId(callConversationId || activeDmId || convId || "");
+      const profilePreviewAnchor = getCallParticipantProfilePreviewClickAnchor(ev, tile);
+      if (profilePreviewAnchor && isServerVoiceConversationById(watchConvId)) {
+        void openCallParticipantProfilePreview(memberUserId, profilePreviewAnchor, {
+          display_name: String(tile.getAttribute("data-call-user-label") || getCallParticipantPreviewText(tile, ".callParticipantLabel__name, .stageGridLabel, .participantLabel") || "").trim(),
+          avatar_url: getCallParticipantPreviewAvatarUrl(tile),
+        }, {
+          conversationId: watchConvId,
+          conversationLabel: String(state.activeDm?.displayName || "").trim(),
+          serverId: resolveServerVoiceServerIdByConversation(watchConvId),
+          kind: "server",
+        });
+        return;
+      }
+      if (isServerVoiceConversationById(watchConvId)) closeMeProfilePopout();
       if (
         memberMediaType === "share"
         && memberUserId !== meId
@@ -71916,7 +73401,12 @@ function renderGroupCallStageMembers() {
       });
     }
     applyUserNameColorToEl(labelEl, entry.userId, "");
-    applyCallTileColorToEl(tile, entry.userId, "");
+    applyCallTileColorToEl(tile, entry.userId, "", {
+      conversationId: convId,
+      tileVariant: entryTileType === "screenshare" ? "screenshare" : `grid:${entryTileType || "primary"}`,
+      suppressPersonalColor: entryTileType === "screenshare" || entryMediaType === "share",
+      forceServerVoiceLog: isServerVoiceConversationById(convId),
+    });
     syncGroupCallMemberTileVideo(tile, entry.track || null);
   });
 
@@ -72343,9 +73833,11 @@ function getCallEls() {
 
     bar: document.getElementById("callBar"),
     barText: document.getElementById("callBarText"),
+    barSub: document.getElementById("callBarSub"),
     barShareBadge: document.getElementById("callBarShareBadge"),
     barPing: document.getElementById("callBarPing"),
     btnServerVoiceReconnectSmall: document.getElementById("btnServerVoiceReconnectSmall"),
+    btnOpenCallSmall: document.getElementById("btnOpenCallSmall"),
     btnMicToggleSmall: document.getElementById("btnMicToggleSmall"),
     btnDeafenToggleSmall: document.getElementById("btnDeafenToggleSmall"),
     btnCallEndSmall: document.getElementById("btnCallEndSmall"),
@@ -72745,8 +74237,14 @@ async function openCallCameraDeviceMenuAt(anchorRect = null, {
 
   const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
   const vh = window.innerHeight || document.documentElement.clientHeight || 720;
-  const menuWidth = Math.max(220, deviceMenu.offsetWidth || 248);
-  const menuHeight = Math.max(108, deviceMenu.offsetHeight || 160);
+  const menuSize = measureFloatingCallMenu(deviceMenu, {
+    fallbackWidth: 248,
+    fallbackHeight: 180,
+    minWidth: 220,
+    minHeight: 108,
+  });
+  const menuWidth = menuSize.width;
+  const menuHeight = menuSize.height;
 
   let left = 0;
   let top = 0;
@@ -72783,6 +74281,7 @@ async function openCallCameraDeviceMenuAt(anchorRect = null, {
   deviceMenu.style.top = `${Math.round(top)}px`;
   deviceMenu.classList.add("is-open");
   deviceMenu.setAttribute("aria-hidden", "false");
+  queueClampFloatingCallMenu(deviceMenu);
 
   logServerVoiceDebug("camera.device_menu_opened", {
     conversationId: convId || null,
@@ -72838,30 +74337,30 @@ async function openCallCameraMenuAt(anchorRect = null, {
   closeServerVoiceMemberMenu();
   syncCallCameraMenuUi(convId);
 
-  const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
-  const vh = window.innerHeight || document.documentElement.clientHeight || 720;
-  const menuWidth = Math.max(220, menu.offsetWidth || 240);
-  const menuHeight = Math.max(108, menu.offsetHeight || 130);
+  const menuSize = measureFloatingCallMenu(menu, {
+    fallbackWidth: 240,
+    fallbackHeight: 132,
+    minWidth: 220,
+    minHeight: 108,
+  });
+  const menuPosition = computeContextMenuPosition({
+    menuWidth: menuSize.width,
+    menuHeight: menuSize.height,
+    tileId: "",
+    tileType: "camera",
+    participantId: normId(state.user?.id || ""),
+    isOwner: true,
+    menuType: "camera_context_menu",
+    callerFunction: String(callerFunction || "").trim() || "openCallCameraMenuAt",
+    triggerReason: String(triggerReason || "").trim() || "manual_open",
+    anchorRect,
+  });
 
-  let left = 0;
-  let top = 0;
-  if (anchorRect) {
-    left = anchorRect.left;
-    top = anchorRect.top - menuHeight - 8;
-    if (top < 8) top = anchorRect.bottom + 8;
-  } else {
-    left = Math.round(vw / 2 - menuWidth / 2);
-    top = Math.round(vh / 2 - menuHeight / 2);
-  }
-  if (left + menuWidth > vw - 8) left = Math.max(8, vw - menuWidth - 8);
-  if (left < 8) left = 8;
-  if (top < 8) top = 8;
-  if (top + menuHeight > vh - 8) top = Math.max(8, vh - menuHeight - 8);
-
-  menu.style.left = `${Math.round(left)}px`;
-  menu.style.top = `${Math.round(top)}px`;
+  menu.style.left = `${menuPosition.x}px`;
+  menu.style.top = `${menuPosition.y}px`;
   menu.classList.add("is-open");
   menu.setAttribute("aria-hidden", "false");
+  queueClampFloatingCallMenu(menu);
   logServerVoiceDebug("camera.context_menu_opened", {
     conversationId: convId || null,
     triggerReason: String(triggerReason || "").trim() || "manual_open",
@@ -72966,7 +74465,7 @@ function bindCallCameraMenuOnce() {
     closeCallCameraMenu();
   }, { capture: true });
   window.addEventListener("scroll", closeCallCameraMenu, { passive: true });
-  window.addEventListener("resize", closeCallCameraMenu);
+  window.addEventListener("resize", clampOpenCallFloatingMenus);
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") closeCallCameraMenu();
   });
@@ -73127,8 +74626,14 @@ function openCallShareMenuAt(anchorRect = null, {
   closeServerVoiceMemberMenu();
   syncCallShareMenuUi();
 
-  const menuWidth = Math.max(220, menu.offsetWidth || 240);
-  const menuHeight = Math.max(108, menu.offsetHeight || 120);
+  const menuSize = measureFloatingCallMenu(menu, {
+    fallbackWidth: 268,
+    fallbackHeight: 220,
+    minWidth: 220,
+    minHeight: 108,
+  });
+  const menuWidth = menuSize.width;
+  const menuHeight = menuSize.height;
   const meId = normId(state.user?.id || "");
   const contextObject = context && typeof context === "object" ? context : {};
   const ownerParticipantId = normId(
@@ -73180,6 +74685,7 @@ function openCallShareMenuAt(anchorRect = null, {
   menu.style.zIndex = "2147483000";
   menu.classList.add("is-open");
   menu.setAttribute("aria-hidden", "false");
+  queueClampFloatingCallMenu(menu);
   logStreamMenuEvent("stream_menu.opened", ownerStreamContext, {
     triggerReason: String(triggerReason || "").trim() || "manual_open",
     callerFunction: String(callerFunction || "").trim() || "openCallShareMenuAt",
@@ -73399,8 +74905,14 @@ function openCallAudioMenuAt(x, y, mode = REMOTE_AUDIO_TYPE_VOICE, context = nul
   callAudioMenuMode = nextMode;
   syncCallAudioMenuUi();
 
-  const menuWidth = Math.max(220, menu.offsetWidth || 260);
-  const menuHeight = Math.max(130, menu.offsetHeight || 190);
+  const menuSize = measureFloatingCallMenu(menu, {
+    fallbackWidth: 280,
+    fallbackHeight: 240,
+    minWidth: 220,
+    minHeight: 130,
+  });
+  const menuWidth = menuSize.width;
+  const menuHeight = menuSize.height;
   const menuType = nextMode === REMOTE_AUDIO_TYPE_SHARE
     ? (streamRouting?.menuTypeResolved || "viewer_stream_menu")
     : "participant_audio_menu";
@@ -73425,6 +74937,7 @@ function openCallAudioMenuAt(x, y, mode = REMOTE_AUDIO_TYPE_VOICE, context = nul
   menu.style.zIndex = "2147483000";
   menu.classList.add("is-open");
   menu.setAttribute("aria-hidden", "false");
+  queueClampFloatingCallMenu(menu);
   const resolvedMediaType = nextMode === REMOTE_AUDIO_TYPE_SHARE ? "screenshare" : contextMediaType;
   const persistedKey = nextMode === REMOTE_AUDIO_TYPE_SHARE
     ? buildRemoteStreamPersistedKey(callAudioMenuContext?.streamPreferenceKey || "", "volume")
@@ -73993,7 +75506,7 @@ function bindCallAudioMenuOnce() {
     closeCallAudioMenu();
   }, { capture: true });
   window.addEventListener("scroll", closeCallAudioMenu, { passive: true });
-  window.addEventListener("resize", closeCallAudioMenu);
+  window.addEventListener("resize", clampOpenCallFloatingMenus);
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") closeCallAudioMenu();
   });
@@ -74192,7 +75705,7 @@ function bindCallShareMenuOnce() {
     closeCallShareMenu();
   }, { capture: true });
   window.addEventListener("scroll", closeCallShareMenu, { passive: true });
-  window.addEventListener("resize", closeCallShareMenu);
+  window.addEventListener("resize", clampOpenCallFloatingMenus);
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") closeCallShareMenu();
   });
@@ -80165,18 +81678,35 @@ function handleServerVoiceRealtimePresenceEvent(conversationId, members = [], { 
 
   if (!useLiveKitTransport) {
     joinedIds.forEach((uid) => unsuppressGroupDmConnectedUser(convId, uid));
+  } else if (joinedIds.length) {
+    clearServerVoiceUiForcedRemovedIds(convId, joinedIds);
   }
   leftIds.forEach((uid) => {
     if (useLiveKitTransport) {
       const transportState = getServerVoiceTransportParticipantState(convId, uid);
-      logServerVoiceDebug("participant.presence_leave_ignored_transport_owned", {
+      const stillInTransport = isServerVoiceTransportParticipantInChannel(convId, uid, transportState);
+      logServerVoiceDebug("participant.presence_leave_transport_reconciled", {
         conversationId: convId,
         peerUserId: uid,
         presentInRoom: !!transportState?.presentInRoom,
         audioSubscribed: !!transportState?.audioSubscribed,
         audioAttached: !!transportState?.audioAttached,
         audioLive: !!transportState?.audioLive,
+        stillInTransport,
       });
+      if (!stillInTransport) {
+        const forcedEntry = getServerVoiceUiForcedRemovedEntry(convId, { create: true });
+        forcedEntry?.add?.(uid);
+        removeServerVoiceUiCachedParticipantState(convId, uid);
+        logServerVoiceUiParticipantsEvent("ui.participant_leave_detected", convId, getServerVoiceInCallParticipantIds(convId, {
+          triggerReason: `presence.${event}:leave_cleanup`,
+          callerFunction: "handleServerVoiceRealtimePresenceEvent",
+        }), `presence.${event}`, {
+          callerFunction: "handleServerVoiceRealtimePresenceEvent",
+          peerUserId: uid,
+          source: "supabase_presence_leave_livekit_absent",
+        });
+      }
       return;
     }
     suppressGroupDmConnectedUser(convId, uid);
@@ -84651,11 +86181,33 @@ function setCallButtonA11y(btn, label) {
   if (sr) sr.textContent = text;
 }
 
+function clearServerVoiceCallViewVisualState({ hideStage = false } = {}) {
+  const dmMain = document.getElementById("dmMain");
+  const midPanel = dmMain?.closest?.(".panel.mid") || document.querySelector("main.panel.mid");
+  dmMain?.classList?.remove?.("is-server-voice-call-layout", "is-server-voice-in-call", "is-server-voice-hide-header");
+  midPanel?.classList?.remove?.("is-server-voice-call-layout", "is-server-voice-in-call");
+  const emptyState = document.getElementById("voiceChannelEmptyState");
+  if (emptyState) {
+    emptyState.hidden = true;
+    emptyState.setAttribute("aria-hidden", "true");
+  }
+  if (!hideStage) return;
+  const stage = document.getElementById("callStage");
+  if (!stage) return;
+  stage.hidden = true;
+  stage.classList.remove("is-open");
+  stage.setAttribute("aria-hidden", "true");
+}
+
 function syncServerVoiceCallLayout(enabled = false, { hideHeader = false, activeCall = false } = {}) {
   const dmMain = document.getElementById("dmMain");
   if (!dmMain) return;
   const midPanel = dmMain.closest(".panel.mid") || document.querySelector("main.panel.mid");
   const voiceLayout = !!enabled;
+  if (!voiceLayout) {
+    clearServerVoiceCallViewVisualState({ hideStage: false });
+    return;
+  }
   dmMain.classList.toggle("is-server-voice-call-layout", voiceLayout);
   dmMain.classList.toggle("is-server-voice-in-call", !!(voiceLayout && activeCall));
   dmMain.classList.toggle("is-server-voice-hide-header", !!(voiceLayout && hideHeader));
@@ -84663,7 +86215,7 @@ function syncServerVoiceCallLayout(enabled = false, { hideHeader = false, active
     midPanel.classList.toggle("is-server-voice-call-layout", voiceLayout);
     midPanel.classList.toggle("is-server-voice-in-call", !!(voiceLayout && activeCall));
   }
-  if (voiceLayout) setCallStatus("", false);
+  setCallStatus("", false);
 }
 
 function syncLeftSidebarCallbarInset() {
@@ -84673,7 +86225,8 @@ function syncLeftSidebarCallbarInset() {
 
   const isSidebarDock = bar.classList.contains("is-docked-in-sidebar");
   const isVisible = bar.classList.contains("is-open") && !bar.hidden;
-  if (!isSidebarDock || !isVisible) {
+  const isStaticMiniDock = !!bar.closest?.("#voiceMiniDockSlot");
+  if (!isSidebarDock || !isVisible || isStaticMiniDock) {
     leftPanel.classList.remove("has-callbar-overlay");
     leftPanel.style.removeProperty("--left-callbar-overlay-offset");
     return;
@@ -84683,6 +86236,39 @@ function syncLeftSidebarCallbarInset() {
   const inset = Math.max(76, barHeight + 14);
   leftPanel.classList.add("has-callbar-overlay");
   leftPanel.style.setProperty("--left-callbar-overlay-offset", `${inset}px`);
+}
+
+function getMiniCallDockConversationId() {
+  return normId(callConversationId || serverVoiceTransportConversationId || activeDmId || state.activeDm?.conversationId || "");
+}
+
+function buildMiniCallDockLocationLabel(conversationId = "") {
+  const convId = normId(conversationId || getMiniCallDockConversationId());
+  if (!convId) return "Voice channel";
+  const meta = getActiveConversationMeta(convId) || getConversationMeta(convId) || {};
+  const channelCtx = findServerChannelContextByConversationId(convId) || null;
+  const sid = normId(channelCtx?.serverId || meta?.serverId || "");
+  const serverRow = sid && typeof getServerRowById === "function" ? getServerRowById(sid) : null;
+  const serverName = normalizeConversationLabel(
+    serverRow?.name || meta?.serverName || channelCtx?.name || "Server",
+    "Server"
+  );
+  const channelName = normalizeConversationLabel(
+    channelCtx?.channel?.name
+      || channelCtx?.channel?.displayName
+      || meta?.displayName
+      || "Voice channel",
+    "Voice channel"
+  );
+  return serverName ? `${serverName} / ${channelName}` : channelName;
+}
+
+async function openCurrentCallScreenFromMiniDock() {
+  const convId = getMiniCallDockConversationId();
+  if (!convId) return;
+  stageOpen = true;
+  await showDm(convId, { autoAnswerIfPending: true });
+  refreshCallUI();
 }
 
 function syncServerVoiceEmptyState({
@@ -84781,8 +86367,8 @@ function refreshCallUI() {
     remoteTileAvatar, remoteAuxTileAvatar, selfTileAvatar, selfAuxTileAvatar, remoteTileLabel, remoteAuxTileLabel, selfTileLabel, selfAuxTileLabel,
     remoteGridAvatar, remoteAuxGridAvatar, selfGridAvatar, selfAuxGridAvatar, remoteGridLabel, remoteAuxGridLabel, selfGridLabel, selfAuxGridLabel,
     btnMicToggle, btnDeafenToggle, btnHeaderMicToggle, btnHeaderDeafenToggle, btnServerVoiceReconnect, btnCallEndStage, btnPopoutStage, btnExitFullscreen,
-    bar, barText, barShareBadge, barPing,
-    btnServerVoiceReconnectSmall, btnMicToggleSmall, btnDeafenToggleSmall, btnCallEndSmall,
+    bar, barText, barSub, barShareBadge, barPing,
+    btnServerVoiceReconnectSmall, btnOpenCallSmall, btnMicToggleSmall, btnDeafenToggleSmall, btnCallEndSmall,
     btnShareScreen, btnShareScreenStage, btnShareScreenStageMenu, btnShareScreenSmall, btnShareScreenSmallMenu,
     btnCamera, btnCameraStage, btnCameraStageMenu, btnCameraSmall, btnCameraSmallMenu, btnFullscreenStage, stageViewport,
   } = getCallEls();
@@ -84827,10 +86413,19 @@ function refreshCallUI() {
     activeViewedConvId === stageConvId &&
     isServerVoiceConversationUiContext(stageConvId)
   );
-  const canRenderCallUiInCurrentView = !!(!activeCallConvId || viewingCallConversation || viewingServerVoiceConversation);
-  const shouldDockCallUiInDm = !!(isDmOpen && (viewingCallConversation || (callActive && viewingServerVoiceConversation)));
   const stageMeta = getActiveConversationMeta(stageConvId) || getConversationMeta(stageConvId) || {};
-  const isServerVoiceCallUi = isServerVoiceConversationMeta(stageMeta);
+  const isServerVoiceCallUi = !!(isServerVoiceConversationMeta(stageMeta) || isServerVoiceConversationUiContext(stageConvId));
+  const activeMainTab = document.querySelector("[data-tab].active")?.getAttribute("data-tab") || "widgets";
+  const currentViewRoute = isDmOpen
+    ? (activeViewedConvId ? (viewingServerVoiceConversation ? "server_voice" : "dm") : "dm")
+    : `tab:${activeMainTab}`;
+  const isViewingServerVoiceCallScreen = !!(isServerVoiceCallUi && viewingServerVoiceConversation);
+  const canRenderCallUiInCurrentView = isServerVoiceCallUi
+    ? isViewingServerVoiceCallScreen
+    : !!(!activeCallConvId || viewingCallConversation);
+  const shouldDockCallUiInDm = isServerVoiceCallUi
+    ? !!(isDmOpen && isViewingServerVoiceCallScreen)
+    : !!(isDmOpen && viewingCallConversation);
   const privateLiveKitCallUi = isPrivateDmLiveKitTransportConversation(stageConvId);
   const groupDmLiveKitCallUi = isGroupDmLiveKitTransportConversation(stageConvId);
   const serverVoiceLiveKitActive = !!(
@@ -85016,11 +86611,8 @@ function refreshCallUI() {
       }),
     )
     : 0;
-  const serverVoiceCallElapsedText = formatCallElapsedClockLabel(
-    callEventConnectedAtMs ? (nowMs - callEventConnectedAtMs) : 0,
-  );
   const stageSubText = (isServerVoiceCallUi && callActive)
-    ? `${groupCallLabel} • ${serverVoiceInCallParticipantCount} ${serverVoiceInCallParticipantCount === 1 ? "participante" : "participantes"} • ${serverVoiceCallElapsedText}`
+    ? `${groupCallLabel} - ${serverVoiceInCallParticipantCount} ${serverVoiceInCallParticipantCount === 1 ? "participante" : "participantes"}`
     : (serverVoiceTransportStageText
     || (inCall
       ? (shareBits.length ? shareBits.join(" • ") : t("call.stage.connected", "Connected"))
@@ -85273,18 +86865,55 @@ function refreshCallUI() {
     "is-speaking-spotlight",
     !!(stageLayoutMode === "focus" && mainUserId && isCallSpeakingUiUserActive(mainUserId))
   );
-  applyCallTileColorToEl(tileRemote, effectiveRemoteUserId, remoteTileColor);
-  applyCallTileColorToEl(tileRemoteAux, effectiveRemoteAuxUserId || effectiveRemoteUserId, remoteAuxTileColor);
-  applyCallTileColorToEl(tileSelf, state.user?.id, meTileColor);
-  applyCallTileColorToEl(tileSelfAux, state.user?.id, meTileColor);
-  applyCallTileColorToEl(gridRemote, effectiveRemoteUserId, remoteTileColor);
-  applyCallTileColorToEl(gridRemoteAux, effectiveRemoteAuxUserId || effectiveRemoteUserId, remoteAuxTileColor);
-  applyCallTileColorToEl(gridSelf, state.user?.id, meTileColor);
-  applyCallTileColorToEl(gridSelfAux, state.user?.id, meTileColor);
+  applyCallTileColorToEl(tileRemote, effectiveRemoteUserId, remoteTileColor, {
+    conversationId: stageConvId,
+    tileVariant: `fixed:${remotePrimaryTileType || "primary"}`,
+    suppressPersonalColor: remotePrimaryTileType === "screenshare",
+  });
+  applyCallTileColorToEl(tileRemoteAux, effectiveRemoteAuxUserId || effectiveRemoteUserId, remoteAuxTileColor, {
+    conversationId: stageConvId,
+    tileVariant: `fixed:${remoteAuxTileType || "aux"}`,
+    suppressPersonalColor: remoteAuxTileType === "screenshare",
+  });
+  applyCallTileColorToEl(tileSelf, state.user?.id, meTileColor, {
+    conversationId: stageConvId,
+    tileVariant: `fixed:${selfPrimaryTileType || "primary"}`,
+    suppressPersonalColor: selfPrimaryTileType === "screenshare",
+  });
+  applyCallTileColorToEl(tileSelfAux, state.user?.id, meTileColor, {
+    conversationId: stageConvId,
+    tileVariant: `fixed:${selfAuxTileType || "aux"}`,
+    suppressPersonalColor: selfAuxTileType === "screenshare",
+  });
+  applyCallTileColorToEl(gridRemote, effectiveRemoteUserId, remoteTileColor, {
+    conversationId: stageConvId,
+    tileVariant: `grid-fixed:${remotePrimaryTileType || "primary"}`,
+    suppressPersonalColor: remotePrimaryTileType === "screenshare",
+  });
+  applyCallTileColorToEl(gridRemoteAux, effectiveRemoteAuxUserId || effectiveRemoteUserId, remoteAuxTileColor, {
+    conversationId: stageConvId,
+    tileVariant: `grid-fixed:${remoteAuxTileType || "aux"}`,
+    suppressPersonalColor: remoteAuxTileType === "screenshare",
+  });
+  applyCallTileColorToEl(gridSelf, state.user?.id, meTileColor, {
+    conversationId: stageConvId,
+    tileVariant: `grid-fixed:${selfPrimaryTileType || "primary"}`,
+    suppressPersonalColor: selfPrimaryTileType === "screenshare",
+  });
+  applyCallTileColorToEl(gridSelfAux, state.user?.id, meTileColor, {
+    conversationId: stageConvId,
+    tileVariant: `grid-fixed:${selfAuxTileType || "aux"}`,
+    suppressPersonalColor: selfAuxTileType === "screenshare",
+  });
   renderGroupCallStageMembers();
 
-  applyCallTileColorToEl(stageViewport, mainUserId, mainTileColor);
-  applyCallTileColorToEl(stagePlaceholder, mainUserId, mainTileColor);
+  // Stage viewport is layout chrome; participant colors belong only to tile surfaces.
+  clearCallTileColorFromEl(stageViewport);
+  applyCallTileColorToEl(stagePlaceholder, mainUserId, mainTileColor, {
+    conversationId: stageConvId,
+    tileVariant: requestedFocusTileType === "screenshare" ? "focused:screenshare" : "focused:participant",
+    suppressPersonalColor: requestedFocusTileType === "screenshare",
+  });
   applyUserNameColorToEl(stageLabel, mainUserId, mainNameColor);
   applyUserNameColorToEl(remoteTileLabel, effectiveRemoteUserId, remoteNameColor);
   applyUserNameColorToEl(
@@ -85486,6 +87115,26 @@ function refreshCallUI() {
     stageGrid.setAttribute("aria-hidden", showGrid ? "false" : "true");
   }
   const showStage = !!(callUiVisible && stageOpen && !publicGroupPreviewOnly);
+  if (isServerVoiceDebugLoggingEnabled() && isServerVoiceCallUi) {
+    const shell = getSidebarShellEl();
+    logServerVoiceDebug("server_voice_view_visibility", {
+      conversationId: stageConvId || null,
+      isConnectedToVoiceCall: !!callActive,
+      isViewingVoiceCall: !!isViewingServerVoiceCallScreen,
+      currentView: currentViewRoute,
+      currentRoute: currentViewRoute,
+      fullCallStageMounted: !!(stage && !stage.hidden && stage.classList.contains("is-open")),
+      fullCallStageShouldShow: !!showStage,
+      miniCallWidgetMounted: !!(bar && !bar.hidden && bar.classList.contains("is-open")),
+      bodyCallStageOpen: document.body?.getAttribute?.("data-call-stage-open") || null,
+      shellCallStageOpen: shell?.getAttribute?.("data-call-stage-open") || null,
+      dmMainClasses: document.getElementById("dmMain")?.className || null,
+      stageClasses: stage?.className || null,
+      reason: showStage
+        ? "connected_and_viewing_server_voice_call"
+        : (callActive && !isViewingServerVoiceCallScreen ? "connected_but_not_viewing_server_voice_call" : "not_connected_or_stage_closed"),
+    });
+  }
 
   if (stage) {
     stage.classList.toggle("is-private-call-ui", isPrivateCallUi);
@@ -85503,8 +87152,10 @@ function refreshCallUI() {
   }
 
   if (showStage && stageGrid) {
+    ensureCallStageLayoutResizeObserver();
     syncCallStageGridLayoutAttrs(stageGrid, stageViewport);
     syncCallFocusStageLayoutAttrs(stageViewport);
+    queueCallStageLayoutSync();
     if (typeof requestAnimationFrame === "function") {
       requestAnimationFrame(() => {
         syncCallStageGridLayoutAttrs(stageGrid, stageViewport);
@@ -85586,6 +87237,11 @@ function refreshCallUI() {
   });
 
   if (barText) barText.textContent = callHeaderTitle;
+  if (barSub) {
+    barSub.hidden = true;
+    barSub.textContent = "";
+    barSub.title = "";
+  }
   const callBarShareText = serverVoiceScreenshareEnabled
     ? (
       serverVoiceActiveScreenshare
@@ -85855,9 +87511,34 @@ function refreshCallUI() {
     && isActiveServerVoiceCallJoined(activeViewedConvId)
   );
 
+  const connectedMiniDockConversationId = getMiniCallDockConversationId();
+  const connectedMiniDockIsServerVoice = !!(
+    callActive
+    && connectedMiniDockConversationId
+    && shouldUseServerVoiceLiveKitTransport(connectedMiniDockConversationId)
+    && (isServerVoiceConversationUiContext(connectedMiniDockConversationId) || isServerVoiceConversationById(connectedMiniDockConversationId))
+  );
   const shouldHideVoiceHeader = !!serverVoiceCallJoinedInView;
-  const shouldHideServerVoiceMiniPanel = !!serverVoiceCallJoinedInView;
-  const shouldUseSidebarMiniPanel = false;
+  const shouldHideServerVoiceMiniPanel = false;
+  const shouldUseSidebarMiniPanel = !!connectedMiniDockIsServerVoice;
+  ensureCallSidebarElapsedTimer(!!(connectedMiniDockIsServerVoice && callEventConnectedAtMs));
+
+  if (barText) barText.textContent = shouldUseSidebarMiniPanel ? "Em chamada" : callHeaderTitle;
+  if (barSub) {
+    const miniDockSubText = shouldUseSidebarMiniPanel
+      ? buildMiniCallDockLocationLabel(connectedMiniDockConversationId)
+      : "";
+    barSub.hidden = !miniDockSubText;
+    barSub.textContent = miniDockSubText;
+    barSub.title = miniDockSubText;
+  }
+  if (btnOpenCallSmall) {
+    const openCallLabel = "Abrir chamada";
+    btnOpenCallSmall.hidden = true;
+    btnOpenCallSmall.style.display = "none";
+    btnOpenCallSmall.disabled = true;
+    setCallButtonA11y(btnOpenCallSmall, openCallLabel);
+  }
 
   syncServerVoiceCallLayout(serverVoiceConversationOpen, {
     hideHeader: shouldHideVoiceHeader,
@@ -92798,6 +94479,23 @@ function startGlobalServerChannelTableListener() {
     });
 }
 
+async function onGlobalServerTableChanged(row) {
+  if (!row || !state.user?.id) return;
+  const serverId = normId(row?.id || row?.server_id || "");
+  if (!serverId) return;
+  const isTrackedServer = (state.servers || []).some((serverRow) => normId(serverRow?.serverId || "") === serverId);
+  if (!isTrackedServer) return;
+  const isDeleted = !!row?.deleted_at || String(row?.status || "").trim().toLowerCase() === "pending_deletion";
+  if (isDeleted) {
+    applyServerDeletionLocally(serverId, { source: "server_realtime_deleted" });
+    await loadGroupAndServerCollections({ force: true, hydrateGroupMetadata: false }).catch(() => {});
+    renderGroupsRail();
+    return;
+  }
+  await loadGroupAndServerCollections({ force: true, hydrateGroupMetadata: false }).catch(() => {});
+  renderGroupsRail();
+}
+
 async function onGlobalServerRoleTableChanged(row) {
   if (!row || !state.user?.id) return;
   const serverId = normId(row?.server_id || "");
@@ -92818,6 +94516,18 @@ function startGlobalServerRoleTablesListener() {
 
   globalServerRoleTablesChannel = supabase
     .channel("global-server-roles:" + state.user.id)
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "servers",
+    }, async (payload) => {
+      try {
+        const row = payload?.new || payload?.old || null;
+        await onGlobalServerTableChanged(row);
+      } catch (e) {
+        console.warn("servers realtime update failed", e);
+      }
+    })
     .on("postgres_changes", {
       event: "*",
       schema: "public",
@@ -94341,6 +96051,10 @@ async function showDm(conversationId, opts = {}) {
     }, async (payload) => {
       const row = payload?.new;
       if (!row?.id) return;
+      if (row?.deleted_at) {
+        removeMessageFromCacheAndUi(row.id);
+        return;
+      }
       const idx = dmMessagesCache.findIndex((m) => String(m?.id || "") === String(row.id));
       if (idx < 0) return;
 
@@ -94542,7 +96256,7 @@ function bindCallUIButtons() {
   const {
     btnMicToggle, btnDeafenToggle, btnHeaderMicToggle, btnHeaderDeafenToggle, btnServerVoiceReconnect, btnCallEndStage, btnPopoutStage, btnExitFullscreen,
     btnServerVoiceCopyDiagnostics,
-    btnServerVoiceReconnectSmall, btnMicToggleSmall, btnDeafenToggleSmall, btnCallEndSmall,
+    btnServerVoiceReconnectSmall, btnOpenCallSmall, btnMicToggleSmall, btnDeafenToggleSmall, btnCallEndSmall,
     btnShareScreen, btnShareScreenStage, btnShareScreenStageMenu, btnShareScreenSmall, btnShareScreenSmallMenu,
     btnCamera, btnCameraStage, btnCameraStageMenu, btnCameraSmall, btnCameraSmallMenu, btnFullscreenStage,
     tileRemote, tileRemoteAux, tileSelf, tileSelfAux, gridRemote, gridRemoteAux, gridSelf, gridSelfAux,
@@ -94592,6 +96306,11 @@ function bindCallUIButtons() {
   });
   btnMicToggleSmall?.addEventListener("click", toggleMic);
   btnDeafenToggleSmall?.addEventListener("click", toggleDeafen);
+  btnOpenCallSmall?.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    await openCurrentCallScreenFromMiniDock();
+  });
 
   btnCallEndSmall?.addEventListener("click", async () => {
     await hangupCurrentCallByUser("?? Desligaste.");
@@ -95114,6 +96833,20 @@ function bindCallUIButtons() {
       callerFunction: "bindCallUIButtons.handleFixedStageTileClick",
     });
     const convId = normId(callConversationId || activeDmId || "");
+    const profilePreviewAnchor = getCallParticipantProfilePreviewClickAnchor(ev, targetEl);
+    if (profilePreviewAnchor && participantId && isServerVoiceConversationById(convId)) {
+      void openCallParticipantProfilePreview(participantId, profilePreviewAnchor, {
+        display_name: String(targetEl?.getAttribute?.("data-call-user-label") || getCallParticipantPreviewText(targetEl, ".callParticipantLabel__name, .stageGridLabel, .participantLabel") || "").trim(),
+        avatar_url: getCallParticipantPreviewAvatarUrl(targetEl),
+      }, {
+        conversationId: convId,
+        conversationLabel: String(state.activeDm?.displayName || "").trim(),
+        serverId: resolveServerVoiceServerIdByConversation(convId),
+        kind: "server",
+      });
+      return;
+    }
+    if (isServerVoiceConversationById(convId)) closeMeProfilePopout();
     if (allowWatchPrompt && isRemoteShareWatchPromptActive(convId)) {
       logStageTileEvent("stage.focus_target", {
         tileId,
@@ -95353,10 +97086,7 @@ function bindCallUIButtons() {
   });
 
   document.addEventListener("fullscreenchange", refreshCallUI);
-  window.addEventListener("resize", () => {
-    syncCallStageGridLayoutAttrs();
-    syncCallFocusStageLayoutAttrs();
-  });
+  window.addEventListener("resize", queueCallStageLayoutSync);
 
   dmStageResizeGrip?.addEventListener("pointerdown", (ev) => {
     if (!ev.isPrimary) return;

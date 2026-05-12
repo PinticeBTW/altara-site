@@ -1,4 +1,4 @@
-﻿@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap");
 
 :root {
   --profile-banner-ratio: 4 / 1;
@@ -504,14 +504,16 @@ body.is-resizing-sidebar * {
   width: 100%;
   min-height: 36px;
   border-radius: 10px;
-  background: rgba(8, 12, 20, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--altara-sidebar-input-bg, rgba(18, 18, 18, 0.94));
+  border: 1px solid var(--altara-sidebar-border, rgba(255, 255, 255, 0.085));
   color: var(--text-main);
 }
 
 .serverMembersSearch:focus {
-  border-color: rgba(255, 255, 255, 0.26);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
+  outline: none;
+  border-color: var(--altara-sidebar-focus-border, rgba(232, 207, 174, 0.36));
+  box-shadow: var(--altara-sidebar-focus-ring, 0 0 0 3px rgba(232, 207, 174, 0.1));
+  background: var(--altara-sidebar-input-focus-bg, rgba(21, 21, 21, 0.96));
 }
 
 .serverMembersList {
@@ -554,8 +556,10 @@ body.is-resizing-sidebar * {
 
 .serverMemberRow:hover,
 .serverMemberRow:focus-visible {
-  border-color: rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.045);
+  outline: none;
+  border-color: var(--altara-sidebar-hover-border, rgba(232, 207, 174, 0.2));
+  background: var(--altara-sidebar-hover-bg, rgba(232, 207, 174, 0.07));
+  box-shadow: var(--altara-sidebar-hover-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.035));
 }
 
 .serverMemberRow__avatar {
@@ -2365,7 +2369,7 @@ body.desktop-install-welcome-open {
 
 .serverChannelCreateAccessRow__swatch {
   border-radius: 8px;
-  background: var(--role-color, #5865f2);
+  background: var(--role-color, #d8b98f);
 }
 
 .serverChannelCreateAccessRow__text {
@@ -2576,9 +2580,9 @@ body.desktop-install-welcome-open {
 }
 
 .serverSettingsRolesSection {
-  border: 1px solid rgba(176, 198, 255, 0.2);
+  border: 1px solid rgba(232, 207, 174, 0.16);
   border-radius: 14px;
-  background: rgba(8, 14, 24, 0.55);
+  background: rgba(16, 15, 14, 0.72);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -2602,8 +2606,8 @@ body.desktop-install-welcome-open {
   width: 44px;
   height: 36px;
   border-radius: 10px;
-  border: 1px solid rgba(188, 206, 255, 0.34);
-  background: rgba(8, 14, 24, 0.88);
+  border: 1px solid rgba(232, 207, 174, 0.2);
+  background: rgba(16, 15, 14, 0.9);
   padding: 2px;
   cursor: pointer;
 }
@@ -2629,9 +2633,9 @@ body.desktop-install-welcome-open {
 
 .serverSettingsRolesList,
 .serverSettingsRoleMembers {
-  border: 1px solid rgba(176, 198, 255, 0.18);
+  border: 1px solid rgba(232, 207, 174, 0.12);
   border-radius: 12px;
-  background: rgba(7, 12, 22, 0.56);
+  background: rgba(12, 12, 12, 0.5);
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -2653,21 +2657,21 @@ body.desktop-install-welcome-open {
   align-items: center;
   gap: 8px;
   border-radius: 10px;
-  border: 1px solid rgba(176, 198, 255, 0.16);
-  background: rgba(16, 24, 38, 0.72);
+  border: 1px solid rgba(232, 207, 174, 0.12);
+  background: rgba(255, 255, 255, 0.035);
   color: var(--text-strong);
   padding: 8px 10px;
   cursor: pointer;
 }
 
 .serverSettingsRolePick:hover {
-  border-color: rgba(109, 133, 255, 0.58);
+  border-color: rgba(232, 207, 174, 0.28);
 }
 
 .serverSettingsRolePick.active {
-  border-color: rgba(109, 133, 255, 0.76);
-  background: rgba(54, 68, 126, 0.28);
-  box-shadow: inset 0 0 0 1px rgba(131, 157, 255, 0.28);
+  border-color: rgba(232, 207, 174, 0.42);
+  background: rgba(232, 207, 174, 0.09);
+  box-shadow: inset 3px 0 0 rgba(232, 207, 174, 0.82);
 }
 
 .serverSettingsRoleSwatch {
@@ -2698,9 +2702,9 @@ body.desktop-install-welcome-open {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: rgba(228, 239, 255, 0.88);
-  border: 1px solid rgba(153, 179, 255, 0.36);
-  background: rgba(76, 96, 176, 0.24);
+  color: rgba(246, 232, 210, 0.92);
+  border: 1px solid rgba(232, 207, 174, 0.24);
+  background: rgba(232, 207, 174, 0.09);
   border-radius: 999px;
   padding: 2px 6px;
   line-height: 1.2;
@@ -2745,8 +2749,8 @@ body.desktop-install-welcome-open {
   align-items: flex-start;
   gap: 10px;
   border-radius: 10px;
-  border: 1px solid rgba(176, 198, 255, 0.14);
-  background: rgba(13, 20, 34, 0.66);
+  border: 1px solid rgba(232, 207, 174, 0.11);
+  background: rgba(255, 255, 255, 0.035);
   padding: 8px 10px;
 }
 
@@ -2777,8 +2781,8 @@ body.desktop-install-welcome-open {
   align-items: center;
   gap: 10px;
   border-radius: 10px;
-  border: 1px solid rgba(176, 198, 255, 0.14);
-  background: rgba(13, 20, 34, 0.66);
+  border: 1px solid rgba(232, 207, 174, 0.11);
+  background: rgba(255, 255, 255, 0.035);
   padding: 7px 9px;
 }
 
@@ -2791,8 +2795,8 @@ body.desktop-install-welcome-open {
   height: 30px;
   border-radius: 999px;
   overflow: hidden;
-  border: 1px solid rgba(194, 212, 255, 0.25);
-  background: rgba(18, 25, 38, 0.8);
+  border: 1px solid rgba(232, 207, 174, 0.16);
+  background: rgba(24, 23, 22, 0.96);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5572,11 +5576,11 @@ body.desktop-install-welcome-open {
   min-width: 220px;
   max-width: 300px;
   min-height: 0;
-  border: 1px solid rgba(200, 232, 255, 0.14);
+  border: 1px solid var(--altara-sidebar-border, rgba(255, 255, 255, 0.085));
   border-radius: 14px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 18%),
-    rgba(8, 12, 20, 0.9);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 18%),
+    var(--altara-sidebar-bg, rgba(13, 13, 13, 0.94));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -5587,12 +5591,9 @@ body.desktop-install-welcome-open {
 }
 
 .serverChannelsPanel__top {
-  padding: 12px;
-  border-bottom: 1px solid rgba(200, 232, 255, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid var(--altara-sidebar-border, rgba(255, 255, 255, 0.085));
+  display: block;
 }
 
 .serverChannelsPanel__identity {
@@ -5600,18 +5601,63 @@ body.desktop-install-welcome-open {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1 1 auto;
+}
+
+.serverChannelsPanel__identityBtn {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid rgba(232, 207, 174, 0.12);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
+    rgba(18, 18, 18, 0.92);
+  padding: 6px 10px;
+  color: var(--altara-sidebar-text, #f2f0ec);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .14s ease, background-color .14s ease, color .14s ease, box-shadow .14s ease, transform .12s ease;
+}
+
+.serverChannelsPanel__identityBtn:hover,
+.serverChannelsPanel__identityBtn:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.26);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.075), rgba(255, 255, 255, 0.016)),
+    rgba(23, 22, 21, 0.96);
+  box-shadow:
+    0 0 0 2px rgba(232, 207, 174, 0.075),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.serverChannelsPanel__identityBtn:focus-visible {
+  box-shadow:
+    0 0 0 1px rgba(232, 207, 174, 0.32),
+    0 0 0 4px rgba(232, 207, 174, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.serverChannelsPanel__identityBtn:active {
+  border-color: rgba(232, 207, 174, 0.34);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.11), rgba(255, 255, 255, 0.02)),
+    rgba(27, 25, 22, 0.98);
+  transform: translateY(1px);
 }
 
 .serverChannelsPanel__icon {
   width: 34px;
   height: 34px;
   border-radius: 11px;
-  border: 1px solid rgba(183, 202, 255, 0.42);
-  background: rgba(63, 74, 112, 0.48);
+  border: 1px solid var(--altara-sidebar-icon-border, rgba(232, 207, 174, 0.2));
+  background:
+    linear-gradient(145deg, rgba(232, 207, 174, 0.1), rgba(255, 255, 255, 0.024)),
+    var(--altara-sidebar-surface, #181818);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #f0f4ff;
+  color: var(--altara-sidebar-accent-text, #f0d8b8);
   font-size: 15px;
   font-weight: 800;
   overflow: hidden;
@@ -5625,54 +5671,134 @@ body.desktop-install-welcome-open {
 
 .serverChannelsPanel__identityMeta {
   min-width: 0;
+  display: grid;
+  gap: 2px;
+  flex: 1 1 auto;
 }
 
 .serverChannelsPanel__name {
+  display: block;
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 700;
-  color: #f0f4ff;
+  color: var(--altara-sidebar-text, #f2f0ec);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .serverChannelsPanel__meta {
-  margin-top: 2px;
+  display: block;
+  margin-top: 0;
   font-size: 12px;
-  color: rgba(200, 214, 236, 0.8);
+  color: var(--altara-sidebar-muted, rgba(242, 240, 236, 0.56));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .serverChannelsPanel__invite {
   width: 31px;
   height: 31px;
   border-radius: 8px;
-  border: 1px solid rgba(176, 194, 255, 0.42);
-  background: rgba(32, 42, 70, 0.56);
-  color: #d7e2ff;
+  border: 1px solid var(--altara-sidebar-icon-btn-border, rgba(232, 207, 174, 0.22));
+  background: var(--altara-sidebar-icon-btn-bg, rgba(24, 24, 24, 0.96));
+  color: var(--altara-sidebar-accent-text, #f0d8b8);
   font-size: 19px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: border-color .14s ease, background-color .14s ease, color .14s ease, box-shadow .14s ease;
 }
 
-.serverChannelsPanel__invite:hover {
-  border-color: rgba(200, 216, 255, 0.72);
-  background: rgba(60, 76, 130, 0.66);
+.serverChannelsPanel__invite:hover,
+.serverChannelsPanel__invite:focus-visible {
+  outline: none;
+  border-color: var(--altara-sidebar-icon-btn-hover-border, rgba(232, 207, 174, 0.34));
+  background: var(--altara-sidebar-icon-btn-hover-bg, rgba(232, 207, 174, 0.09));
+  color: var(--altara-sidebar-text, #f2f0ec);
+  box-shadow: var(--altara-sidebar-focus-ring-soft, 0 0 0 2px rgba(232, 207, 174, 0.08));
+}
+
+.serverChannelsPanel__invite:active {
+  border-color: var(--altara-sidebar-icon-btn-active-border, rgba(232, 207, 174, 0.4));
+  background: var(--altara-sidebar-icon-btn-active-bg, rgba(232, 207, 174, 0.13));
 }
 
 .serverChannelsPanel__actions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .serverChannelsPanel__menuBtn {
-  font-size: 16px;
-  font-weight: 700;
+  width: auto;
+  max-width: min(132px, 44vw);
+  min-width: 0;
+  height: 34px;
+  padding: 0 11px 0 12px;
+  border: 1px solid var(--altara-sidebar-icon-btn-border, rgba(232, 207, 174, 0.22));
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)),
+    var(--altara-sidebar-icon-btn-bg, rgba(24, 24, 24, 0.96));
+  color: var(--altara-sidebar-text, #f2f0ec);
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: left;
+  transition: border-color .14s ease, background-color .14s ease, color .14s ease, box-shadow .14s ease, transform .12s ease;
+}
+
+.serverChannelsPanel__menuBtn:hover,
+.serverChannelsPanel__menuBtn:focus-visible {
+  outline: none;
+  border-color: var(--altara-sidebar-icon-btn-hover-border, rgba(232, 207, 174, 0.36));
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.09), rgba(255, 255, 255, 0.018)),
+    var(--altara-sidebar-icon-btn-hover-bg, rgba(30, 29, 27, 0.98));
+  color: var(--altara-sidebar-text, #f2f0ec);
+  box-shadow:
+    var(--altara-sidebar-focus-ring-soft, 0 0 0 2px rgba(232, 207, 174, 0.08)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.serverChannelsPanel__menuBtn:focus-visible {
+  box-shadow:
+    0 0 0 1px rgba(232, 207, 174, 0.32),
+    0 0 0 4px rgba(232, 207, 174, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.serverChannelsPanel__menuBtn:active {
+  border-color: var(--altara-sidebar-icon-btn-active-border, rgba(232, 207, 174, 0.42));
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.13), rgba(255, 255, 255, 0.02)),
+    var(--altara-sidebar-icon-btn-active-bg, rgba(34, 31, 27, 0.98));
+  transform: translateY(1px);
+}
+
+.serverChannelsPanel__menuLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.serverChannelsPanel__menuChevron {
+  color: var(--altara-sidebar-accent-text, #f0d8b8);
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.86;
 }
 
 .serverChannelsPanel__body {
@@ -5691,10 +5817,10 @@ body.desktop-install-welcome-open {
 .serverQuickItem {
   width: 100%;
   min-height: 34px;
-  border: 1px solid rgba(200, 232, 255, 0.12);
+  border: 1px solid var(--altara-sidebar-border, rgba(255, 255, 255, 0.085));
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(216, 228, 250, 0.88);
+  background: var(--altara-sidebar-item-bg, rgba(255, 255, 255, 0.026));
+  color: var(--altara-sidebar-soft, rgba(242, 240, 236, 0.72));
   text-align: left;
   padding: 0 9px;
   display: grid;
@@ -5734,7 +5860,7 @@ body.desktop-install-welcome-open {
 
 .serverChannelsGroup__title {
   margin: 0;
-  color: rgba(206, 214, 230, 0.72);
+  color: var(--altara-sidebar-muted, rgba(242, 240, 236, 0.54));
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -5749,7 +5875,7 @@ body.desktop-install-welcome-open {
   border-radius: 7px;
   background: transparent;
   padding: 0;
-  color: rgba(206, 214, 230, 0.82);
+  color: var(--altara-sidebar-soft, rgba(242, 240, 236, 0.66));
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5761,16 +5887,20 @@ body.desktop-install-welcome-open {
 }
 
 .serverChannelsGroup__add:hover,
-.serverChannelsCategory__add:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(238, 244, 255, 0.98);
+.serverChannelsCategory__add:hover,
+.serverChannelsGroup__add:focus-visible,
+.serverChannelsCategory__add:focus-visible {
+  outline: none;
+  background: var(--altara-sidebar-hover-bg, rgba(232, 207, 174, 0.07));
+  color: var(--altara-sidebar-accent-text, #f0d8b8);
   opacity: 1;
+  box-shadow: var(--altara-sidebar-focus-ring-soft, 0 0 0 2px rgba(232, 207, 174, 0.08));
 }
 
 .serverChannelsGroup__add:disabled,
 .serverChannelsCategory__add:disabled {
   background: transparent;
-  color: rgba(206, 214, 230, 0.46);
+  color: var(--altara-sidebar-disabled, rgba(242, 240, 236, 0.28));
   opacity: 0.34;
   cursor: not-allowed;
 }
@@ -5797,7 +5927,7 @@ body.desktop-install-welcome-open {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: rgba(206, 214, 230, 0.84);
+  color: var(--altara-sidebar-soft, rgba(242, 240, 236, 0.68));
   padding: 0 4px;
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto;
@@ -5806,10 +5936,14 @@ body.desktop-install-welcome-open {
   text-align: left;
   cursor: pointer;
   flex: 1 1 auto;
+  transition: background-color .14s ease, box-shadow .14s ease, color .14s ease;
 }
 
-.serverChannelsCategory__toggle:hover {
-  background: rgba(255, 255, 255, 0.05);
+.serverChannelsCategory__toggle:hover,
+.serverChannelsCategory__toggle:focus-visible {
+  outline: none;
+  background: var(--altara-sidebar-hover-bg, rgba(232, 207, 174, 0.07));
+  box-shadow: var(--altara-sidebar-focus-ring-soft, 0 0 0 2px rgba(232, 207, 174, 0.08));
 }
 
 .serverChannelsCategory__toggle.is-static {
@@ -5842,7 +5976,7 @@ body.desktop-install-welcome-open {
 .serverChannelsCategory__count {
   font-size: 11px;
   font-weight: 700;
-  color: rgba(194, 205, 230, 0.72);
+  color: var(--altara-sidebar-muted, rgba(242, 240, 236, 0.52));
 }
 
 .serverChannelsCategory.has-unread > .serverChannelsCategory__head::before {
@@ -5859,7 +5993,7 @@ body.desktop-install-welcome-open {
 }
 
 .serverChannelsCategory.is-active > .serverChannelsCategory__head .serverChannelsCategory__toggle {
-  color: rgba(236, 242, 255, 0.95);
+  color: var(--altara-sidebar-text, #f2f0ec);
 }
 
 .serverChannelsCategory__body {
@@ -5891,7 +6025,7 @@ body.desktop-install-welcome-open {
   border: 0;
   border-radius: 9px;
   background: transparent;
-  color: #dfe6f7;
+  color: var(--altara-sidebar-soft, rgba(242, 240, 236, 0.78));
   text-align: left;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;
@@ -5900,6 +6034,7 @@ body.desktop-install-welcome-open {
   padding: 7px 10px;
   position: relative;
   cursor: pointer;
+  transition: background .14s ease, box-shadow .14s ease, color .14s ease;
 }
 
 .serverChannelItem[draggable="true"],
@@ -5915,13 +6050,24 @@ body.desktop-install-welcome-open {
   filter: saturate(0.86);
 }
 
-.serverChannelItem:hover {
-  background: var(--ui-row-bg);
+.serverChannelItem:hover,
+.serverChannelItem:focus-visible {
+  outline: none;
+  background: var(--altara-sidebar-hover-bg, rgba(232, 207, 174, 0.07));
+  box-shadow: var(--altara-sidebar-focus-ring-soft, 0 0 0 2px rgba(232, 207, 174, 0.08));
 }
 
 .serverChannelItem.is-active {
-  background: linear-gradient(90deg, rgba(180, 191, 255, 0.26), rgba(180, 191, 255, 0.12));
-  box-shadow: inset 0 0 0 1px rgba(206, 215, 255, 0.34);
+  background: var(--altara-sidebar-selected-bg, linear-gradient(90deg, rgba(232, 207, 174, 0.14), rgba(232, 207, 174, 0.07)));
+  color: var(--altara-sidebar-selected-text, #f6efe4);
+  box-shadow: var(--altara-sidebar-selected-shadow, inset 0 0 0 1px rgba(232, 207, 174, 0.3));
+}
+
+.serverChannelItem.is-active:focus-visible {
+  outline: none;
+  box-shadow:
+    var(--altara-sidebar-selected-shadow, inset 0 0 0 1px rgba(232, 207, 174, 0.3)),
+    var(--altara-sidebar-focus-ring, 0 0 0 3px rgba(232, 207, 174, 0.1));
 }
 
 .serverChannelItem.has-unread::before {
@@ -5945,7 +6091,7 @@ body.desktop-install-welcome-open {
 }
 
 .serverChannelItem__icon {
-  color: rgba(192, 206, 231, 0.78);
+  color: var(--altara-sidebar-icon, rgba(242, 240, 236, 0.58));
   font-size: 17px;
   font-weight: 700;
   line-height: 1;
@@ -5965,9 +6111,9 @@ body.desktop-install-welcome-open {
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  border: 1px solid rgba(168, 188, 255, 0.56);
-  background: rgba(90, 114, 255, 0.28);
-  color: #eef2ff;
+  border: 1px solid var(--altara-sidebar-badge-border, rgba(232, 207, 174, 0.28));
+  background: var(--altara-sidebar-badge-bg, rgba(232, 207, 174, 0.1));
+  color: var(--altara-sidebar-badge-text, #f0d8b8);
   font-size: 10px;
   font-weight: 700;
   display: inline-flex;
@@ -6000,15 +6146,18 @@ body.desktop-install-welcome-open {
 .serverVoiceRoom {
   border: 0;
   background: transparent;
-  color: #dfe6f7;
+  color: var(--altara-sidebar-soft, rgba(242, 240, 236, 0.78));
   opacity: 1;
   padding: 7px 10px;
   gap: 8px;
-  transition: background .14s ease, transform .12s ease;
+  transition: background .14s ease, transform .12s ease, box-shadow .14s ease, color .14s ease;
 }
 
-.serverVoiceRoom:hover {
-  background: var(--ui-row-bg);
+.serverVoiceRoom:hover,
+.serverVoiceRoom:focus-visible {
+  outline: none;
+  background: var(--altara-sidebar-hover-bg, rgba(232, 207, 174, 0.07));
+  box-shadow: var(--altara-sidebar-focus-ring-soft, 0 0 0 2px rgba(232, 207, 174, 0.08));
 }
 
 .serverVoiceRoom:active {
@@ -6016,8 +6165,16 @@ body.desktop-install-welcome-open {
 }
 
 .serverVoiceRoom.is-active {
-  background: linear-gradient(90deg, rgba(180, 191, 255, 0.26), rgba(180, 191, 255, 0.12));
-  box-shadow: inset 0 0 0 1px rgba(206, 215, 255, 0.34);
+  background: var(--altara-sidebar-selected-bg, linear-gradient(90deg, rgba(232, 207, 174, 0.14), rgba(232, 207, 174, 0.07)));
+  color: var(--altara-sidebar-selected-text, #f6efe4);
+  box-shadow: var(--altara-sidebar-selected-shadow, inset 0 0 0 1px rgba(232, 207, 174, 0.3));
+}
+
+.serverVoiceRoom.is-active:focus-visible {
+  outline: none;
+  box-shadow:
+    var(--altara-sidebar-selected-shadow, inset 0 0 0 1px rgba(232, 207, 174, 0.3)),
+    var(--altara-sidebar-focus-ring, 0 0 0 3px rgba(232, 207, 174, 0.1));
 }
 
 .serverVoiceRoom.has-unread::before {
@@ -6044,13 +6201,48 @@ body.desktop-install-welcome-open {
   box-shadow: inset 0 0 0 1px rgba(88, 226, 162, 0.22);
 }
 
+.serverVoiceRoom.is-active.has-live {
+  box-shadow: var(--altara-sidebar-selected-shadow, inset 0 0 0 1px rgba(232, 207, 174, 0.3));
+}
+
+.serverVoiceRoom.is-active.has-live:focus-visible {
+  box-shadow:
+    var(--altara-sidebar-selected-shadow, inset 0 0 0 1px rgba(232, 207, 174, 0.3)),
+    var(--altara-sidebar-focus-ring, 0 0 0 3px rgba(232, 207, 174, 0.1));
+}
+
 .serverVoiceRoom__icon {
-  color: rgba(192, 206, 231, 0.78);
+  color: var(--altara-sidebar-icon, rgba(242, 240, 236, 0.58));
   font-size: 16px;
 }
 
 .serverVoiceRoom__label {
   font-size: 15px;
+}
+
+.serverVoiceRoom__meta {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.serverVoiceRoom__elapsed {
+  flex: 0 0 auto;
+  min-width: 34px;
+  color: rgba(232, 207, 174, 0.68);
+  font-size: 10.5px;
+  font-weight: 750;
+  line-height: 1;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.serverVoiceRoom:not(.is-active) .serverVoiceRoom__elapsed {
+  color: rgba(242, 240, 236, 0.42);
 }
 
 .serverVoiceRoom__count {
@@ -6142,15 +6334,18 @@ body.desktop-install-welcome-open {
   grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--altara-sidebar-member-bg, rgba(255, 255, 255, 0.018));
   cursor: context-menu;
-  transition: background .14s ease, border-color .14s ease;
+  transition: background .14s ease, border-color .14s ease, box-shadow .14s ease;
   border: 1px solid transparent;
 }
 
-.serverVoiceMember:hover {
-  background: rgba(118, 144, 216, 0.12);
-  border-color: rgba(140, 168, 236, 0.35);
+.serverVoiceMember:hover,
+.serverVoiceMember:focus-visible {
+  outline: none;
+  background: var(--altara-sidebar-member-active-bg, rgba(232, 207, 174, 0.07));
+  border-color: var(--altara-sidebar-member-active-border, rgba(232, 207, 174, 0.24));
+  box-shadow: var(--altara-sidebar-member-active-shadow, inset 0 0 0 1px rgba(232, 207, 174, 0.07));
 }
 
 .serverVoiceMember__avatar {
@@ -6183,7 +6378,7 @@ body.desktop-install-welcome-open {
 .serverVoiceMember__name {
   min-width: 0;
   font-size: 12px;
-  color: #d9e6ff;
+  color: var(--altara-sidebar-text, #f2f0ec);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -6192,7 +6387,7 @@ body.desktop-install-welcome-open {
 
 .serverVoiceMember__state {
   font-size: 11px;
-  color: rgba(214, 224, 245, 0.72);
+  color: var(--altara-sidebar-muted, rgba(242, 240, 236, 0.54));
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -12899,6 +13094,30 @@ input[type="range"] {
   contain: none;
 }
 
+.stageGridTile[data-call-media-type="share"] .stageGridAvatar,
+.stageGridTile[data-call-tile-type="screenshare"] .stageGridAvatar {
+  display: none !important;
+}
+
+.stageGridTile[data-call-media-type="share"]:not(.has-video):not(.is-watch-gated):not(.is-share-loading):not(.has-watch-snapshot)::before,
+.stageGridTile[data-call-tile-type="screenshare"]:not(.has-video):not(.is-watch-gated):not(.is-share-loading):not(.has-watch-snapshot)::before {
+  content: "A preparar partilha...";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(244, 235, 222, 0.78);
+  background:
+    radial-gradient(360px 180px at 50% 48%, rgba(232, 207, 174, 0.08), transparent 72%),
+    linear-gradient(180deg, rgba(10, 10, 10, 0.82), rgba(0, 0, 0, 0.92));
+  pointer-events: none;
+}
+
 .stageGridTile[data-call-media-type="share"] .stageGridVideo,
 .stageGridTile[data-call-tile-type="screenshare"] .stageGridVideo {
   display: block;
@@ -13139,6 +13358,31 @@ input[type="range"] {
   pointer-events: none;
 }
 
+.callStage[data-focused-tile-type="screenshare"] .callStagePlaceholder > #callStageAvatar,
+.callStage[data-focused-tile-type="screenshare"] .callStagePlaceholder > #callStageAvatar.avatarBig {
+  display: none !important;
+}
+
+.callStage[data-focused-tile-type="screenshare"] .callStagePlaceholder {
+  background:
+    radial-gradient(520px 260px at 50% 45%, rgba(232, 207, 174, 0.08), transparent 72%),
+    linear-gradient(180deg, rgba(13, 13, 13, 0.92), rgba(0, 0, 0, 0.96));
+}
+
+.callStage[data-focused-tile-type="screenshare"] .callStagePlaceholder::before {
+  content: "A preparar partilha...";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(244, 235, 222, 0.8);
+  pointer-events: none;
+}
+
 .callStageLabel {
   position: absolute;
   left: 14px;
@@ -13325,7 +13569,9 @@ input[type="range"] {
   justify-content: center;
   gap: 9px;
   pointer-events: none;
-  background: radial-gradient(340px 180px at 50% 50%, rgba(7, 13, 22, 0.52), rgba(6, 10, 16, 0.24));
+  background:
+    radial-gradient(340px 180px at 50% 50%, rgba(232, 207, 174, 0.1), rgba(6, 10, 16, 0.24)),
+    linear-gradient(180deg, rgba(10, 10, 10, 0.46), rgba(0, 0, 0, 0.34));
 }
 
 .callTileLoadingCta[hidden] {
@@ -13336,8 +13582,8 @@ input[type="range"] {
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  border: 2px solid rgba(226, 238, 255, 0.32);
-  border-top-color: rgba(142, 191, 255, 0.95);
+  border: 2px solid rgba(232, 207, 174, 0.26);
+  border-top-color: rgba(240, 211, 170, 0.95);
   box-shadow: 0 0 0 1px rgba(10, 16, 24, 0.25), 0 8px 20px rgba(0, 0, 0, 0.35);
   animation: callTileLoadingSpin 0.8s linear infinite;
 }
@@ -13345,7 +13591,7 @@ input[type="range"] {
 .callTileLoadingHint {
   font-size: 12px;
   font-weight: 700;
-  color: rgba(232, 240, 253, 0.9);
+  color: rgba(244, 235, 222, 0.9);
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
 }
 
@@ -20830,6 +21076,239 @@ body.theme-density-comfortable .padded {
   gap: 8px;
 }
 
+/* ALTARA neutral dark screen-share picker */
+#desktopSharePickerModal .modal__backdrop {
+  background: rgba(3, 3, 3, 0.58);
+  backdrop-filter: blur(8px);
+}
+
+#desktopSharePickerModal .desktopSharePickerCard {
+  border-color: rgba(255, 255, 255, 0.11);
+  background: linear-gradient(180deg, rgba(18, 18, 18, 0.99), rgba(11, 11, 11, 0.99));
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+#desktopSharePickerModal .desktopSharePickerTop {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  background: rgba(14, 14, 14, 0.86);
+}
+
+#desktopSharePickerModal .modalTitle {
+  color: rgba(242, 240, 236, 0.96);
+}
+
+#desktopSharePickerModal .desktopSharePickerHead .hint,
+#desktopSharePickerModal .desktopSharePickerMeta {
+  color: rgba(242, 240, 236, 0.48);
+}
+
+#desktopSharePickerModal .icon-btn {
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(242, 240, 236, 0.72);
+  box-shadow: none;
+}
+
+#desktopSharePickerModal .icon-btn:hover,
+#desktopSharePickerModal .icon-btn:focus-visible {
+  border-color: rgba(232, 207, 174, 0.24);
+  background: rgba(255, 255, 255, 0.065);
+  color: rgba(242, 240, 236, 0.94);
+  box-shadow: 0 0 0 3px rgba(232, 207, 174, 0.08);
+}
+
+#desktopSharePickerModal .desktopSharePickerTabs {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: rgba(9, 9, 9, 0.96);
+}
+
+#desktopSharePickerModal .desktopSharePickerTab,
+#desktopSharePickerModal .desktopSharePickerRefresh,
+#desktopSharePickerModal .desktopSharePickerFooter__actions .btn.ghost {
+  border-color: rgba(255, 255, 255, 0.10);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
+    rgba(24, 24, 24, 0.92);
+  color: rgba(242, 240, 236, 0.70);
+  box-shadow: none;
+}
+
+#desktopSharePickerModal .desktopSharePickerTab:hover,
+#desktopSharePickerModal .desktopSharePickerTab:focus-visible,
+#desktopSharePickerModal .desktopSharePickerRefresh:hover,
+#desktopSharePickerModal .desktopSharePickerRefresh:focus-visible,
+#desktopSharePickerModal .desktopSharePickerFooter__actions .btn.ghost:hover,
+#desktopSharePickerModal .desktopSharePickerFooter__actions .btn.ghost:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.22);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.06), rgba(255, 255, 255, 0.012)),
+    rgba(29, 29, 29, 0.96);
+  color: rgba(242, 240, 236, 0.92);
+  box-shadow: 0 0 0 3px rgba(232, 207, 174, 0.06);
+}
+
+#desktopSharePickerModal .desktopSharePickerTab.is-active {
+  border-color: rgba(232, 207, 174, 0.30);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.10), rgba(255, 255, 255, 0.018)),
+    rgba(31, 29, 26, 0.96);
+  color: rgba(242, 240, 236, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(232, 207, 174, 0.04);
+}
+
+#desktopSharePickerModal .desktopSharePickerBody {
+  background: rgba(12, 12, 12, 0.84);
+}
+
+#desktopSharePickerModal .desktopSharePickerGrid {
+  scrollbar-color: rgba(232, 207, 174, 0.24) rgba(255, 255, 255, 0.04);
+}
+
+#desktopSharePickerModal .desktopSharePickerItem {
+  border-color: rgba(255, 255, 255, 0.085);
+  background: linear-gradient(180deg, rgba(22, 22, 22, 0.98), rgba(15, 15, 15, 0.98));
+  box-shadow: none;
+}
+
+#desktopSharePickerModal .desktopSharePickerItem:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(28, 28, 28, 0.99), rgba(18, 18, 18, 0.99));
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28);
+}
+
+#desktopSharePickerModal .desktopSharePickerItem:focus-visible {
+  border-color: rgba(232, 207, 174, 0.34);
+  box-shadow:
+    0 0 0 3px rgba(232, 207, 174, 0.08),
+    0 12px 26px rgba(0, 0, 0, 0.34);
+}
+
+#desktopSharePickerModal .desktopSharePickerItem.is-selected {
+  border-color: rgba(232, 207, 174, 0.48);
+  background: linear-gradient(180deg, rgba(31, 29, 26, 0.99), rgba(18, 17, 16, 0.99));
+  box-shadow:
+    0 0 0 1px rgba(232, 207, 174, 0.10),
+    0 14px 28px rgba(0, 0, 0, 0.34);
+}
+
+#desktopSharePickerModal .desktopSharePickerItem__thumbWrap {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: linear-gradient(145deg, rgba(17, 17, 17, 0.98), rgba(8, 8, 8, 0.99));
+}
+
+#desktopSharePickerModal .desktopSharePickerItem__thumbWrap::after {
+  background: rgba(0, 0, 0, 0);
+}
+
+#desktopSharePickerModal .desktopSharePickerItem:hover .desktopSharePickerItem__thumbWrap::after,
+#desktopSharePickerModal .desktopSharePickerItem:focus-within .desktopSharePickerItem__thumbWrap::after {
+  background: rgba(0, 0, 0, 0.34);
+}
+
+#desktopSharePickerModal .desktopSharePickerItem__shareBtn {
+  border-color: rgba(232, 207, 174, 0.24);
+  background: rgba(18, 18, 18, 0.94);
+  color: rgba(242, 240, 236, 0.94);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
+}
+
+#desktopSharePickerModal .desktopSharePickerItem__shareBtn:hover,
+#desktopSharePickerModal .desktopSharePickerItem__shareBtn:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.38);
+  background: rgba(30, 28, 25, 0.98);
+  box-shadow:
+    0 0 0 3px rgba(232, 207, 174, 0.08),
+    0 12px 24px rgba(0, 0, 0, 0.38);
+}
+
+#desktopSharePickerModal .desktopSharePickerItem__thumbFallback,
+#desktopSharePickerModal .desktopSharePickerItem__name {
+  color: rgba(242, 240, 236, 0.9);
+}
+
+#desktopSharePickerModal .desktopSharePickerItem__icon,
+#desktopSharePickerModal .desktopSharePickerItem__iconFallback {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(242, 240, 236, 0.78);
+}
+
+#desktopSharePickerModal .desktopSharePickerFooter {
+  border-top-color: rgba(255, 255, 255, 0.08);
+  background: rgba(12, 12, 12, 0.96);
+}
+
+#desktopSharePickerModal .shareAudioToggle,
+#desktopSharePickerModal .desktopSharePickerQuality,
+#desktopSharePickerModal .desktopSharePickerServerVoiceControls__group {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: rgba(8, 8, 8, 0.94);
+  color: rgba(242, 240, 236, 0.76);
+}
+
+#desktopSharePickerModal .shareAudioToggle input {
+  accent-color: #e8cfae;
+}
+
+#desktopSharePickerModal .desktopSharePickerServerVoiceControls__label {
+  color: rgba(242, 240, 236, 0.48);
+}
+
+#desktopSharePickerModal .desktopSharePickerServerVoiceControls__value {
+  color: rgba(242, 240, 236, 0.88);
+}
+
+#desktopSharePickerModal .desktopSharePickerQualityBtn {
+  background: transparent;
+  color: rgba(242, 240, 236, 0.54);
+}
+
+#desktopSharePickerModal .desktopSharePickerQualityBtn:hover,
+#desktopSharePickerModal .desktopSharePickerQualityBtn:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(242, 240, 236, 0.9);
+}
+
+#desktopSharePickerModal .desktopSharePickerQualityBtn.is-active {
+  border: 1px solid rgba(232, 207, 174, 0.26);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.11), rgba(255, 255, 255, 0.014)),
+    rgba(28, 27, 25, 0.96);
+  color: rgba(242, 240, 236, 0.94);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+#desktopSharePickerModal .desktopSharePickerFooter__actions .btn.primary {
+  border-color: rgba(232, 207, 174, 0.30);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.16), rgba(232, 207, 174, 0.08)),
+    rgba(32, 29, 25, 0.96);
+  color: rgba(255, 237, 211, 0.96);
+  box-shadow: none;
+}
+
+#desktopSharePickerModal .desktopSharePickerFooter__actions .btn.primary:hover,
+#desktopSharePickerModal .desktopSharePickerFooter__actions .btn.primary:focus-visible {
+  border-color: rgba(232, 207, 174, 0.42);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.22), rgba(232, 207, 174, 0.10)),
+    rgba(38, 34, 28, 0.98);
+  box-shadow: 0 0 0 3px rgba(232, 207, 174, 0.08);
+}
+
+#desktopSharePickerModal .desktopSharePickerFooter__actions .btn.danger {
+  border-color: rgba(228, 82, 111, 0.58);
+  background: linear-gradient(180deg, rgba(194, 65, 94, 0.92), rgba(145, 42, 65, 0.95));
+  color: rgba(255, 239, 242, 0.96);
+}
+
 @media (max-width: 900px) {
   .desktopSharePickerTabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -24257,6 +24736,7 @@ body:not(.authPage) {
   --accent: #e8cfae;
   --accent-strong: #f1dbc0;
   --accent-soft: rgba(232, 207, 174, 0.14);
+  --focus-ring: rgba(232, 207, 174, 0.34);
   --selection-bg: rgba(232, 207, 174, 0.28);
   --color-link: #e8cfae;
   --ui-shell-bg: #101010;
@@ -24280,6 +24760,42 @@ body:not(.authPage) {
   --ui-danger-hover-bg: rgba(156, 68, 68, 0.22);
   --ui-danger-hover-border: rgba(210, 104, 104, 0.42);
   --ui-debug-bg: #0d0d0d;
+  --altara-sidebar-bg: rgba(13, 13, 13, 0.94);
+  --altara-sidebar-surface: #181818;
+  --altara-sidebar-item-bg: rgba(255, 255, 255, 0.026);
+  --altara-sidebar-input-bg: rgba(18, 18, 18, 0.94);
+  --altara-sidebar-input-focus-bg: rgba(21, 21, 21, 0.96);
+  --altara-sidebar-selected-bg: linear-gradient(90deg, rgba(232, 207, 174, 0.14), rgba(232, 207, 174, 0.07));
+  --altara-sidebar-selected-text: #f6efe4;
+  --altara-sidebar-selected-shadow: inset 0 0 0 1px rgba(232, 207, 174, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --altara-sidebar-hover-bg: rgba(232, 207, 174, 0.07);
+  --altara-sidebar-hover-border: rgba(232, 207, 174, 0.2);
+  --altara-sidebar-hover-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  --altara-sidebar-border: rgba(255, 255, 255, 0.085);
+  --altara-sidebar-border-strong: rgba(232, 207, 174, 0.22);
+  --altara-sidebar-focus-border: rgba(232, 207, 174, 0.36);
+  --altara-sidebar-focus-ring: 0 0 0 3px rgba(232, 207, 174, 0.1);
+  --altara-sidebar-focus-ring-soft: 0 0 0 2px rgba(232, 207, 174, 0.08);
+  --altara-sidebar-badge-bg: rgba(232, 207, 174, 0.1);
+  --altara-sidebar-badge-border: rgba(232, 207, 174, 0.28);
+  --altara-sidebar-badge-text: #f0d8b8;
+  --altara-sidebar-icon-btn-bg: rgba(24, 24, 24, 0.96);
+  --altara-sidebar-icon-btn-border: rgba(232, 207, 174, 0.22);
+  --altara-sidebar-icon-btn-hover-bg: rgba(232, 207, 174, 0.09);
+  --altara-sidebar-icon-btn-hover-border: rgba(232, 207, 174, 0.34);
+  --altara-sidebar-icon-btn-active-bg: rgba(232, 207, 174, 0.13);
+  --altara-sidebar-icon-btn-active-border: rgba(232, 207, 174, 0.4);
+  --altara-sidebar-member-bg: rgba(255, 255, 255, 0.018);
+  --altara-sidebar-member-active-bg: rgba(232, 207, 174, 0.07);
+  --altara-sidebar-member-active-border: rgba(232, 207, 174, 0.24);
+  --altara-sidebar-member-active-shadow: inset 0 0 0 1px rgba(232, 207, 174, 0.07);
+  --altara-sidebar-text: #f2f0ec;
+  --altara-sidebar-soft: rgba(242, 240, 236, 0.72);
+  --altara-sidebar-muted: rgba(242, 240, 236, 0.54);
+  --altara-sidebar-disabled: rgba(242, 240, 236, 0.28);
+  --altara-sidebar-icon: rgba(242, 240, 236, 0.58);
+  --altara-sidebar-icon-border: rgba(232, 207, 174, 0.2);
+  --altara-sidebar-accent-text: #f0d8b8;
   --left-sidebar-bg: #101010;
   --left-sidebar-top-bg: #101010;
   --left-sidebar-width: 390px;
@@ -25898,7 +26414,6 @@ body:not(.authPage) .meCtrlBtn,
 body:not(.authPage) .widgetCardTool,
 body:not(.authPage) .widgetResizeHandle,
 body:not(.authPage) .msgActionBtn,
-body:not(.authPage) .serverChannelsPanel__menuBtn,
 body:not(.authPage) .serverChannelsGroup__add,
 body:not(.authPage) .serverChannelsCategory__add {
   line-height: 0;
@@ -31786,10 +32301,20 @@ body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStagePlaceholder,
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .stageGridTile {
   border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255,255,255,0.12)) 72%, var(--altara-accent, #e8cfae) 28%) !important;
-  background: linear-gradient(160deg, rgba(44, 40, 43, 0.96), rgba(19, 19, 19, 0.98)) !important;
+  background:
+    radial-gradient(520px 260px at 50% 0%, var(--call-tile-bg-glow, rgba(232, 207, 174, 0.08)), transparent 72%),
+    linear-gradient(160deg, var(--call-tile-bg-start, rgba(44, 40, 43, 0.96)), var(--call-tile-bg-end, rgba(19, 19, 19, 0.98))) !important;
   box-shadow:
     0 14px 28px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage[data-focused-tile-type="screenshare"] .callStagePlaceholder,
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .stageGridTile[data-call-media-type="share"],
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .stageGridTile[data-call-tile-type="screenshare"] {
+  background:
+    radial-gradient(520px 260px at 50% 45%, rgba(232, 207, 174, 0.08), transparent 72%),
+    linear-gradient(180deg, rgba(13, 13, 13, 0.92), rgba(0, 0, 0, 0.96)) !important;
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStagePlaceholder > #callStageAvatar,
@@ -31804,16 +32329,16 @@ body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call 
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageViewport {
-  width: min(1180px, calc(100% - 48px));
-  min-width: min(100%, 420px);
-  height: clamp(400px, 66vh, 740px);
-  min-height: 360px;
+  width: min(1420px, calc(100% - 24px));
+  min-width: min(100%, 460px);
+  height: clamp(460px, 74vh, 860px);
+  min-height: 420px;
   aspect-ratio: auto;
-  margin: 0 auto clamp(50px, 8vh, 92px) !important;
+  margin: 0 auto clamp(62px, 9vh, 104px) !important;
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid:not([hidden]) {
-  --server-voice-stage-gap: clamp(14px, 1.5vw, 20px);
+  --server-voice-stage-gap: clamp(12px, 1.2vw, 18px);
   --server-voice-tile-width: calc((100% - (var(--server-voice-stage-gap) * 2)) / 3);
   display: flex !important;
   flex-wrap: wrap;
@@ -31822,7 +32347,7 @@ body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call 
   align-content: center;
   justify-content: center;
   width: 100%;
-  max-width: min(100%, 1160px);
+  max-width: min(100%, 1400px);
   height: 100%;
   min-height: 240px;
   margin: 0 auto;
@@ -31834,29 +32359,29 @@ body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call 
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid[data-tile-count="1"] {
-  --server-voice-tile-width: min(880px, 100%);
-  max-width: min(880px, 100%);
+  --server-voice-tile-width: min(1120px, 100%);
+  max-width: min(1120px, 100%);
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid[data-tile-count="2"] {
   --server-voice-tile-width: calc((100% - var(--server-voice-stage-gap)) / 2);
-  max-width: min(1080px, 100%);
+  max-width: min(1360px, 100%);
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid[data-tile-count="3"] {
   --server-voice-tile-width: calc((100% - var(--server-voice-stage-gap)) / 2);
-  max-width: min(980px, 100%);
+  max-width: min(1260px, 100%);
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid[data-tile-count="4"] {
   --server-voice-tile-width: calc((100% - var(--server-voice-stage-gap)) / 2);
-  max-width: min(1040px, 100%);
+  max-width: min(1320px, 100%);
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid[data-tile-count="5"],
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid[data-tile-count="6"] {
   --server-voice-tile-width: calc((100% - (var(--server-voice-stage-gap) * 2)) / 3);
-  max-width: min(1160px, 100%);
+  max-width: min(1400px, 100%);
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .stageGridTile[data-call-grid-entry="1"] {
@@ -31866,8 +32391,8 @@ body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call 
   width: var(--server-voice-tile-width) !important;
   max-width: var(--server-voice-tile-width) !important;
   height: auto !important;
-  min-width: min(100%, 320px);
-  min-height: 180px;
+  min-width: min(100%, 360px);
+  min-height: 204px;
   aspect-ratio: 16 / 9;
   align-self: center;
   opacity: 1 !important;
@@ -31879,7 +32404,7 @@ body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call 
   body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid[data-tile-count="5"],
   body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid[data-tile-count="6"] {
     --server-voice-tile-width: calc((100% - var(--server-voice-stage-gap)) / 2);
-    max-width: min(880px, 100%);
+    max-width: min(1040px, 100%);
   }
 }
 
@@ -31991,16 +32516,230 @@ body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call 
 }
 
 @media (max-width: 1180px) {
-  body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm .callStageViewport {
-    width: min(680px, calc(100% - 24px));
-  }
-
   body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStageViewportFsBtn {
     right: 12px;
     top: auto;
     bottom: 12px;
     transform: none;
   }
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callStageViewport {
+  width: min(96%, 1480px, var(--call-stage-screenshare-vh-width, 142vh));
+  min-width: min(100%, 420px);
+  height: auto;
+  min-height: 0;
+  max-width: calc(100% - 12px);
+  max-height: min(82vh, 860px, calc(100% - 92px));
+  aspect-ratio: var(--call-stage-screenshare-aspect-ratio, 16 / 9);
+  margin: 0 auto clamp(78px, 10vh, 116px) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 18px;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callVideo,
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callLocalPreview,
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callStagePlaceholder {
+  inset: 0;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: auto;
+  transform: none;
+  border-radius: inherit;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callVideo,
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callLocalPreview {
+  object-fit: contain;
+  object-position: center center;
+  background: #000;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid).is-watch-gated .callVideo.is-on {
+  transform: scale(1.01);
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callStagePlaceholder {
+  place-items: center;
+  align-content: center;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callStagePlaceholder > #callStageAvatar,
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callStagePlaceholder > #callStageAvatar.avatarBig {
+  width: clamp(104px, 12vw, 152px);
+  height: clamp(104px, 12vw, 152px);
+  min-width: clamp(104px, 12vw, 152px);
+  min-height: clamp(104px, 12vw, 152px);
+}
+
+@media (max-width: 900px), (max-height: 720px) {
+  body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageViewport {
+    width: calc(100% - 8px);
+    min-width: 0;
+    height: clamp(340px, 70vh, 720px);
+    min-height: 320px;
+    margin-bottom: clamp(70px, 11vh, 96px) !important;
+  }
+
+  body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid:not([hidden]) {
+    --server-voice-stage-gap: 10px;
+    max-width: 100%;
+  }
+
+  body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .stageGridTile[data-call-grid-entry="1"] {
+    min-width: min(100%, 280px);
+    min-height: 158px;
+  }
+
+  body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callStageViewport {
+    width: min(98%, var(--call-stage-screenshare-vh-width, 116vh));
+    min-width: 0;
+    min-height: 0;
+    max-height: min(78vh, calc(100% - 82px));
+    margin-bottom: clamp(70px, 11vh, 96px) !important;
+  }
+}
+
+/* Server voice uses JS-measured safe area so tiles scale to the actual app window. */
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm .callStageViewport {
+  width: min(100%, var(--call-stage-safe-width, 100%)) !important;
+  height: min(100%, var(--call-stage-safe-height, 70vh)) !important;
+  max-width: 100% !important;
+  max-height: var(--call-stage-safe-height, 100%) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 auto !important;
+  aspect-ratio: auto !important;
+  position: relative !important;
+  overflow: hidden !important;
+  box-sizing: border-box;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageViewport {
+  width: min(100%, var(--call-stage-safe-width, 100%)) !important;
+  height: min(100%, var(--call-stage-safe-height, 74vh)) !important;
+  display: block;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid:not([hidden]) {
+  --server-voice-stage-gap: var(--call-grid-gap, clamp(10px, 1vw, 16px));
+  --server-voice-tile-width: var(--call-grid-tile-width, min(100%, 640px));
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: var(--server-voice-stage-gap);
+  align-items: center;
+  align-content: center;
+  justify-content: center;
+  width: min(100%, var(--call-grid-layout-width, 100%));
+  height: min(100%, var(--call-grid-layout-height, 100%));
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: visible;
+  box-sizing: border-box;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .stageGridTile[data-call-grid-entry="1"] {
+  flex: 0 0 var(--call-grid-tile-width, var(--server-voice-tile-width)) !important;
+  width: var(--call-grid-tile-width, var(--server-voice-tile-width)) !important;
+  max-width: var(--call-grid-tile-width, var(--server-voice-tile-width)) !important;
+  height: var(--call-grid-tile-height, auto) !important;
+  max-height: var(--call-grid-tile-height, 360px) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  aspect-ratio: auto !important;
+  box-sizing: border-box;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm.layout-grid .callStageGrid[data-last-fill="1"] .stageGridTile:last-child {
+  width: var(--call-grid-tile-width, var(--server-voice-tile-width)) !important;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm:not(.layout-grid) .callStageViewport {
+  width: min(100%, var(--call-focus-stage-width, var(--call-stage-safe-width, 96%))) !important;
+  height: min(100%, var(--call-focus-stage-height, var(--call-stage-safe-height, 76vh))) !important;
+  max-width: min(100%, var(--call-stage-safe-width, 100%)) !important;
+  max-height: min(100%, var(--call-stage-safe-height, 100%)) !important;
+  margin: 0 auto !important;
+  aspect-ratio: var(--call-stage-screenshare-aspect-ratio, 16 / 9) !important;
+  overflow: hidden !important;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm :is(.stageGridTile, .participantTile):hover {
+  transform: none !important;
+  filter: none !important;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm :is(.stageGridTile, .participantTile):not(.has-custom-call-bg):not(.is-active):hover {
+  border-color: color-mix(in srgb, var(--altara-border, rgba(255,255,255,0.12)) 72%, var(--altara-accent, #e8cfae) 28%) !important;
+  background: linear-gradient(160deg, rgba(44, 40, 43, 0.96), rgba(19, 19, 19, 0.98)) !important;
+  box-shadow:
+    0 14px 28px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call
+  :is(
+    .callStagePlaceholder,
+    .stageGridTile:not([data-call-media-type="share"]):not([data-call-tile-type="screenshare"]),
+    .participantTile
+  ).has-custom-call-bg,
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call
+  :is(
+    .callStagePlaceholder,
+    .stageGridTile:not([data-call-media-type="share"]):not([data-call-tile-type="screenshare"]),
+    .participantTile
+  ).has-custom-call-bg:hover,
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call
+  :is(
+    .callStagePlaceholder,
+    .stageGridTile:not([data-call-media-type="share"]):not([data-call-tile-type="screenshare"]),
+    .participantTile
+  ).has-custom-call-bg:is(.is-active, .is-speaking, .is-selected, .is-focused) {
+  background: var(--participant-call-bg) !important;
+  background-color: var(--participant-call-bg) !important;
+  background-image: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+  mix-blend-mode: normal !important;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call
+  :is(
+    .callStagePlaceholder,
+    .stageGridTile:not([data-call-media-type="share"]):not([data-call-tile-type="screenshare"]),
+    .participantTile
+  ).has-custom-call-bg::before,
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call
+  :is(
+    .callStagePlaceholder,
+    .stageGridTile:not([data-call-media-type="share"]):not([data-call-tile-type="screenshare"]),
+    .participantTile
+  ).has-custom-call-bg::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+  opacity: 0 !important;
+  animation: none !important;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm .callStageViewport,
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStage.is-docked-in-dm .callStageViewport.has-custom-call-bg {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 @media (max-width: 1280px) {
@@ -33243,5 +33982,1977 @@ body.theme-resolved-light:not(.authPage) #dmMain #dmPinsList > .hint {
   .msg__attachmentFallbackActions {
     grid-column: 1 / -1;
     justify-content: flex-start;
+  }
+}
+
+/* ALTARA compact voice dock above the profile card */
+body:not(.authPage) .leftBottomVoiceStack {
+  grid-column: 2;
+  grid-row: 4;
+  align-self: end;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 10px 12px 14px;
+  z-index: 8;
+}
+
+body:not(.authPage) .leftBottomVoiceStack #meProfileCard {
+  grid-column: auto;
+  grid-row: auto;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+body:not(.authPage) .voiceMiniDockSlot {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+}
+
+body:not(.authPage) .voiceMiniDockSlot:empty {
+  display: none;
+}
+
+.callBarCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.callBarSub {
+  min-width: 0;
+  color: rgba(242, 240, 236, 0.52);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callBar.is-docked-in-sidebar,
+body:not(.authPage) .voiceMiniDockSlot .callBar.is-docked-in-sidebar.is-server-voice-mini-panel {
+  position: relative;
+  inset: auto;
+  left: auto;
+  right: auto;
+  top: auto;
+  bottom: auto;
+  width: 100%;
+  max-width: 100%;
+  padding: 9px;
+  gap: 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  background: linear-gradient(180deg, rgba(18, 18, 18, 0.99), rgba(11, 11, 11, 0.99));
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transform: none;
+  animation: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callBar.is-docked-in-sidebar.is-open {
+  transform: none;
+}
+
+body:not(.authPage) .app:has(#dmMain.is-server-voice-call-layout.is-server-voice-in-call) .voiceMiniDockSlot .callBar.is-docked-in-sidebar.is-server-voice-mini-panel,
+body:not(.authPage) .appGrid:has(#dmMain.is-server-voice-call-layout.is-server-voice-in-call) .voiceMiniDockSlot .callBar.is-docked-in-sidebar.is-server-voice-mini-panel {
+  display: grid !important;
+  pointer-events: auto !important;
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callBarHeader {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callBarLiveIcon {
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(242, 240, 236, 0.64);
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callBarText {
+  color: rgba(242, 240, 236, 0.94);
+  font-size: 12.5px;
+  font-weight: 750;
+  line-height: 1.1;
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callBarShareBadge,
+body:not(.authPage) .voiceMiniDockSlot .callBarPing,
+body:not(.authPage) .voiceMiniDockSlot #btnServerVoiceReconnectSmall,
+body:not(.authPage) .voiceMiniDockSlot #btnShareScreenSmallMenu,
+body:not(.authPage) .voiceMiniDockSlot #btnCameraSmallMenu,
+body:not(.authPage) .voiceMiniDockSlot #btnOpenCallSmall,
+body:not(.authPage) .voiceMiniDockSlot #btnMicToggleSmall,
+body:not(.authPage) .voiceMiniDockSlot #btnDeafenToggleSmall {
+  display: none !important;
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callBarActions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  min-width: 0;
+}
+
+body:not(.authPage) .voiceMiniDockSlot #callCameraSplitSmall,
+body:not(.authPage) .voiceMiniDockSlot #callShareSplitSmall {
+  display: contents;
+}
+
+body:not(.authPage) .voiceMiniDockSlot #btnCameraSmall {
+  order: 1;
+}
+
+body:not(.authPage) .voiceMiniDockSlot #btnShareScreenSmall {
+  order: 2;
+}
+
+body:not(.authPage) .voiceMiniDockSlot #btnCallEndSmall {
+  order: 3;
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callMiniBtn,
+body:not(.authPage) .voiceMiniDockSlot .callShareSplit .callMiniBtn {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  border-radius: 10px;
+  border-color: rgba(255, 255, 255, 0.10);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)),
+    rgba(24, 24, 24, 0.92);
+  color: rgba(242, 240, 236, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callMiniBtn:hover:not(:disabled),
+body:not(.authPage) .voiceMiniDockSlot .callShareSplit .callMiniBtn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.018)),
+    rgba(29, 29, 29, 0.96);
+  color: rgba(242, 240, 236, 0.95);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  transform: none;
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callMiniBtn.is-on,
+body:not(.authPage) .voiceMiniDockSlot .callShareSplit.is-sharing .callMiniBtn,
+body:not(.authPage) .voiceMiniDockSlot .btn.is-on {
+  border-color: rgba(232, 207, 174, 0.32);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.11), rgba(255, 255, 255, 0.018)),
+    rgba(31, 29, 26, 0.96);
+  color: rgba(242, 240, 236, 0.96);
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callMiniBtn--danger {
+  border-color: rgba(228, 82, 111, 0.58);
+  background: linear-gradient(180deg, rgba(194, 65, 94, 0.92), rgba(145, 42, 65, 0.95));
+  color: rgba(255, 239, 242, 0.96);
+}
+
+body:not(.authPage) .voiceMiniDockSlot .callMiniBtn--danger:hover:not(:disabled) {
+  border-color: rgba(252, 128, 150, 0.68);
+  background: linear-gradient(180deg, rgba(214, 76, 107, 0.96), rgba(158, 47, 72, 0.98));
+}
+/* ALTARA call control menus */
+body:not(.authPage) :is(.callShareMenu, .callAudioMenu) {
+  z-index: 2147483000;
+  max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 20px);
+  overflow: auto;
+  box-sizing: border-box;
+  border: 1px solid rgba(232, 207, 174, 0.14);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(24, 23, 22, 0.99), rgba(12, 12, 12, 0.99));
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  color: rgba(246, 243, 238, 0.94);
+  scrollbar-color: rgba(232, 207, 174, 0.28) rgba(255, 255, 255, 0.04);
+}
+
+body:not(.authPage) .callShareMenu {
+  width: min(276px, calc(100vw - 20px));
+  padding: 8px;
+  overflow: visible;
+}
+
+body:not(.authPage) .callAudioMenu {
+  width: min(292px, calc(100vw - 20px));
+  padding: 10px;
+}
+
+body:not(.authPage) .callShareMenu__info,
+body:not(.authPage) .callShareMenu__sectionLabel,
+body:not(.authPage) .callAudioMenu__title {
+  color: rgba(211, 205, 194, 0.66);
+}
+
+body:not(.authPage) .callAudioMenu__title {
+  margin: 0 2px 9px;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+body:not(.authPage) :is(.callShareMenu__item, .callAudioMenu__action) {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(243, 239, 232, 0.88);
+  font-size: 12px;
+  font-weight: 750;
+  gap: 10px;
+}
+
+body:not(.authPage) .callShareMenu__item {
+  padding: 10px 11px;
+}
+
+body:not(.authPage) .callAudioMenu__action {
+  margin-bottom: 4px;
+  padding: 0 11px;
+}
+
+body:not(.authPage) :is(.callShareMenu__item, .callAudioMenu__action):hover,
+body:not(.authPage) :is(.callShareMenu__item, .callAudioMenu__action):focus-visible,
+body:not(.authPage) .callShareMenu__submenuAnchor:is(.is-open, :hover, :focus-within) > .callShareMenu__item {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.18);
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 250, 242, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+body:not(.authPage) :is(.callShareMenu__item, .callAudioMenu__action):focus-visible,
+body:not(.authPage) :is(.callShareMenu__chip, .callShareMenu__qualityOption):focus-visible {
+  box-shadow:
+    0 0 0 1px rgba(232, 207, 174, 0.32),
+    0 0 0 4px rgba(232, 207, 174, 0.08);
+}
+
+body:not(.authPage) .callShareMenu__itemIcon {
+  color: rgba(232, 207, 174, 0.76);
+  opacity: 1;
+}
+
+body:not(.authPage) .callShareMenu__audioState {
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(211, 205, 194, 0.7);
+  opacity: 1;
+}
+
+body:not(.authPage) .callShareMenu__item--audio.is-off {
+  border-color: rgba(255, 255, 255, 0.06);
+  color: rgba(192, 186, 176, 0.78);
+}
+
+body:not(.authPage) .callShareMenu__item--danger {
+  border-color: rgba(236, 92, 117, 0.22);
+  background: rgba(79, 24, 35, 0.62);
+  color: #ffd2da;
+}
+
+body:not(.authPage) .callShareMenu__item--danger:hover,
+body:not(.authPage) .callShareMenu__item--danger:focus-visible {
+  border-color: rgba(236, 92, 117, 0.44);
+  background: rgba(110, 32, 50, 0.78);
+  color: #fff1f4;
+}
+
+body:not(.authPage) .callShareMenu__chip,
+body:not(.authPage) .callShareMenu__qualityOption {
+  border: 1px solid rgba(232, 207, 174, 0.11);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(218, 211, 201, 0.75);
+}
+
+body:not(.authPage) .callShareMenu__chip:hover,
+body:not(.authPage) .callShareMenu__chip:focus-visible,
+body:not(.authPage) .callShareMenu__qualityOption:hover,
+body:not(.authPage) .callShareMenu__qualityOption:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.26);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 250, 242, 0.95);
+}
+
+body:not(.authPage) .callShareMenu__chip.is-active,
+body:not(.authPage) .callShareMenu__qualityOption.is-active {
+  border-color: rgba(232, 207, 174, 0.52);
+  background: rgba(232, 207, 174, 0.13);
+  color: rgba(255, 247, 232, 0.98);
+  box-shadow: inset 0 0 0 1px rgba(232, 207, 174, 0.16);
+}
+
+body:not(.authPage) .callShareMenu__submenu {
+  max-width: calc(100vw - 20px);
+  border: 1px solid rgba(232, 207, 174, 0.14);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(24, 23, 22, 0.99), rgba(12, 12, 12, 0.99));
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  padding: 7px;
+}
+
+body:not(.authPage) .callAudioMenu__check,
+body:not(.authPage) .callAudioMenu__row {
+  color: rgba(243, 239, 232, 0.86);
+}
+
+body:not(.authPage) .callAudioMenu__value {
+  color: rgba(211, 205, 194, 0.64);
+}
+
+body:not(.authPage) .callAudioMenu__section + .callAudioMenu__section {
+  border-top-color: rgba(232, 207, 174, 0.1);
+}
+
+body:not(.authPage) .callAudioMenu__check input,
+body:not(.authPage) .callAudioMenu__slider {
+  accent-color: #e8cfae;
+}
+
+body.motion-ready:not(.authPage) .callAudioMenu__action:hover,
+body.motion-ready:not(.authPage) .callShareMenu__item:hover {
+  transform: none;
+}
+
+/* ALTARA channel create/edit modal polish */
+body:not(.authPage) #serverChannelCreateModal.modal {
+  background: rgba(3, 3, 3, 0.68);
+  backdrop-filter: blur(6px);
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateCard {
+  border-color: rgba(232, 207, 174, 0.16) !important;
+  background:
+    linear-gradient(180deg, rgba(19, 18, 17, 0.99), rgba(11, 11, 11, 0.99)) !important;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.64),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .modalTop {
+  border-bottom-color: rgba(232, 207, 174, 0.11) !important;
+  background: rgba(17, 16, 15, 0.98) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverCreateBody {
+  background: rgba(12, 12, 12, 0.99) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverCreateFooter {
+  border-top-color: rgba(232, 207, 174, 0.11) !important;
+  background: rgba(17, 16, 15, 0.98) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .modalTitle,
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateSectionTitle,
+body:not(.authPage) #serverChannelCreateModal .serverChannelTypeOption__title,
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreatePrivate__title,
+body:not(.authPage) #serverChannelCreateModal .serverChannelNameField__input,
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateCategorySelect,
+body:not(.authPage) #serverChannelCreateModal .input {
+  color: rgba(246, 243, 238, 0.95) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .hint,
+body:not(.authPage) #serverChannelCreateModal .serverChannelTypeOption__desc,
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreatePrivate__hint,
+body:not(.authPage) #serverChannelCreateModal .serverChannelNameField__prefix,
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateAccessRow__meta {
+  color: rgba(211, 205, 194, 0.62) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelTypeOption {
+  border-radius: 11px;
+  padding: 7px 8px;
+  transition: background-color .14s ease, box-shadow .14s ease;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelTypeOption:hover,
+body:not(.authPage) #serverChannelCreateModal .serverChannelTypeOption:focus-within {
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 0 0 1px rgba(232, 207, 174, 0.08);
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelTypeOption__icon {
+  color: rgba(232, 207, 174, 0.78) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelTypeOption__radio {
+  border-color: rgba(232, 207, 174, 0.24) !important;
+  background: rgba(7, 7, 7, 0.94) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.38) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelTypeOption__input:checked + .serverChannelTypeOption__radio,
+body:not(.authPage) #serverChannelCreateModal.is-edit-mode #serverChannelCreateTypeSection.is-readonly .serverChannelTypeOption__input:checked + .serverChannelTypeOption__radio {
+  border-color: rgba(232, 207, 174, 0.72) !important;
+  background: rgba(232, 207, 174, 0.12) !important;
+  box-shadow:
+    0 0 0 1px rgba(232, 207, 174, 0.12),
+    0 0 0 4px rgba(232, 207, 174, 0.045) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelTypeOption__input:checked + .serverChannelTypeOption__radio::after {
+  background: #e8cfae !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateCategorySelect,
+body:not(.authPage) #serverChannelCreateModal .serverChannelNameField,
+body:not(.authPage) #serverChannelCreateModal .input,
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateAccessGroup,
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateAccessRow {
+  border-color: rgba(232, 207, 174, 0.13) !important;
+  background: rgba(7, 7, 7, 0.92) !important;
+  background-image: none !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateCategorySelect {
+  color-scheme: dark;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateCategorySelect option {
+  background: #11100f;
+  color: rgba(246, 243, 238, 0.95);
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateCategorySelect:hover,
+body:not(.authPage) #serverChannelCreateModal .serverChannelNameField:hover,
+body:not(.authPage) #serverChannelCreateModal .input:hover {
+  border-color: rgba(232, 207, 174, 0.22) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateCategorySelect:focus,
+body:not(.authPage) #serverChannelCreateModal .serverChannelNameField:focus-within,
+body:not(.authPage) #serverChannelCreateModal .input:focus {
+  outline: none !important;
+  border-color: rgba(232, 207, 174, 0.42) !important;
+  box-shadow:
+    0 0 0 1px rgba(232, 207, 174, 0.2),
+    0 0 0 4px rgba(232, 207, 174, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateSelectWrap::after {
+  border-right-color: rgba(232, 207, 174, 0.72) !important;
+  border-bottom-color: rgba(232, 207, 174, 0.72) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreatePrivate__slider {
+  border-color: rgba(232, 207, 174, 0.16) !important;
+  background: rgba(10, 10, 10, 0.96) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreatePrivate__slider::after {
+  background: rgba(246, 243, 238, 0.96);
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreatePrivate__switch input:focus-visible + .serverChannelCreatePrivate__slider {
+  box-shadow:
+    0 0 0 1px rgba(232, 207, 174, 0.26),
+    0 0 0 4px rgba(232, 207, 174, 0.08) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreatePrivate__switch input:checked + .serverChannelCreatePrivate__slider {
+  border-color: rgba(232, 207, 174, 0.5) !important;
+  background: rgba(232, 207, 174, 0.18) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateAccessGroup__title {
+  border-bottom-color: rgba(232, 207, 174, 0.11);
+  color: rgba(246, 243, 238, 0.9) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateAccessRow:hover {
+  background: rgba(255, 255, 255, 0.048) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateAccessRow input {
+  accent-color: #e8cfae;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateAccessRow__avatar,
+body:not(.authPage) #serverChannelCreateModal .serverChannelCreateAccessRow__swatch {
+  border-color: rgba(232, 207, 174, 0.16) !important;
+  background: rgba(24, 23, 22, 0.96) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal #btnServerChannelCreateClose {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-color: rgba(232, 207, 174, 0.16) !important;
+  border-radius: 10px;
+  background: rgba(232, 207, 174, 0.06) !important;
+  color: rgba(246, 243, 238, 0.82) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal #btnServerChannelCreateClose:hover,
+body:not(.authPage) #serverChannelCreateModal #btnServerChannelCreateClose:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.34) !important;
+  background: rgba(232, 207, 174, 0.11) !important;
+  box-shadow: 0 0 0 3px rgba(232, 207, 174, 0.08);
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverCreateFooter .btn.ghost {
+  border-color: rgba(232, 207, 174, 0.14) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.014)),
+    rgba(23, 23, 22, 0.96) !important;
+  color: rgba(246, 243, 238, 0.9) !important;
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverCreateFooter .btn.ghost:hover,
+body:not(.authPage) #serverChannelCreateModal .serverCreateFooter .btn.ghost:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.3) !important;
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.08), rgba(255, 255, 255, 0.018)),
+    rgba(29, 28, 26, 0.98) !important;
+  box-shadow: 0 0 0 3px rgba(232, 207, 174, 0.07);
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverCreateFooter .btn.primary {
+  border-color: rgba(232, 207, 174, 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.22), rgba(232, 207, 174, 0.11)),
+    rgba(35, 31, 25, 0.98) !important;
+  color: rgba(255, 249, 238, 0.98) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+body:not(.authPage) #serverChannelCreateModal .serverCreateFooter .btn.primary:hover,
+body:not(.authPage) #serverChannelCreateModal .serverCreateFooter .btn.primary:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.6) !important;
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.28), rgba(232, 207, 174, 0.14)),
+    rgba(42, 36, 28, 0.99) !important;
+  box-shadow:
+    0 0 0 3px rgba(232, 207, 174, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.065);
+}
+
+/* ALTARA server settings screen */
+body:not(.authPage) #serverSettingsModal {
+  --server-settings-bg: #101010;
+  --server-settings-panel: #151515;
+  --server-settings-surface: #181818;
+  --server-settings-surface-2: #1d1b19;
+  --server-settings-row: rgba(255, 255, 255, 0.035);
+  --server-settings-row-hover: rgba(232, 207, 174, 0.07);
+  --server-settings-border: rgba(255, 255, 255, 0.075);
+  --server-settings-border-strong: rgba(255, 255, 255, 0.115);
+  --server-settings-text: rgba(246, 243, 238, 0.94);
+  --server-settings-soft: rgba(246, 243, 238, 0.64);
+  --server-settings-muted: rgba(246, 243, 238, 0.43);
+  --server-settings-accent: #e8cfae;
+  --server-settings-accent-soft: rgba(232, 207, 174, 0.11);
+  --server-settings-accent-border: rgba(232, 207, 174, 0.28);
+  --server-settings-danger: #e58b8b;
+  padding: 0;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(10px);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsCard {
+  width: min(1280px, calc(100vw - 24px));
+  height: min(840px, calc(100vh - 24px));
+  max-height: calc(100vh - 24px);
+  padding: 0;
+  border: 1px solid var(--server-settings-border-strong);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 86% 0%, rgba(232, 207, 174, 0.055), transparent 34%),
+    var(--server-settings-bg);
+  box-shadow:
+    0 34px 120px rgba(0, 0, 0, 0.66),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  color: var(--server-settings-text);
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSidebar {
+  min-width: 0;
+  min-height: 0;
+  padding: 22px 18px 18px;
+  border-right: 1px solid var(--server-settings-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0)),
+    #151515;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(232, 207, 174, 0.24) transparent;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSidebarServer {
+  min-height: 76px;
+  padding: 14px;
+  border: 1px solid var(--server-settings-border);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)),
+    var(--server-settings-surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSidebarIcon {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 50%;
+  background: #202020;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSidebarIcon img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSidebarMeta {
+  min-width: 0;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSidebarName {
+  min-width: 0;
+  color: var(--server-settings-text);
+  font-size: 15px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSidebarTag {
+  margin-top: 3px;
+  color: var(--server-settings-soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSidebarSection {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSidebarSection + .serverSettingsSidebarSection {
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.065);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSidebarSection--danger {
+  margin-top: auto;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsGroupLabel {
+  margin: 0 0 5px;
+  padding: 0 2px;
+  color: var(--server-settings-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsNav {
+  display: grid;
+  gap: 4px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsNavItem {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--server-settings-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsNavItem:hover,
+body:not(.authPage) #serverSettingsModal .serverSettingsNavItem:focus-visible {
+  outline: none;
+  border-color: var(--server-settings-border);
+  background: var(--server-settings-row-hover);
+  color: var(--server-settings-text);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsNavItem.is-active,
+body:not(.authPage) #serverSettingsModal .serverSettingsNavItem[aria-current="page"] {
+  border-color: var(--server-settings-accent-border);
+  background:
+    linear-gradient(90deg, rgba(232, 207, 174, 0.15), rgba(232, 207, 174, 0.055));
+  color: var(--server-settings-accent);
+  box-shadow: inset 3px 0 0 rgba(232, 207, 174, 0.92);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsNavItem small {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(246, 243, 238, 0.42);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsNavItem--danger {
+  border-color: rgba(229, 139, 139, 0.22);
+  background: rgba(229, 139, 139, 0.06);
+  color: rgba(242, 190, 190, 0.88);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsNavItem--danger:hover,
+body:not(.authPage) #serverSettingsModal .serverSettingsNavItem--danger:focus-visible,
+body:not(.authPage) #serverSettingsModal .serverSettingsNavItem--danger.is-active {
+  border-color: rgba(229, 139, 139, 0.36);
+  background: rgba(229, 139, 139, 0.11);
+  color: rgba(255, 224, 224, 0.96);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsMain {
+  min-width: 0;
+  min-height: 0;
+  background:
+    radial-gradient(circle at 74% -8%, rgba(232, 207, 174, 0.045), transparent 34%),
+    var(--server-settings-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsMainTop {
+  min-height: 104px;
+  padding: 34px 34px 18px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsTitle {
+  color: var(--server-settings-text);
+  font-family: "Bricolage Grotesque", var(--font-display);
+  font-size: 29px;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSubtitle {
+  margin-top: 7px;
+  color: var(--server-settings-soft);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsCloseBtn {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  border-color: var(--server-settings-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(246, 243, 238, 0.76);
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsCloseBtn:hover,
+body:not(.authPage) #serverSettingsModal .serverSettingsCloseBtn:focus-visible {
+  outline: none;
+  border-color: var(--server-settings-accent-border);
+  background: var(--server-settings-accent-soft);
+  color: var(--server-settings-text);
+  box-shadow: 0 0 0 3px rgba(232, 207, 174, 0.07);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px 34px 34px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(232, 207, 174, 0.24) transparent;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPanel {
+  display: none;
+  min-width: 0;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPanel.is-active {
+  display: grid;
+  gap: 18px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPanelIntro h2,
+body:not(.authPage) #serverSettingsModal .serverSettingsPlaceholder h2 {
+  margin: 0;
+  color: var(--server-settings-text);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPanelIntro p,
+body:not(.authPage) #serverSettingsModal .serverSettingsPlaceholder p {
+  max-width: 760px;
+  margin: 7px 0 0;
+  color: var(--server-settings-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsProfileGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  align-items: start;
+  gap: 18px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSectionCard,
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewCard,
+body:not(.authPage) #serverSettingsModal .serverSettingsRolesSection,
+body:not(.authPage) #serverSettingsModal .serverSettingsPlaceholder {
+  border: 1px solid var(--server-settings-border);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    var(--server-settings-surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsSectionCard,
+body:not(.authPage) #serverSettingsModal .serverSettingsRolesSection,
+body:not(.authPage) #serverSettingsModal .serverSettingsPlaceholder {
+  padding: 18px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsIconRow {
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverCreateIconPreview {
+  width: 86px;
+  height: 86px;
+  border-color: rgba(232, 207, 174, 0.2);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(232, 207, 174, 0.11), transparent 58%),
+    #202020;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
+}
+
+body:not(.authPage) #serverSettingsModal .serverCreateIconPreview:hover,
+body:not(.authPage) #serverSettingsModal .serverCreateIconPreview:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.36);
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.34),
+    0 0 0 3px rgba(232, 207, 174, 0.07);
+}
+
+body:not(.authPage) #serverSettingsModal .serverCreateIconPlus {
+  border-color: rgba(232, 207, 174, 0.28);
+  background: rgba(32, 29, 25, 0.96);
+  color: var(--server-settings-accent);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsFieldLabel,
+body:not(.authPage) #serverSettingsModal .field > label,
+body:not(.authPage) #serverSettingsModal .label {
+  color: rgba(232, 207, 174, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsFieldHint,
+body:not(.authPage) #serverSettingsModal .hint {
+  color: var(--server-settings-soft);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsButtonRow {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+body:not(.authPage) #serverSettingsModal .input,
+body:not(.authPage) #serverSettingsModal select.input {
+  min-height: 42px;
+  border-color: var(--server-settings-border);
+  border-radius: 10px;
+  background: #101010;
+  color: var(--server-settings-text);
+}
+
+body:not(.authPage) #serverSettingsModal .input:focus,
+body:not(.authPage) #serverSettingsModal select.input:focus {
+  outline: none;
+  border-color: var(--server-settings-accent-border);
+  background: #11100f;
+  box-shadow: 0 0 0 3px rgba(232, 207, 174, 0.08);
+}
+
+body:not(.authPage) #serverSettingsModal .btn.ghost {
+  border-color: rgba(232, 207, 174, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.014)),
+    rgba(23, 23, 22, 0.96);
+  color: rgba(246, 243, 238, 0.9);
+}
+
+body:not(.authPage) #serverSettingsModal .btn.ghost:hover,
+body:not(.authPage) #serverSettingsModal .btn.ghost:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.3);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.08), rgba(255, 255, 255, 0.018)),
+    rgba(29, 28, 26, 0.98);
+  box-shadow: 0 0 0 3px rgba(232, 207, 174, 0.07);
+}
+
+body:not(.authPage) #serverSettingsModal .btn.primary {
+  border-color: rgba(232, 207, 174, 0.42);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.22), rgba(232, 207, 174, 0.11)),
+    rgba(35, 31, 25, 0.98);
+  color: rgba(255, 249, 238, 0.98);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+body:not(.authPage) #serverSettingsModal .btn.primary:hover,
+body:not(.authPage) #serverSettingsModal .btn.primary:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.6);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.28), rgba(232, 207, 174, 0.14)),
+    rgba(42, 36, 28, 0.99);
+  box-shadow:
+    0 0 0 3px rgba(232, 207, 174, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.065);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewCard {
+  overflow: hidden;
+  min-height: 304px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewBanner {
+  height: 112px;
+  background:
+    radial-gradient(circle at 22% 18%, rgba(232, 207, 174, 0.32), transparent 36%),
+    linear-gradient(135deg, #2b2119, #151515 72%);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewBody {
+  position: relative;
+  padding: 44px 16px 16px;
+  display: grid;
+  gap: 8px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewIcon {
+  position: absolute;
+  left: 16px;
+  top: -34px;
+  width: 68px;
+  height: 68px;
+  border: 4px solid var(--server-settings-surface);
+  border-radius: 50%;
+  background: #202020;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.34);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewIcon img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewName {
+  min-width: 0;
+  color: var(--server-settings-text);
+  font-size: 18px;
+  font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewMeta,
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewChannel {
+  min-width: 0;
+  color: var(--server-settings-soft);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewChannel {
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(232, 207, 174, 0.12);
+  border-radius: 10px;
+  background: rgba(232, 207, 174, 0.055);
+  color: rgba(246, 243, 238, 0.78);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRolesSection {
+  border-color: var(--server-settings-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    var(--server-settings-surface);
+  gap: 14px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRolesHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleCreateRow {
+  grid-template-columns: minmax(180px, 1fr) 48px minmax(190px, 230px) auto;
+  gap: 10px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleColorInput {
+  width: 48px;
+  height: 42px;
+  border: 1px solid rgba(232, 207, 174, 0.18);
+  border-radius: 10px;
+  background: #101010;
+  padding: 3px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleColorInput:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.36);
+  box-shadow: 0 0 0 3px rgba(232, 207, 174, 0.08);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRolesGrid {
+  grid-template-columns: minmax(230px, 280px) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 360px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRolesList,
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleMembers {
+  max-height: min(52vh, 520px);
+  border-color: rgba(232, 207, 174, 0.11);
+  background: rgba(12, 12, 12, 0.44);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePick {
+  border-color: rgba(232, 207, 174, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--server-settings-text);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePick:hover,
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePick:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.28);
+  background: rgba(232, 207, 174, 0.065);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePick.active {
+  border-color: rgba(232, 207, 174, 0.42);
+  background:
+    linear-gradient(90deg, rgba(232, 207, 174, 0.13), rgba(232, 207, 174, 0.045));
+  box-shadow: inset 3px 0 0 rgba(232, 207, 174, 0.82);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermsBadge {
+  color: rgba(246, 232, 210, 0.92);
+  border-color: rgba(232, 207, 174, 0.24);
+  background: rgba(232, 207, 174, 0.09);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermRow,
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleMemberRow {
+  border-color: rgba(232, 207, 174, 0.11);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermRow input[type="checkbox"],
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleMemberRow input[type="checkbox"] {
+  accent-color: #e8cfae;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleMemberAvatar {
+  border-color: rgba(232, 207, 174, 0.16);
+  background: rgba(24, 23, 22, 0.96);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPlaceholder {
+  min-height: 220px;
+  display: grid;
+  align-content: start;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsPlaceholder--danger {
+  border-color: rgba(229, 139, 139, 0.22);
+  background:
+    linear-gradient(180deg, rgba(229, 139, 139, 0.07), rgba(255, 255, 255, 0.012)),
+    var(--server-settings-surface);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDangerLayout {
+  display: grid;
+  gap: 16px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDangerNotice,
+body:not(.authPage) #serverSettingsModal .serverSettingsDeleteBox {
+  border: 1px solid rgba(229, 139, 139, 0.22);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(229, 139, 139, 0.06), rgba(255, 255, 255, 0.012)),
+    var(--server-settings-surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDangerNotice {
+  padding: 16px 18px;
+  display: grid;
+  gap: 8px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDangerNotice p {
+  margin: 0;
+  color: rgba(246, 221, 221, 0.86);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDeleteBox {
+  padding: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDeleteCopy {
+  min-width: 0;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDeleteCopy h3 {
+  margin: 0;
+  color: rgba(255, 236, 236, 0.98);
+  font-size: 16px;
+  font-weight: 850;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDeleteCopy p {
+  max-width: 780px;
+  margin: 7px 0 0;
+  color: rgba(246, 218, 218, 0.68);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDangerOwnerNote {
+  color: rgba(232, 207, 174, 0.74) !important;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDangerOwnerNote.is-blocked {
+  color: rgba(229, 139, 139, 0.82) !important;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDangerButton,
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmDanger {
+  border-color: rgba(223, 82, 102, 0.5);
+  background:
+    linear-gradient(180deg, rgba(223, 82, 102, 0.9), rgba(151, 42, 62, 0.92)),
+    #9c2f45;
+  color: rgba(255, 249, 249, 0.98);
+  box-shadow:
+    0 14px 28px rgba(120, 24, 42, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDangerButton:hover,
+body:not(.authPage) #serverSettingsModal .serverSettingsDangerButton:focus-visible,
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmDanger:hover,
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmDanger:focus-visible {
+  outline: none;
+  border-color: rgba(255, 144, 160, 0.64);
+  background:
+    linear-gradient(180deg, rgba(239, 97, 118, 0.94), rgba(170, 48, 70, 0.95)),
+    #ab354d;
+  box-shadow:
+    0 0 0 3px rgba(223, 82, 102, 0.12),
+    0 16px 34px rgba(120, 24, 42, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsDangerButton:disabled,
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmDanger:disabled {
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(246, 243, 238, 0.36);
+  box-shadow: none;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsFooter {
+  flex: 0 0 auto;
+  padding: 14px 34px;
+  border-top: 1px solid var(--server-settings-border);
+  background: rgba(255, 255, 255, 0.018);
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+body:not(.authPage) #serverSettingsModal .serverSettingsFooter .btn {
+  min-width: 120px;
+  min-height: 40px;
+}
+
+@media (max-width: 980px) {
+  body:not(.authPage) #serverSettingsModal .serverSettingsCard {
+    width: calc(100vw - 12px);
+    height: calc(100vh - 12px);
+    max-height: calc(100vh - 12px);
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  body:not(.authPage) #serverSettingsModal .serverSettingsSidebar {
+    max-height: 260px;
+    border-right: 0;
+    border-bottom: 1px solid var(--server-settings-border);
+  }
+
+  body:not(.authPage) #serverSettingsModal .serverSettingsSidebarSection--danger {
+    margin-top: 0;
+  }
+
+  body:not(.authPage) #serverSettingsModal .serverSettingsMainTop {
+    min-height: auto;
+    padding: 22px 22px 14px;
+  }
+
+  body:not(.authPage) #serverSettingsModal .serverSettingsBody {
+    padding: 8px 22px 22px;
+  }
+
+  body:not(.authPage) #serverSettingsModal .serverSettingsProfileGrid,
+  body:not(.authPage) #serverSettingsModal .serverSettingsRolesGrid {
+    grid-template-columns: 1fr;
+  }
+
+  body:not(.authPage) #serverSettingsModal .serverSettingsRoleCreateRow {
+    grid-template-columns: 1fr auto;
+  }
+
+  body:not(.authPage) #serverSettingsModal .serverSettingsRoleCreateRow .serverSettingsRolePresetSelect,
+  body:not(.authPage) #serverSettingsModal .serverSettingsRoleCreateRow .btn {
+    grid-column: 1 / -1;
+  }
+
+  body:not(.authPage) #serverSettingsModal .serverSettingsDeleteBox {
+    grid-template-columns: 1fr;
+  }
+}
+
+body:not(.authPage) #serverDeleteConfirmModal {
+  padding: 0;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmCard {
+  width: min(520px, calc(100vw - 28px));
+  padding: 0;
+  border: 1px solid rgba(229, 139, 139, 0.24);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(229, 139, 139, 0.07), transparent 34%),
+    #111;
+  color: rgba(246, 243, 238, 0.94);
+  box-shadow:
+    0 34px 120px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  overflow: hidden;
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmTop {
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmTop .modalTitle {
+  color: rgba(255, 236, 236, 0.98);
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmBody {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmWarning,
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmNameBlock {
+  border: 1px solid rgba(229, 139, 139, 0.18);
+  border-radius: 12px;
+  background: rgba(229, 139, 139, 0.055);
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmWarning {
+  padding: 13px 14px;
+  display: grid;
+  gap: 6px;
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmWarning strong {
+  color: rgba(255, 236, 236, 0.95);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmWarning span {
+  color: rgba(246, 218, 218, 0.68);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmNameBlock {
+  padding: 12px 14px;
+  display: grid;
+  gap: 4px;
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmNameBlock span {
+  color: rgba(232, 207, 174, 0.72);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmNameBlock strong {
+  min-width: 0;
+  color: rgba(246, 243, 238, 0.96);
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .field > label {
+  color: rgba(232, 207, 174, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .input {
+  min-height: 42px;
+  border-color: rgba(255, 255, 255, 0.095);
+  border-radius: 10px;
+  background: #0d0d0d;
+  color: rgba(246, 243, 238, 0.94);
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .input:focus {
+  outline: none;
+  border-color: rgba(229, 139, 139, 0.42);
+  box-shadow: 0 0 0 3px rgba(229, 139, 139, 0.1);
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .hint {
+  color: rgba(246, 243, 238, 0.56);
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmFooter {
+  padding: 14px 18px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.075);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+body:not(.authPage) #serverDeleteConfirmModal .serverDeleteConfirmFooter .btn {
+  min-width: 124px;
+  min-height: 40px;
+}
+
+/* ALTARA confirmation, alert, prompt, and destructive mini-menu surfaces */
+body:not(.authPage) .altaraConfirmDialog {
+  padding: clamp(14px, 2.4vw, 28px);
+  overflow: auto;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(232, 207, 174, 0.045), transparent 36%),
+    rgba(0, 0, 0, 0.76);
+  backdrop-filter: blur(10px);
+}
+
+body:not(.authPage) .altaraConfirmDialog .modal__backdrop {
+  background: transparent;
+}
+
+body:not(.authPage) .altaraConfirmDialog__card {
+  box-sizing: border-box;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(232, 207, 174, 0.16);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(232, 207, 174, 0.055), transparent 34%),
+    linear-gradient(180deg, rgba(22, 21, 20, 0.99), rgba(11, 11, 11, 0.99));
+  color: rgba(246, 243, 238, 0.96);
+  box-shadow:
+    0 34px 120px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalCard {
+  width: min(480px, calc(100vw - 28px));
+  overflow: hidden;
+}
+
+body:not(.authPage) #appConfirmModal.appConfirmModal--prompt:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalCard {
+  width: min(560px, calc(100vw - 28px));
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .modalTop {
+  flex: 0 0 auto;
+  padding: 17px 18px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .modalTitle {
+  color: rgba(255, 250, 242, 0.98);
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #appConfirmModal.appConfirmModal--danger:not(.appConfirmModal--whiteThemeEasterEgg) .modalTitle {
+  color: rgba(255, 236, 236, 0.98);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalBody {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 18px 18px 12px;
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalMessage {
+  color: rgba(238, 233, 225, 0.78);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalInput {
+  margin-top: 16px;
+  gap: 9px;
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalInput .label {
+  color: rgba(232, 207, 174, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalTextarea {
+  min-height: 132px;
+  border-color: rgba(255, 255, 255, 0.095);
+  border-radius: 12px;
+  background: #0d0d0d;
+  color: rgba(246, 243, 238, 0.94);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalTextarea:focus {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.42);
+  box-shadow:
+    0 0 0 3px rgba(232, 207, 174, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalInputHint {
+  color: rgba(211, 205, 194, 0.62);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalActions {
+  flex: 0 0 auto;
+  padding: 14px 18px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.075);
+  background: rgba(255, 255, 255, 0.012);
+  gap: 10px;
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) .appConfirmModalActions .btn,
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmClose {
+  min-height: 40px;
+  border-radius: 11px;
+  box-shadow: none;
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmClose,
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmCancel {
+  border-color: rgba(255, 255, 255, 0.095);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(238, 233, 225, 0.74);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmClose:hover,
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmClose:focus-visible,
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmCancel:hover,
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmCancel:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.24);
+  background: rgba(232, 207, 174, 0.09);
+  color: rgba(255, 250, 242, 0.95);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmOk.primary {
+  border-color: rgba(232, 207, 174, 0.42);
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.98), rgba(197, 161, 118, 0.98));
+  color: #17130f;
+  box-shadow: 0 12px 32px rgba(232, 207, 174, 0.13);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmOk.primary:hover,
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmOk.primary:focus-visible {
+  outline: none;
+  border-color: rgba(255, 232, 198, 0.58);
+  background:
+    linear-gradient(180deg, rgba(241, 219, 188, 1), rgba(211, 176, 132, 1));
+  box-shadow:
+    0 0 0 3px rgba(232, 207, 174, 0.1),
+    0 14px 34px rgba(232, 207, 174, 0.16);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmOk.danger {
+  border-color: rgba(223, 82, 102, 0.5);
+  background:
+    linear-gradient(180deg, rgba(223, 82, 102, 0.9), rgba(151, 42, 62, 0.92)),
+    #9c2f45;
+  color: rgba(255, 249, 249, 0.98);
+  box-shadow:
+    0 14px 28px rgba(120, 24, 42, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmOk.danger:hover,
+body:not(.authPage) #appConfirmModal:not(.appConfirmModal--whiteThemeEasterEgg) #btnAppConfirmOk.danger:focus-visible {
+  outline: none;
+  border-color: rgba(255, 144, 160, 0.64);
+  background:
+    linear-gradient(180deg, rgba(239, 97, 118, 0.94), rgba(170, 48, 70, 0.95)),
+    #ab354d;
+  box-shadow:
+    0 0 0 3px rgba(223, 82, 102, 0.12),
+    0 16px 34px rgba(120, 24, 42, 0.3);
+}
+
+body:not(.authPage) :is(.msgMenu, .userCardWidgetMenuList, .profileWidgetInlinePopover, .dmEmojiShortcodeMenu, #meStatusMenu.meStatusMenu) {
+  border-color: rgba(232, 207, 174, 0.14) !important;
+  background:
+    linear-gradient(180deg, rgba(24, 23, 22, 0.99), rgba(12, 12, 12, 0.99)) !important;
+  color: rgba(246, 243, 238, 0.94) !important;
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+}
+
+body:not(.authPage) :is(.msgMenu__item, .userCardWidgetMenuItem, .dmEmojiShortcodeMenu__item, #meStatusMenu .meStatusMenu__item) {
+  color: rgba(243, 239, 232, 0.86);
+}
+
+body:not(.authPage) :is(.msgMenu__item, .userCardWidgetMenuItem, .dmEmojiShortcodeMenu__item, #meStatusMenu .meStatusMenu__item):hover,
+body:not(.authPage) :is(.msgMenu__item, .userCardWidgetMenuItem, .dmEmojiShortcodeMenu__item, #meStatusMenu .meStatusMenu__item):focus-visible,
+body:not(.authPage) #meStatusMenu .meStatusMenu__item.is-active {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.18);
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 250, 242, 0.96);
+}
+
+body:not(.authPage) :is(.msgMenu__item--danger, .userCardWidgetMenuItem.is-danger, .userCardWidgetItemActionBtn.is-danger) {
+  color: rgba(255, 190, 198, 0.96);
+}
+
+body:not(.authPage) :is(.msgMenu__item--danger, .userCardWidgetMenuItem.is-danger, .userCardWidgetItemActionBtn.is-danger):hover,
+body:not(.authPage) :is(.msgMenu__item--danger, .userCardWidgetMenuItem.is-danger, .userCardWidgetItemActionBtn.is-danger):focus-visible {
+  border-color: rgba(236, 92, 117, 0.34);
+  background: rgba(110, 32, 50, 0.42);
+  color: #fff1f4;
+}
+
+body:not(.authPage) :is(.userCardWidgetMenuTrigger, .userCardWidgetItemActionBtn) {
+  border-color: rgba(232, 207, 174, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(243, 239, 232, 0.86);
+}
+
+body:not(.authPage) :is(.userCardWidgetMenuTrigger, .userCardWidgetItemActionBtn):hover,
+body:not(.authPage) :is(.userCardWidgetMenuTrigger, .userCardWidgetItemActionBtn):focus-visible,
+body:not(.authPage) .userCardWidgetMenu[open] > .userCardWidgetMenuTrigger {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.24);
+  background: rgba(232, 207, 174, 0.09);
+  color: rgba(255, 250, 242, 0.95);
+}
+
+/* ALTARA create server + invite modal polish */
+body:not(.authPage) #serverCreateModal,
+body:not(.authPage) #serverInviteModal {
+  padding: clamp(14px, 2.2vw, 28px);
+  overflow: auto;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(232, 207, 174, 0.045), transparent 38%),
+    rgba(0, 0, 0, 0.74);
+  backdrop-filter: blur(10px);
+}
+
+body:not(.authPage) #serverCreateModal .serverCreateCard,
+body:not(.authPage) #serverInviteModal .serverChannelCreateCard {
+  box-sizing: border-box;
+  border: 1px solid rgba(232, 207, 174, 0.16) !important;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(232, 207, 174, 0.055), transparent 34%),
+    linear-gradient(180deg, rgba(22, 21, 20, 0.99), rgba(11, 11, 11, 0.99)) !important;
+  color: rgba(246, 243, 238, 0.96);
+  box-shadow:
+    0 34px 120px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+  overflow: hidden;
+}
+
+body:not(.authPage) #serverCreateModal .serverCreateCard {
+  width: min(540px, calc(100vw - 28px));
+  max-height: calc(100vh - 32px);
+}
+
+body:not(.authPage) #serverInviteModal .serverChannelCreateCard {
+  width: min(800px, calc(100vw - 28px)) !important;
+  max-height: calc(100vh - 32px) !important;
+}
+
+body:not(.authPage) #serverCreateModal .serverCreateTop,
+body:not(.authPage) #serverInviteModal .serverCreateTop {
+  padding: 18px 20px 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075) !important;
+  background: rgba(255, 255, 255, 0.018) !important;
+}
+
+body:not(.authPage) #serverCreateModal .modalTitle,
+body:not(.authPage) #serverInviteModal .modalTitle {
+  color: rgba(255, 250, 242, 0.98) !important;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #serverCreateModal .hint,
+body:not(.authPage) #serverInviteModal .hint,
+body:not(.authPage) #serverInviteModal #serverInviteSub,
+body:not(.authPage) #serverInviteModal #serverInviteMeta {
+  color: rgba(211, 205, 194, 0.64) !important;
+}
+
+body:not(.authPage) #serverCreateModal .serverCreateBody,
+body:not(.authPage) #serverInviteModal .serverCreateBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+
+body:not(.authPage) #serverCreateModal .field label,
+body:not(.authPage) #serverInviteModal .field label {
+  color: rgba(232, 207, 174, 0.78) !important;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+body:not(.authPage) #serverCreateModal .input,
+body:not(.authPage) #serverInviteModal .input,
+body:not(.authPage) #serverInviteModal select.input {
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.095) !important;
+  border-radius: 12px;
+  background: #0d0d0d !important;
+  color: rgba(246, 243, 238, 0.94) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
+}
+
+body:not(.authPage) #serverCreateModal .input:focus,
+body:not(.authPage) #serverInviteModal .input:focus,
+body:not(.authPage) #serverInviteModal select.input:focus {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.42) !important;
+  background: #0d0d0d !important;
+  box-shadow:
+    0 0 0 3px rgba(232, 207, 174, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
+}
+
+body:not(.authPage) #serverInviteModal select.input {
+  appearance: none;
+  padding-right: 40px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(232, 207, 174, 0.72) 50%),
+    linear-gradient(135deg, rgba(232, 207, 174, 0.72) 50%, transparent 50%) !important;
+  background-position:
+    calc(100% - 18px) 52%,
+    calc(100% - 13px) 52% !important;
+  background-size: 5px 5px, 5px 5px !important;
+  background-repeat: no-repeat !important;
+}
+
+body:not(.authPage) #serverCreateModal .serverCreateIconRow {
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid rgba(232, 207, 174, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+body:not(.authPage) #serverCreateModal .serverCreateIconPreview {
+  width: 88px;
+  height: 88px;
+  border: 1px dashed rgba(232, 207, 174, 0.34);
+  background:
+    radial-gradient(circle at 50% 28%, rgba(232, 207, 174, 0.09), transparent 58%),
+    rgba(13, 13, 13, 0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 14px 28px rgba(0, 0, 0, 0.3);
+}
+
+body:not(.authPage) #serverCreateModal .serverCreateIconPreview:hover,
+body:not(.authPage) #serverCreateModal .serverCreateIconPreview:focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.52);
+  box-shadow:
+    0 0 0 3px rgba(232, 207, 174, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+body:not(.authPage) #serverCreateModal .serverCreateIconPlus {
+  border-color: rgba(232, 207, 174, 0.42);
+  background: linear-gradient(180deg, rgba(232, 207, 174, 0.98), rgba(197, 161, 118, 0.98));
+  color: #17130f;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.32);
+}
+
+body:not(.authPage) #serverCreateModal .serverCreateFooter,
+body:not(.authPage) #serverInviteModal .serverCreateFooter {
+  flex: 0 0 auto;
+  padding: 15px 20px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.075) !important;
+  background: rgba(255, 255, 255, 0.012) !important;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+body:not(.authPage) #serverCreateModal :is(.btn.ghost, #btnServerCreateClose),
+body:not(.authPage) #serverInviteModal :is(.btn.ghost, #btnServerInviteClose) {
+  border-color: rgba(255, 255, 255, 0.095) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  color: rgba(238, 233, 225, 0.78) !important;
+  box-shadow: none;
+}
+
+body:not(.authPage) #serverCreateModal :is(.btn.ghost, #btnServerCreateClose):hover,
+body:not(.authPage) #serverCreateModal :is(.btn.ghost, #btnServerCreateClose):focus-visible,
+body:not(.authPage) #serverInviteModal :is(.btn.ghost, #btnServerInviteClose):hover,
+body:not(.authPage) #serverInviteModal :is(.btn.ghost, #btnServerInviteClose):focus-visible {
+  outline: none;
+  border-color: rgba(232, 207, 174, 0.24) !important;
+  background: rgba(232, 207, 174, 0.09) !important;
+  color: rgba(255, 250, 242, 0.95) !important;
+}
+
+body:not(.authPage) #serverCreateModal .btn.primary,
+body:not(.authPage) #serverInviteModal .btn.primary {
+  border-color: rgba(232, 207, 174, 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.98), rgba(197, 161, 118, 0.98)) !important;
+  color: #17130f !important;
+  box-shadow: 0 12px 32px rgba(232, 207, 174, 0.13);
+}
+
+body:not(.authPage) #serverCreateModal .btn.primary:hover,
+body:not(.authPage) #serverCreateModal .btn.primary:focus-visible,
+body:not(.authPage) #serverInviteModal .btn.primary:hover,
+body:not(.authPage) #serverInviteModal .btn.primary:focus-visible {
+  outline: none;
+  border-color: rgba(255, 232, 198, 0.58) !important;
+  background:
+    linear-gradient(180deg, rgba(241, 219, 188, 1), rgba(211, 176, 132, 1)) !important;
+  box-shadow:
+    0 0 0 3px rgba(232, 207, 174, 0.1),
+    0 14px 34px rgba(232, 207, 174, 0.16);
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteLinkRow {
+  gap: 10px;
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteSettingsCard {
+  border-color: rgba(232, 207, 174, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.014)),
+    rgba(13, 13, 13, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteSettingsCard__title,
+body:not(.authPage) #serverInviteModal .serverInviteFriendName {
+  color: rgba(255, 250, 242, 0.96) !important;
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteSettingsCard__summary {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 207, 174, 0.14);
+  background: rgba(232, 207, 174, 0.07);
+  color: rgba(232, 207, 174, 0.78) !important;
+  font-weight: 750;
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteSettingsCard__note,
+body:not(.authPage) #serverInviteModal .serverInviteFriendUsername {
+  color: rgba(211, 205, 194, 0.62) !important;
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteFriendsList {
+  max-height: min(32vh, 280px);
+  padding-right: 4px;
+  scrollbar-color: rgba(232, 207, 174, 0.28) rgba(255, 255, 255, 0.04);
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteFriendRow {
+  border-color: rgba(232, 207, 174, 0.11);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteFriendRow:hover {
+  border-color: rgba(232, 207, 174, 0.18);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteFriendAvatar {
+  border-color: rgba(232, 207, 174, 0.16);
+  background: rgba(13, 13, 13, 0.98);
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteFriendAction {
+  min-width: 86px;
+  min-height: 34px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+body:not(.authPage) #serverInviteModal .serverInviteFriendAction.is-ok {
+  border-color: rgba(139, 205, 158, 0.34) !important;
+  background: rgba(49, 98, 65, 0.24) !important;
+  color: rgba(218, 252, 226, 0.92) !important;
+}
+
+@media (max-width: 640px) {
+  body:not(.authPage) #serverCreateModal .serverCreateIconRow,
+  body:not(.authPage) #serverInviteModal .serverInviteSettingsCard__head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  body:not(.authPage) #serverInviteModal .serverInviteLinkRow,
+  body:not(.authPage) #serverInviteModal .serverInviteFriendRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body:not(.authPage) #serverInviteModal .serverInviteFriendAction,
+  body:not(.authPage) #serverInviteModal #btnServerInviteCopy {
+    width: 100%;
   }
 }

@@ -6,6 +6,11 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/try",
+        destination: "/app/index.html",
+        permanent: false,
+      },
+      {
         source: "/app",
         destination: "/app/index.html",
         permanent: false,
