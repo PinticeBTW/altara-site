@@ -28,7 +28,7 @@ function Brand() {
   );
 }
 
-export function SiteNav({ active }: { active: NavPage }) {
+export function SiteNav({ active }: { active?: NavPage }) {
   return (
     <nav className="nav">
       <div className="nav-inner">
@@ -70,6 +70,8 @@ const footerColumns = [
     title: "Company",
     links: [
       { label: "About", href: "/about" },
+      { label: "Terms", href: "/terms" },
+      { label: "Privacy", href: "/privacy" },
       { label: "GitHub releases", href: RELEASES_URL },
     ],
   },
