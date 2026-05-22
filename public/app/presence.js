@@ -26,6 +26,32 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
     return Number.isFinite(ms) ? ms : 0;
   }
 
+  function normalizeActivity(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const type = String(raw.type || "").trim().toLowerCase();
+    const name = String(raw.name || "").trim().slice(0, 96);
+    const startedAt = Number(raw.startedAt || 0);
+    if (type !== "playing" || !name || !Number.isFinite(startedAt) || startedAt <= 0) return null;
+    const kind = String(raw.kind || "").trim().toLowerCase() === "app" ? "app" : "game";
+    const activityVerb = String(raw.activityVerb || raw.activity_verb || "").trim().toLowerCase() === "using"
+      ? "using"
+      : (kind === "app" ? "using" : "playing");
+    return {
+      type: "playing",
+      name,
+      gameId: String(raw.gameId || "").trim().slice(0, 96) || undefined,
+      kind,
+      activityVerb,
+      startedAt,
+      icon: String(raw.icon || "").trim().slice(0, 512) || undefined,
+      cover: String(raw.cover || "").trim().slice(0, 512) || undefined,
+      background: String(raw.background || "").trim().slice(0, 512) || undefined,
+      provider: String(raw.provider || "").trim().slice(0, 32) || undefined,
+      providerId: String(raw.providerId || "").trim().slice(0, 80) || undefined,
+      slug: String(raw.slug || "").trim().slice(0, 120) || undefined,
+    };
+  }
+
   function clearHeartbeat() {
     if (!heartbeatTimer) return;
     clearInterval(heartbeatTimer);
@@ -43,12 +69,16 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
     try {
       const payload = getMe?.() || {};
       const nextStatus = normalizeStatus(statusOverride || payload.status || currentStatus || "online");
+      const activity = normalizeActivity(payload.activity);
       currentStatus = nextStatus;
-      await channel.track({
+      const trackedPayload = {
         ...payload,
         status: nextStatus,
         last_seen: new Date().toISOString(),
-      });
+      };
+      if (activity) trackedPayload.activity = activity;
+      else trackedPayload.activity = null;
+      await channel.track(trackedPayload);
     } catch (e) {
       onError?.(e);
     }
@@ -83,6 +113,7 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
           name_color: p.name_color || null,
           call_tile_color: p.call_tile_color || null,
           status: normalizeStatus(p.status || "online"),
+          activity: normalizeActivity(p.activity),
           last_seen: p.last_seen || null,
           last_seen_ms: toEpochMs(p.last_seen),
         });
@@ -107,9 +138,11 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
       const list = flattenPresenceState(st).map((u) => {
         const age = Math.max(0, now - Number(u.last_seen_ms || 0));
         const stale = !u.last_seen_ms || age > PRESENCE_STALE_AFTER_MS;
+        const nextStatus = stale ? "offline" : normalizeStatus(u.status);
         return {
           ...u,
-          status: stale ? "offline" : normalizeStatus(u.status),
+          status: nextStatus,
+          activity: nextStatus === "offline" ? null : normalizeActivity(u.activity),
         };
       });
 
@@ -131,6 +164,7 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
           String(u.avatar_url || "").trim(),
           String(u.name_color || "").trim(),
           String(u.call_tile_color || "").trim(),
+          JSON.stringify(normalizeActivity(u.activity) || null),
         ].join("|"))
         .sort()
         .join("||");
@@ -168,11 +202,15 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
         try {
           const payload = getMe?.() || {};
           currentStatus = normalizeStatus(payload?.status || currentStatus || "online");
-          await channel.track({
+          const activity = normalizeActivity(payload.activity);
+          const trackedPayload = {
             ...payload,
             status: currentStatus,
             last_seen: new Date().toISOString(),
-          });
+          };
+          if (activity) trackedPayload.activity = activity;
+          else trackedPayload.activity = null;
+          await channel.track(trackedPayload);
           startHeartbeat();
           startRefreshTimer();
           emitList();
@@ -214,5 +252,15 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
     }
   }
 
-  return { start, stop, setStatus };
+  async function refresh() {
+    if (!channel) return;
+    try {
+      await trackNow(currentStatus);
+      emitList();
+    } catch (e) {
+      onError?.(e);
+    }
+  }
+
+  return { start, stop, setStatus, refresh };
 }

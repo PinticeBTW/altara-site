@@ -526,6 +526,7 @@ export function createServerVoiceScreenshareLayer({
   logger = () => {},
   onStateChanged = () => {},
   openSourcePicker = null,
+  normalizeCapturePreferencesForEntitlement = null,
 } = {}) {
   const convId = normalizeId(conversationId || "");
   const meId = normalizeId(localUserId || "");
@@ -533,6 +534,7 @@ export function createServerVoiceScreenshareLayer({
   let room = null;
   let roomBound = false;
   const shareRecordsByKey = new Map();
+  const remoteWatchedShareKeys = new Set();
   let localShareKey = "";
   let activeShareKey = "";
   let lastRenderSignature = "";
@@ -573,6 +575,82 @@ export function createServerVoiceScreenshareLayer({
     });
   }
 
+  function normalizeCapturePreferenceForEntitlement({
+    nextQualityPreset = qualityPreset,
+    nextFpsPreset = fpsPreset,
+    nextStreamPreset = streamPreset,
+  } = {}) {
+    const normalizedStreamPreset = normalizeScreenshareStreamPreset(
+      nextStreamPreset || deriveStreamPresetFromQualityAndFps(nextQualityPreset, nextFpsPreset),
+    );
+    const derived = deriveQualityAndFpsFromStreamPreset(
+      normalizedStreamPreset,
+      nextFpsPreset || fpsPreset,
+    );
+    let normalizedQuality = normalizeScreenshareQualityPreset(derived.qualityPreset || nextQualityPreset);
+    let normalizedFps = normalizeScreenshareFpsPreset(derived.fpsPreset || nextFpsPreset);
+    let normalizedStream = deriveStreamPresetFromQualityAndFps(normalizedQuality, normalizedFps);
+    let clampedByEntitlement = false;
+    let planAccess = null;
+    if (typeof normalizeCapturePreferencesForEntitlement === "function") {
+      const callbackResult = safeInvoke(normalizeCapturePreferencesForEntitlement, {
+        qualityPreset: normalizedQuality,
+        fpsPreset: normalizedFps,
+        streamPreset: normalizedStream,
+      });
+      if (callbackResult && typeof callbackResult === "object") {
+        const callbackQuality = normalizeScreenshareQualityPreset(
+          callbackResult?.qualityPreset || normalizedQuality,
+        );
+        const callbackFps = normalizeScreenshareFpsPreset(callbackResult?.fpsPreset || normalizedFps);
+        const callbackStream = normalizeScreenshareStreamPreset(
+          callbackResult?.streamPreset || deriveStreamPresetFromQualityAndFps(callbackQuality, callbackFps),
+        );
+        const callbackDerived = deriveQualityAndFpsFromStreamPreset(callbackStream, callbackFps);
+        const resolvedQuality = normalizeScreenshareQualityPreset(
+          callbackDerived.qualityPreset || callbackQuality,
+        );
+        const resolvedFps = normalizeScreenshareFpsPreset(
+          callbackDerived.fpsPreset || callbackFps,
+        );
+        const resolvedStream = deriveStreamPresetFromQualityAndFps(resolvedQuality, resolvedFps);
+        normalizedQuality = resolvedQuality;
+        normalizedFps = resolvedFps;
+        normalizedStream = resolvedStream;
+        clampedByEntitlement = !!(
+          callbackResult?.clampedByEntitlement
+          || resolvedQuality !== normalizeScreenshareQualityPreset(derived.qualityPreset || nextQualityPreset)
+          || resolvedFps !== normalizeScreenshareFpsPreset(derived.fpsPreset || nextFpsPreset)
+          || resolvedStream !== normalizedStreamPreset
+        );
+        planAccess = String(callbackResult?.planAccess || "").trim().toLowerCase() || null;
+      }
+    }
+    return {
+      streamPreset: normalizedStream,
+      qualityPreset: normalizedQuality,
+      fpsPreset: normalizedFps,
+      clampedByEntitlement,
+      planAccess,
+    };
+  }
+
+  {
+    const normalizedInitialPreset = normalizeCapturePreferenceForEntitlement({
+      nextQualityPreset: qualityPreset,
+      nextFpsPreset: fpsPreset,
+      nextStreamPreset: streamPreset,
+    });
+    qualityPreset = normalizedInitialPreset.qualityPreset;
+    fpsPreset = normalizedInitialPreset.fpsPreset;
+    streamPreset = normalizedInitialPreset.streamPreset;
+    if (normalizedInitialPreset.clampedByEntitlement) {
+      writeStoredValue(SERVER_VOICE_SCREENSHARE_STREAM_PRESET_STORAGE_KEY, normalizedInitialPreset.streamPreset);
+      writeStoredValue(SERVER_VOICE_SCREENSHARE_QUALITY_STORAGE_KEY, normalizedInitialPreset.qualityPreset);
+      writeStoredValue(SERVER_VOICE_SCREENSHARE_FPS_STORAGE_KEY, normalizedInitialPreset.fpsPreset);
+    }
+  }
+
   emit("screenshare.preset_loaded", {
     quality: qualityPreset || null,
     fps: fpsPreset || null,
@@ -584,11 +662,19 @@ export function createServerVoiceScreenshareLayer({
   });
 
   function getCapturePreferences() {
+    const normalized = normalizeCapturePreferenceForEntitlement({
+      nextQualityPreset: qualityPreset,
+      nextFpsPreset: fpsPreset,
+      nextStreamPreset: streamPreset,
+    });
+    qualityPreset = normalized.qualityPreset;
+    fpsPreset = normalized.fpsPreset;
+    streamPreset = normalized.streamPreset;
     return {
-      streamPreset,
+      streamPreset: normalized.streamPreset,
       streamPresetOptions: [...SERVER_VOICE_SCREENSHARE_STREAM_PRESETS],
-      qualityPreset,
-      fpsPreset,
+      qualityPreset: normalized.qualityPreset,
+      fpsPreset: normalized.fpsPreset,
       qualityPresetOptions: [...SERVER_VOICE_SCREENSHARE_QUALITY_PRESETS],
       fpsPresetOptions: [...SERVER_VOICE_SCREENSHARE_FPS_PRESETS],
       shareAudioEnabled: !!shareAudioEnabled,
@@ -599,10 +685,17 @@ export function createServerVoiceScreenshareLayer({
   }
 
   function buildCurrentCaptureRequest() {
-    const normalizedStreamPreset = normalizeScreenshareStreamPreset(streamPreset);
-    const derived = deriveQualityAndFpsFromStreamPreset(normalizedStreamPreset, fpsPreset);
-    const normalizedQuality = normalizeScreenshareQualityPreset(derived.qualityPreset || qualityPreset);
-    const normalizedFps = normalizeScreenshareFpsPreset(derived.fpsPreset || fpsPreset);
+    const normalized = normalizeCapturePreferenceForEntitlement({
+      nextQualityPreset: qualityPreset,
+      nextFpsPreset: fpsPreset,
+      nextStreamPreset: streamPreset,
+    });
+    const normalizedStreamPreset = normalized.streamPreset;
+    const normalizedQuality = normalized.qualityPreset;
+    const normalizedFps = normalized.fpsPreset;
+    qualityPreset = normalizedQuality;
+    fpsPreset = normalizedFps;
+    streamPreset = normalizedStreamPreset;
     const videoConstraints = buildCaptureVideoConstraints({
       qualityPreset: normalizedQuality,
       fpsPreset: normalizedFps,
@@ -697,50 +790,54 @@ export function createServerVoiceScreenshareLayer({
     triggerReason = "preset_updated",
     callerFunction = "commitCapturePreference",
   } = {}) {
-    const normalizedStreamPreset = normalizeScreenshareStreamPreset(
-      nextStreamPreset || deriveStreamPresetFromQualityAndFps(nextQualityPreset, nextFpsPreset),
-    );
-    const derived = deriveQualityAndFpsFromStreamPreset(
-      normalizedStreamPreset,
-      nextFpsPreset || fpsPreset,
-    );
-    const normalizedQuality = normalizeScreenshareQualityPreset(derived.qualityPreset || nextQualityPreset);
-    const normalizedFps = normalizeScreenshareFpsPreset(derived.fpsPreset || nextFpsPreset);
-    streamPreset = normalizedStreamPreset;
-    qualityPreset = normalizedQuality;
-    fpsPreset = normalizedFps;
-    writeStoredValue(SERVER_VOICE_SCREENSHARE_STREAM_PRESET_STORAGE_KEY, normalizedStreamPreset);
-    writeStoredValue(SERVER_VOICE_SCREENSHARE_QUALITY_STORAGE_KEY, normalizedQuality);
-    writeStoredValue(SERVER_VOICE_SCREENSHARE_FPS_STORAGE_KEY, normalizedFps);
+    const normalized = normalizeCapturePreferenceForEntitlement({
+      nextQualityPreset,
+      nextFpsPreset,
+      nextStreamPreset,
+    });
+    streamPreset = normalized.streamPreset;
+    qualityPreset = normalized.qualityPreset;
+    fpsPreset = normalized.fpsPreset;
+    writeStoredValue(SERVER_VOICE_SCREENSHARE_STREAM_PRESET_STORAGE_KEY, normalized.streamPreset);
+    writeStoredValue(SERVER_VOICE_SCREENSHARE_QUALITY_STORAGE_KEY, normalized.qualityPreset);
+    writeStoredValue(SERVER_VOICE_SCREENSHARE_FPS_STORAGE_KEY, normalized.fpsPreset);
     emit("screenshare.preset_selected", {
       triggerReason: String(triggerReason || "").trim() || "preset_updated",
       callerFunction: String(callerFunction || "").trim() || "commitCapturePreference",
-      streamPreset: normalizedStreamPreset,
-      qualityPreset: normalizedQuality,
-      fpsPreset: normalizedFps,
+      streamPreset: normalized.streamPreset,
+      qualityPreset: normalized.qualityPreset,
+      fpsPreset: normalized.fpsPreset,
+      clampedByEntitlement: !!normalized.clampedByEntitlement,
+      planAccess: normalized.planAccess || null,
     });
     emit("screenshare.preset_saved", {
       triggerReason: String(triggerReason || "").trim() || "preset_updated",
       callerFunction: String(callerFunction || "").trim() || "commitCapturePreference",
-      streamPreset: normalizedStreamPreset,
-      quality: normalizedQuality,
-      fps: normalizedFps,
+      streamPreset: normalized.streamPreset,
+      quality: normalized.qualityPreset,
+      fps: normalized.fpsPreset,
       source: "screenshare_layer",
       reason: String(triggerReason || "").trim() || "preset_updated",
       shareAudioEnabled: !!shareAudioEnabled,
+      clampedByEntitlement: !!normalized.clampedByEntitlement,
+      planAccess: normalized.planAccess || null,
     });
     emit("screenshare.capture_preset_updated", {
       triggerReason: String(triggerReason || "").trim() || "preset_updated",
       callerFunction: String(callerFunction || "").trim() || "commitCapturePreference",
-      streamPreset: normalizedStreamPreset,
-      qualityPreset: normalizedQuality,
-      fpsPreset: normalizedFps,
+      streamPreset: normalized.streamPreset,
+      qualityPreset: normalized.qualityPreset,
+      fpsPreset: normalized.fpsPreset,
+      clampedByEntitlement: !!normalized.clampedByEntitlement,
+      planAccess: normalized.planAccess || null,
     });
     emitStateChanged(triggerReason, callerFunction);
     return {
-      streamPreset: normalizedStreamPreset,
-      qualityPreset: normalizedQuality,
-      fpsPreset: normalizedFps,
+      streamPreset: normalized.streamPreset,
+      qualityPreset: normalized.qualityPreset,
+      fpsPreset: normalized.fpsPreset,
+      clampedByEntitlement: !!normalized.clampedByEntitlement,
+      planAccess: normalized.planAccess || null,
     };
   }
 
@@ -773,40 +870,49 @@ export function createServerVoiceScreenshareLayer({
     return shareRecordsByKey.get(activeShareKey) || null;
   }
 
+  function isRemoteShareRecord(record = null) {
+    return !!(record && !record.isLocal);
+  }
+
+  function isRemoteShareRecordWatched(record = null) {
+    if (!isRemoteShareRecord(record)) return true;
+    return remoteWatchedShareKeys.has(normalizeId(record?.key || ""));
+  }
+
+  function buildShareStateFromRecord(record = null) {
+    if (!record || !record.ownerUserId) return null;
+    const remote = isRemoteShareRecord(record);
+    const subscribed = remote
+      ? !!(record?.publication?.isSubscribed ?? record?.subscribed)
+      : true;
+    const watched = remote ? isRemoteShareRecordWatched(record) : true;
+    return {
+      key: record.key,
+      ownerUserId: record.ownerUserId || "",
+      ownerDisplayName: record.ownerDisplayName || "",
+      isLocal: !!record.isLocal,
+      isRemote: remote,
+      isWatched: watched,
+      isSubscribed: subscribed,
+      hasPublication: !!record.publication,
+      track: record.track || null,
+      trackId: record.trackId || "",
+      trackSid: record.trackSid || "",
+      stream: record.stream || null,
+      captureRequest: record.captureRequest || null,
+      captureSettings: record.captureSettings || null,
+      updatedAt: Number(record.updatedAt || 0),
+    };
+  }
+
   function buildState() {
     const records = Array.from(shareRecordsByKey.values());
     const shareStates = records
-      .map((record) => (record
-        ? {
-          key: record.key,
-          ownerUserId: record.ownerUserId || "",
-          ownerDisplayName: record.ownerDisplayName || "",
-          isLocal: !!record.isLocal,
-          track: record.track || null,
-          trackId: record.trackId || "",
-          trackSid: record.trackSid || "",
-          stream: record.stream || null,
-          captureRequest: record.captureRequest || null,
-          captureSettings: record.captureSettings || null,
-          updatedAt: Number(record.updatedAt || 0),
-        }
-        : null))
-      .filter((record) => !!(record && record.ownerUserId));
+      .map((record) => buildShareStateFromRecord(record))
+      .filter((record) => !!record);
     const active = readActiveShareRecord();
     const activeState = active
-      ? (shareStates.find((record) => record.key === active.key) || {
-        key: active.key,
-        ownerUserId: active.ownerUserId || "",
-        ownerDisplayName: active.ownerDisplayName || "",
-        isLocal: !!active.isLocal,
-        track: active.track || null,
-        trackId: active.trackId || "",
-        trackSid: active.trackSid || "",
-        stream: active.stream || null,
-        captureRequest: active.captureRequest || null,
-        captureSettings: active.captureSettings || null,
-        updatedAt: Number(active.updatedAt || 0),
-      })
+      ? (shareStates.find((record) => record.key === active.key) || buildShareStateFromRecord(active))
       : null;
     const remoteParticipantIds = dedupeIds(
       shareStates
@@ -854,10 +960,53 @@ export function createServerVoiceScreenshareLayer({
   function pickFallbackActiveShareKey() {
     const records = Array.from(shareRecordsByKey.values());
     if (!records.length) return "";
+    const rankRecord = (record) => {
+      if (!record) return 0;
+      const hasStream = !!record.stream;
+      const watched = isRemoteShareRecord(record) ? isRemoteShareRecordWatched(record) : true;
+      if (record.isLocal && hasStream) return 8;
+      if (watched && hasStream) return 7;
+      if (watched) return 6;
+      if (hasStream) return 5;
+      return 4;
+    };
     const ordered = records
       .slice()
-      .sort((left, right) => Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0));
+      .sort((left, right) => {
+        const rankDiff = rankRecord(right) - rankRecord(left);
+        if (rankDiff) return rankDiff;
+        return Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0);
+      });
     return normalizeId(ordered[0]?.key || "");
+  }
+
+  function applyRemotePublicationSubscription(record = null, subscribed = false, {
+    triggerReason = "remote_subscription_update",
+    callerFunction = "applyRemotePublicationSubscription",
+  } = {}) {
+    const remoteRecord = record && typeof record === "object" ? record : null;
+    if (!isRemoteShareRecord(remoteRecord)) return;
+    const publication = remoteRecord?.publication || null;
+    if (!publication) return;
+    const wantSubscribed = !!subscribed;
+    try {
+      if (typeof publication.setSubscribed === "function") {
+        publication.setSubscribed(wantSubscribed);
+      }
+    } catch (_) {}
+    try {
+      if (typeof publication.setEnabled === "function") {
+        publication.setEnabled(wantSubscribed);
+      }
+    } catch (_) {}
+    remoteRecord.subscribed = wantSubscribed;
+    emit("screenshare.remote_subscription_updated", {
+      triggerReason: String(triggerReason || "").trim() || "remote_subscription_update",
+      callerFunction: String(callerFunction || "").trim() || "applyRemotePublicationSubscription",
+      participantId: remoteRecord?.ownerUserId || null,
+      trackSid: remoteRecord?.trackSid || null,
+      subscribed: wantSubscribed,
+    });
   }
 
   function upsertShareRecord({
@@ -870,27 +1019,66 @@ export function createServerVoiceScreenshareLayer({
     stream = null,
     captureRequest = null,
     captureSettings = null,
+    publication = null,
+    watched = null,
+    keepTrackOnNull = true,
   } = {}) {
     const normalizedKey = normalizeId(key);
     const uid = normalizeId(ownerUserId);
-    const mediaTrack = track?.mediaStreamTrack || track || null;
-    const trackId = normalizeId(mediaTrack?.id || "");
-    if (!normalizedKey || !uid || !mediaTrack || !trackId) return null;
+    if (!normalizedKey || !uid) return null;
+    const existing = shareRecordsByKey.get(normalizedKey) || null;
+    const directMediaTrack = track?.mediaStreamTrack || track || null;
+    const directKind = String(directMediaTrack?.kind || "").trim().toLowerCase();
+    const directVideoTrack = directKind === "video" ? directMediaTrack : null;
+    const bundleFromTrack = createVideoStreamFromTrack(directVideoTrack);
+    const nextTrack = bundleFromTrack?.mediaTrack || directVideoTrack || null;
+    const shouldKeepExistingTrack = !!(keepTrackOnNull && !nextTrack);
+    const resolvedTrack = nextTrack || (shouldKeepExistingTrack ? (existing?.track || null) : null);
+    const resolvedTrackId = normalizeId(resolvedTrack?.id || "");
+    if (isLocal && (!resolvedTrack || !resolvedTrackId)) return null;
+    const nextPublication = !isLocal
+      ? (publication || existing?.publication || null)
+      : null;
+    const resolvedTrackSid = normalizeId(
+      trackSid
+      || nextPublication?.trackSid
+      || resolvedTrack?.sid
+      || existing?.trackSid
+      || "",
+    );
+    if (!isLocal && !nextPublication && !resolvedTrackSid && !resolvedTrackId) return null;
+    const resolvedStream = stream
+      || (nextTrack ? (bundleFromTrack?.stream || createVideoStreamFromTrack(nextTrack)?.stream || null) : null)
+      || (shouldKeepExistingTrack ? (existing?.stream || null) : null);
+    const watchedExplicit = typeof watched === "boolean" ? watched : null;
+    if (!isLocal && watchedExplicit === true) remoteWatchedShareKeys.add(normalizedKey);
+    if (!isLocal && watchedExplicit === false) remoteWatchedShareKeys.delete(normalizedKey);
     const now = Date.now();
     const record = {
+      ...(existing || {}),
       key: normalizedKey,
       ownerUserId: uid,
       ownerDisplayName: String(ownerDisplayName || "").trim(),
       isLocal: !!isLocal,
-      track: mediaTrack,
-      trackSid: normalizeId(trackSid || ""),
-      trackId,
-      stream: stream || createVideoStreamFromTrack(mediaTrack)?.stream || null,
+      publication: nextPublication,
+      track: resolvedTrack,
+      trackSid: resolvedTrackSid,
+      trackId: resolvedTrackId,
+      stream: resolvedStream,
       captureRequest: captureRequest || null,
       captureSettings: captureSettings || null,
+      subscribed: isLocal
+        ? true
+        : !!(nextPublication?.isSubscribed ?? existing?.subscribed),
       updatedAt: now,
     };
     shareRecordsByKey.set(normalizedKey, record);
+    if (!isLocal && watchedExplicit == null && !remoteWatchedShareKeys.has(normalizedKey)) {
+      // Remote shares are opt-in by default: placeholder first, subscribe on explicit watch.
+      record.watched = false;
+    }
+    if (!isLocal && watchedExplicit === true) record.watched = true;
+    if (isLocal) record.watched = true;
     if (record.isLocal) localShareKey = normalizedKey;
     selectActiveShare(normalizedKey, {
       triggerReason: "active_share_added",
@@ -908,6 +1096,9 @@ export function createServerVoiceScreenshareLayer({
     if (!normalizedKey) return false;
     const existing = shareRecordsByKey.get(normalizedKey) || null;
     if (!existing) return false;
+    if (isRemoteShareRecord(existing)) {
+      remoteWatchedShareKeys.delete(normalizedKey);
+    }
     shareRecordsByKey.delete(normalizedKey);
     if (localShareKey === normalizedKey) localShareKey = "";
     if (activeShareKey === normalizedKey) {
@@ -924,6 +1115,102 @@ export function createServerVoiceScreenshareLayer({
     }
     emitStateChanged(triggerReason, callerFunction);
     return true;
+  }
+
+  function clearShareTrackByKey(key = "", {
+    preserveUpdatedAt = false,
+  } = {}) {
+    const normalizedKey = normalizeId(key);
+    if (!normalizedKey) return null;
+    const existing = shareRecordsByKey.get(normalizedKey) || null;
+    if (!existing) return null;
+    const nextRecord = {
+      ...existing,
+      track: null,
+      trackId: "",
+      stream: null,
+      updatedAt: preserveUpdatedAt ? existing.updatedAt : Date.now(),
+    };
+    shareRecordsByKey.set(normalizedKey, nextRecord);
+    return nextRecord;
+  }
+
+  function watchRemoteShareByKey(key = "", {
+    triggerReason = "watch_share",
+    callerFunction = "watchRemoteShareByKey",
+    focusActive = true,
+  } = {}) {
+    const normalizedKey = normalizeId(key);
+    if (!normalizedKey) return false;
+    const record = shareRecordsByKey.get(normalizedKey) || null;
+    if (!isRemoteShareRecord(record)) return false;
+    remoteWatchedShareKeys.add(normalizedKey);
+    applyRemotePublicationSubscription(record, true, {
+      triggerReason,
+      callerFunction,
+    });
+    const track = record?.publication?.track || null;
+    const streamBundle = createVideoStreamFromTrack(track);
+    const nextRecord = {
+      ...record,
+      track: streamBundle?.mediaTrack || record.track || null,
+      trackId: normalizeId(streamBundle?.mediaTrack?.id || record.track?.id || record.trackId || ""),
+      stream: streamBundle?.stream || record.stream || null,
+      watched: true,
+      subscribed: true,
+      updatedAt: Date.now(),
+    };
+    shareRecordsByKey.set(normalizedKey, nextRecord);
+    if (focusActive) {
+      selectActiveShare(normalizedKey, {
+        triggerReason,
+        callerFunction,
+        force: true,
+      });
+      return true;
+    }
+    emitStateChanged(triggerReason, callerFunction);
+    return true;
+  }
+
+  function stopWatchingRemoteShareByKey(key = "", {
+    triggerReason = "stop_watching_share",
+    callerFunction = "stopWatchingRemoteShareByKey",
+  } = {}) {
+    const normalizedKey = normalizeId(key);
+    if (!normalizedKey) return false;
+    const record = shareRecordsByKey.get(normalizedKey) || null;
+    if (!isRemoteShareRecord(record)) return false;
+    remoteWatchedShareKeys.delete(normalizedKey);
+    applyRemotePublicationSubscription(record, false, {
+      triggerReason,
+      callerFunction,
+    });
+    const nextRecord = clearShareTrackByKey(normalizedKey, {
+      preserveUpdatedAt: false,
+    });
+    if (!nextRecord) return false;
+    shareRecordsByKey.set(normalizedKey, {
+      ...nextRecord,
+      watched: false,
+      subscribed: false,
+      updatedAt: Date.now(),
+    });
+    emitStateChanged(triggerReason, callerFunction);
+    return true;
+  }
+
+  function resolveRemoteShareRecordKey({
+    participantIdentity = "",
+    publication = null,
+    track = null,
+  } = {}) {
+    const uid = normalizeId(participantIdentity || "");
+    const mediaTrack = track?.mediaStreamTrack || track || null;
+    const trackId = normalizeId(mediaTrack?.id || track?.sid || "");
+    const trackSid = normalizeId(publication?.trackSid || track?.sid || "");
+    if (!uid) return "";
+    return `remote:${uid}:${trackSid || trackId}`;
   }
 
   function removeRemoteShareRecordByTrack({
@@ -1768,17 +2055,112 @@ export function createServerVoiceScreenshareLayer({
     return true;
   }
 
-  function handleRemoteTrackSubscribed(track, publication, participant) {
+  function handleRemoteTrackPublished(publication, participant, {
+    triggerReason = "room_track_published",
+    callerFunction = "handleRemoteTrackPublished",
+  } = {}) {
+    if (String(publication?.kind || "").trim().toLowerCase() !== "video") return;
+    if (!isScreenSharePublication(publication, publication?.track || null)) return;
+    const uid = normalizeId(participant?.identity || "");
+    if (!uid || uid === meId) return;
+    const recordKey = resolveRemoteShareRecordKey({
+      participantIdentity: uid,
+      publication,
+      track: publication?.track || null,
+    });
+    if (!recordKey) return;
+    const trackSid = normalizeId(publication?.trackSid || publication?.track?.sid || "");
+    const existing = shareRecordsByKey.get(recordKey) || null;
+    const shouldWatch = !!(existing && isRemoteShareRecordWatched(existing));
+    const streamBundle = shouldWatch ? createVideoStreamFromTrack(publication?.track || null) : null;
+    const record = upsertShareRecord({
+      key: recordKey,
+      ownerUserId: uid,
+      ownerDisplayName: String(participant?.name || "").trim(),
+      isLocal: false,
+      track: streamBundle?.mediaTrack || null,
+      trackSid,
+      stream: streamBundle?.stream || null,
+      publication,
+      keepTrackOnNull: !!shouldWatch,
+      watched: shouldWatch,
+    });
+    if (!record) return;
+    if (!isRemoteShareRecordWatched(record)) {
+      applyRemotePublicationSubscription(record, false, {
+        triggerReason,
+        callerFunction,
+      });
+      clearShareTrackByKey(record.key, {
+        preserveUpdatedAt: false,
+      });
+      emit("screenshare.remote_track_available", {
+        triggerReason,
+        participantId: uid || null,
+        trackSid: trackSid || null,
+        watched: false,
+      });
+      emitStateChanged(triggerReason, callerFunction);
+      return;
+    }
+    applyRemotePublicationSubscription(record, true, {
+      triggerReason,
+      callerFunction,
+    });
+    if (streamBundle?.mediaTrack) {
+      const remoteMetrics = readTrackOutputMetrics(streamBundle.mediaTrack);
+      emit("screenshare.remote_track_received", {
+        triggerReason,
+        participantId: uid || null,
+        trackId: normalizeId(streamBundle.mediaTrack.id || "") || null,
+        trackSid: trackSid || null,
+        actualWidth: remoteMetrics.actualWidth,
+        actualHeight: remoteMetrics.actualHeight,
+        actualFps: remoteMetrics.actualFps,
+      });
+    }
+    emitStateChanged(triggerReason, callerFunction);
+  }
+
+  function handleRemoteTrackSubscribed(track, publication, participant, {
+    triggerReason = "room_track_subscribed",
+    callerFunction = "handleRemoteTrackSubscribed",
+  } = {}) {
     if (String(track?.kind || "").trim().toLowerCase() !== "video") return;
     if (!isScreenSharePublication(publication, track)) return;
     const uid = normalizeId(participant?.identity || "");
-    if (!uid) return;
+    if (!uid || uid === meId) return;
+    const recordKey = resolveRemoteShareRecordKey({
+      participantIdentity: uid,
+      publication,
+      track,
+    });
+    if (!recordKey) return;
+    const trackSid = normalizeId(publication?.trackSid || track?.sid || "");
+    let record = upsertShareRecord({
+      key: recordKey,
+      ownerUserId: uid,
+      ownerDisplayName: String(participant?.name || "").trim(),
+      isLocal: false,
+      trackSid,
+      publication,
+      keepTrackOnNull: true,
+    });
+    if (!record) return;
+    if (!isRemoteShareRecordWatched(record)) {
+      applyRemotePublicationSubscription(record, false, {
+        triggerReason,
+        callerFunction,
+      });
+      clearShareTrackByKey(recordKey, {
+        preserveUpdatedAt: false,
+      });
+      emitStateChanged(triggerReason, callerFunction);
+      return;
+    }
     const streamBundle = createVideoStreamFromTrack(track);
     if (!streamBundle?.mediaTrack || !streamBundle?.stream) return;
-    const trackId = normalizeId(streamBundle.mediaTrack.id || "");
-    const trackSid = normalizeId(publication?.trackSid || track?.sid || "");
-    const recordKey = `remote:${uid}:${trackSid || trackId}`;
-    upsertShareRecord({
+    record = upsertShareRecord({
       key: recordKey,
       ownerUserId: uid,
       ownerDisplayName: String(participant?.name || "").trim(),
@@ -1786,41 +2168,101 @@ export function createServerVoiceScreenshareLayer({
       track: streamBundle.mediaTrack,
       trackSid,
       stream: streamBundle.stream,
+      publication,
+      keepTrackOnNull: true,
+      watched: true,
+    });
+    if (!record) return;
+    applyRemotePublicationSubscription(record, true, {
+      triggerReason,
+      callerFunction,
     });
     const remoteMetrics = readTrackOutputMetrics(streamBundle.mediaTrack);
     emit("screenshare.remote_track_received", {
-      triggerReason: "room_track_subscribed",
+      triggerReason,
       participantId: uid || null,
-      trackId: trackId || null,
+      trackId: normalizeId(streamBundle.mediaTrack.id || "") || null,
       trackSid: trackSid || null,
       actualWidth: remoteMetrics.actualWidth,
       actualHeight: remoteMetrics.actualHeight,
       actualFps: remoteMetrics.actualFps,
     });
-    emitStateChanged("remote_track_subscribed", "handleRemoteTrackSubscribed");
+    emitStateChanged(triggerReason, callerFunction);
   }
 
-  function handleRemoteTrackUnsubscribed(track, publication, participant) {
+  function handleRemoteTrackUnsubscribed(track, publication, participant, {
+    triggerReason = "room_track_unsubscribed",
+    callerFunction = "handleRemoteTrackUnsubscribed",
+  } = {}) {
     if (String(track?.kind || "").trim().toLowerCase() !== "video") return;
     if (!isScreenSharePublication(publication, track)) return;
     const uid = normalizeId(participant?.identity || "");
-    const mediaTrack = track?.mediaStreamTrack || track || null;
-    const trackId = normalizeId(mediaTrack?.id || "");
-    const trackSid = normalizeId(publication?.trackSid || track?.sid || "");
-    const removed = removeRemoteShareRecordByTrack({
+    if (!uid || uid === meId) return;
+    const recordKey = resolveRemoteShareRecordKey({
       participantIdentity: uid,
-      track,
       publication,
-      triggerReason: "room_track_unsubscribed",
+      track,
+    });
+    if (!recordKey) return;
+    const trackSid = normalizeId(publication?.trackSid || track?.sid || "");
+    const existing = shareRecordsByKey.get(recordKey) || null;
+    const placeholderRecord = existing || upsertShareRecord({
+      key: recordKey,
+      ownerUserId: uid,
+      ownerDisplayName: String(participant?.name || "").trim(),
+      isLocal: false,
+      trackSid,
+      publication,
+      keepTrackOnNull: false,
+      watched: false,
+    });
+    if (!placeholderRecord) return;
+    const cleared = clearShareTrackByKey(recordKey, {
+      preserveUpdatedAt: false,
+    });
+    if (cleared) {
+      shareRecordsByKey.set(recordKey, {
+        ...cleared,
+        subscribed: false,
+        updatedAt: Date.now(),
+      });
+    }
+    emit("screenshare.remote_track_detached", {
+      triggerReason,
+      participantId: uid || null,
+      trackSid: trackSid || null,
+    });
+    emitStateChanged(triggerReason, callerFunction);
+  }
+
+  function handleRemoteTrackUnpublished(publication, participant, {
+    triggerReason = "room_track_unpublished",
+    callerFunction = "handleRemoteTrackUnpublished",
+  } = {}) {
+    if (String(publication?.kind || "").trim().toLowerCase() !== "video") return;
+    if (!isScreenSharePublication(publication, publication?.track || null)) return;
+    const uid = normalizeId(participant?.identity || "");
+    if (!uid || uid === meId) return;
+    const recordKey = resolveRemoteShareRecordKey({
+      participantIdentity: uid,
+      publication,
+      track: publication?.track || null,
+    });
+    if (!recordKey) return;
+    const existing = shareRecordsByKey.get(recordKey) || null;
+    const removed = removeShareRecordByKey(recordKey, {
+      triggerReason,
+      callerFunction,
     });
     if (!removed) return;
     emit("screenshare.remote_track_removed", {
-      triggerReason: "room_track_unsubscribed",
+      triggerReason,
+      callerFunction,
       participantId: uid || null,
-      trackId: trackId || null,
-      trackSid: trackSid || null,
+      trackId: existing?.trackId || null,
+      trackSid: normalizeId(publication?.trackSid || existing?.trackSid || "") || null,
     });
-    emitStateChanged("remote_track_unsubscribed", "handleRemoteTrackUnsubscribed");
+    emitStateChanged(triggerReason, callerFunction);
   }
 
   function handleParticipantDisconnected(participant) {
@@ -1847,10 +2289,16 @@ export function createServerVoiceScreenshareLayer({
       if (!uid) return;
       participant?.trackPublications?.forEach?.((publication) => {
         if (!publication) return;
-        if (!isScreenSharePublication(publication, publication.track || null)) return;
-        const subscribedTrack = publication.track || null;
+        handleRemoteTrackPublished(publication, participant, {
+          triggerReason: "room_remote_hydrate_publication",
+          callerFunction: "hydrateExistingRemoteShares",
+        });
+        const subscribedTrack = publication?.track || null;
         if (!subscribedTrack) return;
-        handleRemoteTrackSubscribed(subscribedTrack, publication, participant);
+        handleRemoteTrackSubscribed(subscribedTrack, publication, participant, {
+          triggerReason: "room_remote_hydrate_subscribed",
+          callerFunction: "hydrateExistingRemoteShares",
+        });
       });
     });
   }
@@ -1858,15 +2306,19 @@ export function createServerVoiceScreenshareLayer({
   function bindRoom(nextRoom = null) {
     if (!nextRoom || room === nextRoom) return;
     if (room && roomBound) {
+      try { room.off(RoomEvent.TrackPublished, handleRemoteTrackPublished); } catch (_) {}
       try { room.off(RoomEvent.TrackSubscribed, handleRemoteTrackSubscribed); } catch (_) {}
       try { room.off(RoomEvent.TrackUnsubscribed, handleRemoteTrackUnsubscribed); } catch (_) {}
+      try { room.off(RoomEvent.TrackUnpublished, handleRemoteTrackUnpublished); } catch (_) {}
       try { room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected); } catch (_) {}
       try { room.off(RoomEvent.Disconnected, handleRoomDisconnected); } catch (_) {}
       roomBound = false;
     }
     room = nextRoom;
+    room.on(RoomEvent.TrackPublished, handleRemoteTrackPublished);
     room.on(RoomEvent.TrackSubscribed, handleRemoteTrackSubscribed);
     room.on(RoomEvent.TrackUnsubscribed, handleRemoteTrackUnsubscribed);
+    room.on(RoomEvent.TrackUnpublished, handleRemoteTrackUnpublished);
     room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
     room.on(RoomEvent.Disconnected, handleRoomDisconnected);
     roomBound = true;
@@ -2010,8 +2462,10 @@ export function createServerVoiceScreenshareLayer({
       releaseLocalCaptureResources();
     }
     if (room && roomBound) {
+      try { room.off(RoomEvent.TrackPublished, handleRemoteTrackPublished); } catch (_) {}
       try { room.off(RoomEvent.TrackSubscribed, handleRemoteTrackSubscribed); } catch (_) {}
       try { room.off(RoomEvent.TrackUnsubscribed, handleRemoteTrackUnsubscribed); } catch (_) {}
+      try { room.off(RoomEvent.TrackUnpublished, handleRemoteTrackUnpublished); } catch (_) {}
       try { room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected); } catch (_) {}
       try { room.off(RoomEvent.Disconnected, handleRoomDisconnected); } catch (_) {}
     }
@@ -2221,6 +2675,31 @@ export function createServerVoiceScreenshareLayer({
         "clearPreferredSourceSelection",
       );
       return null;
+    },
+    watchShare(key = "", {
+      triggerReason = "watch_share",
+      focusActive = true,
+    } = {}) {
+      return watchRemoteShareByKey(key, {
+        triggerReason: String(triggerReason || "").trim() || "watch_share",
+        callerFunction: "watchShare",
+        focusActive: !!focusActive,
+      });
+    },
+    stopWatchingShare(key = "", {
+      triggerReason = "stop_watching_share",
+    } = {}) {
+      return stopWatchingRemoteShareByKey(key, {
+        triggerReason: String(triggerReason || "").trim() || "stop_watching_share",
+        callerFunction: "stopWatchingShare",
+      });
+    },
+    isShareWatched(key = "") {
+      const normalizedKey = normalizeId(key);
+      if (!normalizedKey) return false;
+      const record = shareRecordsByKey.get(normalizedKey) || null;
+      if (!record) return false;
+      return isRemoteShareRecord(record) ? isRemoteShareRecordWatched(record) : true;
     },
     getState() {
       return buildState();

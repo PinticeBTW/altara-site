@@ -26,6 +26,38 @@ function statusLabel(s) {
   return "offline";
 }
 
+function normalizeActivity(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const type = String(raw.type || "").trim().toLowerCase();
+  const name = String(raw.name || "").trim();
+  const startedAt = Number(raw.startedAt || 0);
+  if (type !== "playing" || !name || !Number.isFinite(startedAt) || startedAt <= 0) return null;
+  const kind = String(raw.kind || "").trim().toLowerCase() === "app" ? "app" : "game";
+  const activityVerb = String(raw.activityVerb || raw.activity_verb || "").trim().toLowerCase() === "using"
+    ? "using"
+    : (kind === "app" ? "using" : "playing");
+  return {
+    type: "playing",
+    name,
+    gameId: String(raw.gameId || "").trim(),
+    kind,
+    activityVerb,
+    startedAt,
+    icon: String(raw.icon || "").trim(),
+    cover: String(raw.cover || "").trim(),
+    background: String(raw.background || "").trim(),
+    provider: String(raw.provider || "").trim(),
+    providerId: String(raw.providerId || "").trim(),
+    slug: String(raw.slug || "").trim(),
+  };
+}
+
+function activityLabel(activity) {
+  const normalized = normalizeActivity(activity);
+  if (!normalized) return "";
+  return `${normalized.activityVerb === "using" ? "Using" : "Playing"} ${normalized.name}`;
+}
+
 function normalizeNameColor(value) {
   const s = String(value || "").trim().toLowerCase();
   if (/^#[0-9a-f]{6}$/.test(s)) return s;
@@ -73,6 +105,7 @@ function cardUser(u, right = "") {
   const nameClass = nameColor ? " userNameCustom" : "";
   const nameStyle = nameColor ? ` style="--user-name-color:${esc(nameColor)}"` : "";
   const avatarHtml = buildPresenceAvatarHtml(u) || `<span class="presenceAvatarFallback">${esc(presenceInitial(u))}</span>`;
+  const activityText = activityLabel(u.activity);
   return `
     <div class="presenceRow presenceRow--${esc(st)}" data-presence-user="${esc(u.id)}">
       <div class="presenceLeft">
@@ -82,7 +115,7 @@ function cardUser(u, right = "") {
         </div>
         <div class="presenceText">
           <div class="presenceName${nameClass}"${nameStyle}>${esc(u.display_name || u.username || "User")}</div>
-          <div class="presenceHandle">@${esc(u.username || "")}</div>
+          <div class="presenceHandle">@${esc(u.username || "")}${activityText ? ` <span>&middot; ${esc(activityText)}</span>` : ""}</div>
         </div>
       </div>
       <div class="presenceRight">
@@ -118,6 +151,7 @@ export function renderPresenceUI({
       avatar_url: u.avatar_url || null,
       name_color: normalizeNameColor(u.name_color),
       status: normalizeStatus(u.status),
+      activity: normalizeActivity(u.activity),
     });
   }
 
@@ -130,6 +164,7 @@ export function renderPresenceUI({
       display_name: f.display_name || f.username || "User",
       avatar_url: f.avatar_url || null,
       name_color: normalizeNameColor(f.name_color),
+      activity: null,
       status: "offline"
     };
   }).filter(x => x.id);
@@ -143,6 +178,7 @@ export function renderPresenceUI({
     return {
       ...u,
       status: normalizeStatus(p.status),
+      activity: normalizeActivity(p.activity),
     };
   });
 
@@ -154,6 +190,7 @@ export function renderPresenceUI({
       display_name: me.display_name || me.username || "Me",
       avatar_url: me.avatar_url || null,
       name_color: normalizeNameColor(me.name_color),
+      activity: normalizeActivity(me.activity),
       status: normalizeStatus(me.status || "online"),
     };
     // garante que aparece

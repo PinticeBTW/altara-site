@@ -11,6 +11,69 @@
     (() => {
       const APPEARANCE_STORAGE_KEY = "altara.appearance.v1";
       const DEFAULT_ACCENT = "#e8cfae";
+      const CUSTOM_COLOR_KEYS = ["appBg", "surface", "surfaceElevated", "accent", "accentStrong", "border", "text", "textMuted"];
+      const DEFAULT_CUSTOM_COLORS_DARK = Object.freeze({
+        appBg: "#101010",
+        surface: "#181818",
+        surfaceElevated: "#202020",
+        accent: "#e8cfae",
+        accentStrong: "#f0d8b8",
+        border: "#2c2c2c",
+        text: "#f2f0ec",
+        textMuted: "#706c67",
+      });
+      const DEFAULT_CUSTOM_COLORS_WHITE = Object.freeze({
+        appBg: "#f5f1e8",
+        surface: "#fffdf8",
+        surfaceElevated: "#f8f3ea",
+        accent: "#e8cfae",
+        accentStrong: "#9f7c50",
+        border: "#d8cfc1",
+        text: "#181512",
+        textMuted: "#675f55",
+      });
+      const THEME_VALUES = Object.freeze(["default", "white", "system", "blood", "forest", "custom"]);
+      const THEME_ALIASES = Object.freeze({
+        "soft-light": "white",
+        "soft_light": "white",
+        "soft light": "white",
+        "clean-light": "white",
+        "clean_light": "white",
+        light: "white",
+      });
+      const THEME_CLASSES = Object.freeze(["theme-default", "theme-white", "theme-system", "theme-midnight", "theme-blood", "theme-forest", "theme-rose", "theme-cream", "theme-mono", "theme-custom"]);
+      const EARLY_THEME_PRESETS = Object.freeze({
+        default: Object.freeze({ mode: "dark", bg: "#101010", bgDeep: "#080808", bgSoft: "#151515", surface: "#181818", surfaceElevated: "#202020", surfacePanel: "#1c1c1c", surfaceMuted: "#202020", surface0: "rgba(24, 24, 24, 0.94)", row: "rgba(255, 255, 255, 0.035)", rowStrong: "#181818", hover: "rgba(255, 255, 255, 0.055)", input: "#111111", inputFocus: "#191714", border: "rgba(255, 255, 255, 0.075)", borderHex: "#2c2c2c", borderStrong: "rgba(255, 255, 255, 0.115)", text: "#f2f0ec", textSoft: "rgba(242, 240, 236, 0.64)", textMuted: "rgba(242, 240, 236, 0.44)", textMutedHex: "#706c67", accent: "#e8cfae", accentStrongMixTarget: "#ffffff", accentStrongMixWeight: 0.14 }),
+        white: Object.freeze({ mode: "light", bg: "#f5f1e8", bgDeep: "#e4dac8", bgSoft: "#eee8dd", surface: "#fffdf8", surfaceElevated: "#f8f3ea", surfacePanel: "#f3ede4", surfaceMuted: "#efe7db", surface0: "rgba(255, 253, 248, 0.92)", row: "rgba(24, 21, 18, 0.045)", rowStrong: "#efe7db", hover: "#ece4d8", input: "#f3ede4", inputFocus: "#f0e6d7", border: "rgba(32, 28, 22, 0.14)", borderHex: "#d8cfc1", borderStrong: "rgba(32, 28, 22, 0.22)", text: "#181512", textSoft: "#8c8174", textMuted: "#675f55", textMutedHex: "#675f55", accent: "#e8cfae", accentStrongMixTarget: "#3d3326", accentStrongMixWeight: 0.42 }),
+        blood: Object.freeze({ mode: "dark", bg: "#0d0809", bgDeep: "#060303", bgSoft: "#150d0f", surface: "#1a1013", surfaceElevated: "#25151a", surfacePanel: "#201216", surfaceMuted: "#2a171c", surface0: "rgba(26, 16, 19, 0.94)", row: "rgba(255, 231, 224, 0.042)", rowStrong: "#24151a", hover: "rgba(174, 76, 68, 0.13)", input: "#120b0d", inputFocus: "#1d1212", border: "rgba(205, 96, 88, 0.18)", borderHex: "#3a2226", borderStrong: "rgba(220, 116, 104, 0.28)", text: "#f5ece8", textSoft: "rgba(245, 236, 232, 0.66)", textMuted: "rgba(245, 236, 232, 0.48)", textMutedHex: "#a4918c", accent: "#d36c68", accentStrongMixTarget: "#fff0eb", accentStrongMixWeight: 0.16 }),
+        forest: Object.freeze({ mode: "dark", bg: "#0b110e", bgDeep: "#050806", bgSoft: "#111a15", surface: "#162019", surfaceElevated: "#1d2a22", surfacePanel: "#19251e", surfaceMuted: "#223127", surface0: "rgba(22, 32, 25, 0.94)", row: "rgba(229, 242, 232, 0.04)", rowStrong: "#1d2a22", hover: "rgba(126, 173, 130, 0.11)", input: "#0e1611", inputFocus: "#162017", border: "rgba(143, 178, 145, 0.15)", borderHex: "#2a3a30", borderStrong: "rgba(157, 195, 160, 0.24)", text: "#edf4ed", textSoft: "rgba(237, 244, 237, 0.64)", textMuted: "rgba(237, 244, 237, 0.45)", textMutedHex: "#94a194", accent: "#79b77c", accentStrongMixTarget: "#edf6e9", accentStrongMixWeight: 0.15 }),
+      });
+      const normalizeThemeChoice = (value, fallback = "default") => {
+        const raw = String(value || "").trim().toLowerCase();
+        const aliased = THEME_ALIASES[raw] || raw;
+        if (THEME_VALUES.includes(aliased)) return aliased;
+        const fallbackRaw = String(fallback || "default").trim().toLowerCase();
+        const fallbackAliased = THEME_ALIASES[fallbackRaw] || fallbackRaw;
+        return THEME_VALUES.includes(fallbackAliased) ? fallbackAliased : "default";
+      };
+      const getEarlyThemePreset = (themeChoice = "default") => EARLY_THEME_PRESETS[themeChoice] || EARLY_THEME_PRESETS.default;
+      const getEarlyAccentStrong = (accentInput, presetInput) => {
+        const preset = presetInput || EARLY_THEME_PRESETS.default;
+        const accent = normalizeHex(accentInput, preset.accent || DEFAULT_ACCENT);
+        const target = normalizeHex(preset.accentStrongMixTarget, preset.mode === "light" ? "#3d3326" : "#ffffff");
+        const weight = Number.isFinite(Number(preset.accentStrongMixWeight)) ? Number(preset.accentStrongMixWeight) : (preset.mode === "light" ? 0.42 : 0.14);
+        return mixHex(accent, target, weight);
+      };
+      const normalizeBool = (value, fallback = false) => {
+        if (typeof value === "boolean") return value;
+        if (typeof value === "number") return value === 1;
+        if (typeof value === "string") {
+          const normalized = value.trim().toLowerCase();
+          if (normalized === "true" || normalized === "1") return true;
+          if (normalized === "false" || normalized === "0") return false;
+        }
+        return !!fallback;
+      };
       const normalizeHex = (value, fallback = DEFAULT_ACCENT) => {
         const raw = String(value || "").trim();
         const full = /^#([0-9a-f]{6})$/i.exec(raw);
@@ -29,6 +92,103 @@
         const right = Number.parseInt(normalizeHex(b).slice(1), 16);
         const mix = (shift) => Math.round((((left >> shift) & 255) * (1 - weight)) + (((right >> shift) & 255) * weight));
         return `#${[mix(16), mix(8), mix(0)].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+      };
+      const DEFAULT_CUSTOM_THEME = Object.freeze({ mode: "night", colors: Object.freeze(["#e8cfae"]), intensity: 50, gradientDirection: 135 });
+      const normalizeCustomThemeMode = (value, fallback = DEFAULT_CUSTOM_THEME.mode) => {
+        const mode = String(value || "").trim().toLowerCase();
+        if (mode === "day" || mode === "light") return "day";
+        if (mode === "night" || mode === "dark") return "night";
+        return fallback === "day" ? "day" : "night";
+      };
+      const normalizeCustomThemeColors = (value, fallback = DEFAULT_CUSTOM_THEME.colors) => {
+        const colors = [];
+        (Array.isArray(value) ? value : []).forEach((entry) => {
+          if (colors.length >= 5) return;
+          const normalized = normalizeHex(entry, "");
+          if (normalized) colors.push(normalized);
+        });
+        if (!colors.length) (Array.isArray(fallback) ? fallback : DEFAULT_CUSTOM_THEME.colors).forEach((entry) => {
+          if (colors.length >= 5) return;
+          const normalized = normalizeHex(entry, "");
+          if (normalized) colors.push(normalized);
+        });
+        return colors.length ? colors : ["#e8cfae"];
+      };
+      const normalizeCustomTheme = (value, fallback = DEFAULT_CUSTOM_THEME) => {
+        const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+        const base = fallback && typeof fallback === "object" && !Array.isArray(fallback) ? fallback : DEFAULT_CUSTOM_THEME;
+        return {
+          mode: normalizeCustomThemeMode(source.mode || source.appearance || source.themeMode, base.mode),
+          colors: normalizeCustomThemeColors(source.colors || source.themeColors, base.colors),
+          intensity: Math.max(0, Math.min(100, Math.round(Number(source.intensity ?? source.colorIntensity ?? base.intensity ?? 50) || 50))),
+          gradientDirection: Math.max(0, Math.min(360, Math.round(Number(source.gradientDirection ?? source.gradient_angle ?? source.gradientAngle ?? base.gradientDirection ?? 135) || 135))),
+        };
+      };
+      const averageColors = (colorsInput) => {
+        const colors = normalizeCustomThemeColors(colorsInput);
+        const total = colors.reduce((acc, color) => {
+          const n = Number.parseInt(normalizeHex(color).slice(1), 16);
+          acc.r += (n >> 16) & 255;
+          acc.g += (n >> 8) & 255;
+          acc.b += n & 255;
+          return acc;
+        }, { r: 0, g: 0, b: 0 });
+        const count = Math.max(colors.length, 1);
+        return "#" + [total.r / count, total.g / count, total.b / count].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+      };
+      const luminance = (hex) => {
+        const n = Number.parseInt(normalizeHex(hex).slice(1), 16);
+        const channel = (v) => {
+          const x = v / 255;
+          return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+        };
+        return (0.2126 * channel((n >> 16) & 255)) + (0.7152 * channel((n >> 8) & 255)) + (0.0722 * channel(n & 255));
+      };
+      const contrast = (a, b) => {
+        const light = Math.max(luminance(a), luminance(b));
+        const dark = Math.min(luminance(a), luminance(b));
+        return (light + 0.05) / (dark + 0.05);
+      };
+      const clampCustomLuminance = (hex, mode, limit) => {
+        const day = mode === "day";
+        let out = normalizeHex(hex, day ? "#f5f1e8" : "#101010");
+        for (let i = 0; i < 14; i += 1) {
+          const l = luminance(out);
+          if (day ? l >= limit : l <= limit) break;
+          out = mixHex(out, day ? "#fffaf2" : "#050505", day ? 0.18 : 0.2);
+        }
+        return out;
+      };
+      const ensureTextContrast = (bgInput, textInput, mode) => {
+        let bg = normalizeHex(bgInput, mode === "day" ? "#f5f1e8" : "#101010");
+        const text = normalizeHex(textInput, mode === "day" ? "#181512" : "#f2f0ec");
+        for (let i = 0; i < 16; i += 1) {
+          if (contrast(text, bg) >= 4.6) break;
+          bg = mixHex(bg, mode === "day" ? "#fffdf8" : "#050505", mode === "day" ? 0.2 : 0.22);
+        }
+        return bg;
+      };
+      const generateCustomPalette = (input) => {
+        const customTheme = normalizeCustomTheme(input);
+        const day = customTheme.mode === "day";
+        const colors = normalizeCustomThemeColors(customTheme.colors);
+        const strength = customTheme.intensity / 100;
+        const tint = averageColors(colors);
+        const bgBase = day ? "#f5f1e8" : "#101010";
+        const surfaceBase = day ? "#fffdf8" : "#181818";
+        const elevatedBase = day ? "#f8f3ea" : "#202020";
+        const text = day ? "#181512" : "#f2f0ec";
+        const textMuted = day ? "#675f55" : "#706c67";
+        const bgLimit = day ? 0.78 : 0.075;
+        const bg = ensureTextContrast(clampCustomLuminance(mixHex(bgBase, tint, day ? 0.035 + strength * 0.16 : 0.045 + strength * 0.13), customTheme.mode, bgLimit), text, customTheme.mode);
+        const surface = ensureTextContrast(clampCustomLuminance(mixHex(surfaceBase, tint, day ? 0.025 + strength * 0.09 : 0.035 + strength * 0.09), customTheme.mode, day ? 0.82 : 0.105), text, customTheme.mode);
+        const elevated = ensureTextContrast(clampCustomLuminance(mixHex(elevatedBase, tint, day ? 0.035 + strength * 0.12 : 0.045 + strength * 0.12), customTheme.mode, day ? 0.78 : 0.14), text, customTheme.mode);
+        const accent = mixHex(colors[0] || "#e8cfae", day ? "#6b4d31" : "#fff4e6", day ? 0.12 : 0.1);
+        const accentStrong = mixHex(accent, day ? "#241b13" : "#fff7ed", day ? 0.26 : 0.2);
+        const border = day ? mixHex("#d8cfc1", tint, 0.04 + strength * 0.11) : mixHex("#2c2c2c", tint, 0.06 + strength * 0.15);
+        const stops = colors.map((color) => ensureTextContrast(clampCustomLuminance(mixHex(bgBase, color, day ? 0.04 + strength * 0.18 : 0.05 + strength * 0.15), customTheme.mode, bgLimit), text, customTheme.mode));
+        const bgGradient = stops.length > 1 ? "linear-gradient(" + customTheme.gradientDirection + "deg, " + stops.join(", ") + ")" : "var(--altara-bg)";
+        return { mode: day ? "light" : "dark", customTheme, bg, bgGradient, bgDeep: day ? mixHex(bg, "#d9cdbb", 0.18) : mixHex(bg, "#000000", 0.38), bgSoft: bg, surface, surfaceElevated: elevated, surfacePanel: mixHex(elevated, surface, 0.42), surfaceMuted: mixHex(surface, bg, day ? 0.22 : 0.24), surface0: rgbaFromHex(surface, day ? 0.92 : 0.94), row: day ? rgbaFromHex(text, 0.055) : rgbaFromHex(text, 0.04), rowStrong: mixHex(surface, bg, 0.22), hover: day ? mixHex(elevated, accent, 0.1) : mixHex(elevated, accent, 0.08), input: mixHex(surface, bg, day ? 0.24 : 0.3), inputFocus: mixHex(mixHex(surface, bg, day ? 0.24 : 0.3), accent, day ? 0.2 : 0.16), border, borderStrong: mixHex(border, day ? "#3a3026" : "#ffffff", day ? 0.24 : 0.22), text, textSoft: mixHex(textMuted, text, 0.46), textMuted, accent, accentStrong };
       };
       const readStoredAppearanceUserId = () => {
         const stores = [];
@@ -52,85 +212,209 @@
         }
         return "";
       };
+      const getDefaultCustomColors = (themeChoice = "default", accentInput = DEFAULT_ACCENT) => {
+        const theme = normalizeThemeChoice(themeChoice, "default");
+        const preset = getEarlyThemePreset(theme === "system" ? "default" : theme);
+        const accent = normalizeHex(accentInput, preset.accent || DEFAULT_ACCENT);
+        return {
+          appBg: preset.bg,
+          surface: preset.surface,
+          surfaceElevated: preset.surfaceElevated,
+          accent,
+          accentStrong: getEarlyAccentStrong(accent, preset),
+          border: preset.borderHex || DEFAULT_CUSTOM_COLORS_DARK.border,
+          text: preset.text,
+          textMuted: preset.textMutedHex || DEFAULT_CUSTOM_COLORS_DARK.textMuted,
+        };
+      };
+      const areColorsEqual = (left, right) => {
+        const a = normalizeHex(left, "");
+        const b = normalizeHex(right, "");
+        return !!a && !!b && a === b;
+      };
+      const collectCustomColorValues = (value) => {
+        const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+        const out = {};
+        CUSTOM_COLOR_KEYS.forEach((key) => {
+          const normalized = normalizeHex(source?.[key], "");
+          if (normalized) out[key] = normalized;
+        });
+        return out;
+      };
+      const normalizeCustomColors = (value, fallbackTheme = "default", accentInput = DEFAULT_ACCENT) => {
+        const defaults = getDefaultCustomColors(fallbackTheme, accentInput);
+        return {
+          ...defaults,
+          ...collectCustomColorValues(value),
+        };
+      };
+      const normalizeCustomOverrides = (value, themeChoice = "default") => {
+        const theme = normalizeThemeChoice(themeChoice === "system" ? "default" : themeChoice, "default");
+        const preset = getEarlyThemePreset(theme);
+        const baseAccent = normalizeHex(preset.accent || DEFAULT_ACCENT, DEFAULT_ACCENT);
+        const base = getDefaultCustomColors(theme, baseAccent);
+        const values = collectCustomColorValues(value);
+        const overrides = {};
+        CUSTOM_COLOR_KEYS.forEach((key) => {
+          const next = normalizeHex(values[key], "");
+          if (next && !areColorsEqual(next, base[key])) overrides[key] = next;
+        });
+        return overrides;
+      };
+      const isKnownThemeBasePalette = (value) => {
+        const values = collectCustomColorValues(value);
+        if (!CUSTOM_COLOR_KEYS.every((key) => !!values[key])) return false;
+        const knownPalettes = [
+          DEFAULT_CUSTOM_COLORS_DARK,
+          DEFAULT_CUSTOM_COLORS_WHITE,
+          ...["default", "white", "blood", "forest"].map((theme) => {
+            const preset = getEarlyThemePreset(theme);
+            const baseAccent = normalizeHex(preset.accent || DEFAULT_ACCENT, DEFAULT_ACCENT);
+            return getDefaultCustomColors(theme, baseAccent);
+          }),
+        ];
+        return knownPalettes.some((base) => CUSTOM_COLOR_KEYS.every((key) => areColorsEqual(values[key], base[key])));
+      };
+      const normalizeLegacyCustomOverrides = (value, themeChoice = "default") => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+        if (isKnownThemeBasePalette(value)) return {};
+        return normalizeCustomOverrides(value, themeChoice);
+      };
+      const hasCustomColorOverrides = (colorsInput, themeChoice = "default", resolvedChoice = "") => {
+        const resolved = normalizeThemeChoice(resolvedChoice || (themeChoice === "system" ? "default" : themeChoice), "default");
+        return Object.keys(normalizeCustomOverrides(colorsInput, resolved)).length > 0;
+      };
       const readAppearance = () => {
         try {
           const uid = readStoredAppearanceUserId();
-          const raw = uid ? localStorage.getItem(`${APPEARANCE_STORAGE_KEY}:${uid}`) : "";
+          const raw = uid ? localStorage.getItem(APPEARANCE_STORAGE_KEY + ":" + uid) : "";
           const parsed = JSON.parse(raw || "null") || {};
-          const rawTheme = String(parsed.theme || parsed.preset || "default").trim().toLowerCase();
-          const theme = ["default", "white", "system"].includes(rawTheme) ? rawTheme : "default";
-          return { theme, accent: normalizeHex(parsed.accent || parsed.accent_color || parsed.accentColor) };
+          const themeObj = parsed.theme && typeof parsed.theme === "object" && !Array.isArray(parsed.theme)
+            ? parsed.theme
+            : null;
+          const rawTheme = String(
+            (typeof parsed.theme === "string" ? parsed.theme : "")
+            || parsed.appearance_theme
+            || parsed.appearanceTheme
+            || themeObj?.appearance_theme
+            || themeObj?.appearanceTheme
+            || parsed.preset
+            || "default"
+          ).trim().toLowerCase();
+          const theme = normalizeThemeChoice(rawTheme, "default");
+          const accent = normalizeHex(parsed.accent || parsed.accent_color || parsed.accentColor || parsed.appearance_accent || parsed.appearanceAccent || themeObj?.accent || themeObj?.appearance_accent || themeObj?.appearanceAccent, "");
+          const customOverridesSource = parsed.custom_overrides
+            || parsed.customOverrides
+            || parsed.appearance_custom_overrides
+            || parsed.appearanceCustomOverrides
+            || themeObj?.custom_overrides
+            || themeObj?.customOverrides
+            || themeObj?.appearance_custom_overrides
+            || themeObj?.appearanceCustomOverrides
+            || null;
+          const customColorsSource = parsed.custom_colors
+            || parsed.customColors
+            || parsed.appearance_custom_colors
+            || parsed.appearanceCustomColors
+            || themeObj?.custom_colors
+            || themeObj?.customColors
+            || themeObj?.appearance_custom_colors
+            || themeObj?.appearanceCustomColors
+            || null;
+          return {
+            theme,
+            accent,
+            customOverrides: null,
+            customColors: null,
+            customTheme: parsed.appearance_custom_theme || parsed.appearanceCustomTheme || parsed.custom_theme || parsed.customTheme || themeObj?.appearance_custom_theme || themeObj?.appearanceCustomTheme || themeObj?.custom_theme || themeObj?.customTheme || null,
+          };
         } catch (_) {
-          return { theme: "default", accent: DEFAULT_ACCENT };
+          return {
+            theme: "default",
+            accent: "",
+            customOverrides: null,
+            customColors: null,
+            customTheme: null,
+          };
         }
       };
       const applyEarlyAppearance = () => {
         const settings = readAppearance();
-        const prefersDark = (() => {
-          try { return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches; } catch (_) { return true; }
-        })();
-        const resolved = settings.theme === "system" ? (prefersDark ? "default" : "white") : settings.theme;
-        const isWhite = resolved === "white";
-        const accent = settings.accent;
-        const accentStrong = isWhite ? mixHex(accent, "#3d3326", 0.42) : mixHex(accent, "#ffffff", 0.14);
-        const vars = isWhite ? {
-          "--altara-bg": "#f5f1e8",
-          "--altara-bg-soft": "#eee8dd",
-          "--altara-surface": "#fffdf8",
-          "--altara-surface-elevated": "#f8f3ea",
-          "--altara-surface-panel": "#f3ede4",
-          "--altara-surface-muted": "#efe7db",
-          "--altara-border": "rgba(32, 28, 22, 0.14)",
-          "--altara-border-strong": "rgba(32, 28, 22, 0.22)",
-          "--altara-text": "#181512",
-          "--altara-text-muted": "#675f55",
-          "--altara-text-soft": "#8c8174",
-          "--altara-input": "#f3ede4",
-          "--altara-hover": "rgba(32, 28, 22, 0.06)",
-          "--altara-active": "rgba(218, 184, 141, 0.22)",
-          "--bg-main": "#f5f1e8",
-          "--bg-deep": "#e4dac8",
-          "--surface-0": "rgba(255, 253, 248, 0.92)",
-          "--surface-1": "#fffdf8",
-          "--surface-2": "#f8f3ea",
-          "--surface-row": "rgba(24, 21, 18, 0.045)",
-          "--surface-row-hover": "rgba(218, 184, 141, 0.22)",
-          "--stroke": "rgba(32, 28, 22, 0.14)",
-          "--stroke-strong": "rgba(32, 28, 22, 0.22)",
-          "--text-main": "#181512",
-          "--text-soft": "#675f55",
-          "--text-muted": "#675f55",
-          "--ui-shell-bg": "#f5f1e8",
-          "--ui-top-bg": "#f5f1e8",
-          "--ui-card-bg": "#fffdf8",
-          "--ui-panel-soft-bg": "#eee8dd",
-          "--ui-row-bg": "rgba(24, 21, 18, 0.045)",
-          "--ui-row-strong-bg": "#efe7db",
-          "--ui-input-bg": "#f3ede4",
-          "--ui-input-focus-bg": "#f0e6d7",
-          "--ui-btn-bg": "#f8f3ea",
-          "--ui-btn-border": "rgba(32, 28, 22, 0.14)",
-          "--ui-btn-hover-bg": "#ece4d8",
-          "--ui-btn-hover-border": "rgba(32, 28, 22, 0.22)",
-          "--left-sidebar-bg": "#f5f1e8",
-          "--left-sidebar-top-bg": "#f5f1e8"
-        } : {};
-        Object.assign(vars, {
+        const prefersDark = (() => { try { return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches; } catch (_) { return true; } })();
+        const choice = normalizeThemeChoice(settings.theme, "default");
+        const resolved = choice === "system" ? (prefersDark ? "default" : "white") : (choice === "custom" ? "custom" : choice);
+        const customPalette = resolved === "custom" ? generateCustomPalette(settings.customTheme) : null;
+        const preset = customPalette || getEarlyThemePreset(resolved);
+        const isWhite = customPalette ? customPalette.mode === "light" : preset.mode === "light";
+        const accent = customPalette ? preset.accent : normalizeHex(preset.accent || DEFAULT_ACCENT, DEFAULT_ACCENT);
+        const accentStrong = customPalette ? preset.accentStrong : getEarlyAccentStrong(accent, preset);
+        const accentText = contrast(accent, "#15120e") >= contrast(accent, "#fffaf2") ? "#15120e" : "#fffaf2";
+        const vars = {
+          "--altara-bg": preset.bg,
+          "--altara-bg-gradient": customPalette ? preset.bgGradient : "var(--altara-bg)",
+          "--altara-bg-soft": preset.bgSoft,
+          "--altara-surface": preset.surface,
+          "--altara-surface-elevated": preset.surfaceElevated,
+          "--altara-surface-panel": preset.surfacePanel,
+          "--altara-surface-muted": preset.surfaceMuted,
+          "--altara-border": preset.border,
+          "--altara-border-strong": preset.borderStrong,
+          "--altara-text": preset.text,
+          "--altara-text-muted": preset.textMuted,
+          "--altara-text-soft": preset.textSoft,
+          "--altara-input": preset.input,
+          "--altara-hover": preset.hover,
+          "--altara-active": rgbaFromHex(accent, isWhite ? 0.22 : 0.12),
+          "--bg-main": preset.bg,
+          "--bg-deep": preset.bgDeep,
+          "--surface-0": preset.surface0,
+          "--surface-1": preset.surface,
+          "--surface-2": preset.surfaceElevated,
+          "--surface-row": preset.row,
+          "--surface-row-hover": rgbaFromHex(accent, isWhite ? 0.22 : 0.12),
+          "--stroke": preset.border,
+          "--stroke-strong": preset.borderStrong,
+          "--text-main": preset.text,
+          "--text-soft": isWhite ? preset.textMuted : preset.textSoft,
+          "--text-muted": preset.textMuted,
+          "--ui-shell-bg": preset.bg,
+          "--ui-top-bg": "var(--altara-bg)",
+          "--ui-card-bg": preset.surface,
+          "--ui-panel-soft-bg": preset.bgSoft,
+          "--ui-row-bg": preset.row,
+          "--ui-row-strong-bg": preset.rowStrong,
+          "--ui-input-bg": preset.input,
+          "--ui-input-focus-bg": preset.inputFocus,
+          "--ui-btn-bg": preset.surfaceElevated,
+          "--ui-btn-border": preset.border,
+          "--ui-btn-hover-bg": preset.hover,
+          "--ui-btn-hover-border": preset.borderStrong,
+          "--altara-sidebar-bg": "var(--altara-bg)",
+          "--altara-effective-sidebar-bg": "var(--altara-bg)",
+          "--left-sidebar-bg": "var(--altara-bg)",
+          "--left-sidebar-top-bg": "var(--altara-bg)",
           "--altara-accent": accent,
           "--altara-accent-strong": accentStrong,
+          "--altara-accent-text": accentText,
           "--altara-accent-soft": rgbaFromHex(accent, isWhite ? 0.14 : 0.11),
           "--altara-accent-border": rgbaFromHex(accent, isWhite ? 0.34 : 0.28),
           "--accent": accent,
           "--accent-strong": accentStrong,
           "--accent-soft": rgbaFromHex(accent, isWhite ? 0.16 : 0.14),
           "--focus-ring": rgbaFromHex(accent, isWhite ? 0.28 : 0.34),
-          "--selection-bg": rgbaFromHex(accent, isWhite ? 0.36 : 0.58)
-        });
+          "--selection-bg": rgbaFromHex(accent, isWhite ? 0.36 : 0.58),
+          "--ui-primary-bg": accent,
+          "--ui-primary-border": accent,
+          "--ui-primary-hover-bg": accentStrong,
+          "--ui-primary-hover-border": accentStrong,
+          "--ui-primary-text": accentText
+        };
         [document.documentElement, document.body].forEach((node) => {
           if (!node) return;
-          node.classList.remove("theme-default", "theme-white", "theme-system", "theme-resolved-dark", "theme-resolved-light");
-          node.classList.add(settings.theme === "system" ? "theme-system" : `theme-${settings.theme}`);
+          node.classList.remove(...THEME_CLASSES, "theme-resolved-dark", "theme-resolved-light", "appearance-custom-colors-enabled");
+          node.classList.add(choice === "system" ? "theme-system" : "theme-" + choice);
           node.classList.add(isWhite ? "theme-resolved-light" : "theme-resolved-dark");
+          node.classList.toggle("appearance-custom-colors-enabled", choice === "custom");
           Object.entries(vars).forEach(([name, value]) => node.style.setProperty(name, value));
         });
       };
@@ -547,6 +831,7 @@
                 <div class="dmProfileSection__title">About Me</div>
                 <div id="dmProfileBio" class="dmProfileBio">No bio yet.</div>
               </div>
+              <div id="dmProfileActivityPreview" class="dmProfileActivityPreview hidden" aria-hidden="true"></div>
 
               <div id="dmProfileWidgetsPreview" class="dmProfileWidgetsPreview hidden" aria-hidden="true"></div>
               <div id="dmProfileMutualSection" class="dmProfileContextSection hidden" aria-hidden="true"></div>
@@ -684,17 +969,8 @@
         <div class="settingsSidebarSection">
           <div id="settingsGroupBillingLabel" class="settingsGroupLabel">Billing Settings</div>
           <nav class="settingsNav" aria-label="Billing navigation">
-            <button class="settingsNavItem" type="button" disabled>
-              <span id="settingsNavNitro">Nitro</span>
-              <small>em breve</small>
-            </button>
-            <button class="settingsNavItem" type="button" disabled>
-              <span id="settingsNavServerBoost">Server Boost</span>
-              <small>em breve</small>
-            </button>
-            <button class="settingsNavItem" type="button" disabled>
-              <span id="settingsNavSubscriptions">Subscriptions</span>
-              <small>em breve</small>
+            <button class="settingsNavItem" type="button" data-settings-tab="altara-plus">
+              <span id="settingsNavAltaraPlus">ALTARA+</span>
             </button>
           </nav>
         </div>
@@ -704,6 +980,9 @@
           <nav class="settingsNav" aria-label="App navigation">
             <button class="settingsNavItem" type="button" data-settings-tab="voice-video">
               <span id="settingsNavVoiceVideo">Voice &amp; Video</span>
+            </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="activity">
+              <span id="settingsNavActivity">Activity</span>
             </button>
             <button class="settingsNavItem" type="button" data-settings-tab="keybinds">
               <span id="settingsNavKeybinds">Binds</span>
@@ -749,12 +1028,14 @@
                     <div id="pronounsLine" class="settingsIdentityPronouns" hidden>...</div>
                   </div>
                   <div id="uidLine" class="settingsIdentityUid">@...</div>
+                  <div id="settingsIdentityAltaraPlusBadge" class="profileBadgeRow settingsIdentityBadgeRow" hidden></div>
                 </div>
               </div>
             </div>
 
             <div class="settingsCardSection">
               <div id="settingsSectionProfile" class="settingsSectionTitle">Profile</div>
+              <div id="settingsAccountLoadStatus" class="settingsAccountLoadStatus settingsHint" role="status" aria-live="polite" hidden></div>
               <div class="grid2 settingsGrid settingsProfileGrid">
                 <div class="settingsColumn settingsProfileColumn">
                   <label class="label" for="username">Username</label>
@@ -779,6 +1060,136 @@
                 <button id="btnSaveUsername" class="btn ghost" type="button">Save username</button>
                 <button id="btnSaveProfile" class="btn primary" type="button">Save profile</button>
                 <button id="btnOpenProfileWidgets" class="btn ghost" type="button">Widgets</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="altara-plus">
+            <div class="settingsCardSection settingsAltaraPlusCard">
+              <div id="settingsSectionAltaraPlus" class="settingsSectionTitle">ALTARA+</div>
+              <div id="settingsAltaraPlusHint" class="settingsHint">
+                ALTARA+ is a way to support ALTARA while the app grows. For now, subscribers receive a profile badge, with more perks being planned for future updates.
+              </div>
+
+              <section class="settingsAltaraPlusStatusCard">
+                <div class="settingsAltaraPlusStatusTop">
+                  <div>
+                    <div class="settingsAltaraPlusStatusLabel">Current plan</div>
+                    <div id="settingsAltaraPlusCurrentPlan" class="settingsAltaraPlusStatusPlan">Free</div>
+                  </div>
+                  <span id="settingsAltaraPlusEnvironmentPill" class="settingsAltaraPlusEnvironmentPill" hidden>Test environment</span>
+                </div>
+                <div class="settingsAltaraPlusStatusGrid">
+                  <div class="settingsAltaraPlusStatusItem">
+                    <span class="settingsAltaraPlusStatusItemLabel">Status</span>
+                    <span id="settingsAltaraPlusStatus" class="settingsAltaraPlusStatusItemValue">Inactive</span>
+                  </div>
+                  <div class="settingsAltaraPlusStatusItem">
+                    <span class="settingsAltaraPlusStatusItemLabel">Billing interval</span>
+                    <span id="settingsAltaraPlusInterval" class="settingsAltaraPlusStatusItemValue">-</span>
+                  </div>
+                  <div class="settingsAltaraPlusStatusItem">
+                    <span id="settingsAltaraPlusDateLabel" class="settingsAltaraPlusStatusItemLabel">Renewal</span>
+                    <span id="settingsAltaraPlusExpiresAt" class="settingsAltaraPlusStatusItemValue">-</span>
+                  </div>
+                </div>
+                <div id="settingsAltaraPlusStatusDescription" class="settingsAltaraPlusStatusDescription">
+                  Support ALTARA while the app grows. Subscribers currently receive an ALTARA+ profile badge.
+                </div>
+                <div id="settingsAltaraPlusCancelNotice" class="settingsAltaraPlusCancelNotice" hidden>
+                  <div id="settingsAltaraPlusCancelNoticeText" class="settingsAltaraPlusCancelNoticeText"></div>
+                  <button id="btnSettingsAltaraPlusManageCancellation" class="btn ghost settingsAltaraPlusManageCancelBtn" type="button">Manage cancellation</button>
+                </div>
+                <div class="settingsAltaraPlusActions settingsAltaraPlusActions--top">
+                  <button id="btnSettingsAltaraPlusManage" class="btn primary settingsAltaraPlusManageBtn" type="button" hidden>Manage subscription</button>
+                  <button id="btnSettingsAltaraPlusRefresh" class="btn ghost" type="button">Refresh status</button>
+                </div>
+              </section>
+
+              <div id="settingsAltaraPlusPlanOptions" class="settingsAltaraPlusPlanOptions">
+                <article class="settingsAltaraPlusPlanCard" data-plan-root="core">
+                  <div class="settingsAltaraPlusPlanCardTop">
+                    <div>
+                      <div class="settingsAltaraPlusPlanName">ALTARA+ Core</div>
+                      <div class="settingsAltaraPlusPlanSubtitle">The main paid tier for ALTARA features and supporter perks.</div>
+                    </div>
+                    <span class="settingsAltaraPlusPlanBadge">Core</span>
+                  </div>
+                  <div class="settingsAltaraPlusPriceRows">
+                    <div class="settingsAltaraPlusPriceRow">
+                      <span>�4.99 / month</span>
+                      <span class="settingsAltaraPlusPriceMeta">Monthly</span>
+                    </div>
+                    <div class="settingsAltaraPlusPriceRow">
+                      <span>�44.99 / year</span>
+                      <span class="settingsAltaraPlusPriceMeta">Save about 25%</span>
+                    </div>
+                  </div>
+                  <ul class="settingsAltaraPlusFeatureList">
+                    <li>ALTARA+ Core profile badge</li>
+                    <li>Advanced screen share quality</li>
+                    <li>DM Lock for private conversations</li>
+                    <li>Helps fund future updates</li>
+                  </ul>
+                  <div class="settingsHint settingsAltaraPlusPlanNote">Core unlocks the current paid feature set.</div>
+                  <div class="settingsAltaraPlusIntervalActions">
+                    <button class="btn primary settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="core" data-interval="monthly">Support with Core monthly</button>
+                    <button class="btn ghost settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="core" data-interval="yearly">Support with Core yearly</button>
+                  </div>
+                </article>
+
+                <article class="settingsAltaraPlusPlanCard settingsAltaraPlusPlanCard--nova" data-plan-root="nova">
+                  <div class="settingsAltaraPlusPlanCardTop">
+                    <div>
+                      <div class="settingsAltaraPlusPlanName">ALTARA+ Nova</div>
+                      <div class="settingsAltaraPlusPlanSubtitle">Extra support for ALTARA with Nova recognition.</div>
+                    </div>
+                    <span class="settingsAltaraPlusPlanBadge settingsAltaraPlusPlanBadge--nova">Nova</span>
+                  </div>
+                  <div class="settingsAltaraPlusPriceRows">
+                    <div class="settingsAltaraPlusPriceRow">
+                      <span>�7.99 / month</span>
+                      <span class="settingsAltaraPlusPriceMeta">Monthly</span>
+                    </div>
+                    <div class="settingsAltaraPlusPriceRow">
+                      <span>�74.99 / year</span>
+                      <span class="settingsAltaraPlusPriceMeta">Save about 22%</span>
+                    </div>
+                  </div>
+                  <ul class="settingsAltaraPlusFeatureList">
+                    <li>ALTARA+ Nova profile badge</li>
+                    <li>Everything in Core</li>
+                    <li>Extra supporter recognition</li>
+                    <li>Future Nova perks</li>
+                    <li>Helps fund future updates</li>
+                  </ul>
+                  <div class="settingsHint settingsAltaraPlusPlanNote">Nova includes Core and supports development even more.</div>
+                  <div class="settingsAltaraPlusIntervalActions">
+                    <button class="btn primary settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="nova" data-interval="monthly">Support with Nova monthly</button>
+                    <button class="btn ghost settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="nova" data-interval="yearly">Support with Nova yearly</button>
+                  </div>
+                </article>
+              </div>
+
+              <div class="settingsAltaraPlusCompareCard">
+                <div class="settingsAltaraPlusCompareTitle">Compare plans</div>
+                <div class="settingsAltaraPlusCompareGrid" role="table" aria-label="ALTARA+ comparison">
+                  <div class="settingsAltaraPlusCompareHead">Feature</div>
+                  <div class="settingsAltaraPlusCompareHead">Free</div>
+                  <div class="settingsAltaraPlusCompareHead">Core</div>
+                  <div class="settingsAltaraPlusCompareHead">Nova</div>
+
+                  <div>Supports ALTARA</div><div>-</div><div>Yes</div><div>More</div>
+                  <div>Profile badge</div><div>-</div><div>Core badge</div><div>Nova badge</div>
+                  <div>Advanced screen share quality</div><div>-</div><div>Yes</div><div>Yes</div>
+                  <div>DM Lock</div><div>-</div><div>Yes</div><div>Yes</div>
+                  <div>Future perks</div><div>Standard access</div><div>Core perks</div><div>Nova perks</div>
+                  <div>Supporter recognition</div><div>-</div><div>Core supporter</div><div>Nova supporter</div>
+                </div>
+              </div>
+
+              <div id="settingsAltaraPlusCtaHint" class="settingsHint">
+                Payments are handled securely by Stripe. You can manage or cancel your subscription through the billing portal. Core unlocks the current paid feature set, and Nova includes Core.
               </div>
             </div>
           </div>
@@ -1015,6 +1426,56 @@
             </div>
           </div>
 
+          <div class="settingsPanel" data-settings-panel="activity">
+            <div class="settingsCardSection settingsActivitySection">
+              <div id="settingsSectionActivity" class="settingsSectionTitle">Activity</div>
+              <div class="settingsHint">Choose whether ALTARA shows registered games and apps on your profile and presence.</div>
+
+              <label class="appearanceSwitchRow" for="settingsActivityDisplayGame">
+                <span class="appearanceSwitchText">
+                  <b>Display current game/app as status</b>
+                  <small>Show friends and server members when you're playing or using a registered app.</small>
+                </span>
+                <input id="settingsActivityDisplayGame" type="checkbox" />
+              </label>
+
+              <label class="appearanceSwitchRow" for="settingsActivityDetectGames">
+                <span class="appearanceSwitchText">
+                  <b>Detect games automatically</b>
+                  <small>ALTARA can detect known games running on this device. Add other apps manually.</small>
+                </span>
+                <input id="settingsActivityDetectGames" type="checkbox" />
+              </label>
+
+              <div id="settingsActivityDesktopNote" class="settingsHint">Running app detection is available in the desktop app.</div>
+              <div id="settingsActivityMetadataProvider" class="settingsHint">Metadata provider: RAWG</div>
+
+              <div id="settingsActivityCurrent" class="settingsActivityCurrent" aria-live="polite">
+                <div class="settingsActivityCurrent__icon" aria-hidden="true">ALT</div>
+                <div>
+                  <b>No activity detected</b>
+                  <small>Registered games and apps appear here when running.</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="settingsCardSection settingsActivitySection">
+              <div class="settingsActivitySectionHead">
+                <div>
+                  <div class="settingsSectionTitle">Registered Activity</div>
+                  <div class="settingsHint">Games and apps detected or added on this device. Hidden entries never show as activity.</div>
+                </div>
+                <div class="settingsActivitySectionActions">
+                  <button id="btnSettingsActivityAddRunningApp" class="btn ghost" type="button" data-action="activity-add-running-app">Add running app</button>
+                  <button id="btnSettingsActivityPollNow" class="btn ghost" type="button" data-action="activity-refresh">Refresh</button>
+                </div>
+              </div>
+              <div id="settingsActivityGamesList" class="settingsActivityGamesList">
+                <div class="settingsActivityEmpty">No registered apps loaded.</div>
+              </div>
+            </div>
+          </div>
+
           <div class="settingsPanel" data-settings-panel="blocked-users">
             <div class="settingsCardSection">
               <div id="settingsSectionBlockedUsers" class="settingsSectionTitle">Blocked Users</div>
@@ -1029,7 +1490,7 @@
                 <div>
                   <div class="appearancePageEyebrow">Appearance</div>
                   <h2>Appearance</h2>
-                  <p>Customize how ALTARA looks and feels.</p>
+                  <p>Theme and visual customization for the app.</p>
                 </div>
               </div>
 
@@ -1043,51 +1504,202 @@
 
                 <div class="appearanceThemeCards appearanceThemeCards--simple">
                   <button class="appearanceThemeCard is-selected" type="button" data-appearance-theme="default" aria-pressed="true">
-                    <div class="appearanceThemeThumb appearanceThemeThumb--dark">
-                      <span></span><span></span><span></span>
+                    <div class="appearanceThemeThumb appearanceThemeThumb--default" aria-hidden="true">
+                      <span class="appearanceThemeThumb__sidebar"></span>
+                      <span class="appearanceThemeThumb__surface"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--long"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--short"></span>
+                      <span class="appearanceThemeThumb__accent"></span>
                     </div>
                     <b>Default</b>
                     <small>ALTARA dark</small>
                   </button>
                   <button class="appearanceThemeCard" type="button" data-appearance-theme="white" aria-pressed="false">
-                    <div class="appearanceThemeThumb appearanceThemeThumb--white">
-                      <span></span><span></span><span></span>
+                    <div class="appearanceThemeThumb appearanceThemeThumb--white" aria-hidden="true">
+                      <span class="appearanceThemeThumb__sidebar"></span>
+                      <span class="appearanceThemeThumb__surface"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--long"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--short"></span>
+                      <span class="appearanceThemeThumb__accent"></span>
                     </div>
                     <b>White</b>
                     <small>Soft light</small>
                   </button>
                   <button class="appearanceThemeCard" type="button" data-appearance-theme="system" aria-pressed="false">
-                    <div class="appearanceThemeThumb appearanceThemeThumb--system">
-                      <span></span><span></span><span></span>
+                    <div class="appearanceThemeThumb appearanceThemeThumb--system" aria-hidden="true">
+                      <span class="appearanceThemeThumb__sidebar"></span>
+                      <span class="appearanceThemeThumb__surface"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--long"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--short"></span>
+                      <span class="appearanceThemeThumb__accent"></span>
                     </div>
                     <b>System</b>
                     <small>Follow device</small>
                   </button>
+                  <button class="appearanceThemeCard" type="button" data-appearance-theme="blood" aria-pressed="false">
+                    <div class="appearanceThemeThumb appearanceThemeThumb--blood" aria-hidden="true">
+                      <span class="appearanceThemeThumb__sidebar"></span>
+                      <span class="appearanceThemeThumb__surface"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--long"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--short"></span>
+                      <span class="appearanceThemeThumb__accent"></span>
+                    </div>
+                    <b>Blood</b>
+                    <small>Dark red</small>
+                  </button>
+                  <button class="appearanceThemeCard" type="button" data-appearance-theme="forest" aria-pressed="false">
+                    <div class="appearanceThemeThumb appearanceThemeThumb--forest" aria-hidden="true">
+                      <span class="appearanceThemeThumb__sidebar"></span>
+                      <span class="appearanceThemeThumb__surface"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--long"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--short"></span>
+                      <span class="appearanceThemeThumb__accent"></span>
+                    </div>
+                    <b>Forest</b>
+                    <small>Deep green</small>
+                  </button>
+                  <button class="appearanceThemeCard appearanceThemeCard--custom" type="button" data-appearance-theme="custom" data-custom-theme-open aria-pressed="false">
+                    <div class="appearanceThemeThumb appearanceThemeThumb--custom" aria-hidden="true">
+                      <span class="appearanceThemeThumb__sidebar"></span>
+                      <span class="appearanceThemeThumb__surface"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--long"></span>
+                      <span class="appearanceThemeThumb__line appearanceThemeThumb__line--short"></span>
+                      <span class="appearanceThemeThumb__accent"></span>
+                    </div>
+                    <b>Custom</b>
+                    <small>Make it yours</small>
+                  </button>
                 </div>
               </div>
-
-              <div class="settingsCardSection appearanceSection appearanceSection--accent">
-                <div class="appearanceSectionHeader">
+              <div id="appearanceCustomThemeSection" class="settingsCardSection appearanceSection appearanceSection--custom-theme hidden" aria-hidden="true">
+                <div class="appearanceSectionHeader appearanceCustomInlineHeader">
                   <div>
-                    <div class="settingsSectionTitle">Accent</div>
-                    <div class="settingsHint">Choose a calm highlight color for selected states, focus rings, and key actions.</div>
+                    <div class="appearancePageEyebrow">Custom theme</div>
+                    <div id="appearanceCustomThemeTitle" class="settingsSectionTitle">Customize your theme</div>
+                    <div class="settingsHint">Create a look that feels like you.</div>
                   </div>
                 </div>
-                <div class="appearanceAccentSwatches">
-                  <button class="appearanceSwatch is-selected" type="button" style="--swatch: #e8cfae" data-appearance-accent="#e8cfae" aria-label="Champagne accent" aria-pressed="true"></button>
-                  <button class="appearanceSwatch" type="button" style="--swatch: #d36c68" data-appearance-accent="#d36c68" aria-label="Muted red accent" aria-pressed="false"></button>
-                  <button class="appearanceSwatch" type="button" style="--swatch: #79b77c" data-appearance-accent="#79b77c" aria-label="Muted green accent" aria-pressed="false"></button>
-                  <button class="appearanceSwatch" type="button" style="--swatch: #6fbcb3" data-appearance-accent="#6fbcb3" aria-label="Muted teal accent" aria-pressed="false"></button>
-                  <button class="appearanceSwatch" type="button" style="--swatch: #9274bb" data-appearance-accent="#9274bb" aria-label="Muted violet accent" aria-pressed="false"></button>
+
+                <div class="appearanceCustomInlineLayout">
+                  <div class="appearanceCustomInlineLibrary">
+                    <div class="appearanceCustomInlinePreviewCard" aria-hidden="true">
+                      <div class="appearanceCustomInlinePreviewHead">
+                        <b>Live preview</b>
+                        <small>Theme preview updates as you tune the look.</small>
+                      </div>
+                      <div class="appearanceCustomInlinePreview">
+                        <div class="appearanceCustomInlinePreviewRail"></div>
+                        <div class="appearanceCustomInlinePreviewMain">
+                          <div class="appearanceCustomInlinePreviewTop">
+                            <span></span>
+                            <span></span>
+                          </div>
+                          <div class="appearanceCustomInlinePreviewHero"></div>
+                          <div class="appearanceCustomInlinePreviewCardItem"></div>
+                          <div class="appearanceCustomInlinePreviewText">
+                            <b>ALTARA custom</b>
+                            <small>Readable surfaces, soft depth, warm action states.</small>
+                          </div>
+                          <button type="button" class="appearanceCustomInlinePreviewButton">Accent action</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <section class="appearanceSavedThemesPanel" aria-labelledby="appearanceSavedThemesTitle">
+                      <div class="appearanceSavedThemesPanel__head">
+                        <div>
+                          <b id="appearanceSavedThemesTitle">Saved themes</b>
+                          <small>Keep your favorite looks on this device.</small>
+                        </div>
+                        <button id="btnAppearanceSaveCurrentTheme" class="btn ghost" type="button">Save current theme</button>
+                      </div>
+                      <div id="appearanceSavedThemesStatus" class="appearanceSavedThemesStatus" aria-live="polite"></div>
+                      <div id="appearanceSavedThemesList" class="appearanceSavedThemesList" aria-live="polite">
+                        <div class="appearanceSavedThemesEmpty">No saved themes yet.</div>
+                      </div>
+                      <div class="appearanceSavedThemesLocalNote">Saved themes are stored locally on this device.</div>
+                    </section>
+                  </div>
+
+                  <div class="appearanceCustomInlineControls">
+                    <section class="appearanceCustomPanel">
+                      <div class="appearanceCustomPanel__head">
+                        <b>Appearance</b>
+                        <small>Choose the mood before tuning your colors.</small>
+                      </div>
+                      <div class="appearanceModeSegment" role="group" aria-label="Custom theme appearance">
+                        <button class="appearanceModeSegment__btn is-selected" type="button" data-custom-theme-mode="night" aria-pressed="true">Night</button>
+                        <button class="appearanceModeSegment__btn" type="button" data-custom-theme-mode="day" aria-pressed="false">Day</button>
+                      </div>
+                    </section>
+
+                    <section class="appearanceCustomPanel appearanceCustomPanel--colors">
+                      <div class="appearanceCustomPanel__head">
+                        <b>Colors</b>
+                        <small>Add up to five colors. ALTARA keeps the palette readable.</small>
+                      </div>
+
+                      <div id="appearanceCustomColorField" class="appearanceCustomColorFieldLarge" aria-hidden="true"></div>
+                      <input id="appearanceCustomHueSlider" class="appearanceCustomHueSlider" type="range" min="0" max="360" value="38" aria-label="Hue" />
+
+                      <div id="appearanceCustomColorList" class="appearanceCustomColorList" role="listbox" aria-label="Custom theme colors"></div>
+
+                      <div class="appearanceCustomSelectedColor">
+                        <button id="appearanceCustomColorSwatchButton" class="appearanceCustomSelectedColor__swatch" type="button" aria-label="Open color picker"></button>
+                        <label class="appearanceCustomSelectedColor__hex">
+                          <span>Selected color</span>
+                          <input id="appearanceCustomColorHex" class="appearanceCustomInlineHex themeColorInput--custom" type="text" maxlength="7" value="#E8CFAE" autocomplete="off" spellcheck="false" />
+                        </label>
+                        <button id="btnAppearanceCustomRemoveColor" class="btn ghost appearanceCustomRemoveColor" type="button">Remove</button>
+                      </div>
+                      <div id="appearanceCustomColorError" class="appearanceCustomError hidden" aria-live="polite"></div>
+                      <button id="btnAppearanceCustomAddColor" class="btn ghost appearanceCustomAddColor" type="button">Add Color</button>
+                    </section>
+
+                    <section class="appearanceCustomPanel">
+                      <div class="appearanceCustomPanel__head">
+                        <b>Controls</b>
+                        <small>Dial the color into the interface without sacrificing contrast.</small>
+                      </div>
+                      <label class="appearanceCustomSliderRow">
+                        <span>
+                          <b>Color intensity</b>
+                          <small id="appearanceCustomIntensityValue">50%</small>
+                        </span>
+                        <input id="appearanceCustomIntensity" type="range" min="0" max="100" value="50" />
+                      </label>
+                      <label id="appearanceCustomGradientRow" class="appearanceCustomSliderRow hidden">
+                        <span>
+                          <b>Gradient direction</b>
+                          <small id="appearanceCustomGradientValue">135 deg</small>
+                        </span>
+                        <input id="appearanceCustomGradientDirection" type="range" min="0" max="360" value="135" />
+                      </label>
+                    </section>
+
+                    <section class="appearanceCustomPanel appearanceCustomPanel--actions">
+                      <div class="appearanceCustomPanel__head">
+                        <b>Actions</b>
+                        <small>Try something tasteful or return to the ALTARA base.</small>
+                      </div>
+                      <div class="appearanceCustomActionRow">
+                        <button id="btnAppearanceExportCurrentTheme" class="btn ghost" type="button">Export current theme</button>
+                        <button id="btnAppearanceImportTheme" class="btn ghost" type="button">Import theme</button>
+                        <button id="btnAppearanceCustomSurprise" class="btn ghost" type="button">Surprise Me</button>
+                        <button id="btnAppearanceCustomReset" class="btn ghost" type="button">Reset custom theme</button>
+                      </div>
+                    </section>
+                  </div>
                 </div>
               </div>
 
               <div class="settingsCardSection appearanceSection appearanceSection--actions">
-                <div class="themeActions">
-                  <button id="btnSaveTheme" class="btn primary" type="button">Save changes</button>
+                <div class="themeActions appearanceAutosaveActions">
+                  <button id="btnUndoAppearance" class="btn ghost" type="button" disabled>Undo last change</button>
                   <button id="btnResetTheme" class="btn ghost" type="button">Reset to Default</button>
+                  <div id="appearanceAutosaveStatus" class="appearanceAutosaveStatus" role="status" aria-live="polite" data-status="saved">Saved</div>
                 </div>
-                <div id="settingsThemeHint" class="hint">Theme and accent preview immediately and sync with your account when saved.</div>
+                <div id="settingsThemeHint" class="hint">Changes save automatically. Use Undo if you want to go back.</div>
               </div>
             </div>
           </div>
@@ -1310,13 +1922,14 @@
             <div class="userCardIdentity">
               <div id="userCardAvatar" class="userCardAvatar"></div>
               <div class="userCardIdentityMeta">
-                <div class="userCardBadgeRow">
-                  <div id="userCardRelation" class="userCardRelation" hidden></div>
-                  <div id="userCardStatus" class="userCardStatus" hidden></div>
-                </div>
                 <div id="userCardName" class="userCardName">...</div>
                 <div id="userCardHandle" class="userCardHandle">@...</div>
                 <div id="userCardPronouns" class="userCardPronouns" hidden></div>
+                <div class="userCardBadgeRow">
+                  <div id="userCardAltaraPlusBadge" class="profileBadgeRow userCardBadgeSlot" hidden></div>
+                  <div id="userCardRelation" class="userCardRelation" hidden></div>
+                  <div id="userCardStatus" class="userCardStatus" hidden></div>
+                </div>
               </div>
             </div>
             <div id="userCardBio" class="userCardBio">No bio.</div>
@@ -1344,6 +1957,36 @@
             <section id="userCardWidgetsPanel" class="userCardPanel is-active" data-user-card-panel="widgets"></section>
           </div>
         </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="activityRunningAppModal" class="modal hidden" aria-hidden="true" data-close="1">
+    <div class="modalCard activityRunningAppModalCard" role="dialog" aria-modal="true" aria-labelledby="activityRunningAppModalTitle">
+      <div class="modalTop">
+        <div>
+          <div id="activityRunningAppModalTitle" class="modalTitle">Add running app</div>
+          <div class="settingsHint">Choose an app running on this device. Apps you add can be shown as activity.</div>
+        </div>
+        <button id="btnActivityRunningAppClose" class="btn ghost" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal__body activityRunningAppModalBody">
+        <div id="activityRunningAppStatus" class="settingsHint" aria-live="polite">Loading running apps...</div>
+        <input id="activityRunningAppSearch" class="settingsSearchInput" type="search" placeholder="Search running apps..." autocomplete="off" />
+        <label class="activityRunningAppOptions" for="activityRunningShowSystemApps">
+          <input id="activityRunningShowSystemApps" type="checkbox" />
+          <span>Show system apps</span>
+        </label>
+        <div class="activityRunningAppLayout">
+          <div id="activityRunningAppList" class="activityRunningAppList"></div>
+          <div id="activityRunningAppResolver" class="activityRunningAppResolver">
+            <div class="activityRunningAppEmpty">Select a running app to search game metadata.</div>
+          </div>
+        </div>
+      </div>
+      <div class="profileWidgetModalActions">
+        <button id="btnActivityRunningAppCancel" class="btn ghost" type="button">Cancel</button>
+        <button id="btnActivityRunningAppAddSelected" class="btn" type="button" disabled>Add selected</button>
       </div>
     </div>
   </div>
@@ -1714,7 +2357,7 @@
         <section class="serverInviteSettingsCard">
           <div class="serverInviteSettingsCard__head">
             <div class="serverInviteSettingsCard__title">Invite Link Settings</div>
-            <div id="serverInviteSettingsSummary" class="serverInviteSettingsCard__summary">7 days • No limit</div>
+            <div id="serverInviteSettingsSummary" class="serverInviteSettingsCard__summary">7 days � No limit</div>
           </div>
           <div class="serverInviteSettingsGrid">
             <div class="field">
@@ -2195,7 +2838,7 @@
           <button id="gridRemoteAux" class="stageGridTile" type="button" hidden>
             <video id="callRemoteAuxGridVideo" class="stageGridVideo" autoplay muted playsinline></video>
             <div id="callRemoteAuxGridAvatar" class="stageGridAvatar"></div>
-            <div id="callRemoteAuxGridLabel" class="stageGridLabel">amigo • Câmara</div>
+            <div id="callRemoteAuxGridLabel" class="stageGridLabel">amigo � C�mara</div>
           </button>
           <button id="gridSelf" class="stageGridTile" type="button">
             <video id="callSelfGridVideo" class="stageGridVideo" autoplay muted playsinline></video>
@@ -2205,7 +2848,7 @@
           <button id="gridSelfAux" class="stageGridTile" type="button" hidden>
             <video id="callSelfAuxGridVideo" class="stageGridVideo" autoplay muted playsinline></video>
             <div id="callSelfAuxGridAvatar" class="stageGridAvatar"></div>
-            <div id="callSelfAuxGridLabel" class="stageGridLabel">Tu • Câmara</div>
+            <div id="callSelfAuxGridLabel" class="stageGridLabel">Tu � C�mara</div>
           </button>
         </div>
         <button id="btnFullscreenStage" class="btn ghost callCtrlBtn callStageViewportFsBtn" type="button" title="Fullscreen" aria-label="Fullscreen">
@@ -2234,7 +2877,7 @@
         <button id="tileRemoteAux" class="participantTile" type="button" hidden>
           <video id="callRemoteAuxThumb" class="participantVideo" autoplay muted playsinline></video>
           <div id="callRemoteAuxAvatar" class="participantAvatar"></div>
-          <div id="callRemoteAuxLabel" class="participantLabel">amigo • Câmara</div>
+          <div id="callRemoteAuxLabel" class="participantLabel">amigo � C�mara</div>
         </button>
         <button id="tileSelf" class="participantTile" type="button">
           <video id="callSelfThumb" class="participantVideo" autoplay muted playsinline></video>
@@ -2244,7 +2887,7 @@
         <button id="tileSelfAux" class="participantTile" type="button" hidden>
           <video id="callSelfAuxThumb" class="participantVideo" autoplay muted playsinline></video>
           <div id="callSelfAuxAvatar" class="participantAvatar"></div>
-          <div id="callSelfAuxLabel" class="participantLabel">Tu • Câmara</div>
+          <div id="callSelfAuxLabel" class="participantLabel">Tu � C�mara</div>
         </button>
       </div>
 
@@ -2345,7 +2988,7 @@
         <div id="callBarText" class="callBarText">Em chamada...</div>
         <div id="callBarSub" class="callBarSub" hidden>Canal de voz</div>
       </div>
-      <span id="callBarShareBadge" class="callBarShareBadge" hidden>Balanced • 1080p 60fps</span>
+      <span id="callBarShareBadge" class="callBarShareBadge" hidden>Balanced � 1080p 60fps</span>
       <span id="callBarPing" class="callBarPing" hidden>-- ms</span>
     </div>
     <div class="callBarActions" role="group" aria-label="Controlos rapidos da chamada">
@@ -2365,13 +3008,13 @@
           </span>
           <span class="sr-only">Partilhar ecra</span>
         </button>
-        <button id="btnShareScreenSmallMenu" class="btn ghost callMiniBtn callShareSplit__arrow" type="button" title="Opções da partilha" aria-label="Opções da partilha" hidden>
+        <button id="btnShareScreenSmallMenu" class="btn ghost callMiniBtn callShareSplit__arrow" type="button" title="Op��es da partilha" aria-label="Op��es da partilha" hidden>
           <span class="callMiniBtn__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
               <path d="m7 10 5 5 5-5"></path>
             </svg>
           </span>
-          <span class="sr-only">Opções da partilha</span>
+          <span class="sr-only">Op��es da partilha</span>
         </button>
       </div>
       <div id="callCameraSplitSmall" class="callShareSplit callShareSplit--small callCameraSplit" data-call-camera-split="small">
@@ -2449,10 +3092,11 @@
         <span id="callVoiceVolumeValue" class="callAudioMenu__value">100%</span>
       </label>
       <input id="callVoiceVolumeSlider" class="callAudioMenu__slider" type="range" min="0" max="100" step="1" value="100" />
+      <button id="callVoiceCameraToggleBtn" class="callAudioMenu__action" type="button">Hide Camera for Me</button>
     </section>
 
     <section id="callShareGroup" class="callAudioMenu__section">
-      <button id="callShareWatchToggleBtn" class="callAudioMenu__action" type="button">Stop Watching</button>
+      <button id="callShareWatchToggleBtn" class="callAudioMenu__action" type="button">Stop Watching Stream</button>
       <label class="callAudioMenu__check">
         <span>Mute</span>
         <input id="callShareMuteToggle" type="checkbox" />
@@ -2554,9 +3198,9 @@
             <span id="desktopSharePickerAudioLabel">Share Stream Audio</span>
           </label>
           <div class="desktopSharePickerQuality" role="group" aria-label="Stream quality">
-            <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-quality="1080p30">1080p • 30fps</button>
-            <button class="desktopSharePickerQualityBtn is-active" type="button" data-desktop-share-quality="1080p60">1080p • 60fps</button>
-            <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-quality="2160p60">4K • 60fps</button>
+            <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-quality="1080p30">1080p � 30fps</button>
+            <button class="desktopSharePickerQualityBtn is-active" type="button" data-desktop-share-quality="1080p60">1080p � 60fps</button>
+            <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-quality="2160p60">4K � 60fps</button>
             <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-quality="source">Source</button>
           </div>
           <div id="desktopSharePickerServerVoiceControls" class="desktopSharePickerServerVoiceControls" hidden>
@@ -2664,11 +3308,11 @@
           <select id="reportUserReason" class="settingsInput" style="width:100%;">
             <option id="reportUserReasonPlaceholder" value="">Seleciona um motivo...</option>
             <option value="spam">Spam</option>
-            <option value="harassment">Assédio ou bullying</option>
-            <option value="hate_speech">Discurso de ódio</option>
-            <option value="inappropriate_content">Conteúdo inapropriado</option>
-            <option value="impersonation">Imitação de outra pessoa</option>
-            <option value="threats">Ameaças ou violência</option>
+            <option value="harassment">Ass�dio ou bullying</option>
+            <option value="hate_speech">Discurso de �dio</option>
+            <option value="inappropriate_content">Conte�do inapropriado</option>
+            <option value="impersonation">Imita��o de outra pessoa</option>
+            <option value="threats">Amea�as ou viol�ncia</option>
             <option value="other">Outro</option>
           </select>
         </div>
@@ -2681,11 +3325,11 @@
             <input id="reportUserIncludeContext" type="checkbox" />
             <span class="reportUserEvidenceText">
               <b id="reportUserEvidenceLabel">Incluir contexto desta DM como prova</b>
-              <small id="reportUserEvidenceHint">Ao ativar esta opção, vais partilhar com a moderação da ALTARA a mensagem denunciada e algumas mensagens próximas.</small>
+              <small id="reportUserEvidenceHint">Ao ativar esta op��o, vais partilhar com a modera��o da ALTARA a mensagem denunciada e algumas mensagens pr�ximas.</small>
             </span>
           </label>
           <div class="reportUserEvidencePreview">
-            <small id="reportUserEvidenceSummary">Esta denúncia pode incluir a mensagem denunciada e até 3 mensagens antes e 3 depois.</small>
+            <small id="reportUserEvidenceSummary">Esta den�ncia pode incluir a mensagem denunciada e at� 3 mensagens antes e 3 depois.</small>
             <div>
               <small id="reportUserEvidenceReportedLabel">Mensagem denunciada</small>
               <div id="reportUserEvidenceReportedMessage" class="reportUserEvidencePreviewText"></div>
@@ -2696,7 +3340,7 @@
       </div>
       <div class="modalFooter" style="display:flex;gap:8px;justify-content:flex-end;padding-top:12px;">
         <button id="reportUserCancelBtn" class="btn secondary" data-modal-close="reportUserModal" type="button">Cancelar</button>
-        <button id="btnSubmitReport" class="btn danger" type="button">Enviar denúncia</button>
+        <button id="btnSubmitReport" class="btn danger" type="button">Enviar den�ncia</button>
       </div>
     </div>
   </div>
@@ -2704,3 +3348,8 @@
   <script type="module" src="./app.js"></script>
 </body>
 </html>
+
+
+
+
+

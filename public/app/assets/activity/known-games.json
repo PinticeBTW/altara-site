@@ -1,0 +1,392 @@
+[
+  {
+    "id": "dead-by-daylight",
+    "name": "Dead by Daylight",
+    "executables": [
+      "DeadByDaylight-Win64-Shipping.exe",
+      "DeadByDaylight.exe"
+    ],
+    "aliases": [
+      "Dead by Daylight",
+      "DeadByDaylight",
+      "dead-by-daylight"
+    ],
+    "rawgSlug": "dead-by-daylight",
+    "steamAppId": 381210,
+    "metadata": {
+      "provider": "rawg",
+      "providerId": "9966",
+      "slug": "dead-by-daylight",
+      "name": "Dead by Daylight",
+      "icon": "https://media.rawg.io/media/games/e11/e11325e2f89151d31f612e38dee3b6a0.jpg",
+      "cover": "https://media.rawg.io/media/games/e11/e11325e2f89151d31f612e38dee3b6a0.jpg",
+      "background": "https://media.rawg.io/media/games/e11/e11325e2f89151d31f612e38dee3b6a0.jpg",
+      "released": "2016-06-14",
+      "confidence": 1
+    },
+    "rawgId": 9966
+  },
+  {
+    "id": "cyberpunk-2077",
+    "name": "Cyberpunk 2077",
+    "executables": [
+      "Cyberpunk2077.exe"
+    ],
+    "aliases": [
+      "Cyberpunk 2077",
+      "Cyberpunk2077",
+      "cyberpunk-2077"
+    ],
+    "rawgSlug": "cyberpunk-2077",
+    "steamAppId": 1091500,
+    "metadata": {
+      "provider": "local",
+      "name": "Cyberpunk 2077",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "minecraft",
+    "name": "Minecraft",
+    "executables": [
+      "Minecraft.Windows.exe",
+      "MinecraftLauncher.exe"
+    ],
+    "aliases": [
+      "Minecraft",
+      "Minecraft Bedrock",
+      "Minecraft Launcher",
+      "Minecraft Windows"
+    ],
+    "rawgSlug": "minecraft",
+    "metadata": {
+      "provider": "local",
+      "name": "Minecraft",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "roblox",
+    "name": "Roblox",
+    "executables": [
+      "RobloxPlayerBeta.exe",
+      "RobloxPlayerLauncher.exe"
+    ],
+    "aliases": [
+      "Roblox",
+      "Roblox Player",
+      "RobloxPlayerBeta"
+    ],
+    "rawgSlug": "roblox",
+    "metadata": {
+      "provider": "local",
+      "name": "Roblox",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "fortnite",
+    "name": "Fortnite",
+    "executables": [
+      "FortniteClient-Win64-Shipping.exe"
+    ],
+    "aliases": [
+      "Fortnite",
+      "Fortnite Battle Royale",
+      "Fortnite Client",
+      "FortniteClient-Win64-Shipping"
+    ],
+    "rawgSlug": "fortnite",
+    "steamAppId": null,
+    "metadata": {
+      "provider": "local",
+      "name": "Fortnite",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "valorant",
+    "name": "VALORANT",
+    "executables": [
+      "VALORANT-Win64-Shipping.exe"
+    ],
+    "aliases": [
+      "Valorant",
+      "VALORANT"
+    ],
+    "rawgSlug": "valorant",
+    "metadata": {
+      "provider": "local",
+      "name": "VALORANT",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "league-of-legends",
+    "name": "League of Legends",
+    "executables": [
+      "League of Legends.exe"
+    ],
+    "aliases": [
+      "League of Legends",
+      "LoL"
+    ],
+    "rawgSlug": "league-of-legends",
+    "metadata": {
+      "provider": "local",
+      "name": "League of Legends",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "counter-strike-2",
+    "name": "Counter-Strike 2",
+    "executables": [
+      "cs2.exe"
+    ],
+    "aliases": [
+      "Counter-Strike 2",
+      "CS2"
+    ],
+    "rawgSlug": "counter-strike-2",
+    "steamAppId": 730,
+    "metadata": {
+      "provider": "local",
+      "name": "Counter-Strike 2",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "grand-theft-auto-v",
+    "name": "Grand Theft Auto V",
+    "executables": [
+      "GTA5.exe"
+    ],
+    "aliases": [
+      "Grand Theft Auto V",
+      "GTA V",
+      "GTA5"
+    ],
+    "rawgSlug": "grand-theft-auto-v",
+    "steamAppId": 271590,
+    "metadata": {
+      "provider": "local",
+      "name": "Grand Theft Auto V",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "rocket-league",
+    "name": "Rocket League",
+    "executables": [
+      "RocketLeague.exe"
+    ],
+    "aliases": [
+      "Rocket League"
+    ],
+    "rawgSlug": "rocket-league",
+    "steamAppId": 252950,
+    "metadata": {
+      "provider": "local",
+      "name": "Rocket League",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "apex-legends",
+    "name": "Apex Legends",
+    "executables": [
+      "r5apex.exe"
+    ],
+    "aliases": [
+      "Apex Legends"
+    ],
+    "rawgSlug": "apex-legends",
+    "steamAppId": 1172470,
+    "metadata": {
+      "provider": "local",
+      "name": "Apex Legends",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "overwatch",
+    "name": "Overwatch",
+    "executables": [
+      "Overwatch.exe",
+      "Overwatch Launcher.exe"
+    ],
+    "aliases": [
+      "Overwatch",
+      "Overwatch 2"
+    ],
+    "rawgSlug": "overwatch-2",
+    "steamAppId": 235757,
+    "metadata": {
+      "provider": "local",
+      "name": "Overwatch",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "genshin-impact",
+    "name": "Genshin Impact",
+    "executables": [
+      "GenshinImpact.exe",
+      "YuanShen.exe"
+    ],
+    "aliases": [
+      "Genshin Impact",
+      "Yuan Shen"
+    ],
+    "rawgSlug": "genshin-impact",
+    "metadata": {
+      "provider": "local",
+      "name": "Genshin Impact",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "terraria",
+    "name": "Terraria",
+    "executables": [
+      "Terraria.exe"
+    ],
+    "aliases": [
+      "Terraria"
+    ],
+    "rawgSlug": "terraria",
+    "steamAppId": 105600,
+    "metadata": {
+      "provider": "local",
+      "name": "Terraria",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "stardew-valley",
+    "name": "Stardew Valley",
+    "executables": [
+      "Stardew Valley.exe"
+    ],
+    "aliases": [
+      "Stardew Valley"
+    ],
+    "rawgSlug": "stardew-valley",
+    "steamAppId": 413150,
+    "metadata": {
+      "provider": "local",
+      "name": "Stardew Valley",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "the-sims-4",
+    "name": "The Sims 4",
+    "executables": [
+      "TS4_x64.exe"
+    ],
+    "aliases": [
+      "The Sims 4",
+      "Sims 4"
+    ],
+    "rawgSlug": "the-sims-4",
+    "steamAppId": 1222670,
+    "metadata": {
+      "provider": "local",
+      "name": "The Sims 4",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "elden-ring",
+    "name": "Elden Ring",
+    "executables": [
+      "eldenring.exe"
+    ],
+    "aliases": [
+      "Elden Ring"
+    ],
+    "rawgSlug": "elden-ring",
+    "steamAppId": 1245620,
+    "metadata": {
+      "provider": "local",
+      "name": "Elden Ring",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "helldivers-2",
+    "name": "Helldivers 2",
+    "executables": [
+      "helldivers2.exe"
+    ],
+    "aliases": [
+      "Helldivers 2",
+      "HELLDIVERS 2"
+    ],
+    "rawgSlug": "helldivers-2",
+    "steamAppId": 553850,
+    "metadata": {
+      "provider": "local",
+      "name": "Helldivers 2",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "baldurs-gate-3",
+    "name": "Baldur's Gate 3",
+    "executables": [
+      "bg3.exe",
+      "bg3_dx11.exe"
+    ],
+    "aliases": [
+      "Baldur's Gate 3",
+      "Baldurs Gate 3",
+      "BG3"
+    ],
+    "rawgSlug": "baldurs-gate-3",
+    "steamAppId": 1086940,
+    "metadata": {
+      "provider": "local",
+      "name": "Baldur's Gate 3",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "dota-2",
+    "name": "Dota 2",
+    "executables": [
+      "dota2.exe"
+    ],
+    "aliases": [
+      "Dota 2"
+    ],
+    "rawgSlug": "dota-2",
+    "steamAppId": 570,
+    "metadata": {
+      "provider": "local",
+      "name": "Dota 2",
+      "confidence": 1
+    }
+  },
+  {
+    "id": "rainbow-six-siege",
+    "name": "Rainbow Six Siege",
+    "executables": [
+      "RainbowSix.exe",
+      "RainbowSix_BE.exe"
+    ],
+    "aliases": [
+      "Rainbow Six Siege",
+      "Tom Clancy's Rainbow Six Siege"
+    ],
+    "rawgSlug": "tom-clancys-rainbow-six-siege",
+    "steamAppId": 359550,
+    "metadata": {
+      "provider": "local",
+      "name": "Rainbow Six Siege",
+      "confidence": 1
+    }
+  }
+]
