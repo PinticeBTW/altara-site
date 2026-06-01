@@ -1,6 +1,6 @@
 ﻿// statusStore.js
 const KEY = "altara_status_v1";
-const ALLOWED = new Set(["online", "idle", "dnd", "invisible", "offline"]);
+const ALLOWED = new Set(["online", "idle", "focus", "dnd", "invisible", "offline"]);
 
 function normalizeStatus(status) {
   const s = String(status || "").trim().toLowerCase();

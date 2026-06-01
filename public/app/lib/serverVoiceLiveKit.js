@@ -156,6 +156,7 @@ export function createServerVoiceLiveKitController({
   onError = () => {},
   onRemoteAudioTrackSubscribed = () => {},
   onRemoteAudioTrackUnsubscribed = () => {},
+  onDataReceived = () => {},
 } = {}) {
   const convId = normalizeId(conversationId || "");
   const meId = normalizeId(localUserId || "");
@@ -848,6 +849,16 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
+    room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
+      safeInvoke(onDataReceived, {
+        payload,
+        participant,
+        kind,
+        topic,
+        conversationId: convId,
+      });
+    });
+
     room.on(RoomEvent.Disconnected, (reason) => {
       syncConnectionState("disconnected");
       snapshot.disconnectedAt = nowIso();
@@ -1095,6 +1106,20 @@ export function createServerVoiceLiveKitController({
     emitSnapshot();
   }
 
+  async function publishData(payload, {
+    reliable = true,
+    topic = "",
+  } = {}) {
+    const data = payload instanceof Uint8Array
+      ? payload
+      : new TextEncoder().encode(String(payload ?? ""));
+    const options = {
+      reliable: reliable !== false,
+      topic: String(topic || "").trim() || undefined,
+    };
+    return room.localParticipant.publishData(data, options);
+  }
+
   async function disconnect({ reason = "manual" } = {}) {
     disconnectRequested = true;
     snapshot.disconnectRequested = true;
@@ -1135,6 +1160,7 @@ export function createServerVoiceLiveKitController({
     connect,
     disconnect,
     publishMicrophone,
+    publishData,
     markRemoteTrackAttached,
     markRemoteTrackDetached,
     updateLocalControls,

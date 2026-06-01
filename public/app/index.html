@@ -569,13 +569,14 @@
     </aside>
     <button
       id="leftSidebarResizer"
-      class="leftSidebarResizer"
+      class="leftSidebarResizer friends-sidebar-resize-handle"
+      data-action="resize-friends-sidebar"
       type="button"
       role="separator"
-      aria-label="Resize sidebar"
+      aria-label="Resize friends sidebar"
       aria-orientation="vertical"
-      aria-valuemin="300"
-      aria-valuemax="420"
+      aria-valuemin="260"
+      aria-valuemax="460"
       aria-valuenow="340"
       title="Drag to resize"
     ></button>
@@ -661,6 +662,11 @@
           <div class="dmHeaderText">
             <div class="dmTitleRow">
               <div id="dmTitle" class="dmTitle">DM</div>
+              <span id="dmPrivacyBadge" class="dmPrivacyBadge hidden" hidden></span>
+              <button id="btnDmPrivacy" class="dmPrivacyOptInBtn hidden" type="button" style="display:none;">
+                <span id="btnDmPrivacyLabel">Request Vault</span>
+                <span id="btnDmPrivacySrOnly" class="sr-only">Request Vault</span>
+              </button>
             </div>
             <div id="callStatus" class="dmSub" style="display:none;"></div>
           </div>
@@ -783,6 +789,7 @@
         <div class="dmMainBody">
           <div class="dmThread">
             <div id="dmCallDock" class="dmCallDock"></div>
+            <div id="dmPrivacyBanner" class="dmPrivacyBanner hidden" hidden></div>
 
             <div id="dmMessages" class="dmMessages">
               <div id="dmMessagesEmpty" class="hint">No messages yet. Say hi &#x1F44B;</div>
@@ -950,6 +957,9 @@
                 </span>
               </span>
             </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="connections">
+              <span id="settingsNavConnections">Connections</span>
+            </button>
             <button class="settingsNavItem" type="button" data-settings-tab="profiles" disabled>
               <span id="settingsNavProfiles">Profiles</span>
               <small>em breve</small>
@@ -1064,11 +1074,30 @@
             </div>
           </div>
 
+          <div class="settingsPanel" data-settings-panel="connections">
+            <div class="settingsCardSection settingsConnectionsSection">
+              <div id="settingsSectionConnections" class="settingsSectionTitle">Connections</div>
+              <div class="settingsHint">Connect accounts to show safe public activity on your profile.</div>
+              <div id="settingsConnectionsStatus" class="settingsHint" role="status" aria-live="polite"></div>
+              <div id="settingsSpotifyConnectionCard" class="settingsConnectionCard">
+                <div class="settingsConnectionCard__icon" aria-hidden="true">SP</div>
+                <div class="settingsConnectionCard__body">
+                  <div class="settingsConnectionCard__title">Spotify</div>
+                  <div class="settingsConnectionCard__meta">Show what you're listening to on your profile.</div>
+                </div>
+                <div class="settingsConnectionCard__actions">
+                  <button id="btnSettingsSpotifyConnect" class="btn ghost" type="button" data-action="spotify-connect">Connect Spotify</button>
+                </div>
+              </div>
+              <div id="settingsManualConnections" class="settingsManualConnections"></div>
+            </div>
+          </div>
+
           <div class="settingsPanel" data-settings-panel="altara-plus">
             <div class="settingsCardSection settingsAltaraPlusCard">
               <div id="settingsSectionAltaraPlus" class="settingsSectionTitle">ALTARA+</div>
               <div id="settingsAltaraPlusHint" class="settingsHint">
-                ALTARA+ is a way to support ALTARA while the app grows. For now, subscribers receive a profile badge, with more perks being planned for future updates.
+                ALTARA+ unlocks higher usage limits, personal Focus tools, personal Spatial Audio upgrades, better screen sharing, and supporter recognition while helping ALTARA keep growing.
               </div>
 
               <section class="settingsAltaraPlusStatusCard">
@@ -1094,7 +1123,7 @@
                   </div>
                 </div>
                 <div id="settingsAltaraPlusStatusDescription" class="settingsAltaraPlusStatusDescription">
-                  Support ALTARA while the app grows. Subscribers currently receive an ALTARA+ profile badge.
+                  Free includes basic ALTARA, basic Focus, basic personal Spatial Audio, and standard calls, messages, and widgets.
                 </div>
                 <div id="settingsAltaraPlusCancelNotice" class="settingsAltaraPlusCancelNotice" hidden>
                   <div id="settingsAltaraPlusCancelNoticeText" class="settingsAltaraPlusCancelNoticeText"></div>
@@ -1111,7 +1140,7 @@
                   <div class="settingsAltaraPlusPlanCardTop">
                     <div>
                       <div class="settingsAltaraPlusPlanName">ALTARA+ Core</div>
-                      <div class="settingsAltaraPlusPlanSubtitle">The main paid tier for ALTARA features and supporter perks.</div>
+                      <div class="settingsAltaraPlusPlanSubtitle">The main paid tier for powerful personal features and supporter perks.</div>
                     </div>
                     <span class="settingsAltaraPlusPlanBadge">Core</span>
                   </div>
@@ -1126,12 +1155,17 @@
                     </div>
                   </div>
                   <ul class="settingsAltaraPlusFeatureList">
-                    <li>ALTARA+ Core profile badge</li>
+                    <li>Core profile badge</li>
+                    <li>Focus Profiles</li>
+                    <li>Schedule Focus</li>
+                    <li>Saved Spatial Audio layouts</li>
+                    <li>More Spatial Audio speakers</li>
+                    <li>Higher limits for servers, Best Friends, and saved presets</li>
+                    <li>Larger uploads up to 50 MB</li>
                     <li>Advanced screen share quality</li>
-                    <li>DM Lock for private conversations</li>
                     <li>Helps fund future updates</li>
                   </ul>
-                  <div class="settingsHint settingsAltaraPlusPlanNote">Core unlocks the current paid feature set.</div>
+                  <div class="settingsHint settingsAltaraPlusPlanNote">Core unlocks advanced personal tools without changing the basics everyone can use.</div>
                   <div class="settingsAltaraPlusIntervalActions">
                     <button class="btn primary settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="core" data-interval="monthly">Support with Core monthly</button>
                     <button class="btn ghost settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="core" data-interval="yearly">Support with Core yearly</button>
@@ -1142,7 +1176,7 @@
                   <div class="settingsAltaraPlusPlanCardTop">
                     <div>
                       <div class="settingsAltaraPlusPlanName">ALTARA+ Nova</div>
-                      <div class="settingsAltaraPlusPlanSubtitle">Extra support for ALTARA with Nova recognition.</div>
+                      <div class="settingsAltaraPlusPlanSubtitle">The premium tier for automation, high-end audio, and extra supporter recognition.</div>
                     </div>
                     <span class="settingsAltaraPlusPlanBadge settingsAltaraPlusPlanBadge--nova">Nova</span>
                   </div>
@@ -1157,13 +1191,18 @@
                     </div>
                   </div>
                   <ul class="settingsAltaraPlusFeatureList">
-                    <li>ALTARA+ Nova profile badge</li>
+                    <li>Nova profile badge</li>
                     <li>Everything in Core</li>
+                    <li>Auto Focus</li>
+                    <li>App-based Focus</li>
+                    <li>Spatial Audio HD</li>
+                    <li>Auto Arrange Spatial Audio</li>
+                    <li>Advanced Spatial presets</li>
+                    <li>Highest limits for servers, Best Friends, and saved presets</li>
+                    <li>Highest uploads up to 1 GB</li>
                     <li>Extra supporter recognition</li>
-                    <li>Future Nova perks</li>
-                    <li>Helps fund future updates</li>
                   </ul>
-                  <div class="settingsHint settingsAltaraPlusPlanNote">Nova includes Core and supports development even more.</div>
+                  <div class="settingsHint settingsAltaraPlusPlanNote">Nova includes Core and unlocks the most advanced ALTARA features.</div>
                   <div class="settingsAltaraPlusIntervalActions">
                     <button class="btn primary settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="nova" data-interval="monthly">Support with Nova monthly</button>
                     <button class="btn ghost settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="nova" data-interval="yearly">Support with Nova yearly</button>
@@ -1181,15 +1220,28 @@
 
                   <div>Supports ALTARA</div><div>-</div><div>Yes</div><div>More</div>
                   <div>Profile badge</div><div>-</div><div>Core badge</div><div>Nova badge</div>
+                  <div>Servers joined</div><div>100</div><div>150</div><div>200</div>
+                  <div>Best Friends</div><div>10</div><div>15</div><div>25</div>
+                  <div>Basic Focus</div><div>Yes</div><div>Yes</div><div>Yes</div>
+                  <div>Focus Profiles</div><div>Basic</div><div>Yes</div><div>Yes</div>
+                  <div>Saved Focus profiles</div><div>3</div><div>10</div><div>25</div>
+                  <div>Schedule Focus</div><div>-</div><div>Yes</div><div>Yes</div>
+                  <div>Auto Focus</div><div>-</div><div>-</div><div>Yes</div>
+                  <div>App-based Focus</div><div>-</div><div>-</div><div>Yes</div>
+                  <div>Basic Spatial Audio</div><div>Yes</div><div>Yes</div><div>Yes</div>
+                  <div>Spatial Audio speakers</div><div>Basic limit</div><div>More</div><div>Highest / All</div>
+                  <div>Saved Spatial layouts</div><div>-</div><div>5</div><div>15</div>
+                  <div>Spatial Audio HD</div><div>-</div><div>-</div><div>Yes</div>
+                  <div>Auto Arrange Spatial</div><div>-</div><div>-</div><div>Yes</div>
+                  <div>Upload/file size</div><div>25 MB</div><div>50 MB</div><div>1 GB</div>
+                  <div>Server folders</div><div>Basic</div><div>Advanced</div><div>Advanced + custom icons</div>
                   <div>Advanced screen share quality</div><div>-</div><div>Yes</div><div>Yes</div>
-                  <div>DM Lock</div><div>-</div><div>Yes</div><div>Yes</div>
-                  <div>Future perks</div><div>Standard access</div><div>Core perks</div><div>Nova perks</div>
                   <div>Supporter recognition</div><div>-</div><div>Core supporter</div><div>Nova supporter</div>
                 </div>
               </div>
 
               <div id="settingsAltaraPlusCtaHint" class="settingsHint">
-                Payments are handled securely by Stripe. You can manage or cancel your subscription through the billing portal. Core unlocks the current paid feature set, and Nova includes Core.
+                Payments are handled securely by Stripe. You can manage or cancel your subscription through the billing portal. Core raises key limits and unlocks advanced personal tools; Nova includes Core plus the highest limits, automation, and HD Spatial Audio.
               </div>
             </div>
           </div>
@@ -1283,15 +1335,84 @@
               </div>
             </div>
 
-            <div id="settingsDmE2eeBackupCard" class="settingsCardSection" hidden>
-              <div id="settingsSectionDmE2eeBackup" class="settingsSectionTitle">Encrypted DM backup</div>
-              <div id="settingsDmE2eeBackupHint" class="settingsHint">Private DM uses one encrypted identity per account. ALTARA uses your account password during sign-in to create, protect, or restore that portable key on each device. The password is only used locally and is not kept after sync.</div>
-              <div id="settingsDmE2eeBackupStatus" class="settingsHint">Loading encrypted DM backup status...</div>
-              <div id="settingsDmE2eeBackupAutoHint" class="settingsHint">Automatic Private DM restore runs during password sign-in.</div>
+            <div id="settingsAltaraSyncCard" class="settingsCardSection settingsPrivacyModeCard settingsPrivacyModeCard--sync">
+              <div class="settingsPrivacyModeHeader">
+                <div class="settingsPrivacyModeMark" aria-hidden="true">S</div>
+                <div class="settingsPrivacyModeCopy">
+                  <div id="settingsSectionAltaraSync" class="settingsSectionTitle">ALTARA Sync</div>
+                  <div id="settingsAltaraSyncHint" class="settingsHint">Your everyday DM mode. Protected, synced across devices, and recoverable if you lose access.</div>
+                </div>
+                <div id="settingsAltaraSyncStatus" class="settingsStatusPill" data-status="ready">Default</div>
+              </div>
+              <div id="settingsAltaraSyncNote" class="settingsPrivacyNote">Sync is built for convenience and recovery. It is not the same as Vault end-to-end encryption.</div>
+            </div>
+
+            <div id="settingsDmE2eeBackupCard" class="settingsCardSection settingsPrivacyModeCard settingsPrivacyModeCard--vault" hidden>
+              <div class="settingsPrivacyModeHeader">
+                <div class="settingsPrivacyModeMark" aria-hidden="true">V</div>
+                <div class="settingsPrivacyModeCopy">
+                  <div id="settingsSectionDmE2eeBackup" class="settingsSectionTitle">ALTARA Vault</div>
+                  <div id="settingsDmE2eeBackupHint" class="settingsHint">End-to-end encrypted DMs for maximum privacy. ALTARA cannot recover Vault messages without your recovery password, recovery key, or trusted device.</div>
+                </div>
+                <div id="settingsDmE2eeBackupModePill" class="settingsStatusPill" data-status="loading">Checking</div>
+              </div>
+              <div id="settingsDmE2eeBackupStatus" class="settingsPrivacyStatusText">Loading Vault Recovery status...</div>
+              <div id="settingsDmE2eeBackupWarning" class="settingsPrivacyCallout">Clearing app/browser data, uninstalling ALTARA with data removal, or using a new device may require your Vault Recovery Password or Recovery Key.</div>
+              <div id="settingsDmE2eeBackupAutoHint" class="settingsPrivacyNote">Logging out does not remove Vault access on this device.</div>
+              <div id="settingsDmE2eeBackupMethodStatus" class="settingsHint sr-only">Recovery methods available: loading...</div>
+              <div id="settingsDmE2eeBackupDeviceStatus" class="settingsHint sr-only">This device: loading...</div>
+              <div class="settingsRecoveryStatusGrid" aria-label="Vault Recovery status">
+                <div class="settingsRecoveryStatusRow">
+                  <span>Password</span>
+                  <strong id="settingsDmE2eeBackupPasswordStatus" data-status="loading">Checking</strong>
+                </div>
+                <div class="settingsRecoveryStatusRow">
+                  <span>Recovery Key</span>
+                  <strong id="settingsDmE2eeBackupRecoveryKeyStatus" data-status="loading">Checking</strong>
+                </div>
+                <div class="settingsRecoveryStatusRow">
+                  <span>This device</span>
+                  <strong id="settingsDmE2eeBackupDeviceStatusValue" data-status="loading">Checking</strong>
+                </div>
+              </div>
+              <div id="settingsDmE2eeBackupRecoveryKeyMissing" class="settingsPrivacyCallout is-warning" hidden>Recovery Key is not set up. Create a new Vault Recovery backup to generate one.</div>
+              <details id="settingsDmE2eeBackupHowItWorks" class="settingsPrivacyDetails">
+                <summary id="settingsDmE2eeBackupHowItWorksSummary">How Vault recovery works</summary>
+                <div id="settingsDmE2eeBackupHowItWorksBody">
+                  <ul class="settingsPrivacyBullets">
+                    <li>Vault messages are encrypted before leaving your device.</li>
+                    <li>ALTARA stores only encrypted recovery data.</li>
+                    <li>Use your Recovery Password or Recovery Key to restore on new devices.</li>
+                    <li>Logging out normally does not remove Vault access.</li>
+                    <li>Clearing app data, reinstalling, or using a new device may require recovery.</li>
+                  </ul>
+                </div>
+              </details>
               <div class="settingsGrid">
+                <div id="settingsDmE2eeBackupSaveWrap" class="settingsColumn" hidden>
+                  <label id="settingsDmE2eeBackupPasswordLabel" class="label" for="settingsDmE2eeBackupPassword">Vault Recovery Password</label>
+                  <input id="settingsDmE2eeBackupPassword" class="input" type="password" autocomplete="new-password" />
+                  <label id="settingsDmE2eeBackupPasswordConfirmLabel" class="label" for="settingsDmE2eeBackupPasswordConfirm">Confirm Vault Recovery Password</label>
+                  <input id="settingsDmE2eeBackupPasswordConfirm" class="input" type="password" autocomplete="new-password" />
+                  <button id="btnSettingsDmE2eeBackupSave" class="btn primary" type="button">Set up Vault Recovery</button>
+                </div>
+                <div id="settingsDmE2eeBackupRestoreWrap" class="settingsColumn" hidden>
+                  <label id="settingsDmE2eeBackupRestoreMethodLabel" class="label" for="settingsDmE2eeBackupRestoreMethod">Restore method</label>
+                  <select id="settingsDmE2eeBackupRestoreMethod" class="input">
+                    <option value="password">Password</option>
+                    <option value="recovery_key">Recovery Key</option>
+                  </select>
+                  <label id="settingsDmE2eeBackupRestorePasswordLabel" class="label" for="settingsDmE2eeBackupRestorePassword">Vault Recovery Password</label>
+                  <input id="settingsDmE2eeBackupRestorePassword" class="input" type="password" autocomplete="current-password" />
+                  <button id="btnSettingsDmE2eeBackupRestore" class="btn primary" type="button">Restore Vault messages</button>
+                  <div id="settingsDmE2eeBackupRestoreHint" class="settingsHint">Use the recovery password or Recovery Key you saved on another device.</div>
+                </div>
+                <div id="settingsDmE2eeBackupSetupWrap" class="settingsColumn" hidden>
+                  <button id="btnSettingsDmE2eeSetupNewKey" class="btn ghost" type="button">Set up Vault on this device</button>
+                </div>
                 <div class="settingsColumn">
-                  <button id="btnSettingsDmE2eeBackupRefresh" class="btn ghost" type="button">Refresh Private DM status</button>
-                  <div id="settingsDmE2eeBackupLimitations" class="settingsHint">If you change your account password, sign out and sign back in on a device that still has your Private DM key so ALTARA can refresh the portable backup.</div>
+                  <button id="btnSettingsDmE2eeBackupRefresh" class="btn ghost" type="button">Refresh Vault status</button>
+                  <div id="settingsDmE2eeBackupLimitations" class="settingsHint">Save your Vault Recovery Password and Recovery Key somewhere safe. Before uninstalling ALTARA, make sure Vault Recovery is set up and your Recovery Key is saved.</div>
                 </div>
               </div>
             </div>
@@ -1423,6 +1544,39 @@
                 </span>
                 <input id="settingsDndMuteNotifications" type="checkbox" checked />
               </label>
+              <div class="settingsSubsection">
+                <div id="settingsFocusSectionTitle" class="settingsSectionSubtitle">Focus Mode</div>
+                <div id="settingsFocusSectionHint" class="settingsHint">Focus helps you stay available while limiting interruptions.</div>
+                <div class="settingsFocusPeople">
+                  <div id="settingsFocusPeopleTitle" class="settingsSectionSubtitle">Who can interrupt Focus?</div>
+                  <div id="settingsFocusPeopleHint" class="settingsHint">Choose who can interrupt Focus.</div>
+                  <label class="settingsFocusModeRow" for="settingsFocusAllowedPeopleMode">
+                    <select id="settingsFocusAllowedPeopleMode" class="input">
+                      <option value="none">No one</option>
+                      <option value="best_friends">Best Friends</option>
+                      <option value="selected">Selected friends</option>
+                    </select>
+                  </label>
+                  <div id="settingsFocusModeDescription" class="settingsHint settingsFocusModeDescription">Only your Best Friends can make sounds, calls, and notifications during Focus.</div>
+                  <div id="settingsFocusBestFriendsList" class="settingsFocusPeopleList" aria-live="polite"></div>
+                  <div id="settingsFocusPeoplePicker" class="settingsFocusPeoplePicker">
+                    <input id="settingsFocusPeopleSearch" class="input" type="search" placeholder="Search friends" autocomplete="off" />
+                    <div id="settingsFocusPeopleResults" class="settingsFocusPeopleList" aria-live="polite"></div>
+                    <div id="settingsFocusPeopleSelectedTitle" class="settingsFocusPeopleTitle">Selected friends</div>
+                    <div id="settingsFocusPeopleSelected" class="settingsFocusPeopleList settingsFocusPeopleList--selected" aria-live="polite"></div>
+                  </div>
+                </div>
+                <div id="settingsFocusPlusSection" class="settingsFocusPlus">
+                  <div class="settingsFocusPlus__head">
+                    <div>
+                      <div id="settingsFocusPlusTitle" class="settingsSectionSubtitle">ALTARA+ Focus</div>
+                      <div id="settingsFocusPlusHint" class="settingsHint">Create Focus Profiles, schedule quiet time, and automatically enter Focus when you open selected apps.</div>
+                    </div>
+                    <div id="settingsFocusPlusPlanBadge" class="settingsFocusPlusBadge">Free</div>
+                  </div>
+                  <div id="settingsFocusPlusDynamic" class="settingsFocusPlusDynamic" aria-live="polite"></div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1947,7 +2101,7 @@
           <div id="userCardTabsGroup" class="userCardTabs" role="tablist" aria-label="Profile">
             <button id="userCardTabWidgets" class="userCardTab is-active" type="button" role="tab" aria-selected="true" data-user-card-tab="widgets">Widgets</button>
             <button id="userCardTabActivity" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="activity">Activity</button>
-            <button id="userCardTabMedia" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="media">Media</button>
+            <button id="userCardTabMedia" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="media" hidden aria-hidden="true" tabindex="-1">Media</button>
             <button id="userCardTabShared" class="userCardTab" type="button" role="tab" aria-selected="false" data-user-card-tab="shared">Connections</button>
           </div>
           <div class="userCardPanels">
@@ -3067,6 +3221,18 @@
         </span>
         <span class="sr-only">Silenciar audio recebido</span>
       </button>
+      <button id="btnSpatialAudioMenuSmall" class="btn ghost callMiniBtn spatialAudioMiniTrigger" type="button" title="Spatial Audio" aria-label="Spatial Audio" aria-expanded="false" hidden>
+        <span class="callMiniBtn__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 9v6"></path>
+            <path d="M8 6v12"></path>
+            <path d="M12 4v16"></path>
+            <path d="M16 7v10"></path>
+            <path d="M20 10v4"></path>
+          </svg>
+        </span>
+        <span class="sr-only">Spatial Audio</span>
+      </button>
       <button id="btnCallEndSmall" class="btn danger callMiniBtn callMiniBtn--danger" type="button" title="Desligar chamada" aria-label="Desligar chamada">
         <span class="callMiniBtn__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24">
@@ -3241,6 +3407,7 @@
         <div id="appConfirmInputWrap" class="appConfirmModalInput" hidden>
           <label id="appConfirmInputLabel" class="label" for="appConfirmInput">Message</label>
           <textarea id="appConfirmInput" class="input appConfirmModalTextarea" rows="5" maxlength="4000"></textarea>
+          <input id="appConfirmPasswordInput" class="input" type="password" maxlength="4000" hidden />
           <div id="appConfirmInputHint" class="settingsHint appConfirmModalInputHint"></div>
         </div>
       </div>
