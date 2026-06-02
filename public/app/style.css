@@ -43516,7 +43516,7 @@ body:not(.authPage) .groupsRail {
 }
 
 
-/* Dev-only spatial audio prototype */
+/* Spatial audio controls */
 .spatialAudioControls[hidden],
 .spatialAudioPopover[hidden],
 .spatialAudioRoom[hidden] {
@@ -44663,6 +44663,16 @@ body:not(.authPage) .groupsRail {
 .callBar .spatialAudioMiniTrigger.is-error {
   border-color: rgba(255, 154, 119, 0.46);
   color: #ffd0c0;
+}
+
+.callBar .callBarActions:has(#btnSpatialAudioMenuSmall:not([hidden])) {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+#dmMain.is-server-voice-call-layout .callBar.is-docked-in-dm .callBarActions:has(#btnSpatialAudioMenuSmall:not([hidden])),
+.callBar.is-docked-in-sidebar.is-server-voice-mini-panel .callBarActions:has(#btnSpatialAudioMenuSmall:not([hidden])) {
+  flex-wrap: wrap;
 }
 
 .spatialAudioSection {
