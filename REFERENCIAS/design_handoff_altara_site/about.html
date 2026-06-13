@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>About — Altara</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+
+<style>
+.about-hero {
+  position: relative;
+  padding: 100px 0 60px;
+  overflow: hidden;
+}
+.about-hero .blob-1 { width: 480px; height: 480px; top: -100px; right: -120px; opacity: 0.45; }
+.about-hero .blob-2 { width: 360px; height: 360px; bottom: -60px; left: -80px; opacity: 0.35; }
+.about-hero-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 80px;
+  align-items: end;
+  position: relative;
+  z-index: 1;
+}
+.about-hero h1 { font-size: clamp(48px, 7vw, 96px); }
+.about-hero .lead {
+  font-size: clamp(17px, 1.5vw, 20px);
+  color: var(--fg-muted);
+  line-height: 1.55;
+  max-width: 380px;
+}
+.about-hero .lead strong { color: var(--fg); font-weight: 600; }
+
+@media (max-width: 900px) {
+  .about-hero-grid { grid-template-columns: 1fr; gap: 32px; }
+}
+
+/* STORY */
+.story {
+  padding: 120px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 80px;
+}
+.story-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 80px;
+}
+.story-grid h3 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-dim);
+  font-weight: 500;
+}
+.story-body {
+  font-size: 19px;
+  line-height: 1.65;
+  color: var(--fg);
+  max-width: 680px;
+}
+.story-body p { margin-bottom: 22px; }
+.story-body p:last-child { margin-bottom: 0; }
+.story-body em {
+  font-style: italic;
+  color: var(--accent-1);
+  font-weight: 500;
+}
+.story-body strong { font-weight: 600; }
+
+@media (max-width: 900px) {
+  .story-grid { grid-template-columns: 1fr; gap: 32px; }
+}
+
+/* TEAM */
+.team-section {
+  padding: 100px 0;
+  border-top: 1px solid var(--border);
+}
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 56px;
+}
+.member-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  position: relative;
+  overflow: hidden;
+  transition: transform .25s var(--ease), border-color .25s;
+}
+.member-card:hover { transform: translateY(-4px); border-color: var(--border-strong); }
+.member-card.solo {
+  grid-column: span 1;
+  background: linear-gradient(160deg, var(--bg-card), var(--bg-soft));
+}
+.member-portrait {
+  width: 88px; height: 88px;
+  border-radius: 24px;
+  background: var(--accent-1);
+  display: grid;
+  place-items: center;
+  font-family: 'Bricolage Grotesque';
+  font-size: 38px;
+  font-weight: 700;
+  color: #0b0a12;
+  margin-bottom: 22px;
+}
+.member-card h3 { margin-bottom: 4px; }
+.member-card .role {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--accent-2);
+  margin-bottom: 18px;
+}
+.member-card .bio {
+  font-size: 14.5px;
+  color: var(--fg-muted);
+  line-height: 1.6;
+  margin-bottom: 22px;
+}
+.member-card .links {
+  display: flex;
+  gap: 8px;
+}
+.member-card .links a {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  color: var(--fg-muted);
+  transition: all .2s var(--ease);
+}
+.member-card .links a:hover { color: var(--accent-2); border-color: var(--accent-2); transform: translateY(-2px); }
+.member-card .links a svg { width: 16px; height: 16px; }
+
+.placeholder-card {
+  background: transparent;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  min-height: 320px;
+  color: var(--fg-dim);
+}
+.placeholder-card .ph-icon {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--border-strong);
+  display: grid; place-items: center;
+  margin-bottom: 16px;
+}
+.placeholder-card .ph-icon svg { width: 22px; height: 22px; }
+.placeholder-card h4 {
+  font-family: 'Inter';
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--fg-muted);
+}
+.placeholder-card p { font-size: 13.5px; max-width: 220px; }
+
+@media (max-width: 900px) { .team-grid { grid-template-columns: 1fr; } }
+
+/* PRINCIPLES */
+.principles {
+  padding: 120px 0;
+  border-top: 1px solid var(--border);
+  position: relative;
+}
+.principle {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr;
+  gap: 40px;
+  padding: 36px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+.principle:last-child { border-bottom: none; }
+.principle .pn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  color: var(--fg-dim);
+  letter-spacing: 0.1em;
+}
+.principle h3 {
+  font-size: clamp(26px, 3vw, 38px);
+  letter-spacing: -0.02em;
+}
+.principle p {
+  color: var(--fg-muted);
+  font-size: 16px;
+  line-height: 1.6;
+  max-width: 460px;
+}
+
+@media (max-width: 800px) {
+  .principle { grid-template-columns: 1fr; gap: 12px; padding: 32px 0; }
+  .principle .pn { margin-bottom: 4px; }
+}
+
+/* JOIN */
+.join {
+  margin-top: 80px;
+  padding: 80px 60px;
+  border-radius: var(--radius-xl);
+  background: var(--bg-soft);
+  border: 1px solid var(--border-strong);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.join .blob-1 { width: 320px; height: 320px; top: -80px; left: 30%; opacity: 0.4; }
+.join > * { position: relative; z-index: 1; }
+.join h2 { max-width: 640px; margin: 0 auto; }
+.join p { color: var(--fg-muted); margin: 22px auto 32px; max-width: 480px; font-size: 17px; }
+.join-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+@media (max-width: 720px) { .join { padding: 60px 24px; } }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="logo">
+      <span class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 L20 19 L12 15 L4 19 Z"/></svg>
+      </span>
+      <span>Altara</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="about.html" class="active">About</a>
+    </div>
+    <div class="nav-actions">
+      <button class="theme-toggle" aria-label="Toggle theme"><span class="icon"></span></button>
+      <a href="index.html#download" class="btn btn-primary">Download</a>
+    </div>
+  </div>
+</nav>
+
+<section class="about-hero">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="container">
+    <div class="about-hero-grid">
+      <div>
+        <span class="eyebrow reveal"><span class="dot"></span> About us</span>
+        <h1 class="reveal" data-delay="1" style="margin-top:24px">A small group<br>making a <span class="gradient-text">smaller app.</span></h1>
+      </div>
+      <p class="lead reveal" data-delay="2">
+        Altara isn't a startup with a rocket-ship deck. It's <strong>one person, mostly</strong>,
+        with help from friends — building the chat app we wanted for our own group, and now sharing it.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- STORY -->
+<section class="story">
+  <div class="container">
+    <div class="story-grid">
+      <h3 class="reveal">Why we built it</h3>
+      <div class="story-body">
+        <p class="reveal">
+          Our group has been on the same chat app for years. It got <em>louder, busier, full of strangers</em> —
+          slowly turning into a feed instead of a hangout. Notifications from communities we forgot we joined.
+          AI assistants in our DMs. Ads in the sidebar.
+        </p>
+        <p class="reveal" data-delay="1">
+          So one weekend in 2025, between exams, I started prototyping something simpler.
+          A chat app that <strong>only does the things friends actually do</strong> — talk, share music,
+          watch stuff together, make polls, get on a quick call. No "communities discovery". No nudges to invite people.
+        </p>
+        <p class="reveal" data-delay="2">
+          Six months later it had a name, a logo, and enough friends using it that we figured we should let other groups in.
+          That's Altara. Not trying to replace anything — just trying to be the <em>cozy version</em> for the people you actually know.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TEAM -->
+<section class="team-section">
+  <div class="container">
+    <div class="section-head">
+      <h2 class="reveal">The team is small.<br>(Like, <span class="gradient-text">really</span> small.)</h2>
+      <p class="lead reveal" data-delay="1">One human, plus a rotating cast of friends who help with art, copy, beta testing, and snacks.</p>
+    </div>
+    <div class="team-grid">
+      <div class="member-card reveal">
+        <div class="member-portrait">T</div>
+        <h3>Tomás Nunes</h3>
+        <div class="role">@pintice · founder, designer, dev</div>
+        <p class="bio">
+          Builds Altara on weekends and most weeknights. Previously made small games and weird websites.
+          Cares too much about cursor design and animation curves.
+        </p>
+        <div class="links">
+          <a href="#" aria-label="Twitter"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+          <a href="#" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.5 11.5 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a>
+          <a href="#" aria-label="Site"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a14.5 14.5 0 0 1 0 20 14.5 14.5 0 0 1 0-20"/></svg></a>
+        </div>
+      </div>
+      <div class="placeholder-card reveal" data-delay="1">
+        <div class="ph-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3 3-2-2"/></svg>
+        </div>
+        <h4>Hiring soon-ish</h4>
+        <p>Frontend engineer who likes weird animation. Drop us a line.</p>
+      </div>
+      <div class="placeholder-card reveal" data-delay="2">
+        <div class="ph-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg>
+        </div>
+        <h4>Friends &amp; testers</h4>
+        <p>The 47 humans currently breaking things in beta. ❤️</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRINCIPLES -->
+<section class="principles">
+  <div class="container">
+    <div class="section-head">
+      <h2 class="reveal">A few things we<br><span class="gradient-text">won't compromise on.</span></h2>
+      <p class="lead reveal" data-delay="1">Promises to ourselves, in writing, before we forget.</p>
+    </div>
+
+    <div class="principle reveal">
+      <div class="pn">/ 01</div>
+      <h3>Friends first, not communities.</h3>
+      <p>Altara is sized for groups you actually know. We won't bolt on a discover feed, an algorithm, or "trending servers." If that's what you want, you have other apps.</p>
+    </div>
+    <div class="principle reveal">
+      <div class="pn">/ 02</div>
+      <h3>Privacy isn't a feature.</h3>
+      <p>End-to-end encryption is the default and the floor. Not a Pro perk, not a toggle in settings. We can't read your DMs, and we don't want to.</p>
+    </div>
+    <div class="principle reveal">
+      <div class="pn">/ 03</div>
+      <h3>No ads. No tracking pixels.</h3>
+      <p>We make money from optional Pro upgrades. Your hangout is not the product. Your data isn't sold, profiled, or trained on.</p>
+    </div>
+    <div class="principle reveal">
+      <div class="pn">/ 04</div>
+      <h3>Ship things that feel good.</h3>
+      <p>Soft animations. Snappy keyboard shortcuts. Sound design that doesn't annoy. The boring engineering that makes things <em>feel</em> right.</p>
+    </div>
+
+    <div class="join">
+      <div class="blob blob-1"></div>
+      <h2 class="reveal">Want in?</h2>
+      <p class="reveal" data-delay="1">We're in open beta. Grab the app, bring three friends, see how it feels.</p>
+      <div class="join-actions reveal" data-delay="2">
+        <a href="index.html#download" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+          Download Altara
+        </a>
+        <a href="features.html" class="btn btn-secondary">See features
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="logo">
+          <span class="logo-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 L20 19 L12 15 L4 19 Z"/></svg>
+          </span>
+          <span>Altara</span>
+        </div>
+        <p class="footer-tagline">Where friends stay together. Built with love by a small team that just wanted a better hangout.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="features.html">Features</a></li>
+          <li><a href="index.html#download">Download</a></li>
+          <li><a href="index.html#try">Try in browser</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="about.html">About</a></li>
+          <li><a href="#">Blog</a></li>
+          <li><a href="#">Careers</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Connect</h4>
+        <ul>
+          <li><a href="#">Twitter</a></li>
+          <li><a href="#">Instagram</a></li>
+          <li><a href="#">GitHub</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-wordmark">altara</div>
+    <div class="footer-bottom">
+      <span>© 2026 Altara. Made by friends, for friends.</span>
+      <span>v1.0 · pintice</span>
+    </div>
+  </div>
+</footer>
+
+<script src="shared.js"></script>
+</body>
+</html>
