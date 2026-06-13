@@ -217,9 +217,10 @@ export async function getMyProfile(uid) {
   let includeCallTile = true;
   let includeBanner = true;
   let includePronouns = true;
+  let includeConnectedAccounts = true;
   let lastError = null;
 
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 7; i += 1) {
     const select = [
       baseSelect,
       ...(includeStatus ? ["status"] : []),
@@ -228,6 +229,7 @@ export async function getMyProfile(uid) {
       ...(includeCallTile ? ["call_tile_color"] : []),
       ...(includeBanner ? ["banner_url"] : []),
       ...(includePronouns ? ["pronouns"] : []),
+      ...(includeConnectedAccounts ? ["connected_accounts"] : []),
     ].join(", ");
 
     const result = await raceWithTimeout(
@@ -248,6 +250,7 @@ export async function getMyProfile(uid) {
       if (!includeCallTile && typeof data.call_tile_color === "undefined") data.call_tile_color = null;
       if (!includeBanner && typeof data.banner_url === "undefined") data.banner_url = null;
       if (!includePronouns && typeof data.pronouns === "undefined") data.pronouns = null;
+      if (!includeConnectedAccounts && typeof data.connected_accounts === "undefined") data.connected_accounts = null;
       return data;
     }
 
@@ -276,6 +279,10 @@ export async function getMyProfile(uid) {
     }
     if (includePronouns && msg.includes("pronouns") && msg.includes("column")) {
       includePronouns = false;
+      changed = true;
+    }
+    if (includeConnectedAccounts && msg.includes("connected_accounts") && msg.includes("column")) {
+      includeConnectedAccounts = false;
       changed = true;
     }
     if (!changed) break;

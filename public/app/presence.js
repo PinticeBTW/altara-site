@@ -1,10 +1,10 @@
 // presence.js
 // Supabase Realtime Presence (Discord-like)
 
-export function createPresenceSystem({ supabase, getMe, onPresenceList, onError }) {
+export function createPresenceSystem({ supabase, getMe, onPresenceList, onError, onStatus }) {
   const PRESENCE_CHANNEL_NAME = "altara-presence-global";
   const PRESENCE_HEARTBEAT_MS = 25000;
-  const REMOTE_PRESENCE_GRACE_MS = 12000;
+  const REMOTE_PRESENCE_GRACE_MS = Math.max(60000, PRESENCE_HEARTBEAT_MS * 2);
 
   let channel = null;
   let started = false;
@@ -43,7 +43,7 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
   function logPresenceLiveDebug(event = "", details = {}) {
     if (!isPresenceLiveDebugEnabled()) return;
     try {
-      console.info("[presence-live] " + String(event || "event"), details && typeof details === "object" ? details : {});
+      console.info("[Presence] " + String(event || "event"), details && typeof details === "object" ? details : {});
     } catch (_) {}
   }
 
@@ -65,6 +65,77 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
     if (manual === "invisible") return "offline";
     if (manual === "idle" || manual === "focus" || manual === "dnd" || manual === "online") return manual;
     return "online";
+  }
+
+  function getPresenceStatusPriority(status = "") {
+    const s = normalizeManualStatus(status);
+    if (s === "focus") return 4;
+    if (s === "dnd") return 3;
+    if (s === "idle") return 2;
+    if (s === "online") return 1;
+    return 0;
+  }
+
+  function resolveUserPresenceFromSessions(userId = "", sessions = []) {
+    const liveSessions = (Array.isArray(sessions) ? sessions : [])
+      .filter(Boolean)
+      .map((session) => ({
+        ...session,
+        user_id: userId || session?.user_id || session?.id || "",
+        id: userId || session?.id || session?.user_id || "",
+        manual_status: normalizeManualStatus(session?.manual_status || session?.manualStatus || session?.status || "online"),
+        status: normalizeEffectiveStatus(session?.status || "online"),
+      }));
+
+    if (!liveSessions.length) {
+      return {
+        userId,
+        hasLiveSession: false,
+        manualStatus: "online",
+        effectiveStatus: "offline",
+        session: null,
+        publicSessions: [],
+        liveSessions,
+      };
+    }
+
+    const publicSessions = liveSessions.filter((session) => normalizeManualStatus(session?.manual_status) !== "invisible");
+    if (!publicSessions.length) {
+      const latestInvisible = liveSessions.reduce((best, session) => {
+        const sessionMs = Number(session?.last_seen_ms || 0);
+        const bestMs = Number(best?.last_seen_ms || 0);
+        return sessionMs >= bestMs ? session : best;
+      }, liveSessions[0] || null);
+      return {
+        userId,
+        hasLiveSession: true,
+        manualStatus: "invisible",
+        effectiveStatus: "offline",
+        session: latestInvisible,
+        publicSessions: [],
+        liveSessions,
+      };
+    }
+
+    const bestPublicSession = publicSessions.reduce((best, session) => {
+      if (!best) return session;
+      const sessionPriority = getPresenceStatusPriority(session?.manual_status);
+      const bestPriority = getPresenceStatusPriority(best?.manual_status);
+      if (sessionPriority !== bestPriority) return sessionPriority > bestPriority ? session : best;
+      const sessionMs = Number(session?.last_seen_ms || 0);
+      const bestMs = Number(best?.last_seen_ms || 0);
+      return sessionMs >= bestMs ? session : best;
+    }, null);
+    const manualStatus = normalizeManualStatus(bestPublicSession?.manual_status || "online");
+    return {
+      userId,
+      hasLiveSession: true,
+      manualStatus,
+      effectiveStatus: resolveEffectiveStatus(manualStatus, true),
+      session: bestPublicSession,
+      publicSessions,
+      liveSessions,
+    };
   }
 
   function makeSessionId() {
@@ -555,27 +626,26 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
   function flattenLiveSessionsByUserId(liveSessionsByUserId) {
     const out = [];
     for (const [userId, sessions] of liveSessionsByUserId.entries()) {
-      let freshest = sessions[0] || null;
-      for (const session of sessions) {
-        const sessionMs = Number(session?.last_seen_ms || 0);
-        const freshestMs = Number(freshest?.last_seen_ms || 0);
-        if (sessionMs > freshestMs || (!freshestMs && sessionMs === 0)) {
-          freshest = session;
-        }
-      }
+      const resolved = resolveUserPresenceFromSessions(userId, sessions);
+      const freshest = resolved.session;
       if (!freshest) continue;
       out.push({
         ...freshest,
         id: userId,
         user_id: userId,
-        has_live_session: sessions.length > 0,
-        is_live: sessions.length > 0,
-        live_session_count: sessions.length,
-        live_sessions: sessions.map((session) => ({
+        manual_status: resolved.manualStatus,
+        status: resolved.effectiveStatus,
+        has_live_session: resolved.hasLiveSession,
+        is_live: resolved.hasLiveSession,
+        live_session_count: resolved.liveSessions.length,
+        public_live_session_count: resolved.publicSessions.length,
+        live_sessions: resolved.liveSessions.map((session) => ({
           session_id: session.session_id || "",
           manual_status: session.manual_status,
+          status: resolveEffectiveStatus(session.manual_status, true),
           last_seen_at: session.last_seen_at || session.last_seen || null,
           device_type: session.device_type || "",
+          presence_grace: session.presence_grace === true,
         })),
       });
     }
@@ -698,6 +768,8 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
           normalizeEffectiveStatus(u.status),
           normalizeManualStatus(u.manual_status),
           u.has_live_session === true ? "1" : "0",
+          String(Number(u.live_session_count || 0)),
+          String(Number(u.public_live_session_count || 0)),
           String(u.username || "").trim(),
           String(u.display_name || "").trim(),
           String(u.avatar_url || "").trim(),
@@ -813,6 +885,7 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
     const { error } = await channel.subscribe(async (status) => {
       channelStatus = String(status || "");
       logPresenceLiveDebug("channel status", { status: channelStatus });
+      try { onStatus?.(channelStatus, { source: "presence", channelName: PRESENCE_CHANNEL_NAME }); } catch (_) {}
       if (status === "SUBSCRIBED") {
         try {
           logPresenceLiveDebug("channel subscribed", {});
@@ -840,6 +913,7 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
 
     if (error) {
       lastPresenceError = String(error?.message || error || "unknown");
+      try { onStatus?.("CHANNEL_ERROR", { source: "presence", channelName: PRESENCE_CHANNEL_NAME, error }); } catch (_) {}
       onError?.(error);
     }
   }
@@ -911,6 +985,26 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
     ]));
   }
 
+  function mapEffectivePresenceToDebugObject(map) {
+    return Object.fromEntries(Array.from((map || new Map()).entries()).map(([userId, sessions]) => {
+      const resolved = resolveUserPresenceFromSessions(userId, sessions);
+      return [
+        userId,
+        {
+          user_id: userId,
+          manual_status: resolved.manualStatus,
+          status: resolved.effectiveStatus,
+          has_live_session: resolved.hasLiveSession,
+          live_session_count: resolved.liveSessions.length,
+          public_live_session_count: resolved.publicSessions.length,
+          selected_session_id: resolved.session?.session_id || "",
+          selected_device_type: resolved.session?.device_type || "",
+          selected_last_seen_at: resolved.session?.last_seen_at || resolved.session?.last_seen || null,
+        },
+      ];
+    }));
+  }
+
   function getDebugSnapshot() {
     const raw = channel?.presenceState ? channel.presenceState() : lastRawPresenceState;
     const rawLiveMap = buildLiveSessionsByUserId(raw || {});
@@ -920,15 +1014,19 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError 
     return {
       supabaseUrl: getSupabaseUrl(),
       presenceChannelName: PRESENCE_CHANNEL_NAME,
+      presenceHeartbeatMs: PRESENCE_HEARTBEAT_MS,
+      remotePresenceGraceMs: REMOTE_PRESENCE_GRACE_MS,
       channelTopic: getChannelTopic(channel),
       channelState: channelStatus,
       socketConnected: isRealtimeSocketConnected(),
       presenceChannelState: channelStatus,
       ownSessionId: getSessionId(lastTrackPayload || getMe?.() || {}),
       ownTrackPayload: lastTrackPayload ? compactPresencePayload(lastTrackPayload) : null,
+      rawPresenceState: raw || {},
       rawPresenceStateKeys: Object.keys(raw || {}),
       rawPresencePayloadsCompact: compactRawPresencePayloads(raw || {}),
       liveSessionsByUserId: mapToDebugObject(liveMap),
+      effectivePresenceByUserId: mapEffectivePresenceToDebugObject(liveMap),
       rawLiveSessionsByUserId: mapToDebugObject(rawLiveMap),
       lastSeenLiveAtByUserId: mapLastSeenToDebugObject(lastSeenLiveAtByUserId),
       lastPresenceSyncAt,

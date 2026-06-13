@@ -199,6 +199,22 @@ function setRecoveryResult(message = "", type = "error") {
   $recoveryResult.classList.add(type === "success" ? "is-success" : "is-error");
 }
 
+function shouldShowOfflineLoginWarning() {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("offline") === "1") return true;
+  } catch (_) {}
+  try { return navigator.onLine === false; } catch (_) { return false; }
+}
+
+function syncOfflineLoginWarning() {
+  if (shouldShowOfflineLoginWarning()) {
+    setAuthFeedback("You're offline. Connect to the internet to sign in.", "error");
+  } else if ($feedback?.textContent === "You're offline. Connect to the internet to sign in.") {
+    setAuthFeedback("");
+  }
+}
+
 function readLoginErrorMessage(err) {
   const raw = String(err?.message || err || "").trim();
   const msg = raw.toLowerCase();
@@ -1287,13 +1303,18 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("pageshow", () => {
   ensureLoginInputsReady();
   focusBestAuthInput();
+  syncOfflineLoginWarning();
 });
+
+window.addEventListener("online", syncOfflineLoginWarning);
+window.addEventListener("offline", syncOfflineLoginWarning);
 
 initAuthLanguage({ defaultLanguage: "en" });
 onAuthLanguageChange(() => {
   syncLoginStaticCopy();
 });
 syncLoginStaticCopy();
+syncOfflineLoginWarning();
 
 bindDesktopAuthDeepLinks();
 void (async () => {

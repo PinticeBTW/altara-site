@@ -37,32 +37,54 @@ function normalizeId(value = "") {
   return String(value || "").trim();
 }
 
-function getFriendUserId(friend = {}) {
+function pushFriendIdCandidate(list, source, value) {
+  const id = normalizeId(value);
+  if (!id) return;
+  list.push({ source, id });
+}
+
+function getFriendIdCandidates(friend = {}) {
   const profile = friend?.profile && typeof friend.profile === "object" ? friend.profile : {};
   const profiles = friend?.profiles && typeof friend.profiles === "object" ? friend.profiles : {};
   const friendProfile = friend?.friend && typeof friend.friend === "object" ? friend.friend : {};
-  return normalizeId(
-    friend.other_user_id
-    || friend.friend_user_id
-    || friend.friendUserId
-    || friend.user_id
-    || friend.userId
-    || friend.id
-    || profile.id
-    || profiles.id
-    || friendProfile.id
-    || friend.peer_user_id
-    || friend.peerUserId
-    || friend.target_user_id
-    || friend.targetUserId
-    || friend.profile_id
-    || friend.profileId
-    || ""
-  );
+  const candidates = [];
+  pushFriendIdCandidate(candidates, "other_user_id", friend.other_user_id);
+  pushFriendIdCandidate(candidates, "friend_user_id", friend.friend_user_id);
+  pushFriendIdCandidate(candidates, "friendUserId", friend.friendUserId);
+  pushFriendIdCandidate(candidates, "friend_id", friend.friend_id);
+  pushFriendIdCandidate(candidates, "friendId", friend.friendId);
+  pushFriendIdCandidate(candidates, "peer_user_id", friend.peer_user_id);
+  pushFriendIdCandidate(candidates, "peerUserId", friend.peerUserId);
+  pushFriendIdCandidate(candidates, "target_user_id", friend.target_user_id);
+  pushFriendIdCandidate(candidates, "targetUserId", friend.targetUserId);
+  pushFriendIdCandidate(candidates, "profile.id", profile.id);
+  pushFriendIdCandidate(candidates, "profiles.id", profiles.id);
+  pushFriendIdCandidate(candidates, "friend.id", friendProfile.id);
+  pushFriendIdCandidate(candidates, "profile_id", friend.profile_id);
+  pushFriendIdCandidate(candidates, "profileId", friend.profileId);
+  pushFriendIdCandidate(candidates, "user_id", friend.user_id);
+  pushFriendIdCandidate(candidates, "userId", friend.userId);
+  pushFriendIdCandidate(candidates, "id", friend.id);
+  return candidates;
 }
 
-function getFriendPresenceId(friend = {}) {
-  return getFriendUserId(friend);
+function getFriendRawIds(friend = {}) {
+  return getFriendIdCandidates(friend).reduce((acc, item) => {
+    if (!acc[item.source]) acc[item.source] = item.id;
+    return acc;
+  }, {});
+}
+
+function getFriendUserId(friend = {}, currentUserId = "") {
+  const selfId = normalizeId(currentUserId);
+  const candidates = getFriendIdCandidates(friend);
+  const nonSelf = selfId ? candidates.find((item) => item.id && item.id !== selfId) : null;
+  if (nonSelf) return nonSelf.id;
+  return candidates[0]?.id || "";
+}
+
+function getFriendPresenceId(friend = {}, currentUserId = "") {
+  return getFriendUserId(friend, currentUserId);
 }
 
 function resolveEffectivePresenceStatus({ liveStatus = "", manualStatus = "", hasLiveSession = null } = {}) {
@@ -87,13 +109,13 @@ function isPresenceDebugEnabled() {
 function logActiveNowDebug(event = "", details = {}) {
   if (!isPresenceDebugEnabled()) return;
   if (typeof console === "undefined" || typeof console.info !== "function") return;
-  console.info("[active-now] " + String(event || "event"), details && typeof details === "object" ? details : {});
+  console.info("[Presence] active now " + String(event || "event"), details && typeof details === "object" ? details : {});
 }
 
 function logPresenceLiveDebug(event = "", details = {}) {
   if (!isPresenceDebugEnabled()) return;
   if (typeof console === "undefined" || typeof console.info !== "function") return;
-  console.info("[presence-live] " + String(event || "event"), details && typeof details === "object" ? details : {});
+  console.info("[Presence] " + String(event || "event"), details && typeof details === "object" ? details : {});
 }
 
 function normalizeActivity(raw) {
@@ -283,7 +305,7 @@ export function renderPresenceUI({
   onStatusDot
 }) {
   const q = (searchValue || "").trim();
-  const meId = me?.id;
+  const meId = normalizeId(me?.id || me?.user_id || me?.userId || "");
 
   // map: id -> presence data
   const presenceMap = new Map();
@@ -308,13 +330,14 @@ export function renderPresenceUI({
 
   // construir lista de users baseada nos amigos para não meter randoms
   const friendUsers = (friends || []).map(f => {
-    const id = getFriendUserId(f);
+    const id = getFriendUserId(f, meId);
     const profile = f?.profile && typeof f.profile === "object" ? f.profile : {};
     const profiles = f?.profiles && typeof f.profiles === "object" ? f.profiles : {};
     const friendProfile = f?.friend && typeof f.friend === "object" ? f.friend : {};
     if (!id) {
       logPresenceLiveDebug("friend sessions missing id", {
         displayName: String(f?.display_name || f?.displayName || f?.username || profile.display_name || profiles.display_name || friendProfile.display_name || "").slice(0, 120),
+        rawIds: getFriendRawIds(f),
       });
     }
     return {
@@ -335,7 +358,7 @@ export function renderPresenceUI({
     if (!p) return u;
     const status = resolveEffectivePresenceStatus({
       liveStatus: p.status,
-      manualStatus: p.manual_status || u.manual_status,
+      manualStatus: p.has_live_session ? (p.manual_status || "online") : (p.manual_status || u.manual_status),
       hasLiveSession: p.has_live_session,
     });
     // Presence deve mandar estado em tempo real; dados de perfil (avatar/nome/cor)

@@ -10,6 +10,8 @@
   <script>
     (() => {
       const APPEARANCE_STORAGE_KEY = "altara.appearance.v1";
+      const ALTARA_MOTION_ENABLED_STORAGE_KEY = "altara.motion.enabled";
+      const ALTARA_SMOOTH_SCROLL_STORAGE_KEY = "altara.motion.smoothScroll";
       const DEFAULT_ACCENT = "#e8cfae";
       const CUSTOM_COLOR_KEYS = ["appBg", "surface", "surfaceElevated", "accent", "accentStrong", "border", "text", "textMuted"];
       const DEFAULT_CUSTOM_COLORS_DARK = Object.freeze({
@@ -418,7 +420,39 @@
           Object.entries(vars).forEach(([name, value]) => node.style.setProperty(name, value));
         });
       };
+      const applyEarlyMotion = () => {
+        const readMotionEnabled = () => {
+          try {
+            const raw = String(localStorage.getItem(ALTARA_MOTION_ENABLED_STORAGE_KEY) || "").trim().toLowerCase();
+            if (raw === "system" || raw === "auto") {
+              const reduced = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+              return !reduced;
+            }
+            if (raw === "0" || raw === "off" || raw === "false") return false;
+            if (raw === "1" || raw === "on" || raw === "true") return true;
+          } catch (_) {}
+          return true;
+        };
+        const readSmoothScrollEnabled = () => {
+          try {
+            const raw = String(localStorage.getItem(ALTARA_SMOOTH_SCROLL_STORAGE_KEY) || "").trim().toLowerCase();
+            if (raw === "0" || raw === "off" || raw === "false") return false;
+            if (raw === "1" || raw === "on" || raw === "true") return true;
+          } catch (_) {}
+          return true;
+        };
+        const motionOn = readMotionEnabled();
+        const smoothOn = motionOn && readSmoothScrollEnabled();
+        [document.documentElement, document.body].forEach((node) => {
+          if (!node) return;
+          node.classList.toggle("altara-motion-on", motionOn);
+          node.classList.toggle("altara-motion-off", !motionOn);
+          node.classList.toggle("altara-smooth-scroll-on", smoothOn);
+          node.classList.toggle("altara-smooth-scroll-off", !smoothOn);
+        });
+      };
       applyEarlyAppearance();
+      applyEarlyMotion();
       try {
         const bridge = window?.altaraDesktop;
         const isDesktop = !!bridge && bridge.isDesktopApp === true;
@@ -542,11 +576,11 @@
         </div>
 
         <div class="leftTabsSingle">
-          <button class="chip active" type="button">Friends</button>
+          <button class="chip active" type="button">Friends / Messages</button>
         </div>
 
         <div class="searchBox">
-          <input id="friendSearch" class="input" placeholder="Search..." />
+          <input id="friendSearch" class="input" placeholder="Search friends and messages..." />
         </div>
       </div>
 
@@ -790,6 +824,7 @@
           <div class="dmThread">
             <div id="dmCallDock" class="dmCallDock"></div>
             <div id="dmPrivacyBanner" class="dmPrivacyBanner hidden" hidden></div>
+            <div id="dmRequestBanner" class="dmRequestBanner hidden" hidden></div>
 
             <div id="dmMessages" class="dmMessages">
               <div id="dmMessagesEmpty" class="hint">No messages yet. Say hi &#x1F44B;</div>
@@ -839,6 +874,7 @@
                 <div id="dmProfileBio" class="dmProfileBio">No bio yet.</div>
               </div>
               <div id="dmProfileActivityPreview" class="dmProfileActivityPreview hidden" aria-hidden="true"></div>
+              <div id="dmProfileConnectionsPreview" class="dmProfileConnectionsPreview hidden" aria-hidden="true"></div>
 
               <div id="dmProfileWidgetsPreview" class="dmProfileWidgetsPreview hidden" aria-hidden="true"></div>
               <div id="dmProfileMutualSection" class="dmProfileContextSection hidden" aria-hidden="true"></div>
@@ -1078,7 +1114,10 @@
             <div class="settingsCardSection settingsConnectionsSection">
               <div id="settingsSectionConnections" class="settingsSectionTitle">Connections</div>
               <div class="settingsHint">Connect accounts to show safe public activity on your profile.</div>
-              <div id="settingsConnectionsStatus" class="settingsHint" role="status" aria-live="polite"></div>
+              <div class="settingsConnectionsStatusRow">
+                <div id="settingsConnectionsStatus" class="settingsHint" role="status" aria-live="polite"></div>
+                <button id="settingsConnectionsStatusClear" class="btn ghost settingsConnectionsStatusClear" type="button" data-action="connections-clear-status" hidden>Clear</button>
+              </div>
               <div id="settingsSpotifyConnectionCard" class="settingsConnectionCard">
                 <div class="settingsConnectionCard__icon" aria-hidden="true">SP</div>
                 <div class="settingsConnectionCard__body">
@@ -1345,6 +1384,53 @@
                 <div id="settingsAltaraSyncStatus" class="settingsStatusPill" data-status="ready">Default</div>
               </div>
               <div id="settingsAltaraSyncNote" class="settingsPrivacyNote">Sync is built for convenience and recovery. It is not the same as Vault end-to-end encryption.</div>
+            </div>
+
+            <div id="settingsDirectMessagesCard" class="settingsCardSection settingsDirectMessagesCard">
+              <div class="settingsDirectMessagesHeader">
+                <div>
+                  <div class="settingsSectionTitle">Direct Messages</div>
+                  <div class="settingsHint">Control who can message you and where non-friend messages land.</div>
+                </div>
+                <div id="settingsDmPrivacyStatus" class="settingsStatusPill" data-status="loading">Loading</div>
+              </div>
+              <div class="settingsGrid settingsDirectMessagesGrid">
+                <div class="settingsColumn">
+                  <label class="label" for="settingsDmWhoCanMessageMe">Who can message me</label>
+                  <select id="settingsDmWhoCanMessageMe" class="input">
+                    <option value="everyone">Everyone</option>
+                    <option value="mutual_servers">People with mutual servers</option>
+                    <option value="friends_of_friends">Friends of friends</option>
+                    <option value="friends_only">Friends only</option>
+                    <option value="no_one">No one</option>
+                  </select>
+                  <small class="settingsHint">Friends can always message you unless blocked.</small>
+                </div>
+                <div class="settingsColumn">
+                  <label class="label" for="settingsDmNonFriendMessages">Non-friend messages</label>
+                  <select id="settingsDmNonFriendMessages" class="input">
+                    <option value="message_requests">Send to Message Requests</option>
+                    <option value="direct_inbox">Allow directly</option>
+                    <option value="blocked">Block</option>
+                  </select>
+                  <small class="settingsHint">Message Requests keep new chats pending until you accept.</small>
+                </div>
+              </div>
+              <label class="appearanceSwitchRow settingsDmPrivacyToggle" for="settingsDmAllowServerMemberRequests">
+                <span class="appearanceSwitchText">
+                  <b>Allow message requests from server members</b>
+                  <small>People who share a server with you can send a request when your rules allow it.</small>
+                </span>
+                <input id="settingsDmAllowServerMemberRequests" type="checkbox" />
+              </label>
+              <label class="appearanceSwitchRow settingsDmPrivacyToggle" for="settingsDmSpamFilterEnabled">
+                <span class="appearanceSwitchText">
+                  <b>Filter suspected spam</b>
+                  <small>ALTARA will keep rate limits and spam hooks enabled for new message requests.</small>
+                </span>
+                <input id="settingsDmSpamFilterEnabled" type="checkbox" />
+              </label>
+              <button id="btnSettingsDmPrivacySave" class="btn primary" type="button">Save Direct Message settings</button>
             </div>
 
             <div id="settingsDmE2eeBackupCard" class="settingsCardSection settingsPrivacyModeCard settingsPrivacyModeCard--vault" hidden>
@@ -1951,6 +2037,13 @@
                 </span>
                 <input id="settingsReduceMotion" type="checkbox" />
               </label>
+              <label class="appearanceSwitchRow" for="settingsSmoothScroll">
+                <span class="appearanceSwitchText">
+                  <b id="settingsSmoothScrollLabel">Smooth scrolling</b>
+                  <small id="settingsSmoothScrollHint">Makes ALTARA scroll panels glide softly without using Windows animation settings.</small>
+                </span>
+                <input id="settingsSmoothScroll" type="checkbox" checked />
+              </label>
               <label class="appearanceSwitchRow" for="settingsPauseGifsWhenUnfocused">
                 <span class="appearanceSwitchText">
                   <b id="settingsPauseGifsWhenUnfocusedLabel">Pause GIFs when Altara is in the background</b>
@@ -2092,6 +2185,7 @@
               <div id="userCardFacts" class="userCardFacts"></div>
             </section>
             <div class="userCardActions">
+              <button id="btnUserCardFriend" class="btn ghost" type="button" hidden>Add Friend</button>
               <button id="btnUserCardDm" class="btn primary" type="button">Message</button>
               <button id="btnUserCardOpenProfile" class="btn ghost" type="button">Profile</button>
             </div>
@@ -2163,6 +2257,7 @@
             <option value="series">Series</option>
             <option value="music">Music</option>
             <option value="anime">Anime</option>
+            <option value="custom">Custom / Links</option>
           </select>
         </div>
 

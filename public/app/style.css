@@ -1,7 +1,8 @@
 ﻿@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap");
 
 :root {
-  --profile-banner-ratio: 4 / 1;
+  --altara-profile-banner-ratio: 4 / 1;
+  --profile-banner-ratio: var(--altara-profile-banner-ratio);
   --font-ui: "Manrope", "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
   --font-display: "Plus Jakarta Sans", "Manrope", "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
@@ -59,6 +60,30 @@
   --arrow-nav-btn-bg: linear-gradient(180deg, rgba(49, 55, 66, 0.96), rgba(36, 41, 50, 0.96));
   --arrow-nav-btn-bg-hover: linear-gradient(180deg, rgba(59, 66, 79, 0.97), rgba(43, 49, 59, 0.97));
   --arrow-nav-btn-icon: rgba(236, 243, 251, 0.96);
+  --altara-ease-out: cubic-bezier(.16, 1, .3, 1);
+  --altara-ease-soft: cubic-bezier(.2, .8, .2, 1);
+  --altara-ease-snap: cubic-bezier(.22, 1, .36, 1);
+  --altara-motion-fast: 110ms;
+  --altara-motion-med: 170ms;
+  --altara-motion-slow: 220ms;
+  --altara-motion-scale-pop: .985;
+}
+
+html.altara-motion-off {
+  --altara-motion-fast: 0ms;
+  --altara-motion-med: 0ms;
+  --altara-motion-slow: 0ms;
+  --motion-fast: 0ms;
+  --motion-base: 0ms;
+  --motion-slow: 0ms;
+}
+
+html.altara-smooth-scroll-on {
+  scroll-behavior: smooth;
+}
+
+html.altara-smooth-scroll-off {
+  scroll-behavior: auto;
 }
 
 *,
@@ -82,6 +107,58 @@ body {
     radial-gradient(900px 620px at 92% 8%, rgba(73, 209, 127, 0.08), transparent 54%),
     linear-gradient(var(--bg-angle, 180deg), #171a20, var(--bg-main) 45%, var(--bg-deep));
   overflow: hidden;
+}
+
+html.altara-smooth-scroll-on :is(
+  [data-altara-scroll],
+  #dmMessages,
+  #dmList,
+  #friendsMain,
+  #activeNow,
+  #offlineList,
+  #profileOverlay .settingsPanel,
+  #profileOverlay .profileOverlay__body,
+  #profileOverlay .profileOverlayBody,
+  #profileOverlay .userCardBody,
+  #userCardModal .userCardCard,
+  #desktopInboxPanel,
+  .desktopInboxPanel,
+  .modal__body,
+  .modalBody,
+  .settingsPanel,
+  .settingsMainBody,
+  .profileModalBody,
+  .userCardModalBody,
+  .widgetsGrid
+) {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+html.altara-smooth-scroll-off :is(
+  [data-altara-scroll],
+  #dmMessages,
+  #dmList,
+  #friendsMain,
+  #activeNow,
+  #offlineList,
+  #profileOverlay .settingsPanel,
+  #profileOverlay .profileOverlay__body,
+  #profileOverlay .profileOverlayBody,
+  #profileOverlay .userCardBody,
+  #userCardModal .userCardCard,
+  #desktopInboxPanel,
+  .desktopInboxPanel,
+  .modal__body,
+  .modalBody,
+  .settingsPanel,
+  .settingsMainBody,
+  .profileModalBody,
+  .userCardModalBody,
+  .widgetsGrid
+) {
+  scroll-behavior: auto;
 }
 
 /* Default app behavior: prevent accidental text selection/copy drag on UI chrome.
@@ -1543,7 +1620,10 @@ body.desktop-install-welcome-open {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+  transition:
+    transform var(--altara-motion-fast) var(--altara-ease-snap),
+    border-color var(--altara-motion-fast) var(--altara-ease-out),
+    background-color var(--altara-motion-fast) var(--altara-ease-out);
 }
 
 .row:hover,
@@ -4013,8 +4093,76 @@ body.desktop-install-welcome-open {
 
 .widgetsAddBtn {
   min-width: 0;
-  height: 32px;
-  padding: 0 10px;
+  min-height: 48px;
+  height: auto;
+  padding: 8px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 14px;
+  text-align: left;
+}
+
+.widgetsAddBtn__icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--stroke));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 82%, var(--accent) 8%);
+  color: var(--text-main);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.widgetsAddBtn__body {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.widgetsAddBtn__title,
+.widgetsAddBtn__subtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widgetsAddBtn__title {
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.widgetsAddBtn__subtitle {
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.widgetsAddBtn__sizes {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.widgetsAddBtn__sizes span {
+  min-width: 18px;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--stroke) 86%, transparent);
+  border-radius: 999px;
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.035);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 760;
 }
 
 .widgetsEditFab {
@@ -4216,27 +4364,29 @@ body.desktop-install-welcome-open {
 }
 
 .widgetCard.is-dragging {
-  opacity: 0.16;
-  transform: scale(0.985) translateZ(0);
-  filter: saturate(0.72) brightness(1.04);
+  opacity: 0.28;
+  transform: translateZ(0);
+  filter: none;
   cursor: grabbing;
   border-style: dashed;
   border-color: rgba(231, 237, 246, 0.72);
+  will-change: transform;
 }
 
 .widgetCard.is-drag-placeholder {
   box-shadow:
-    inset 0 0 0 1px rgba(231, 237, 246, 0.2),
-    inset 0 0 0 2px rgba(231, 237, 246, 0.12),
-    0 14px 28px rgba(5, 8, 15, 0.18);
+    inset 0 0 0 1px rgba(231, 237, 246, 0.18),
+    inset 0 0 0 2px rgba(231, 237, 246, 0.08);
 }
 
 .widgetCard.is-layout-animating {
   z-index: 3;
+  will-change: transform;
 }
 
 .widgetsTab.is-widget-dragging .widgetCard:not(.is-dragging) {
-  filter: saturate(0.92) brightness(0.96);
+  filter: none;
+  contain: paint;
 }
 
 .widgetCard.is-drop-target {
@@ -4296,6 +4446,22 @@ body.desktop-install-welcome-open {
     opacity 0.18s ease;
 }
 
+#widgetsGrid .widgetsDropGhost {
+  border: 1px dashed rgba(236, 242, 250, 0.68);
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 0 0 1px rgba(236, 242, 250, 0.12);
+  backdrop-filter: none;
+  animation: none;
+  transition:
+    transform var(--altara-motion-fast, 110ms) var(--altara-ease-snap, cubic-bezier(.22, 1, .36, 1)),
+    opacity 90ms ease;
+  will-change: transform;
+}
+
+.widgetsTab.is-widget-drag-light #widgetsGrid .widgetsDropGhost {
+  transition: opacity 80ms ease;
+}
+
 .widgetsDropGhost::after {
   content: attr(data-drop-label);
   position: absolute;
@@ -4321,20 +4487,16 @@ body.desktop-install-welcome-open {
   z-index: 1200;
   pointer-events: none;
   opacity: 0;
-  will-change: left, top, transform, opacity;
-  transform: translate3d(14px, 12px, 0) scale(var(--widget-preview-scale, 0.78)) rotate(-0.85deg);
+  will-change: transform;
+  transform: translate3d(var(--widget-preview-x, 0px), var(--widget-preview-y, 0px), 0) translate3d(12px, 10px, 0) scale(var(--widget-preview-scale, 0.78));
   transform-origin: top left;
-  transition:
-    opacity 0.14s ease,
-    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-  filter:
-    drop-shadow(0 18px 34px rgba(7, 11, 22, 0.44))
-    drop-shadow(0 8px 18px rgba(7, 11, 22, 0.28));
+  transition: opacity 90ms ease;
+  filter: none;
 }
 
 .widgetDragPreview.is-visible {
-  opacity: 0.98;
-  transform: translate3d(14px, 12px, 0) scale(var(--widget-preview-scale, 0.78)) rotate(-0.35deg);
+  opacity: 0.94;
+  transform: translate3d(var(--widget-preview-x, 0px), var(--widget-preview-y, 0px), 0) translate3d(12px, 10px, 0) scale(var(--widget-preview-scale, 0.78));
 }
 
 .widgetDragPreview__card {
@@ -4344,9 +4506,9 @@ body.desktop-install-welcome-open {
   margin: 0;
   border-style: solid !important;
   background:
-    radial-gradient(150% 120% at 8% 0%, rgba(255, 255, 255, 0.08), transparent 54%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.015)),
     var(--surface-row);
+  box-shadow: 0 12px 24px rgba(7, 11, 22, 0.26);
 }
 
 .widgetDragPreview__card .widgetCard__tools,
@@ -4571,6 +4733,29 @@ body.desktop-install-welcome-open {
   flex-wrap: wrap;
 }
 
+.profileNotepadWidget {
+  --notepad-surface: var(--altara-surface, var(--surface-1));
+  --notepad-surface-elevated: var(--altara-surface-elevated, var(--surface-2));
+  --notepad-input: var(--altara-input, var(--surface-2));
+  --notepad-border: var(--altara-border, var(--stroke));
+  --notepad-border-strong: var(--altara-border-strong, var(--stroke-strong));
+  --notepad-text: var(--altara-text, var(--text-main));
+  --notepad-text-soft: var(--altara-text-soft, var(--text-soft));
+  --notepad-text-muted: var(--altara-text-muted, var(--text-muted));
+  --notepad-accent: var(--altara-accent, var(--accent));
+  --notepad-accent-strong: var(--altara-accent-strong, var(--accent-strong));
+  --notepad-accent-soft: var(--altara-accent-soft, var(--accent-soft));
+  height: 100%;
+  container: profileNotepad / inline-size;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  gap: 10px;
+  overflow: hidden;
+}
+
 .widgetQuickActions {
   display: flex;
   align-items: center;
@@ -4586,20 +4771,80 @@ body.desktop-install-welcome-open {
 
 .widgetNotesInput {
   width: 100%;
-  min-height: 132px;
-  resize: vertical;
-  border: 1px solid rgba(214, 223, 238, 0.16);
-  border-radius: 10px;
-  background: rgba(8, 12, 20, 0.54);
-  color: var(--text-main);
+  min-width: 0;
+  min-height: 72px;
+  max-height: 100%;
+  box-sizing: border-box;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  align-self: start;
+  border: 1px solid var(--notepad-border, var(--stroke));
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--notepad-surface-elevated, var(--surface-2)) 82%, var(--notepad-accent, var(--accent)) 4%), var(--notepad-input, var(--surface-2)));
+  color: var(--notepad-text, var(--text-main));
   padding: 10px 11px;
   line-height: 1.45;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--notepad-accent, var(--accent)) 30%, transparent) transparent;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.widgetNotesInput::placeholder {
+  color: var(--notepad-text-muted, var(--text-muted));
 }
 
 .widgetNotesInput:focus {
   outline: none;
-  border-color: rgba(224, 231, 243, 0.6);
-  box-shadow: 0 0 0 3px rgba(236, 242, 250, 0.12);
+  border-color: color-mix(in srgb, var(--notepad-accent, var(--accent)) 42%, var(--notepad-border, var(--stroke)));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--notepad-surface-elevated, var(--surface-2)) 78%, var(--notepad-accent, var(--accent)) 7%), var(--notepad-input, var(--surface-2)));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--notepad-accent, var(--accent)) 12%, transparent);
+}
+
+.profileNotepadFooter {
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.profileNotepadFooter .widgetCard__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--notepad-text-muted, var(--text-muted));
+}
+
+.profileNotepadFooter .widgetCard__miniBtn {
+  flex: 0 0 auto;
+  border-color: var(--notepad-border, var(--stroke));
+  background: color-mix(in srgb, var(--notepad-surface-elevated, var(--surface-2)) 68%, transparent);
+  color: var(--notepad-text-soft, var(--text-soft));
+}
+
+.profileNotepadFooter .widgetCard__miniBtn:hover,
+.profileNotepadFooter .widgetCard__miniBtn:focus-visible {
+  border-color: color-mix(in srgb, var(--notepad-accent, var(--accent)) 32%, var(--notepad-border, var(--stroke)));
+  background: color-mix(in srgb, var(--notepad-surface-elevated, var(--surface-2)) 78%, var(--notepad-accent, var(--accent)) 10%);
+  color: var(--notepad-text, var(--text-main));
+}
+
+@container profileNotepad (max-width: 360px) {
+  .widgetNotesInput {
+    min-height: 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .widgetNotesInput {
+    transition: none !important;
+  }
 }
 
 .widgetStatusPill {
@@ -4657,7 +4902,21 @@ body.desktop-install-welcome-open {
 }
 
 .widgetCard--calendar {
+  --calendar-surface: var(--altara-surface, var(--surface-1));
+  --calendar-surface-elevated: var(--altara-surface-elevated, var(--surface-2));
+  --calendar-border: var(--altara-border, var(--stroke));
+  --calendar-border-strong: var(--altara-border-strong, var(--stroke-strong));
+  --calendar-text: var(--altara-text, var(--text-main));
+  --calendar-text-soft: var(--altara-text-soft, var(--text-soft));
+  --calendar-text-muted: var(--altara-text-muted, var(--text-muted));
+  --calendar-accent: var(--altara-accent, var(--accent));
+  --calendar-accent-strong: var(--altara-accent-strong, var(--accent-strong));
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   gap: 10px;
+  align-content: stretch;
+  overflow: hidden;
 }
 
 .widgetCalendarTop {
@@ -4678,7 +4937,7 @@ body.desktop-install-welcome-open {
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255, 109, 115, 0.96);
+  color: var(--calendar-accent-strong);
   font-weight: 700;
 }
 
@@ -4693,13 +4952,13 @@ body.desktop-install-welcome-open {
   font-family: var(--font-display);
   font-size: 42px;
   font-weight: 820;
-  color: #f4f6fa;
+  color: var(--calendar-text);
 }
 
 .widgetCalendarDateMonth {
   font-size: 21px;
   font-weight: 650;
-  color: rgba(224, 231, 241, 0.78);
+  color: var(--calendar-text-soft);
   padding-bottom: 3px;
 }
 
@@ -4707,19 +4966,23 @@ body.desktop-install-welcome-open {
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(218, 226, 237, 0.72);
-  border: 1px solid rgba(214, 223, 238, 0.16);
+  color: var(--calendar-text-muted);
+  border: 1px solid var(--calendar-border);
   border-radius: 999px;
   padding: 5px 9px;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--calendar-surface-elevated) 66%, transparent);
   white-space: nowrap;
 }
 
 .widgetCalendarGrid {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 6px;
+  min-width: 0;
+  min-height: 0;
   position: relative;
   z-index: 1;
+  overflow: hidden;
 }
 
 .widgetCalendarWeekdays,
@@ -4732,17 +4995,18 @@ body.desktop-install-welcome-open {
 .widgetCalendarWeekdayCell {
   font-size: 10px;
   text-align: center;
-  color: rgba(213, 221, 233, 0.62);
+  color: var(--calendar-text-muted);
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .widgetCalendarDayCell {
-  min-height: 22px;
+  min-width: 0;
+  min-height: 24px;
   border-radius: 9px;
-  border: 1px solid rgba(214, 223, 238, 0.1);
-  background: rgba(255, 255, 255, 0.02);
-  color: rgba(232, 237, 245, 0.9);
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--calendar-surface-elevated) 42%, transparent);
+  color: var(--calendar-text-soft);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4755,56 +5019,14 @@ body.desktop-install-welcome-open {
 }
 
 .widgetCalendarDayCell.is-today {
-  border-color: rgba(255, 110, 116, 0.75);
-  background: linear-gradient(180deg, rgba(255, 103, 110, 0.24), rgba(255, 103, 110, 0.1));
-  color: #ffffff;
-  box-shadow: 0 5px 12px rgba(255, 95, 103, 0.24);
+  border-color: color-mix(in srgb, var(--calendar-accent) 42%, var(--calendar-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--calendar-accent) 24%, var(--calendar-surface-elevated)), color-mix(in srgb, var(--calendar-accent) 10%, var(--calendar-surface)));
+  color: var(--calendar-accent-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--calendar-accent) 10%, transparent);
 }
 
-.widgetCalendarAgenda {
-  display: grid;
-  gap: 7px;
-  position: relative;
-  z-index: 1;
-}
-
-.widgetCalendarAgendaTitle {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(214, 223, 235, 0.74);
-  font-weight: 700;
-}
-
-.widgetCalendarAgendaList {
-  display: grid;
-  gap: 6px;
-}
-
-.widgetCalendarAgendaRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border-bottom: 1px solid rgba(214, 223, 238, 0.12);
-  padding-bottom: 5px;
-}
-
-.widgetCalendarAgendaLabel {
-  font-size: 12px;
-  color: rgba(229, 235, 244, 0.88);
-  font-weight: 600;
-}
-
-.widgetCalendarAgendaDay {
-  font-size: 12px;
-  color: rgba(214, 223, 235, 0.72);
-  max-width: 180px;
-  line-height: 1.3;
-}
-
-.widgetCard--calendar.widgetCard--size-sm .widgetCalendarGrid,
-.widgetCard--calendar.widgetCard--size-sm .widgetCalendarAgenda {
+.widgetCard--calendar.widgetCard--size-sm .widgetCalendarGrid {
   display: none;
 }
 
@@ -4816,21 +5038,14 @@ body.desktop-install-welcome-open {
   font-size: 48px;
 }
 
-.widgetCard--calendar.widgetCard--size-md .widgetCalendarAgenda {
-  display: none;
-}
-
-.widgetCard--calendar.widgetCard--size-md .widgetCalendarDateDay {
-  font-size: 36px;
-}
-
 .widgetCard--calendar.widgetCard--size-lg,
 .widgetCard--calendar.widgetCard--size-xl {
-  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
-    "top top"
-    "month agenda";
-  align-content: start;
+    "top"
+    "month";
+  align-content: stretch;
 }
 
 .widgetCard--calendar.widgetCard--size-lg .widgetCalendarTop,
@@ -4841,11 +5056,6 @@ body.desktop-install-welcome-open {
 .widgetCard--calendar.widgetCard--size-lg .widgetCalendarGrid,
 .widgetCard--calendar.widgetCard--size-xl .widgetCalendarGrid {
   grid-area: month;
-}
-
-.widgetCard--calendar.widgetCard--size-lg .widgetCalendarAgenda,
-.widgetCard--calendar.widgetCard--size-xl .widgetCalendarAgenda {
-  grid-area: agenda;
 }
 
 .widgetTodoList {
@@ -4982,88 +5192,14 @@ body.desktop-install-welcome-open {
 
 .widgetCalendarDayCell {
   position: relative;
-  align-items: flex-start;
-  justify-content: flex-start;
-  padding: 6px 7px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   min-height: 28px;
-}
-
-.widgetCalendarDayCell.has-tasks {
-  border-color: rgba(150, 198, 255, 0.24);
-  background: linear-gradient(180deg, rgba(76, 122, 170, 0.18), rgba(255, 255, 255, 0.03));
-}
-
-.widgetCalendarDayCell.is-overdue:not(.is-today) {
-  border-color: rgba(255, 125, 125, 0.28);
-  background: linear-gradient(180deg, rgba(96, 31, 41, 0.28), rgba(255, 255, 255, 0.03));
 }
 
 .widgetCalendarDayNumber {
   line-height: 1;
-}
-
-.widgetCalendarDayMarker {
-  position: absolute;
-  right: 5px;
-  bottom: 4px;
-  min-width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  padding: 0 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  font-weight: 800;
-  color: #f4f7fb;
-  background: rgba(146, 189, 244, 0.92);
-  box-shadow: 0 4px 10px rgba(45, 74, 112, 0.22);
-}
-
-.widgetCalendarAgendaRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 8px 0;
-}
-
-.widgetCalendarAgendaRow.is-overdue {
-  border-bottom-color: rgba(255, 123, 123, 0.18);
-}
-
-.widgetCalendarAgendaMain {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.widgetCalendarAgendaTask {
-  font-size: 13px;
-  color: rgba(241, 245, 251, 0.94);
-  font-weight: 620;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.widgetCalendarAgendaMeta {
-  display: grid;
-  gap: 4px;
-  justify-items: end;
-  text-align: right;
-}
-
-.widgetCalendarAgendaReminder {
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(145, 198, 255, 0.88);
-}
-
-.widgetCalendarAgendaEmpty {
-  padding: 8px 0 4px;
-  color: rgba(214, 223, 235, 0.68);
-  font-size: 12px;
 }
 
 .widgetTodoHero {
@@ -5565,6 +5701,1096 @@ body.desktop-install-welcome-open {
   color: rgba(214, 223, 236, 0.72);
 }
 
+.widgetCard.profileChecklistWidget {
+  --checklist-surface: var(--altara-surface, var(--surface-1));
+  --checklist-surface-elevated: var(--altara-surface-elevated, var(--surface-2));
+  --checklist-input: var(--altara-input, var(--surface-2));
+  --checklist-border: var(--altara-border, var(--stroke));
+  --checklist-border-strong: var(--altara-border-strong, var(--stroke-strong));
+  --checklist-text: var(--altara-text, var(--text-main));
+  --checklist-text-soft: var(--altara-text-soft, var(--text-soft));
+  --checklist-text-muted: var(--altara-text-muted, var(--text-muted));
+  --checklist-accent: var(--altara-accent, var(--accent));
+  --checklist-accent-strong: var(--altara-accent-strong, var(--accent-strong));
+  --checklist-accent-soft: var(--altara-accent-soft, var(--accent-soft));
+  --checklist-danger: var(--altara-danger, var(--bad));
+  --checklist-success: var(--ok);
+  --checklist-warning: var(--warn);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  container: profileChecklist / inline-size;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) !important;
+  gap: 0;
+  align-content: stretch;
+  padding: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(110% 88% at 14% -8%, color-mix(in srgb, var(--checklist-accent) 12%, transparent), transparent 50%),
+    linear-gradient(180deg, color-mix(in srgb, var(--checklist-surface-elevated) 86%, rgba(255, 255, 255, 0.045)), var(--checklist-surface));
+}
+
+.widgetCard.profileChecklistWidget.is-editing {
+  padding-top: 34px;
+  padding-bottom: 18px;
+}
+
+.profileChecklistWidget *,
+.profileChecklistSheet * {
+  box-sizing: border-box;
+}
+
+.profileChecklistInner {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  gap: 7px;
+  overflow: hidden;
+}
+
+.profileChecklistWidget--small .profileChecklistInner {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.widgetCard.profileChecklistWidget.profileChecklistWidget--small {
+  padding: 12px;
+}
+
+.profileChecklistHeader {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.profileChecklistTitleBlock,
+.profileChecklistHeaderMeta {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profileChecklistHeaderMeta {
+  justify-content: flex-end;
+}
+
+.profileChecklistIcon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--checklist-accent-strong);
+  font-size: 13px;
+  font-weight: 900;
+  border: 1px solid color-mix(in srgb, var(--checklist-accent) 26%, var(--checklist-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--checklist-surface-elevated) 72%, var(--checklist-accent) 18%), var(--checklist-surface));
+  box-shadow:
+    0 8px 18px color-mix(in srgb, var(--checklist-accent) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--checklist-text) 8%, transparent);
+}
+
+.profileChecklistKicker {
+  min-width: 0;
+  color: var(--checklist-text);
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profileChecklistProgress {
+  flex: 0 0 auto;
+  min-width: 42px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--checklist-border);
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 64%, transparent);
+  color: var(--checklist-text-soft);
+  font-size: 12px;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
+.profileChecklistSubline {
+  min-width: 0;
+  color: var(--checklist-text-muted);
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profileChecklistSmallStat {
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  gap: 7px;
+  align-self: center;
+}
+
+.profileChecklistSmallStat strong {
+  min-width: 0;
+  color: #f8fbff;
+  font-family: var(--font-display);
+  font-size: clamp(24px, 2.2vw, 34px);
+  font-weight: 850;
+  line-height: 0.95;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.profileChecklistProgressRing {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background:
+    conic-gradient(var(--checklist-accent-strong) var(--checklist-progress, 0%), color-mix(in srgb, var(--checklist-border) 72%, transparent) 0),
+    color-mix(in srgb, var(--checklist-surface-elevated) 64%, transparent);
+  box-shadow: inset 0 0 0 1px var(--checklist-border);
+}
+
+.profileChecklistProgressRing > span {
+  width: 28px;
+  height: 28px;
+  border-radius: inherit;
+  background: var(--checklist-surface);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--checklist-text) 6%, transparent);
+}
+
+.profileChecklistWidget--small .profileChecklistProgressRing {
+  width: 34px;
+  height: 34px;
+}
+
+.profileChecklistWidget--small .profileChecklistProgressRing > span {
+  width: 22px;
+  height: 22px;
+}
+
+.profileChecklistWidget--small .profileChecklistSmallStat {
+  gap: 4px;
+}
+
+.profileChecklistWidget--small .profileChecklistSmallStat strong {
+  font-size: 26px;
+}
+
+.profileChecklistProgressBar {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--checklist-border) 54%, transparent);
+}
+
+.profileChecklistProgressBar > span {
+  display: block;
+  width: var(--checklist-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--checklist-accent), var(--checklist-accent-strong));
+  transition: width 0.22s ease;
+}
+
+.profileChecklistTaskList {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--checklist-accent) 24%, transparent) transparent;
+}
+
+.profileChecklistWidget--medium .profileChecklistTaskList {
+  overflow: hidden;
+}
+
+.profileChecklistWidget--large .profileChecklistTaskList {
+  padding-right: 2px;
+}
+
+.profileChecklistTaskRow {
+  min-width: 0;
+  min-height: 38px;
+  max-height: 42px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 72px) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border-radius: 13px;
+  border: 1px solid var(--checklist-border);
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 58%, transparent);
+  overflow: hidden;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s ease;
+}
+
+.profileChecklistTaskRow:hover {
+  border-color: color-mix(in srgb, var(--checklist-accent) 24%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 78%, var(--checklist-accent) 7%);
+}
+
+.profileChecklistTaskRow.is-done {
+  opacity: 0.68;
+}
+
+.profileChecklistTaskRow.is-overdue {
+  border-color: color-mix(in srgb, var(--checklist-danger) 26%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 88%, var(--checklist-danger) 5%);
+}
+
+.profileChecklistTaskRow.is-renaming,
+.profileChecklistTaskRow.is-confirming-delete {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+
+.profileChecklistTaskRow.is-confirming-delete {
+  border-color: color-mix(in srgb, var(--checklist-danger) 34%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 84%, var(--checklist-danger) 8%);
+}
+
+.profileChecklistCheckbox {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--checklist-border-strong);
+  background: color-mix(in srgb, var(--checklist-input) 78%, transparent);
+  color: transparent;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    transform 0.16s ease,
+    box-shadow 0.18s ease;
+}
+
+.profileChecklistCheckbox:hover,
+.profileChecklistCheckbox:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--checklist-accent) 42%, var(--checklist-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--checklist-accent) 10%, transparent);
+}
+
+.profileChecklistCheckbox:active {
+  transform: scale(0.94);
+}
+
+.profileChecklistCheckbox > span {
+  width: 10px;
+  height: 6px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-1px) rotate(-45deg) scale(0);
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.profileChecklistTaskRow.is-done .profileChecklistCheckbox {
+  border-color: color-mix(in srgb, var(--checklist-success) 30%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 78%, var(--checklist-success) 14%);
+  color: color-mix(in srgb, var(--checklist-success) 70%, var(--checklist-text));
+  box-shadow: none;
+}
+
+.profileChecklistTaskRow.is-done .profileChecklistCheckbox > span {
+  transform: translateY(-1px) rotate(-45deg) scale(1);
+}
+
+.profileChecklistTaskBody {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profileChecklistTaskBody:focus-visible {
+  outline: 2px solid rgba(132, 191, 255, 0.34);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.profileChecklistTaskTitle {
+  min-width: 0;
+  color: var(--checklist-text);
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profileChecklistTaskRow.is-done .profileChecklistTaskTitle {
+  color: color-mix(in srgb, var(--checklist-text-muted) 82%, transparent);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.profileChecklistTaskMeta {
+  min-width: 0;
+  max-width: 72px;
+  display: inline-flex;
+  align-items: center;
+  justify-self: end;
+  overflow: hidden;
+}
+
+.profileChecklistTaskMeta:empty {
+  display: none;
+}
+
+.profileChecklistDueChip {
+  max-width: 72px;
+  min-width: 0;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--checklist-border);
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 62%, transparent);
+  color: var(--checklist-text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profileChecklistHeaderMeta .profileChecklistDueChip {
+  max-width: 96px;
+}
+
+.profileChecklistDueChip.is-today {
+  border-color: color-mix(in srgb, var(--checklist-accent) 32%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 78%, var(--checklist-accent) 10%);
+  color: var(--checklist-accent-strong);
+}
+
+.profileChecklistDueChip.is-soon {
+  border-color: color-mix(in srgb, var(--checklist-warning) 28%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 88%, var(--checklist-warning) 7%);
+  color: color-mix(in srgb, var(--checklist-warning) 72%, var(--checklist-text));
+}
+
+.profileChecklistDueChip.is-overdue {
+  border-color: color-mix(in srgb, var(--checklist-danger) 32%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 88%, var(--checklist-danger) 8%);
+  color: color-mix(in srgb, var(--checklist-danger) 68%, var(--checklist-text));
+}
+
+.profileChecklistDueChip--priority[data-priority="high"] {
+  border-color: color-mix(in srgb, var(--checklist-danger) 30%, var(--checklist-border));
+  color: color-mix(in srgb, var(--checklist-danger) 62%, var(--checklist-text));
+}
+
+.profileChecklistDueChip--priority[data-priority="medium"] {
+  border-color: color-mix(in srgb, var(--checklist-warning) 28%, var(--checklist-border));
+  color: color-mix(in srgb, var(--checklist-warning) 68%, var(--checklist-text));
+}
+
+.profileChecklistHiddenCount {
+  min-width: 0;
+  color: var(--checklist-text-muted);
+  font-size: 10px;
+  font-weight: 720;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profileChecklistQuickAdd {
+  min-width: 0;
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--checklist-border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 58%, transparent);
+  color: var(--checklist-text-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    transform 0.16s ease;
+}
+
+.profileChecklistQuickAdd:hover,
+.profileChecklistQuickAdd:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--checklist-accent) 34%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 80%, var(--checklist-accent) 9%);
+}
+
+.profileChecklistQuickAdd:active {
+  transform: scale(0.985);
+}
+
+.profileChecklistQuickAdd:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.profileChecklistQuickAddRow {
+  min-width: 0;
+  width: 100%;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 4px;
+  border-radius: 15px;
+  border: 1px solid var(--checklist-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--checklist-surface-elevated) 82%, var(--checklist-accent) 4%), var(--checklist-surface)),
+    var(--checklist-surface);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--checklist-text) 6%, transparent),
+    0 8px 18px rgba(0, 0, 0, 0.1);
+}
+
+.profileChecklistQuickAddInput {
+  min-width: 0;
+  width: 100%;
+  height: 28px;
+  border: 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--checklist-input) 88%, var(--checklist-surface-elevated));
+  color: var(--checklist-text);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 650;
+  outline: none;
+}
+
+.profileChecklistQuickAddInput::placeholder {
+  color: var(--checklist-text-muted);
+}
+
+.profileChecklistQuickAddInput:focus {
+  background: color-mix(in srgb, var(--checklist-input) 78%, var(--checklist-accent) 8%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--checklist-accent) 38%, var(--checklist-border)),
+    0 0 0 4px color-mix(in srgb, var(--checklist-accent) 10%, transparent);
+}
+
+.profileChecklistQuickAddSubmit,
+.profileChecklistQuickAddCancel {
+  height: 28px;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-weight: 780;
+  line-height: 1;
+}
+
+.profileChecklistQuickAddSubmit {
+  min-width: 52px;
+  border-radius: 999px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--checklist-accent) 36%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 76%, var(--checklist-accent) 16%);
+  color: var(--checklist-accent-strong);
+  font-size: 12px;
+}
+
+.profileChecklistQuickAddCancel {
+  width: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 66%, transparent);
+  color: var(--checklist-text-muted);
+  font-size: 18px;
+}
+
+.profileChecklistQuickAddSubmit:focus-visible,
+.profileChecklistQuickAddCancel:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--checklist-accent) 36%, transparent);
+  outline-offset: 2px;
+}
+
+.profileChecklistMiniAction {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid var(--checklist-border);
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 68%, transparent);
+  color: var(--checklist-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  flex: 0 0 auto;
+  line-height: 1;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.profileChecklistMiniAction:hover,
+.profileChecklistMiniAction:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--checklist-accent) 32%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 78%, var(--checklist-accent) 10%);
+  color: var(--checklist-text);
+}
+
+.profileChecklistMiniAction:active {
+  transform: scale(0.94);
+}
+
+.profileChecklistMiniAction--delete {
+  color: var(--checklist-text-muted);
+  font-weight: 500;
+}
+
+.profileChecklistMiniAction--delete:hover,
+.profileChecklistMiniAction--delete:focus-visible {
+  border-color: color-mix(in srgb, var(--checklist-danger) 34%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 86%, var(--checklist-danger) 8%);
+  color: color-mix(in srgb, var(--checklist-danger) 72%, var(--checklist-text));
+}
+
+.profileChecklistMiniAction--renameSave {
+  border-color: color-mix(in srgb, var(--checklist-accent) 30%, var(--checklist-border));
+  color: var(--checklist-accent-strong);
+}
+
+.profileChecklistMiniAction--renameSave:hover,
+.profileChecklistMiniAction--renameSave:focus-visible {
+  border-color: color-mix(in srgb, var(--checklist-accent) 44%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 76%, var(--checklist-accent) 14%);
+}
+
+.profileChecklistMiniAction--renameCancel {
+  color: var(--checklist-text-muted);
+}
+
+.profileChecklistTaskActions {
+  display: inline-flex;
+  align-items: center;
+  justify-self: end;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 0 auto;
+  opacity: 0.58;
+  transition: opacity 0.16s ease;
+}
+
+.profileChecklistWidget:hover .profileChecklistTaskActions,
+.profileChecklistWidget.is-editing .profileChecklistTaskActions,
+.profileChecklistTaskRow.is-renaming .profileChecklistTaskActions,
+.profileChecklistTaskRow.is-confirming-delete .profileChecklistTaskActions {
+  opacity: 1;
+}
+
+.profileChecklistMiniAction:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+.profileChecklistRenameInput {
+  min-width: 0;
+  width: 100%;
+  height: 28px;
+  border: 1px solid var(--checklist-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--checklist-input) 84%, var(--checklist-surface-elevated));
+  color: var(--checklist-text);
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 680;
+  outline: none;
+  box-shadow: none;
+}
+
+.profileChecklistRenameInput:focus {
+  border-color: color-mix(in srgb, var(--checklist-accent) 44%, var(--checklist-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--checklist-accent) 10%, transparent);
+}
+
+.profileChecklistDeletePrompt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--checklist-danger) 58%, var(--checklist-text));
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.profileChecklistTextAction {
+  min-width: 0;
+  height: 26px;
+  border: 1px solid var(--checklist-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 68%, transparent);
+  color: var(--checklist-text-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.profileChecklistTextAction:hover,
+.profileChecklistTextAction:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--checklist-accent) 32%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 78%, var(--checklist-accent) 10%);
+}
+
+.profileChecklistTextAction.is-primary {
+  border-color: color-mix(in srgb, var(--checklist-accent) 36%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 76%, var(--checklist-accent) 14%);
+  color: var(--checklist-accent-strong);
+}
+
+.profileChecklistTextAction.is-danger {
+  border-color: color-mix(in srgb, var(--checklist-danger) 34%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 86%, var(--checklist-danger) 8%);
+  color: color-mix(in srgb, var(--checklist-danger) 72%, var(--checklist-text));
+}
+
+.profileChecklistEmpty {
+  min-width: 0;
+  padding: 8px 6px;
+  border-radius: 12px;
+  color: var(--checklist-text-muted);
+  font-size: 12px;
+  line-height: 1.2;
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 52%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileChecklistWidget--small .profileChecklistTaskList,
+.profileChecklistWidget--small .profileChecklistQuickAdd,
+.profileChecklistWidget--small .profileChecklistHiddenCount,
+.profileChecklistWidget--small .profileChecklistProgressBar {
+  display: none;
+}
+
+.profileChecklistWidget--medium .profileChecklistInner {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.profileChecklistWidget--medium .profileChecklistSubline,
+.profileChecklistWidget--medium .profileChecklistHiddenCount {
+  display: none;
+}
+
+.profileChecklistWidget--medium .profileChecklistTaskRow {
+  min-height: 28px;
+  padding: 4px 5px;
+}
+
+.profileChecklistWidget--medium .profileChecklistQuickAdd {
+  min-height: 26px;
+}
+
+.profileChecklistWidget--medium .profileChecklistTaskMeta {
+  display: none;
+}
+
+.profileChecklistWidget--medium .profileChecklistCheckbox {
+  width: 24px;
+  height: 24px;
+}
+
+.profileChecklistWidget--large .profileChecklistInner {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+}
+
+@container profileChecklist (max-width: 360px) {
+  .profileChecklistTaskRow {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+
+  .profileChecklistTaskMeta {
+    display: none;
+  }
+}
+
+.profileChecklistOverflowMenu {
+  position: relative;
+}
+
+.profileChecklistSheetOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  padding: 18px;
+  background: rgba(3, 5, 9, 0.14);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.profileChecklistSheetOverlay[hidden] {
+  display: none !important;
+}
+
+.profileChecklistSheet {
+  width: min(440px, calc(100vw - 24px));
+  max-height: min(620px, calc(100vh - 36px));
+  min-width: 0;
+  border-radius: 22px;
+  border: 1px solid rgba(222, 231, 244, 0.16);
+  background:
+    radial-gradient(120% 90% at 12% -10%, rgba(132, 191, 255, 0.1), transparent 48%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.052) 44%, rgba(255, 255, 255, 0.035)),
+    rgba(13, 16, 22, 0.98);
+  box-shadow:
+    0 18px 54px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  transform: translateY(14px) scale(0.985);
+  opacity: 0;
+  transition:
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease;
+}
+
+.profileChecklistSheetOverlay.is-open .profileChecklistSheet {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.profileChecklistSheetGrabber {
+  width: 44px;
+  height: 5px;
+  border-radius: 999px;
+  margin: 10px auto 0;
+  background: rgba(229, 236, 246, 0.24);
+}
+
+.profileChecklistSheetHeader,
+.profileChecklistSheetFooter {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.profileChecklistSheetHeader h2 {
+  margin: 2px 0 0;
+  color: rgba(249, 251, 255, 0.96);
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 820;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.profileChecklistSheetEyebrow {
+  color: rgba(216, 226, 240, 0.62);
+  font-size: 11px;
+  font-weight: 780;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.profileChecklistSheetIconBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(224, 232, 244, 0.13);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(241, 246, 253, 0.86);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.profileChecklistSheetBody {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+  padding: 0 18px 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.profileChecklistSheetTitleField {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.profileChecklistSheetTitleField span {
+  color: rgba(223, 232, 244, 0.68);
+  font-size: 12px;
+  font-weight: 740;
+}
+
+.profileChecklistSheetTitleField input {
+  width: 100%;
+  height: 46px;
+  border-radius: 16px;
+  font-size: 16px;
+}
+
+.profileChecklistSheetDetails {
+  min-width: 0;
+  border-radius: 18px;
+  border: 1px solid rgba(222, 231, 244, 0.12);
+  background: rgba(255, 255, 255, 0.045);
+  overflow: hidden;
+}
+
+.profileChecklistSheetDetails summary {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  color: rgba(242, 247, 254, 0.9);
+  font-size: 14px;
+  font-weight: 760;
+  cursor: pointer;
+  list-style: none;
+}
+
+.profileChecklistSheetDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.profileChecklistSheetDetails summary::after {
+  content: "+";
+  margin-left: auto;
+  color: rgba(223, 232, 244, 0.66);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.profileChecklistSheetDetails[open] summary::after {
+  content: "-";
+}
+
+.profileChecklistSheetGroup {
+  display: grid;
+  gap: 1px;
+  padding: 0 10px 10px;
+}
+
+.profileChecklistSheetRow {
+  min-width: 0;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(128px, 168px);
+  align-items: center;
+  gap: 14px;
+  padding: 10px 4px;
+  border-top: 1px solid rgba(222, 231, 244, 0.08);
+}
+
+.profileChecklistSheetRow > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.profileChecklistSheetRow strong {
+  min-width: 0;
+  color: rgba(244, 248, 253, 0.92);
+  font-size: 13px;
+  font-weight: 760;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profileChecklistSheetRow small {
+  min-width: 0;
+  color: rgba(216, 226, 240, 0.54);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.profileChecklistSheetRow input,
+.profileChecklistSheetRow select {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border-radius: 12px;
+}
+
+.profileChecklistSheetRow input[type="checkbox"] {
+  justify-self: end;
+  width: 34px;
+  height: 22px;
+  accent-color: var(--altara-accent-strong, var(--accent-strong));
+}
+
+.profileChecklistSheetFooter {
+  border-top: 1px solid var(--altara-border, var(--stroke));
+  background: color-mix(in srgb, var(--altara-surface-elevated, var(--surface-2)) 58%, transparent);
+}
+
+.profileChecklistSheetFooterLeft {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.profileChecklistSheetTextBtn,
+.profileChecklistSheetSave {
+  min-height: 38px;
+  border-radius: 999px;
+  border: 1px solid var(--altara-border, var(--stroke));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.profileChecklistSheetTextBtn {
+  background: color-mix(in srgb, var(--altara-surface-elevated, var(--surface-2)) 62%, transparent);
+  color: var(--altara-text-soft, var(--text-soft));
+}
+
+.profileChecklistSheetTextBtn.is-danger {
+  color: color-mix(in srgb, var(--altara-danger, var(--bad)) 68%, var(--altara-text, var(--text-main)));
+}
+
+.profileChecklistSheetTextBtn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.profileChecklistSheetSave {
+  border-color: color-mix(in srgb, var(--altara-accent, var(--accent)) 38%, var(--altara-border, var(--stroke)));
+  background: color-mix(in srgb, var(--altara-surface-elevated, var(--surface-2)) 72%, var(--altara-accent, var(--accent)) 16%);
+  color: var(--altara-accent-strong, var(--accent-strong));
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--altara-accent, var(--accent)) 12%, transparent);
+}
+
+body.has-profile-checklist-sheet {
+  overflow: auto;
+}
+
+@media (max-width: 640px) {
+  .profileChecklistSheetOverlay {
+    padding: 10px;
+  }
+
+  .profileChecklistSheet {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    border-radius: 24px;
+  }
+
+  .profileChecklistSheetRow {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .profileChecklistSheetRow input,
+  .profileChecklistSheetRow select {
+    max-width: none;
+  }
+
+  .profileChecklistSheetFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .profileChecklistSheetFooterLeft {
+    justify-content: center;
+  }
+
+  .profileChecklistSheetSave {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profileChecklistTaskRow,
+  .profileChecklistQuickAdd,
+  .profileChecklistQuickAddRow,
+  .profileChecklistCheckbox,
+  .profileChecklistProgressBar > span,
+  .profileChecklistSheet {
+    transition: none !important;
+  }
+}
+
 @media (max-width: 980px) {
   .widgetTodoComposerMeta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5586,14 +6812,6 @@ body.desktop-install-welcome-open {
     grid-template-columns: 1fr;
   }
 
-  .widgetCalendarAgendaRow {
-    grid-template-columns: 1fr;
-  }
-
-  .widgetCalendarAgendaMeta {
-    justify-items: start;
-    text-align: left;
-  }
 }
 
 #dmMain,
@@ -8164,10 +9382,8 @@ body.theme-resolved-light:not(.authPage) #dmMain .dmPendingCard__remove {
   min-width: 248px;
   max-width: min(320px, calc(100vw - 16px));
   height: auto;
-  max-height: none;
-  overflow: visible;
-  overflow-y: visible;
-  overflow-x: visible;
+  max-height: calc(100vh - 16px);
+  overflow: hidden auto;
   padding: 8px;
   overscroll-behavior: contain;
 }
@@ -9719,12 +10935,18 @@ body.motion-ready .dmServerInviteCard:hover .dmServerInviteIcon {
   word-break: break-word;
 }
 
+.dmProfileConnectionsPreview,
 .dmProfileWidgetsPreview {
   margin-top: 12px;
 }
 
+.dmProfileConnectionsPreview.hidden,
 .dmProfileWidgetsPreview.hidden {
   display: none !important;
+}
+
+.dmProfileConnectionsPreview .profile-connections-compact {
+  margin-top: 0;
 }
 
 .dmProfileActivityPreview {
@@ -10470,6 +11692,15 @@ body.motion-ready .dmServerInviteCard:hover .dmServerInviteIcon {
   gap: 10px;
 }
 
+#userCardFacts > #userCardProfileConnections {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+#userCardFacts > #userCardProfileConnections .profile-connections-compact {
+  margin-top: 0;
+}
+
 .userCardFact {
   min-width: 0;
   padding: 11px 12px;
@@ -10823,6 +12054,14 @@ body.motion-ready .dmServerInviteCard:hover .dmServerInviteIcon {
   stroke-linejoin: round;
 }
 
+.profile-connection-avatar {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
 .profile-connection-icon[data-provider="github"] {
   background: linear-gradient(145deg, #f0f3f6, #6e7681);
   color: #0d1117;
@@ -10858,9 +12097,25 @@ body.motion-ready .dmServerInviteCard:hover .dmServerInviteIcon {
 }
 
 .profile-connection-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: #f2f6ff;
   font-size: 13px;
   font-weight: 750;
+}
+
+.profile-connection-verified {
+  width: 15px;
+  height: 15px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(78, 168, 255, 0.18);
+  color: #9fd0ff;
+  font-size: 10px;
+  font-weight: 900;
 }
 
 .profile-connection-subtitle {
@@ -10884,6 +12139,45 @@ body.motion-ready .dmServerInviteCard:hover .dmServerInviteIcon {
   color: rgba(219, 226, 245, 0.76);
   font-size: 14px;
   line-height: 1.45;
+}
+
+.profile-connections-compact {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.profile-connections-compact__title {
+  color: rgba(219, 226, 245, 0.72);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profile-connections-compact .profile-connections-list {
+  gap: 6px;
+}
+
+.profile-connections-compact .profile-connection-row {
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+
+.profile-connections-compact .profile-connection-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+
+.profile-connections-hint {
+  padding: 9px 10px;
+  border: 1px solid rgba(200, 232, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(219, 226, 245, 0.68);
+  font-size: 12px;
 }
 
 .userCardServerList {
@@ -23303,13 +24597,16 @@ body:not(.authPage) #gifModal .gifFolderBack:focus-visible {
 
 /* Global Motion Upgrade (Arc/Zen-inspired polish) */
 :root {
-  --motion-fast: 90ms;
-  --motion-base: 150ms;
-  --motion-slow: 260ms;
-  --motion-curve-smooth: cubic-bezier(0.22, 1, 0.36, 1);
-  --motion-curve-snappy: cubic-bezier(0.2, 0.9, 0.32, 1.2);
+  --motion-fast: var(--altara-motion-fast, 110ms);
+  --motion-base: var(--altara-motion-med, 170ms);
+  --motion-slow: var(--altara-motion-slow, 220ms);
+  --motion-curve-smooth: var(--altara-ease-snap, cubic-bezier(0.22, 1, 0.36, 1));
+  --motion-curve-snappy: var(--altara-ease-soft, cubic-bezier(0.2, 0.9, 0.32, 1));
 }
 
+html.altara-motion-off *,
+html.altara-motion-off *::before,
+html.altara-motion-off *::after,
 body.motion-reduced *,
 body.motion-reduced *::before,
 body.motion-reduced *::after {
@@ -23348,40 +24645,8 @@ body.motion-ready .rightTop {
   animation-delay: 100ms;
 }
 
-body.motion-ready .widgetsGrid .widgetCard,
-body.motion-ready .list .dm-item,
-body.motion-ready .serverChannelItem,
-body.motion-ready .msg {
-  animation: altaraItemLift var(--motion-base) var(--motion-curve-smooth) both;
-}
-
-body.motion-ready .widgetsGrid .widgetCard:nth-child(1),
-body.motion-ready .list .dm-item:nth-child(1),
-body.motion-ready .serverChannelItem:nth-child(1),
-body.motion-ready .msg:nth-child(1) {
-  animation-delay: 40ms;
-}
-
-body.motion-ready .widgetsGrid .widgetCard:nth-child(2),
-body.motion-ready .list .dm-item:nth-child(2),
-body.motion-ready .serverChannelItem:nth-child(2),
-body.motion-ready .msg:nth-child(2) {
-  animation-delay: 65ms;
-}
-
-body.motion-ready .widgetsGrid .widgetCard:nth-child(3),
-body.motion-ready .list .dm-item:nth-child(3),
-body.motion-ready .serverChannelItem:nth-child(3),
-body.motion-ready .msg:nth-child(3) {
-  animation-delay: 90ms;
-}
-
-body.motion-ready .widgetsGrid .widgetCard:nth-child(4),
-body.motion-ready .list .dm-item:nth-child(4),
-body.motion-ready .serverChannelItem:nth-child(4),
-body.motion-ready .msg:nth-child(4) {
-  animation-delay: 115ms;
-}
+/* Stable rows/cards are intentionally not given entrance animations.
+   Sidebar, widget, timer, presence, and message rerenders can happen often. */
 
 body.motion-ready .btn,
 body.motion-ready .chip,
@@ -23567,9 +24832,9 @@ body.motion-ready .msg__reaction.is-on {
   transform: scale(1.06);
 }
 
-/* --- Online status dot â€” soft repeating glow --- */
+/* Status dots update often; keep them stable instead of continuously pulsing. */
 body.motion-ready .statusDot[data-status="online"] {
-  animation: altaraOnlinePulse 3s ease-in-out 1.5s infinite;
+  animation: none;
 }
 
 /* --- Message input focus glow --- */
@@ -26466,7 +27731,6 @@ body:not(.authPage) .widgetCard--primary {
 }
 
 body:not(.authPage) .widgetCard__label,
-body:not(.authPage) .widgetCalendarAgendaTitle,
 body:not(.authPage) .widgetsAddPanel__title,
 body:not(.authPage) .widgetsEditBar__title {
   color: rgba(242, 240, 236, 0.62);
@@ -26485,13 +27749,10 @@ body:not(.authPage) .widgetCalendarDateDay {
 }
 
 body:not(.authPage) .widgetCard__meta,
-body:not(.authPage) .widgetCalendarDateMonth,
-body:not(.authPage) .widgetCalendarAgendaDay,
-body:not(.authPage) .widgetCalendarAgendaEmpty {
+body:not(.authPage) .widgetCalendarDateMonth {
   color: rgba(242, 240, 236, 0.56);
 }
 
-body:not(.authPage) .widgetNotesInput,
 body:not(.authPage) .widgetTodoComposer,
 body:not(.authPage) .widgetTodoHero,
 body:not(.authPage) .widgetTodoItem,
@@ -26588,19 +27849,10 @@ body:not(.authPage) .widgetCalendarDayCell.is-other {
 }
 
 body:not(.authPage) .widgetCalendarDayCell.is-today {
-  border-color: rgba(232, 207, 174, 0.22);
-  background: var(--accent);
-  color: #111111;
-  box-shadow: none;
-}
-
-body:not(.authPage) .widgetCalendarDayCell.has-tasks {
-  border-color: rgba(232, 207, 174, 0.18);
-  background: rgba(232, 207, 174, 0.08);
-}
-
-body:not(.authPage) .widgetCalendarAgendaRow {
-  border-bottom-color: var(--stroke);
+  border-color: color-mix(in srgb, var(--altara-accent, var(--accent)) 38%, var(--altara-border, var(--stroke)));
+  background: color-mix(in srgb, var(--altara-surface-elevated, var(--surface-2)) 76%, var(--altara-accent, var(--accent)) 16%);
+  color: var(--altara-accent-strong, var(--accent-strong));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--altara-accent, var(--accent)) 10%, transparent);
 }
 
 body:not(.authPage) .widgetsEditFabRow {
@@ -28234,8 +29486,9 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
 
 .meProfilePopout__banner {
   position: relative;
-  height: 72px;
-  min-height: 72px;
+  aspect-ratio: var(--altara-profile-banner-ratio);
+  height: auto;
+  min-height: 0;
   overflow: hidden;
   border-bottom: 1px solid rgba(255, 255, 255, 0.055);
   background:
@@ -28482,12 +29735,17 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
 }
 
 .meProfilePopout__about,
+.meProfilePopout__connections,
 .meProfilePopout__widgets {
   margin-top: 0;
   padding: 9px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
+}
+
+.meProfilePopout__connections .profile-connections-compact {
+  margin-top: 0;
 }
 
 .meProfilePopout__sectionTop {
@@ -28729,8 +29987,9 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
 
 #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBanner {
   position: relative;
-  height: 104px;
-  aspect-ratio: auto;
+  aspect-ratio: var(--altara-profile-banner-ratio);
+  height: auto;
+  min-height: 0;
   padding: 0;
   overflow: hidden;
   border-bottom: 1px solid rgba(255, 255, 255, 0.055);
@@ -30171,8 +31430,9 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
 }
 
 #profileOverlay.settingsOverlay .settingsIdentityBanner {
-  min-height: 150px;
-  aspect-ratio: auto;
+  aspect-ratio: var(--altara-profile-banner-ratio);
+  height: auto;
+  min-height: 0;
   background:
     radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--settings-accent) 16%, transparent), transparent 34%),
     linear-gradient(135deg, #25221e 0%, #181818 52%, #101010 100%);
@@ -30767,7 +32027,7 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
 #profileOverlay.settingsOverlay .settingsIdentityBanner {
   aspect-ratio: var(--profile-banner-ratio);
   height: auto;
-  min-height: 150px;
+  min-height: 0;
   background:
     radial-gradient(circle at 20% 4%, rgba(232, 207, 174, 0.12), transparent 34%),
     linear-gradient(135deg, #211f1b 0%, #181818 54%, #101010 100%);
@@ -31037,7 +32297,8 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
 
 @media (max-width: 760px) {
   #profileOverlay.settingsOverlay .settingsIdentityBanner {
-    min-height: 112px;
+    aspect-ratio: var(--altara-profile-banner-ratio);
+    min-height: 0;
   }
 
   #profileOverlay.settingsOverlay .settingsIdentityBody {
@@ -31046,6 +32307,7 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
   }
 
   #profileOverlay.settingsOverlay .settingsAvatarPick {
+    --settings-profile-avatar-size: 74px;
     width: 74px;
     height: 74px;
     margin-top: -30px;
@@ -32879,7 +34141,6 @@ body.theme-resolved-light:not(.authPage) .leftDockTitle,
 body.theme-resolved-light:not(.authPage) .serverSidebarName,
 body.theme-resolved-light:not(.authPage) .serverNavLabel,
 body.theme-resolved-light:not(.authPage) .widgetCard__label,
-body.theme-resolved-light:not(.authPage) .widgetCalendarAgendaTitle,
 body.theme-resolved-light:not(.authPage) .widgetsAddPanel__title,
 body.theme-resolved-light:not(.authPage) .widgetsEditBar__title,
 body.theme-resolved-light:not(.authPage) .widgetCard__value,
@@ -32893,8 +34154,6 @@ body.theme-resolved-light:not(.authPage) .widgetCalendarDayCell {
 body.theme-resolved-light:not(.authPage) .serverSidebarSub,
 body.theme-resolved-light:not(.authPage) .widgetCard__meta,
 body.theme-resolved-light:not(.authPage) .widgetCalendarDateMonth,
-body.theme-resolved-light:not(.authPage) .widgetCalendarAgendaDay,
-body.theme-resolved-light:not(.authPage) .widgetCalendarAgendaEmpty,
 body.theme-resolved-light:not(.authPage) .widgetTodoMetaInline,
 body.theme-resolved-light:not(.authPage) .widgetCalendarDayCell.is-other,
 body.theme-resolved-light:not(.authPage) .badge,
@@ -32902,7 +34161,6 @@ body.theme-resolved-light:not(.authPage) #pendingBadge {
   color: var(--altara-text-muted) !important;
 }
 
-body.theme-resolved-light:not(.authPage) .widgetNotesInput,
 body.theme-resolved-light:not(.authPage) .widgetTodoComposer,
 body.theme-resolved-light:not(.authPage) .widgetTodoHero,
 body.theme-resolved-light:not(.authPage) .widgetTodoItem,
@@ -32943,9 +34201,10 @@ body.theme-resolved-light:not(.authPage) #pendingBadge {
 }
 
 body.theme-resolved-light:not(.authPage) .widgetCalendarDayCell.is-today {
-  border-color: var(--altara-accent-border);
-  background: var(--altara-accent);
-  color: #181512 !important;
+  border-color: color-mix(in srgb, var(--altara-accent) 38%, var(--altara-border));
+  background: color-mix(in srgb, var(--altara-surface-elevated) 76%, var(--altara-accent) 16%);
+  color: var(--altara-accent-strong) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--altara-accent) 10%, transparent);
 }
 
 body.theme-resolved-light:not(.authPage) .modalTitle,
@@ -33678,9 +34937,9 @@ body:not(.authPage) #dmMain .dmProfilePanel__title {
 }
 
 body:not(.authPage) #dmMain .dmProfilePanel__banner {
-  aspect-ratio: auto;
-  min-height: 86px;
-  height: 86px;
+  aspect-ratio: var(--altara-profile-banner-ratio);
+  min-height: 0;
+  height: auto;
   background:
     radial-gradient(230px 110px at 12% 0%, color-mix(in srgb, var(--altara-accent, #e8cfae) 24%, transparent), transparent 70%),
     radial-gradient(220px 120px at 100% 0%, rgba(255, 255, 255, 0.06), transparent 66%),
@@ -33899,9 +35158,10 @@ body:not(.authPage) #dmMain .dmProfilePanel__top {
 }
 
 body:not(.authPage) #dmMain .dmProfilePanel__banner {
-  flex: 0 0 80px;
-  min-height: 80px;
-  height: 80px;
+  flex: 0 0 auto;
+  aspect-ratio: var(--altara-profile-banner-ratio);
+  min-height: 0;
+  height: auto;
 }
 
 body:not(.authPage) #dmMain .dmProfileAvatar {
@@ -42407,6 +43667,22 @@ body.appearance-theme-solid-bg:not(.authPage) :is(
   gap: 12px;
 }
 
+.settingsConnectionsStatusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 28px;
+}
+
+.settingsConnectionsStatusRow #settingsConnectionsStatus {
+  min-width: 0;
+}
+
+.settingsConnectionsStatusClear {
+  flex: 0 0 auto;
+}
+
 .settingsConnectionCard {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -42431,6 +43707,11 @@ body.appearance-theme-solid-bg:not(.authPage) :is(
 
 .settingsConnectionCard__icon[data-provider="steam"] {
   background: linear-gradient(145deg, #1b66a7, #0b1f35);
+  color: #fff;
+}
+
+.settingsConnectionCard__icon[data-provider="youtube"] {
+  background: linear-gradient(145deg, #ff0033, #7a0018);
   color: #fff;
 }
 
@@ -45350,5 +46631,3576 @@ body:not(.authPage) .panel.left:has(.leftDockDms.is-server-context) #meProfileCa
 
   body:not(.authPage) .panel.left:has(.leftDockDms.is-server-context) .leftDock {
     display: contents !important;
+  }
+}
+
+
+/* ALTARA Profile Widget Layout System */
+.profileWidgetShell {
+  --profile-widget-gap: 12px;
+  --profile-widget-row: 154px;
+  --profile-widget-radius: 22px;
+  min-width: 0;
+}
+
+.profileWidgetTopBar {
+  align-items: center;
+}
+
+.profileWidgetGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: var(--profile-widget-row);
+  grid-auto-flow: dense;
+  gap: var(--profile-widget-gap);
+  align-items: stretch;
+  min-width: 0;
+  min-height: var(--profile-widget-row);
+  contain: layout paint;
+}
+
+.profileWidgetCard {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.095) !important;
+  border-radius: var(--profile-widget-radius) !important;
+  background:
+    radial-gradient(120% 100% at 18% 0%, rgba(255, 255, 255, 0.12), transparent 46%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.022)),
+    color-mix(in srgb, var(--altara-surface, #181818) 86%, #2b2b2b 14%) !important;
+  color: var(--altara-text, #f2f0ec) !important;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  transform: translateZ(0);
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 150ms ease !important;
+  will-change: transform;
+}
+
+.profileWidgetCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 42%, rgba(0, 0, 0, 0.12));
+}
+
+.profileWidgetCard:hover,
+.profileWidgetCard:focus-within {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 34%, rgba(255, 255, 255, 0.12)) !important;
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.32),
+    0 0 0 1px color-mix(in srgb, var(--altara-accent, #e8cfae) 16%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  transform: translateY(-2px) translateZ(0);
+}
+
+.profileWidgetCard--small { grid-column: span 1; grid-row: span 1; }
+.profileWidgetCard--medium { grid-column: span 2; grid-row: span 1; }
+.profileWidgetCard--large { grid-column: span 2; grid-row: span 2; }
+
+.profileWidgetCard__media {
+  z-index: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 22% 14%, rgba(232, 207, 174, 0.18), transparent 36%),
+    linear-gradient(135deg, #252525, #111);
+}
+
+.profileWidgetCard__media img,
+.profileWidgetMiniItem__media img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.profileWidgetMediaFallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: rgba(242, 240, 236, 0.86);
+  font-size: 30px;
+  font-weight: 780;
+}
+
+.profileWidgetCard__content {
+  z-index: 2;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  padding: 13px;
+}
+
+.profileWidgetCard__titleBlock {
+  min-width: 0;
+  padding-right: 112px;
+}
+
+.profileWidgetCard__title {
+  min-width: 0;
+  color: rgba(242, 240, 236, 0.95) !important;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.profileWidgetCard__badges {
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.profileWidgetCard__badges .userCardWidgetBadge,
+.profileWidgetSizeBadge {
+  min-height: 21px;
+  padding: 3px 7px;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  color: rgba(242, 240, 236, 0.62) !important;
+  font-size: 10px;
+  font-weight: 640;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.profileWidgetPrimary {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.profileWidgetPrimary__label {
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 84%, white 8%);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profileWidgetPrimary__title {
+  min-width: 0;
+  color: rgba(242, 240, 236, 0.9);
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 1.24;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileWidgetPrimary__note {
+  color: rgba(242, 240, 236, 0.58);
+  font-size: 12px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.profileWidgetMiniItems {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  align-content: start;
+}
+
+.profileWidgetMiniItem {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.profileWidgetMiniItem__media {
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(242, 240, 236, 0.72);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.profileWidgetMiniItem__body {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.profileWidgetMiniItem__title,
+.profileWidgetMiniItem__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileWidgetMiniItem__title {
+  color: rgba(242, 240, 236, 0.86);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.profileWidgetMiniItem__meta,
+.profileWidgetEmptyState {
+  color: rgba(242, 240, 236, 0.5);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.profileWidgetEmptyState {
+  padding: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.026);
+}
+
+.profileWidgetCard--small {
+  grid-template-rows: 1fr;
+}
+
+.profileWidgetCard--small .profileWidgetCard__media {
+  position: absolute;
+  inset: 0;
+}
+
+.profileWidgetCard--small .profileWidgetCard__content {
+  align-content: end;
+  padding: 12px;
+  background: linear-gradient(180deg, transparent 28%, rgba(0, 0, 0, 0.58));
+}
+
+.profileWidgetCard--small .profileWidgetCard__titleBlock {
+  padding-right: 0;
+}
+
+.profileWidgetCard--small .profileWidgetCard__title {
+  font-size: 13px;
+  line-height: 1.15;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+.profileWidgetCard--small .profileWidgetPrimary,
+.profileWidgetCard--small .profileWidgetMiniItems,
+.profileWidgetCard--small .profileWidgetEmptyState {
+  display: none;
+}
+
+.profileWidgetCard--medium {
+  grid-template-columns: minmax(118px, 0.78fr) minmax(0, 1.22fr);
+}
+
+.profileWidgetCard--medium .profileWidgetCard__media {
+  height: 100%;
+}
+
+.profileWidgetCard--large {
+  grid-template-rows: minmax(0, 1.12fr) minmax(0, 0.88fr);
+}
+
+.profileWidgetCard--large .profileWidgetCard__media {
+  min-height: 0;
+}
+
+.profileWidgetCard--large .profileWidgetCard__content {
+  align-content: start;
+  overflow: hidden;
+}
+
+.profileWidgetCard--large .profileWidgetCard__title {
+  font-size: 18px;
+}
+
+.profileWidgetCard--large .profileWidgetMiniItems {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.profileWidgetCard--type-timer,
+.widgetCard--timer {
+  --timer-surface: var(--altara-surface, #181818);
+  --timer-surface-elevated: var(--altara-surface-elevated, #202020);
+  --timer-border: var(--altara-border, rgba(255, 255, 255, 0.12));
+  --timer-text: var(--altara-text, #f2f0ec);
+  --timer-text-soft: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
+  --timer-text-muted: var(--altara-text-muted, rgba(242, 240, 236, 0.52));
+  --timer-accent: var(--altara-accent, #e8cfae);
+  --timer-accent-strong: var(--altara-accent-strong, #f1d9ba);
+  --timer-break: #9fc9bd;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: visible !important;
+}
+
+.widgetCard--timer {
+  padding: 0;
+  align-content: stretch;
+  min-height: 0;
+}
+
+.widgetCard--timer .widgetCard__tools,
+.widgetCard--timer .widgetResizeHandle {
+  z-index: 8;
+}
+
+.profileTimerWidget {
+  color: var(--timer-text);
+  background:
+    radial-gradient(120% 94% at 18% -8%, color-mix(in srgb, var(--timer-accent) 16%, transparent), transparent 50%),
+    linear-gradient(180deg, color-mix(in srgb, var(--timer-surface-elevated) 88%, rgba(255, 255, 255, 0.05)), var(--timer-surface)) !important;
+}
+
+.profileTimerWidget[data-profile-timer-phase="break"] {
+  --timer-accent: var(--timer-break);
+  --timer-accent-strong: color-mix(in srgb, var(--timer-break) 78%, var(--timer-text));
+}
+
+.profileTimerInner {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  gap: 8px;
+  padding: 14px;
+  overflow: hidden;
+}
+
+.profileTimerHeader {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.profileTimerHeader > div {
+  min-width: 0;
+}
+
+.profileTimerKicker {
+  min-width: 0;
+  color: var(--timer-text);
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileTimerPhase,
+.profileTimerRound,
+.profileTimerSubline,
+.profileTimerNext {
+  min-width: 0;
+  color: var(--timer-text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileTimerPhase {
+  margin-top: 3px;
+  color: var(--timer-accent-strong);
+  text-transform: uppercase;
+  letter-spacing: 0;
+  font-size: 10px;
+}
+
+.profileTimerRound {
+  flex: 0 0 auto;
+  max-width: 48%;
+  border: 1px solid color-mix(in srgb, var(--timer-accent) 20%, var(--timer-border));
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--timer-surface-elevated) 70%, transparent);
+  color: var(--timer-text-soft);
+}
+
+.profileTimerMain {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  isolation: isolate;
+}
+
+.profileTimerRing {
+  width: min(104px, 58%);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background:
+    conic-gradient(var(--timer-accent-strong) var(--profile-timer-progress, 0%), color-mix(in srgb, var(--timer-border) 62%, transparent) 0),
+    color-mix(in srgb, var(--timer-surface-elevated) 76%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--timer-text) 7%, transparent),
+    0 16px 32px color-mix(in srgb, var(--timer-accent) 10%, transparent);
+  opacity: 0.96;
+}
+
+.profileTimerRing > span {
+  width: calc(100% - 12px);
+  aspect-ratio: 1;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 35% 20%, color-mix(in srgb, var(--timer-text) 8%, transparent), transparent 35%),
+    var(--timer-surface);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--timer-text) 7%, transparent);
+}
+
+.profileTimerTime {
+  position: absolute;
+  z-index: 1;
+  max-width: 92%;
+  color: var(--timer-text);
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 780;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+}
+
+.profileTimerProgress {
+  min-width: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--timer-border) 52%, transparent);
+  overflow: hidden;
+}
+
+.profileTimerProgress > span {
+  display: block;
+  width: var(--profile-timer-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--timer-accent), var(--timer-accent-strong));
+  transition: width 180ms ease;
+}
+
+.profileTimerControls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+}
+
+.profileTimerBtn,
+.profileTimerSettingsSave,
+.profileTimerSettingsCancel,
+.profileTimerSettingsReset,
+.profileTimerSettingsIconBtn {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid color-mix(in srgb, var(--timer-border) 92%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--timer-surface-elevated) 74%, transparent);
+  color: var(--timer-text-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.profileTimerBtn--primary,
+.profileTimerSettingsSave {
+  border-color: color-mix(in srgb, var(--timer-accent) 36%, var(--timer-border));
+  background: color-mix(in srgb, var(--timer-surface-elevated) 74%, var(--timer-accent) 12%);
+  color: var(--timer-text);
+}
+
+.profileTimerBtn:hover,
+.profileTimerBtn:focus-visible,
+.profileTimerSettingsSave:hover,
+.profileTimerSettingsSave:focus-visible,
+.profileTimerSettingsCancel:hover,
+.profileTimerSettingsCancel:focus-visible,
+.profileTimerSettingsReset:hover,
+.profileTimerSettingsReset:focus-visible,
+.profileTimerSettingsIconBtn:hover,
+.profileTimerSettingsIconBtn:focus-visible {
+  border-color: color-mix(in srgb, var(--timer-accent) 46%, var(--timer-border));
+  background: color-mix(in srgb, var(--timer-surface-elevated) 78%, var(--timer-accent) 11%);
+  color: var(--timer-text);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.profileTimerSettingsPortal {
+  --timer-surface: var(--altara-surface, #181818);
+  --timer-surface-elevated: var(--altara-surface-elevated, #202020);
+  --timer-border: var(--altara-border, rgba(255, 255, 255, 0.12));
+  --timer-text: var(--altara-text, #f2f0ec);
+  --timer-text-soft: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
+  --timer-text-muted: var(--altara-text-muted, rgba(242, 240, 236, 0.52));
+  --timer-accent: var(--altara-accent, #e8cfae);
+  --timer-accent-strong: var(--altara-accent-strong, #f1d9ba);
+  position: fixed;
+  inset: 0;
+  z-index: 2147482500;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  pointer-events: none;
+}
+
+.profileTimerSettingsBackdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.profileTimerSettingsSheet {
+  position: relative;
+  z-index: 1;
+  width: min(390px, calc(100vw - 28px));
+  max-height: min(640px, calc(100vh - 36px));
+  min-width: 0;
+  overflow: auto;
+  pointer-events: auto;
+  display: grid;
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid color-mix(in srgb, var(--timer-accent, var(--altara-accent, #e8cfae)) 18%, var(--timer-border, rgba(255, 255, 255, 0.12)));
+  border-radius: 24px;
+  background:
+    radial-gradient(110% 88% at 18% -10%, color-mix(in srgb, var(--timer-accent, var(--altara-accent, #e8cfae)) 11%, transparent), transparent 48%),
+    color-mix(in srgb, var(--timer-surface-elevated, var(--altara-surface-elevated, #202020)) 94%, #000 6%);
+  color: var(--timer-text, var(--altara-text, #f2f0ec));
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.48);
+}
+
+.profileTimerSettingsSheetHead {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profileTimerSettingsSheetHead > div {
+  min-width: 0;
+}
+
+.profileTimerSettingsEyebrow {
+  margin: 0 0 4px;
+  color: var(--timer-accent-strong, var(--altara-accent-strong, #f1d9ba));
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.profileTimerSettingsSheetTitle {
+  margin: 0;
+  color: var(--timer-text, var(--altara-text, #f2f0ec));
+  font-size: 18px;
+  font-weight: 820;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.profileTimerSettingsIconBtn {
+  width: 34px;
+  flex: 0 0 34px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.profileTimerSettingsBody {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.profileTimerSettingsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.profileTimerSettingsRow,
+.profileTimerToggleRow {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: var(--timer-text-muted, var(--altara-text-muted, rgba(242, 240, 236, 0.52)));
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.profileTimerSettingsRow em {
+  color: var(--timer-text-muted, var(--altara-text-muted, rgba(242, 240, 236, 0.52)));
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 620;
+}
+
+.profileTimerToggleRow {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 30px;
+}
+
+.profileTimerSelect,
+.profileTimerNumberInput {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid color-mix(in srgb, var(--timer-border) 88%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--timer-surface) 74%, transparent);
+  color: var(--timer-text);
+  padding: 0 9px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.profileTimerSelect:focus,
+.profileTimerNumberInput:focus {
+  border-color: color-mix(in srgb, var(--timer-accent) 42%, var(--timer-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--timer-accent) 12%, transparent);
+}
+
+.profileTimerToggleRow input {
+  accent-color: var(--timer-accent);
+}
+
+.profileTimerSettingsSheetActions {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.profileTimerSettingsCancel,
+.profileTimerSettingsReset {
+  color: var(--timer-text-soft, var(--altara-text-soft, rgba(242, 240, 236, 0.72)));
+  background: color-mix(in srgb, var(--timer-surface, var(--altara-surface, #181818)) 72%, transparent);
+}
+
+.profileTimerSettingsReset {
+  padding-inline: 10px;
+}
+
+.profileTimerWidget--small .profileTimerInner {
+  padding: 11px;
+  gap: 7px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.profileTimerWidget--small .profileTimerHeader {
+  display: grid;
+}
+
+.profileTimerWidget--small .profileTimerKicker {
+  font-size: 12px;
+}
+
+.profileTimerWidget--small .profileTimerPhase {
+  font-size: 9px;
+}
+
+.profileTimerWidget--small .profileTimerRing {
+  width: min(74px, 78%);
+}
+
+.profileTimerWidget--small .profileTimerTime {
+  font-size: 21px;
+}
+
+.profileTimerWidget--small .profileTimerControls {
+  justify-content: center;
+}
+
+.profileTimerWidget--small .profileTimerBtn {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.profileTimerWidget--medium .profileTimerInner {
+  grid-template-columns: minmax(0, 1fr) 96px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  column-gap: 12px;
+  row-gap: 8px;
+  padding: 13px;
+}
+
+.profileTimerWidget--medium .profileTimerHeader,
+.profileTimerWidget--medium .profileTimerSubline,
+.profileTimerWidget--medium .profileTimerProgress,
+.profileTimerWidget--medium .profileTimerControls {
+  grid-column: 1;
+}
+
+.profileTimerWidget--medium .profileTimerMain {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  width: 96px;
+  min-height: 0;
+  align-self: stretch;
+}
+
+.profileTimerWidget--medium .profileTimerRing {
+  width: 84px;
+}
+
+.profileTimerWidget--medium .profileTimerTime {
+  font-size: 24px;
+}
+
+.profileTimerWidget--medium .profileTimerRound {
+  display: none;
+}
+
+.profileTimerWidget--medium .profileTimerControls {
+  gap: 6px;
+}
+
+.profileTimerWidget--medium .profileTimerBtn {
+  height: 30px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.profileTimerWidget--large .profileTimerInner {
+  padding: 16px;
+  gap: 10px;
+  grid-template-rows: auto minmax(124px, 1fr) auto auto auto;
+}
+
+.profileTimerWidget--large .profileTimerHeader {
+  align-items: center;
+}
+
+.profileTimerWidget--large .profileTimerMain {
+  min-height: 124px;
+}
+
+.profileTimerWidget--large .profileTimerRing {
+  width: min(168px, 62%);
+}
+
+.profileTimerWidget--large .profileTimerTime {
+  font-size: 48px;
+}
+
+.profileTimerWidget--large .profileTimerControls {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+@media (max-width: 520px) {
+  .profileTimerSettingsPortal {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .profileTimerSettingsSheet {
+    width: 100%;
+    max-height: min(620px, calc(100vh - 24px));
+    border-radius: 22px;
+  }
+
+  .profileTimerSettingsSheetActions {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .profileTimerSettingsReset {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+.profileWidgetGalleryTypePreview--timer {
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--altara-surface, #181818) 86%, transparent) 0 34%, transparent 35%),
+    conic-gradient(color-mix(in srgb, var(--altara-accent, #e8cfae) 74%, white 8%) 0 72%, rgba(255, 255, 255, 0.08) 0),
+    linear-gradient(135deg, rgba(232, 207, 174, 0.2), rgba(255, 255, 255, 0.04));
+}
+
+.profileTimerToast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 2147483200;
+  transform: translate(-50%, 10px);
+  opacity: 0;
+  pointer-events: none;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 24%, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 92%, #000 8%);
+  color: var(--altara-text, #f2f0ec);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.36);
+  transition: opacity 170ms ease, transform 170ms ease;
+}
+
+.profileTimerToast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.connectionOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482600;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  opacity: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, rgba(0, 0, 0, 0.72) 82%, transparent);
+  transition: opacity 180ms ease;
+}
+
+.connectionOverlay.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.connectionOverlayCard {
+  width: min(390px, calc(100vw - 32px));
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 26px 24px 22px;
+  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 20%, rgba(255, 255, 255, 0.12));
+  border-radius: 28px;
+  background:
+    radial-gradient(110% 80% at 50% -20%, color-mix(in srgb, var(--altara-accent, #e8cfae) 14%, transparent), transparent 58%),
+    color-mix(in srgb, var(--altara-surface-elevated, #202020) 94%, #000 6%);
+  color: var(--altara-text, #f2f0ec);
+  text-align: center;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.52);
+}
+
+.connectionOverlayMark {
+  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
+  font-size: 11px;
+  font-weight: 820;
+  letter-spacing: 0;
+}
+
+.connectionOverlaySpinner {
+  width: 42px;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.12)) 80%, transparent);
+  border-top-color: var(--altara-accent, #e8cfae);
+  animation: connectionSpin 920ms linear infinite;
+}
+
+.connectionOverlayCard h2 {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 820;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.connectionOverlayCard p {
+  margin: 0;
+  max-width: 30ch;
+  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1.42;
+}
+
+.connectionOverlayMeta {
+  min-height: 18px;
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.52));
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.connectionRetryButton {
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 36%, var(--altara-border, rgba(255, 255, 255, 0.12)));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 78%, var(--altara-accent, #e8cfae) 12%);
+  color: var(--altara-text, #f2f0ec);
+  font-size: 12px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.connectionStatusBanner {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  z-index: 2147482400;
+  transform: translate(-50%, -10px);
+  opacity: 0;
+  pointer-events: none;
+  max-width: min(460px, calc(100vw - 28px));
+  padding: 9px 14px;
+  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 18%, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 90%, #000 10%);
+  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
+  font-size: 12px;
+  font-weight: 720;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.34);
+  transition: opacity 170ms ease, transform 170ms ease;
+}
+
+.connectionStatusBanner.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.connectionToast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 2147482550;
+  transform: translate(-50%, 10px);
+  opacity: 0;
+  pointer-events: none;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 18%, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 92%, #000 8%);
+  color: var(--altara-text, #f2f0ec);
+  font-size: 12px;
+  font-weight: 720;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.36);
+  transition: opacity 170ms ease, transform 170ms ease;
+}
+
+.connectionToast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+body.connection-is-offline :is(#dmSend, #btnAttach, #btnSendRequest, #btnCreateServer, #btnCall, #btnAnswer, #btnShareScreen, #btnCamera) {
+  cursor: not-allowed;
+}
+
+@keyframes connectionSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connectionOverlay,
+  .connectionStatusBanner,
+  .connectionToast {
+    transition: none;
+  }
+
+  .connectionOverlaySpinner {
+    animation: none;
+  }
+}
+
+.profileWidgetCard__controls {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  max-width: calc(100% - 18px);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.profileWidgetCard.is-editable:hover .profileWidgetCard__controls,
+.profileWidgetCard.is-editable:focus-within .profileWidgetCard__controls,
+.profileWidgetGrid.is-profile-widget-dragging .profileWidgetCard__controls {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.profileWidgetIconBtn,
+.profileWidgetSizePill {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 10px !important;
+  background: rgba(18, 18, 18, 0.74) !important;
+  color: rgba(242, 240, 236, 0.86) !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(12px);
+}
+
+.profileWidgetIconBtn {
+  width: 28px;
+  padding: 0;
+}
+
+.profileWidgetDragHandle {
+  cursor: grab;
+  font-family: var(--font-mono);
+  letter-spacing: -0.08em;
+}
+
+.profileWidgetDragHandle:active {
+  cursor: grabbing;
+}
+
+.profileWidgetIconBtn:hover,
+.profileWidgetIconBtn:focus-visible,
+.profileWidgetSizePill:hover,
+.profileWidgetSizePill:focus-visible,
+.profileWidgetResizeMenu[open] > .profileWidgetSizePill {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 42%, rgba(255, 255, 255, 0.12)) !important;
+  background: rgba(32, 32, 32, 0.9) !important;
+  color: rgba(242, 240, 236, 0.96) !important;
+  outline: none;
+}
+
+.profileWidgetResizeMenu,
+.profileWidgetOptionsMenu {
+  position: relative;
+}
+
+.profileWidgetResizeMenu > summary,
+.profileWidgetOptionsMenu > summary {
+  list-style: none;
+}
+
+.profileWidgetResizeMenu > summary::-webkit-details-marker,
+.profileWidgetOptionsMenu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.profileWidgetResizeMenu__list {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 220;
+  min-width: 124px;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 94%, #000 6%);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.34);
+}
+
+.profileWidgetResizeOption {
+  width: 100%;
+  min-height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(242, 240, 236, 0.76);
+  padding: 7px 9px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.profileWidgetResizeOption:hover,
+.profileWidgetResizeOption:focus-visible,
+.profileWidgetResizeOption.is-active {
+  outline: none;
+  background: color-mix(in srgb, var(--altara-surface, #181818) 88%, var(--altara-accent, #e8cfae) 12%);
+  color: var(--altara-text, #f2f0ec);
+}
+
+.profileWidgetResizeOption:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  background: transparent;
+}
+
+.profileWidgetMenuDivider {
+  height: 1px;
+  margin: 4px 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.profileWidgetDropPlaceholder {
+  border: 1px dashed color-mix(in srgb, var(--altara-accent, #e8cfae) 54%, rgba(255, 255, 255, 0.18)) !important;
+  background:
+    linear-gradient(180deg, rgba(232, 207, 174, 0.09), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.018) !important;
+  box-shadow: inset 0 0 0 1px rgba(232, 207, 174, 0.12) !important;
+}
+
+.profileWidgetDropPlaceholder::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border-radius: 16px;
+  border: 1px dashed rgba(232, 207, 174, 0.3);
+}
+
+.profileWidgetDragGhost {
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  z-index: 10020;
+  pointer-events: none;
+  opacity: 0.94;
+  filter: drop-shadow(0 24px 42px rgba(0, 0, 0, 0.36));
+  transform-origin: top left;
+}
+
+.profileWidgetGrid.is-profile-widget-dragging .profileWidgetCard:not(.profileWidgetDropPlaceholder) {
+  opacity: 0.72;
+}
+
+body.is-profile-widget-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+@media (max-width: 900px) {
+  .profileWidgetShell {
+    --profile-widget-row: 142px;
+  }
+  .profileWidgetGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .profileWidgetCard--medium,
+  .profileWidgetCard--large {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 560px) {
+  .profileWidgetShell {
+    --profile-widget-row: 132px;
+  }
+  .profileWidgetGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .profileWidgetCard--medium,
+  .profileWidgetCard--large {
+    grid-column: span 2;
+  }
+  .profileWidgetCard--medium {
+    grid-template-columns: minmax(96px, 0.82fr) minmax(0, 1.18fr);
+  }
+  .profileWidgetCard__titleBlock {
+    padding-right: 0;
+  }
+  .profileWidgetCard__controls {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 390px) {
+  .profileWidgetGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profileWidgetCard--small,
+  .profileWidgetCard--medium,
+  .profileWidgetCard--large {
+    grid-column: span 1;
+  }
+  .profileWidgetCard--large {
+    grid-row: span 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profileWidgetCard,
+  .profileWidgetCard__controls,
+  .profileWidgetIconBtn,
+  .profileWidgetSizePill,
+  .profileWidgetDragGhost {
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+
+body:not(.authPage) #userCardModal .profileWidgetGrid {
+  display: grid !important;
+}
+
+body:not(.authPage) #userCardModal .profileWidgetCard {
+  padding: 0 !important;
+  gap: 0 !important;
+  border-color: rgba(255, 255, 255, 0.095) !important;
+  background:
+    radial-gradient(120% 100% at 18% 0%, rgba(255, 255, 255, 0.12), transparent 46%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.022)),
+    color-mix(in srgb, var(--altara-surface, #181818) 86%, #2b2b2b 14%) !important;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+body:not(.authPage) #userCardModal .profileWidgetCard:hover,
+body:not(.authPage) #userCardModal .profileWidgetCard:focus-within {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 34%, rgba(255, 255, 255, 0.12)) !important;
+  background:
+    radial-gradient(120% 100% at 18% 0%, rgba(255, 255, 255, 0.14), transparent 46%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.082), rgba(255, 255, 255, 0.028)),
+    color-mix(in srgb, var(--altara-surface, #181818) 82%, var(--altara-accent, #e8cfae) 8%) !important;
+  transform: translateY(-2px) translateZ(0) !important;
+}
+
+body:not(.authPage) #userCardModal .profileWidgetMiniItem,
+body:not(.authPage) #userCardModal .profileWidgetEmptyState {
+  background: rgba(255, 255, 255, 0.035) !important;
+  border-color: rgba(255, 255, 255, 0.065) !important;
+}
+
+/* ALTARA Profile Widget Drag Polish */
+.profileWidgetGrid {
+  grid-auto-flow: row;
+  overflow: visible;
+  padding: 2px;
+}
+
+.profileWidgetCard {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.profileWidgetCard.is-profile-widget-layout-animating {
+  pointer-events: none;
+}
+
+.profileWidgetDropPlaceholder {
+  opacity: 1 !important;
+  overflow: hidden !important;
+  border: 1px dashed color-mix(in srgb, var(--altara-accent, #e8cfae) 48%, rgba(255, 255, 255, 0.22)) !important;
+  background:
+    radial-gradient(120% 100% at 18% 0%, rgba(232, 207, 174, 0.12), transparent 48%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.022) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 0 1px rgba(232, 207, 174, 0.08) !important;
+  backdrop-filter: blur(14px) saturate(118%);
+  -webkit-backdrop-filter: blur(14px) saturate(118%);
+}
+
+.profileWidgetDropPlaceholder::before {
+  inset: 11px;
+  border-radius: calc(var(--profile-widget-radius) - 8px);
+  border-color: rgba(232, 207, 174, 0.28);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.profileWidgetDropPlaceholder::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 58%);
+}
+
+.profileWidgetDragGhost {
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  z-index: 2147483000;
+  pointer-events: none !important;
+  opacity: 0.985;
+  overflow: hidden !important;
+  transform-origin: top left;
+  will-change: transform;
+  contain: paint;
+  filter:
+    brightness(1.055)
+    saturate(1.04)
+    drop-shadow(0 30px 54px rgba(0, 0, 0, 0.44))
+    drop-shadow(0 10px 22px rgba(0, 0, 0, 0.26));
+}
+
+.profileWidgetDragGhost .profileWidgetCard__controls,
+.profileWidgetDragGhost .profileWidgetResizeMenu__list,
+.profileWidgetDragGhost .profileWidgetOptionsMenu__list,
+.profileWidgetDragGhost [data-profile-widget-inline-search] {
+  display: none !important;
+}
+
+.profileWidgetDragGhost::after {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 44%, rgba(0, 0, 0, 0.08)),
+    radial-gradient(110% 86% at 16% 0%, rgba(255, 255, 255, 0.12), transparent 52%);
+}
+
+.profileWidgetGrid.is-profile-widget-dragging .profileWidgetCard:not(.profileWidgetDropPlaceholder) {
+  opacity: 0.82;
+}
+
+.profileWidgetGrid.is-profile-widget-dragging .profileWidgetCard:not(.profileWidgetDropPlaceholder):hover,
+.profileWidgetGrid.is-profile-widget-dragging .profileWidgetCard:not(.profileWidgetDropPlaceholder):focus-within {
+  transform: translateZ(0) !important;
+}
+
+.profileWidgetGrid.is-profile-widget-dragging .profileWidgetCard__controls {
+  opacity: 0 !important;
+  pointer-events: none;
+  transform: translateY(-4px) !important;
+}
+
+.profileWidgetCard.is-profile-widget-drop-reveal {
+  animation: profileWidgetDropReveal 190ms cubic-bezier(0.2, 0.86, 0.2, 1);
+}
+
+@keyframes profileWidgetDropReveal {
+  from {
+    opacity: 0.68;
+    transform: scale(0.985) translateZ(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateZ(0);
+  }
+}
+
+body.is-profile-widget-dragging,
+body.is-profile-widget-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+body:not(.is-altara-widgets-debug) .widgetsDropGhost::after {
+  content: "";
+  display: none !important;
+}
+
+/* ALTARA Profile Widget 2D Grid Placement */
+.profileWidgetGrid[data-layout-mode="xy"] {
+  position: relative;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: row;
+  overflow: visible;
+  background: transparent;
+}
+
+.profileWidgetGrid[data-layout-mode="xy"] .profileWidgetCard {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profileWidgetGrid[data-layout-mode="xy"] .profileWidgetDropPlaceholder {
+  color: transparent !important;
+  outline: 0 !important;
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 32%, rgba(255, 255, 255, 0.08)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 0 0 1px rgba(232, 207, 174, 0.055) !important;
+}
+
+.profileWidgetGrid[data-layout-mode="xy"] .profileWidgetDropPlaceholder > * {
+  display: none !important;
+}
+
+.profileWidgetGrid[data-layout-mode="xy"] .profileWidgetDropPlaceholder::before {
+  border-color: rgba(232, 207, 174, 0.2);
+}
+
+.profileWidgetGrid[data-layout-mode="xy"] .profileWidgetDropPlaceholder::after {
+  content: attr(data-fit-label);
+  inset: auto 12px 12px auto;
+  width: auto;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border: 1px solid rgba(232, 207, 174, 0.16);
+  border-radius: 999px;
+  background: rgba(16, 16, 16, 0.48);
+  color: rgba(242, 240, 236, 0.68);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.profileWidgetGrid[data-layout-mode="xy"] .profileWidgetDropPlaceholder.is-profile-widget-valid-drop {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 44%, rgba(255, 255, 255, 0.08)) !important;
+  box-shadow:
+    0 0 0 1px rgba(232, 207, 174, 0.06),
+    0 14px 38px rgba(232, 207, 174, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+}
+
+.profileWidgetGrid[data-layout-mode="xy"] .profileWidgetDropPlaceholder.is-profile-widget-nearest-drop {
+  border-color: rgba(232, 176, 132, 0.34) !important;
+  background:
+    radial-gradient(120% 100% at 18% 0%, rgba(232, 176, 132, 0.1), transparent 48%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.022)),
+    rgba(255, 255, 255, 0.018) !important;
+}
+
+.profileWidgetDragGhost {
+  border-color: rgba(232, 207, 174, 0.16) !important;
+  box-shadow:
+    0 34px 70px rgba(0, 0, 0, 0.42),
+    0 12px 30px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+body:not(.is-altara-widgets-debug) .widgetsDropGhost {
+  border-color: rgba(232, 207, 174, 0.24);
+  box-shadow:
+    0 18px 40px rgba(7, 11, 22, 0.24),
+    inset 0 0 0 1px rgba(232, 207, 174, 0.08);
+}
+
+.profileWidgetGrid.profileWidgetGrid--sections {
+  display: flex !important;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+  overflow: visible;
+}
+
+.profileWidgetGrid.profileWidgetGrid--sections .profileWidgetCard {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+
+.profileWidgetGrid.profileWidgetGrid--sections .profileWidgetCard--medium,
+.profileWidgetGrid.profileWidgetGrid--sections .profileWidgetCard--large,
+.profileWidgetGrid.profileWidgetGrid--sections .profileWidgetCard--small {
+  grid-column: auto !important;
+  grid-row: auto !important;
+}
+
+.profileWidgetGrid.profileWidgetGrid--sections .profileWidgetResizeMenu,
+.profileWidgetGrid.profileWidgetGrid--sections .profileWidgetDragHandle,
+.profileWidgetGrid.profileWidgetGrid--sections .profileWidgetSizeBadge {
+  display: none !important;
+}
+
+.profileWidgetSectionToolbar {
+  position: static;
+  justify-self: stretch;
+  width: 100%;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.profileWidgetShell.is-edit-mode {
+  padding-bottom: 0;
+}
+
+.profileWidgetShell.is-edit-mode .profileWidgetGrid--sections {
+  border-radius: 16px;
+  background: transparent;
+}
+
+.profileWidgetGalleryLayout--profileOnly {
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.9fr);
+}
+
+.profileWidgetShell--sections.is-edit-mode {
+  padding-bottom: 0 !important;
+}
+
+.profileWidgetShell--sections.is-edit-mode .profileWidgetGrid--sections {
+  border-radius: 16px !important;
+  background: transparent !important;
+}
+
+.profileWidgetShell--sections .profileWidgetSectionToolbar {
+  position: static !important;
+  right: auto !important;
+  bottom: auto !important;
+  justify-self: stretch;
+  width: 100%;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .profileWidgetGrid[data-layout-mode="xy"] .profileWidgetCard--small {
+    grid-column: auto / span 1 !important;
+    grid-row: auto / span 1 !important;
+  }
+  .profileWidgetGrid[data-layout-mode="xy"] .profileWidgetCard--medium {
+    grid-column: auto / span 2 !important;
+    grid-row: auto / span 1 !important;
+  }
+  .profileWidgetGrid[data-layout-mode="xy"] .profileWidgetCard--large {
+    grid-column: auto / span 2 !important;
+    grid-row: auto / span 2 !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .profileWidgetGrid[data-layout-mode="xy"] .profileWidgetCard--small,
+  .profileWidgetGrid[data-layout-mode="xy"] .profileWidgetCard--medium,
+  .profileWidgetGrid[data-layout-mode="xy"] .profileWidgetCard--large {
+    grid-column: auto / span 1 !important;
+  }
+  .profileWidgetGrid[data-layout-mode="xy"] .profileWidgetCard--medium {
+    grid-template-columns: 1fr;
+  }
+  .profileWidgetGrid[data-layout-mode="xy"] .profileWidgetCard--large {
+    grid-row: auto / span 2 !important;
+  }
+}
+
+/* ALTARA Profile Widget Editing Mode */
+.profileWidgetShell {
+  position: relative;
+}
+
+.profileWidgetShell.is-edit-mode {
+  padding-bottom: 74px;
+}
+
+.profileWidgetShell.is-edit-mode .profileWidgetGrid {
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(232, 207, 174, 0.035), transparent 36%),
+    rgba(255, 255, 255, 0.012);
+}
+
+.profileWidgetShell.is-edit-mode .profileWidgetCard {
+  animation: profileWidgetEditBreathe 4.8s ease-in-out infinite;
+}
+
+.profileWidgetShell.is-edit-mode .profileWidgetCard:nth-child(2n) {
+  animation-delay: -1.6s;
+}
+
+.profileWidgetEditToolbar {
+  position: sticky;
+  right: 12px;
+  bottom: 12px;
+  z-index: 80;
+  justify-self: end;
+  width: max-content;
+  max-width: min(100%, 560px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.085), rgba(255, 255, 255, 0.036)),
+    rgba(18, 18, 18, 0.78);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px) saturate(128%);
+  -webkit-backdrop-filter: blur(18px) saturate(128%);
+}
+
+.profileWidgetToolbarBtn {
+  min-height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(242, 240, 236, 0.78);
+  padding: 0 13px;
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.profileWidgetToolbarBtn:hover,
+.profileWidgetToolbarBtn:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(242, 240, 236, 0.94);
+}
+
+.profileWidgetToolbarBtn--primary {
+  background: color-mix(in srgb, var(--altara-accent, #e8cfae) 28%, rgba(255, 255, 255, 0.05));
+  color: rgba(242, 240, 236, 0.96);
+}
+
+.profileWidgetToolbarBtn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+@keyframes profileWidgetEditBreathe {
+  0%, 100% { transform: translateZ(0) rotate(-0.08deg); }
+  50% { transform: translateZ(0) rotate(0.08deg); }
+}
+
+/* ALTARA Profile Widget Gallery */
+.profileWidgetGalleryModal .modal__backdrop {
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.profileWidgetGalleryCard {
+  width: min(860px, calc(100vw - 28px));
+  max-height: min(760px, calc(100vh - 44px));
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background:
+    radial-gradient(circle at 76% -8%, rgba(232, 207, 174, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+    #111;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.46);
+}
+
+.profileWidgetGalleryCard [data-profile-widget-gallery-body] {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  overflow: auto;
+  max-height: inherit;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(232, 207, 174, 0.24) transparent;
+}
+
+.profileWidgetGalleryHero,
+.profileWidgetGalleryActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profileWidgetGalleryEyebrow {
+  color: rgba(232, 207, 174, 0.74);
+  font-size: 10px;
+  font-weight: 780;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profileWidgetGalleryTitle {
+  color: rgba(242, 240, 236, 0.96);
+  font-size: 28px;
+  font-weight: 720;
+  letter-spacing: 0;
+}
+
+.profileWidgetGalleryClose {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.065);
+  color: rgba(242, 240, 236, 0.74);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.profileWidgetGalleryTabs {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.profileWidgetGalleryTab {
+  min-height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(242, 240, 236, 0.58);
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.profileWidgetGalleryTab.is-active {
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(242, 240, 236, 0.94);
+}
+
+.profileWidgetGalleryLayout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.86fr) minmax(0, 1.14fr);
+  gap: 14px;
+}
+
+.profileWidgetGalleryTypes,
+.profileWidgetGalleryDetail {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.profileWidgetGalleryType,
+.profileWidgetGallerySize {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.034);
+  color: rgba(242, 240, 236, 0.78);
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 11px;
+  align-items: center;
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profileWidgetGalleryType.is-selected,
+.profileWidgetGallerySize.is-selected {
+  border-color: rgba(232, 207, 174, 0.28);
+  background: rgba(232, 207, 174, 0.075);
+  color: rgba(242, 240, 236, 0.96);
+}
+
+.profileWidgetGalleryTypePreview {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.22), transparent 32%),
+    linear-gradient(135deg, rgba(232, 207, 174, 0.34), rgba(255, 255, 255, 0.05));
+}
+
+.profileWidgetGalleryTypeTitle,
+.profileWidgetGallerySizeName {
+  display: block;
+  color: rgba(242, 240, 236, 0.94);
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.profileWidgetGalleryTypeText,
+.profileWidgetGallerySizeMeta,
+.profileWidgetGallerySizeReason,
+.profileWidgetGalleryPlacement {
+  color: rgba(242, 240, 236, 0.56);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.profileWidgetGalleryTitleField {
+  display: grid;
+  gap: 7px;
+  color: rgba(242, 240, 236, 0.64);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.profileWidgetGallerySizeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profileWidgetGallerySize {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.profileWidgetGallerySize:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.profileWidgetGallerySizePreview {
+  width: 62px;
+  height: 62px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 4px;
+  padding: 5px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.profileWidgetGallerySizeCell {
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.profileWidgetGallerySizeCell.is-filled {
+  background: color-mix(in srgb, var(--altara-accent, #e8cfae) 52%, rgba(255, 255, 255, 0.12));
+}
+
+.profileWidgetGalleryPlacement {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.profileWidgetGalleryPlacementDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(232, 207, 174, 0.84);
+  box-shadow: 0 0 16px rgba(232, 207, 174, 0.24);
+}
+
+.profileWidgetGalleryPlacement.is-invalid .profileWidgetGalleryPlacementDot {
+  background: rgba(232, 150, 132, 0.84);
+}
+
+@media (max-width: 680px) {
+  .profileWidgetEditToolbar {
+    justify-self: center;
+    right: auto;
+    bottom: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .profileWidgetGalleryLayout {
+    grid-template-columns: 1fr;
+  }
+  .profileWidgetGallerySizeGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profileWidgetShell.is-edit-mode .profileWidgetCard {
+    animation: none !important;
+  }
+}
+
+.profileWidgetShell--sections.is-edit-mode .profileWidgetCard {
+  animation: none !important;
+}
+
+.profileWidgetShell--sections.is-edit-mode .profileWidgetGrid--sections {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Profile Widgets premium polish: profile-only cards, actions, and modals. */
+body:not(.authPage) #userCardWidgetsPanel {
+  --profile-widget-panel-bg: color-mix(in srgb, var(--altara-surface, #181818) 94%, var(--altara-bg, #101010) 6%);
+  --profile-widget-card-bg: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--altara-surface-elevated, #202020) 86%, var(--altara-accent, #e8cfae) 4%),
+    color-mix(in srgb, var(--altara-surface, #181818) 96%, #000 4%)
+  );
+  --profile-widget-card-border: color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 80%, var(--altara-accent, #e8cfae) 20%);
+  --profile-widget-card-border-hover: color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 58%, var(--altara-accent, #e8cfae) 42%);
+  --profile-widget-muted: var(--altara-text-muted, rgba(242, 240, 236, 0.58));
+  --profile-widget-soft: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
+  --profile-widget-pill-bg: color-mix(in srgb, var(--altara-surface-elevated, #202020) 82%, var(--altara-accent, #e8cfae) 5%);
+  min-width: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetsShell {
+  gap: 18px !important;
+  padding: 2px 1px 10px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardPanelIntro {
+  gap: 7px;
+  margin-bottom: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardPanelEyebrow {
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 78%, var(--profile-widget-muted)) !important;
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardPanelTitle {
+  color: var(--altara-text, #f2f0ec) !important;
+  font-size: 24px;
+  font-weight: 790;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardPanelText,
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetsHint {
+  color: var(--profile-widget-muted) !important;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetsTopBar {
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--profile-widget-card-border) 70%, transparent);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--altara-accent, #e8cfae) 9%, transparent), transparent 34%),
+    color-mix(in srgb, var(--profile-widget-panel-bg) 92%, transparent);
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetsGrid {
+  gap: 14px !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetCard {
+  gap: 15px !important;
+  padding: 15px !important;
+  border: 1px solid var(--profile-widget-card-border) !important;
+  border-radius: 20px !important;
+  background: var(--profile-widget-card-bg) !important;
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 5%, transparent) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetCard:hover,
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetCard:focus-within {
+  border-color: var(--profile-widget-card-border-hover) !important;
+  background:
+    radial-gradient(circle at 94% 2%, color-mix(in srgb, var(--altara-accent, #e8cfae) 10%, transparent), transparent 36%),
+    var(--profile-widget-card-bg) !important;
+  box-shadow:
+    0 22px 52px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 6%, transparent) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetTop {
+  align-items: center;
+  gap: 14px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetTitle {
+  color: var(--altara-text, #f2f0ec) !important;
+  font-size: 18px;
+  font-weight: 780;
+  line-height: 1.16;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetMeta,
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemMeta,
+body:not(.authPage) .profileWidgetCatalogResultMeta,
+body:not(.authPage) .profileWidgetInlineResultMeta {
+  gap: 6px;
+  align-items: center;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetBadge,
+body:not(.authPage) .profileWidgetCatalogResult .userCardWidgetBadge,
+body:not(.authPage) .profileWidgetInlineResultBtn .userCardWidgetBadge {
+  min-height: 22px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 76%, var(--altara-accent, #e8cfae) 18%) !important;
+  border-radius: 999px;
+  background: var(--profile-widget-pill-bg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 88%, var(--altara-accent, #e8cfae) 6%)) !important;
+  color: var(--profile-widget-soft, rgba(242, 240, 236, 0.72)) !important;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetBadge[data-status="favorite"] {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 34%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 88%, var(--altara-accent, #e8cfae) 10%) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetBadge[data-status="current"] {
+  border-color: color-mix(in srgb, #8fb8ff 26%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 90%, #8fb8ff 7%) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetBadge[data-status="wishlist"] {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 28%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 91%, var(--altara-accent, #e8cfae) 7%) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetBadge[data-status="completed"] {
+  border-color: color-mix(in srgb, #9fc9bd 26%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 91%, #9fc9bd 7%) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetBadge[data-status="dropped"] {
+  border-color: color-mix(in srgb, var(--altara-danger, #df5266) 28%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 92%, var(--altara-danger, #df5266) 7%) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetHeaderActions {
+  gap: 7px;
+}
+
+body:not(.authPage) :is(
+  #userCardWidgetsPanel .userCardWidgetBtn,
+  #userCardWidgetsPanel .userCardWidgetItemActionBtn,
+  #userCardWidgetsPanel .userCardWidgetMenuTrigger,
+  .profileWidgetModalActions .btn,
+  .profileWidgetCatalogResultActions .userCardWidgetBtn,
+  .profileWidgetInlineFooter .userCardWidgetBtn
+) {
+  min-height: 31px;
+  border-radius: 999px !important;
+  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 82%, var(--altara-accent, #e8cfae) 14%) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 92%, white 3%), var(--altara-surface, #181818)) !important;
+  color: var(--altara-text, #f2f0ec) !important;
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 5%, transparent) !important;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease !important;
+}
+
+body:not(.authPage) :is(
+  #userCardWidgetsPanel .userCardWidgetBtn:hover,
+  #userCardWidgetsPanel .userCardWidgetBtn:focus-visible,
+  #userCardWidgetsPanel .userCardWidgetItemActionBtn:hover,
+  #userCardWidgetsPanel .userCardWidgetItemActionBtn:focus-visible,
+  #userCardWidgetsPanel .userCardWidgetMenuTrigger:hover,
+  #userCardWidgetsPanel .userCardWidgetMenuTrigger:focus-visible,
+  #userCardWidgetsPanel .userCardWidgetMenu[open] > .userCardWidgetMenuTrigger,
+  .profileWidgetModalActions .btn:hover,
+  .profileWidgetModalActions .btn:focus-visible,
+  .profileWidgetCatalogResultActions .userCardWidgetBtn:hover,
+  .profileWidgetCatalogResultActions .userCardWidgetBtn:focus-visible,
+  .profileWidgetInlineFooter .userCardWidgetBtn:hover,
+  .profileWidgetInlineFooter .userCardWidgetBtn:focus-visible
+) {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 42%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 84%, var(--altara-accent, #e8cfae) 12%), var(--altara-surface-elevated, #202020)) !important;
+  color: var(--altara-text, #f2f0ec) !important;
+  transform: translateY(-1px);
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 6%, transparent) !important;
+  outline: none;
+}
+
+body:not(.authPage) :is(
+  #userCardWidgetsPanel .userCardWidgetsTopBar > .userCardWidgetBtn,
+  #userCardWidgetsPanel .userCardWidgetAddBtn,
+  .profileWidgetModalActions .btn.primary,
+  .profileWidgetCatalogResultActions .userCardWidgetBtn
+) {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 48%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-accent, #e8cfae) 96%, white 6%), color-mix(in srgb, var(--altara-accent, #e8cfae) 82%, #000 18%)) !important;
+  color: var(--altara-accent-text, #15120e) !important;
+  box-shadow:
+    0 10px 24px color-mix(in srgb, var(--altara-accent, #e8cfae) 14%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+}
+
+body:not(.authPage) :is(
+  #userCardWidgetsPanel .userCardWidgetsTopBar > .userCardWidgetBtn:hover,
+  #userCardWidgetsPanel .userCardWidgetsTopBar > .userCardWidgetBtn:focus-visible,
+  #userCardWidgetsPanel .userCardWidgetAddBtn:hover,
+  #userCardWidgetsPanel .userCardWidgetAddBtn:focus-visible,
+  .profileWidgetModalActions .btn.primary:hover,
+  .profileWidgetModalActions .btn.primary:focus-visible,
+  .profileWidgetCatalogResultActions .userCardWidgetBtn:hover,
+  .profileWidgetCatalogResultActions .userCardWidgetBtn:focus-visible
+) {
+  border-color: var(--altara-accent-strong, var(--altara-accent, #e8cfae)) !important;
+  background:
+    linear-gradient(180deg, var(--altara-accent-strong, var(--altara-accent, #e8cfae)), color-mix(in srgb, var(--altara-accent, #e8cfae) 88%, #000 12%)) !important;
+  color: var(--altara-accent-text, #15120e) !important;
+}
+
+body:not(.authPage) :is(
+  #userCardWidgetsPanel .userCardWidgetItemActionBtn.is-danger,
+  #userCardWidgetsPanel .userCardWidgetMenuItem.is-danger
+) {
+  color: color-mix(in srgb, var(--altara-danger, #df5266) 80%, var(--altara-text, #f2f0ec) 20%) !important;
+}
+
+body:not(.authPage) :is(
+  #userCardWidgetsPanel .userCardWidgetItemActionBtn.is-danger:hover,
+  #userCardWidgetsPanel .userCardWidgetItemActionBtn.is-danger:focus-visible,
+  #userCardWidgetsPanel .userCardWidgetMenuItem.is-danger:hover,
+  #userCardWidgetsPanel .userCardWidgetMenuItem.is-danger:focus-visible
+) {
+  border-color: color-mix(in srgb, var(--altara-danger, #df5266) 38%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 88%, var(--altara-danger, #df5266) 10%) !important;
+  color: color-mix(in srgb, var(--altara-danger, #df5266) 86%, var(--altara-text, #f2f0ec) 14%) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel :is(.userCardWidgetBtn, .userCardWidgetItemActionBtn, .userCardWidgetMenuItem):disabled {
+  opacity: 0.42 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetMenuTrigger {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 17px;
+  color: var(--profile-widget-soft) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetMenuList {
+  min-width: 164px;
+  padding: 7px;
+  border: 1px solid var(--profile-widget-card-border) !important;
+  border-radius: 16px !important;
+  background:
+    radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--altara-accent, #e8cfae) 8%, transparent), transparent 42%),
+    color-mix(in srgb, var(--altara-surface-elevated, #202020) 92%, #000 8%) !important;
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 5%, transparent) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetMenuItem {
+  min-height: 32px;
+  border-radius: 11px;
+  padding: 8px 10px;
+  color: var(--profile-widget-soft) !important;
+  font-size: 12px;
+  font-weight: 690;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetMenuItem:hover,
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetMenuItem:focus-visible {
+  background: color-mix(in srgb, var(--altara-surface, #181818) 86%, var(--altara-accent, #e8cfae) 10%) !important;
+  color: var(--altara-text, #f2f0ec) !important;
+  outline: none;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemsArea {
+  gap: 13px;
+  padding-right: 6px;
+  padding-bottom: 6px;
+  scrollbar-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 24%, transparent) transparent;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemsArea.is-empty {
+  padding: 14px;
+  border: 1px dashed color-mix(in srgb, var(--profile-widget-card-border) 78%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 44%, transparent);
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemGrid {
+  gap: 12px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItem {
+  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 86%, var(--altara-accent, #e8cfae) 10%) !important;
+  border-radius: 17px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 76%, transparent), var(--altara-surface, #181818)) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 4%, transparent) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItem:hover,
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItem:focus-within {
+  border-color: var(--profile-widget-card-border-hover) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 82%, var(--altara-accent, #e8cfae) 5%), var(--altara-surface, #181818)) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetFeatured {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 34%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background:
+    radial-gradient(circle at 88% -6%, color-mix(in srgb, var(--altara-accent, #e8cfae) 14%, transparent), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 80%, var(--altara-accent, #e8cfae) 7%), var(--altara-surface, #181818)) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemMedia {
+  border-bottom: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 86%, var(--altara-accent, #e8cfae) 10%);
+  background:
+    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--altara-accent, #e8cfae) 16%, transparent), transparent 40%),
+    color-mix(in srgb, var(--altara-surface-elevated, #202020) 88%, #000 12%) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemMedia img {
+  transform: scale(1.001);
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemFallback {
+  color: var(--profile-widget-soft);
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemBody {
+  gap: 8px;
+  padding: 11px 12px 12px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemTitle {
+  color: var(--altara-text, #f2f0ec) !important;
+  font-size: 13.5px;
+  font-weight: 735;
+  line-height: 1.28;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetFeatured .userCardWidgetItemTitle {
+  font-size: 16px;
+  font-weight: 770;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemNote {
+  color: var(--profile-widget-muted) !important;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetStars {
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 86%, white 8%);
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 7px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemActionBtn {
+  flex: 1 1 72px;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetLink {
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 86%, var(--altara-text, #f2f0ec) 14%) !important;
+  font-weight: 720;
+  text-decoration: none;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetLink:hover,
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetLink:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+body:not(.authPage) :is(.profileWidgetInlinePopover, .profileWidgetCatalogSearch) {
+  border: 1px solid var(--profile-widget-card-border, color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 80%, var(--altara-accent, #e8cfae) 20%)) !important;
+  border-radius: 18px !important;
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--altara-accent, #e8cfae) 8%, transparent), transparent 38%),
+    color-mix(in srgb, var(--altara-surface-elevated, #202020) 92%, #000 8%) !important;
+  box-shadow:
+    0 22px 58px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 5%, transparent) !important;
+}
+
+body:not(.authPage) .profileWidgetInlineInput,
+body:not(.authPage) :is(.profileWidgetModalCard, .profileWidgetItemModalCard) .input {
+  min-height: 38px;
+  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 82%, var(--altara-accent, #e8cfae) 12%) !important;
+  border-radius: 13px !important;
+  background: color-mix(in srgb, var(--altara-surface, #181818) 92%, #000 8%) !important;
+  color: var(--altara-text, #f2f0ec) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 4%, transparent) !important;
+}
+
+body:not(.authPage) .profileWidgetInlineInput:focus,
+body:not(.authPage) .profileWidgetInlineInput:focus-visible,
+body:not(.authPage) :is(.profileWidgetModalCard, .profileWidgetItemModalCard) .input:focus,
+body:not(.authPage) :is(.profileWidgetModalCard, .profileWidgetItemModalCard) .input:focus-visible {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 58%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--altara-accent, #e8cfae) 12%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 5%, transparent) !important;
+  outline: none;
+}
+
+body:not(.authPage) :is(.profileWidgetCatalogResult, .profileWidgetInlineResultBtn, .profileWidgetItemReadonlyPreview) {
+  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 82%, var(--altara-accent, #e8cfae) 12%) !important;
+  border-radius: 16px !important;
+  background: color-mix(in srgb, var(--altara-surface, #181818) 92%, var(--altara-accent, #e8cfae) 3%) !important;
+}
+
+body:not(.authPage) :is(.profileWidgetCatalogResult:hover, .profileWidgetInlineResultBtn:hover, .profileWidgetInlineResultBtn:focus-visible) {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 38%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 86%, var(--altara-accent, #e8cfae) 8%) !important;
+}
+
+body:not(.authPage) :is(.profileWidgetCatalogResultMedia, .profileWidgetInlineResultMedia, .profileWidgetItemReadonlyPreviewMedia) {
+  border-color: color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 80%, var(--altara-accent, #e8cfae) 12%) !important;
+  border-radius: 12px !important;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 88%, #000 12%) !important;
+}
+
+body:not(.authPage) .profileWidgetCatalogStatus,
+body:not(.authPage) .profileWidgetInlineStatus,
+body:not(.authPage) .profileWidgetInlineState,
+body:not(.authPage) .profileWidgetCatalogEmpty {
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.58)) !important;
+}
+
+body:not(.authPage) .profileWidgetCatalogStatus.is-error {
+  color: color-mix(in srgb, var(--altara-danger, #df5266) 82%, var(--altara-text, #f2f0ec) 18%) !important;
+}
+
+body:not(.authPage) .profileWidgetCatalogStatus.is-loading {
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 78%, var(--altara-text, #f2f0ec) 12%) !important;
+}
+
+body:not(.authPage) :is(.profileWidgetModalCard, .profileWidgetItemModalCard) {
+  width: min(620px, calc(100vw - 24px));
+  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 76%, var(--altara-accent, #e8cfae) 18%) !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 86% -8%, color-mix(in srgb, var(--altara-accent, #e8cfae) 10%, transparent), transparent 36%),
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 94%, white 2%), color-mix(in srgb, var(--altara-surface, #181818) 96%, #000 4%)) !important;
+  color: var(--altara-text, #f2f0ec) !important;
+  box-shadow:
+    0 28px 86px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 5%, transparent) !important;
+}
+
+body:not(.authPage) :is(.profileWidgetModalCard, .profileWidgetItemModalCard) .modalTop {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 72%, transparent);
+}
+
+body:not(.authPage) :is(.profileWidgetModalCard, .profileWidgetItemModalCard) .modalTitle {
+  color: var(--altara-text, #f2f0ec) !important;
+  font-size: 20px;
+  font-weight: 780;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) :is(.profileWidgetModalBody, .profileWidgetItemModalBody) {
+  gap: 14px;
+  padding: 16px 18px !important;
+  background: transparent !important;
+}
+
+body:not(.authPage) .profileWidgetModalActions {
+  gap: 8px;
+  padding: 0 18px 18px !important;
+  background: transparent !important;
+}
+
+body:not(.authPage) :is(.profileWidgetModalCard, .profileWidgetItemModalCard) .field {
+  gap: 7px;
+}
+
+body:not(.authPage) :is(.profileWidgetModalCard, .profileWidgetItemModalCard) .field > label {
+  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
+  font-size: 12px;
+  font-weight: 720;
+}
+
+body:not(.authPage) .profileWidgetEnabledRow {
+  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 82%, var(--altara-accent, #e8cfae) 12%) !important;
+  border-radius: 16px !important;
+  background: color-mix(in srgb, var(--altara-surface, #181818) 92%, var(--altara-accent, #e8cfae) 4%) !important;
+}
+
+body:not(.authPage) .profileWidgetEnabledRow b {
+  color: var(--altara-text, #f2f0ec) !important;
+}
+
+body:not(.authPage) .profileWidgetEnabledRow small {
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.58)) !important;
+}
+
+@media (max-width: 680px) {
+  body:not(.authPage) #userCardWidgetsPanel .userCardWidgetsTopBar,
+  body:not(.authPage) #userCardWidgetsPanel .userCardWidgetTop {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body:not(.authPage) #userCardWidgetsPanel .userCardWidgetHeaderActions {
+    justify-content: space-between;
+  }
+
+  body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body:not(.authPage) #userCardWidgetsPanel .userCardWidgetItemActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body:not(.authPage) :is(
+    #userCardWidgetsPanel .userCardWidgetCard,
+    #userCardWidgetsPanel .userCardWidgetItem,
+    #userCardWidgetsPanel .userCardWidgetBtn,
+    #userCardWidgetsPanel .userCardWidgetItemActionBtn,
+    #userCardWidgetsPanel .userCardWidgetMenuTrigger,
+    .profileWidgetCatalogResult,
+    .profileWidgetInlineResultBtn,
+    .profileWidgetModalActions .btn
+  ) {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* Compact premium Profile Widgets board */
+body:not(.authPage) #userCardWidgetsPanel {
+  --profile-board-bg: #171717;
+  --profile-board-card: #1d1c1a;
+  --profile-board-card-2: #151515;
+  --profile-board-border: color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 72%, var(--altara-accent, #e8cfae) 18%);
+  --profile-board-border-strong: color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 50%, var(--altara-accent, #e8cfae) 38%);
+  --profile-board-muted: color-mix(in srgb, var(--altara-text, #f2f0ec) 58%, transparent);
+  --profile-board-soft: color-mix(in srgb, var(--altara-text, #f2f0ec) 74%, transparent);
+  --profile-board-accent-soft: color-mix(in srgb, var(--altara-accent, #e8cfae) 13%, transparent);
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetsPanel {
+  gap: 12px !important;
+  padding: 0 1px 8px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 2px 2px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetPanelIntro {
+  gap: 4px;
+  min-width: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetPanelIntro .userCardPanelEyebrow {
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 74%, var(--profile-board-muted)) !important;
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetPanelIntro .userCardPanelTitle {
+  color: var(--altara-text, #f2f0ec) !important;
+  font-size: 21px;
+  font-weight: 780;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetPanelIntro .userCardPanelText {
+  color: var(--profile-board-muted) !important;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetBoard {
+  display: grid;
+  gap: 10px !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard {
+  display: grid;
+  gap: 11px !important;
+  padding: 12px !important;
+  border: 1px solid var(--profile-board-border) !important;
+  border-radius: 16px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--profile-board-card) 96%, var(--altara-accent, #e8cfae) 4%), var(--profile-board-card-2)) !important;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 4%, transparent) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:hover,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:focus-within {
+  border-color: var(--profile-board-border-strong) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--profile-board-card) 92%, var(--altara-accent, #e8cfae) 7%), var(--profile-board-card-2)) !important;
+  box-shadow:
+    0 16px 38px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 5%, transparent) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetTopRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetTitleBlock {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCategoryLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCategoryMark {
+  width: 28px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 36%, var(--altara-border, rgba(255, 255, 255, 0.08)));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--altara-accent, #e8cfae) 11%, transparent);
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 86%, var(--altara-text, #f2f0ec) 14%);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCategoryLabel {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--profile-board-muted);
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetTitle {
+  color: var(--altara-text, #f2f0ec) !important;
+  font-size: 15.5px;
+  font-weight: 760;
+  line-height: 1.18;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMetaPill,
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetBadge.profileWidgetMetaPill {
+  min-height: 19px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 78%, var(--altara-accent, #e8cfae) 14%) !important;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--profile-board-card) 88%, var(--altara-accent, #e8cfae) 5%) !important;
+  color: var(--profile-board-soft) !important;
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: none;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMetaPill[data-status="favorite"] {
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 82%, var(--altara-text, #f2f0ec) 18%) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetAddWidgetBtn,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCapsuleBtn {
+  min-height: 28px !important;
+  padding: 0 10px !important;
+  border-radius: 999px !important;
+  font-size: 11.5px !important;
+  font-weight: 730 !important;
+  white-space: nowrap;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetAddWidgetBtn,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetAddItemBtn {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 44%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--altara-accent, #e8cfae) 92%, white 5%), color-mix(in srgb, var(--altara-accent, #e8cfae) 78%, #000 22%)) !important;
+  color: var(--altara-accent-text, #15120e) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMoreTrigger {
+  width: 28px !important;
+  min-width: 28px !important;
+  height: 28px !important;
+  border-radius: 999px !important;
+  padding: 0 !important;
+  color: var(--profile-board-soft) !important;
+  font-size: 16px !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMoreMenuList {
+  min-width: 152px;
+  border-radius: 14px !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemsArea {
+  display: grid;
+  gap: 9px;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  scrollbar-gutter: auto;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemsArea.is-empty {
+  min-height: 0;
+  padding: 10px 11px;
+  border: 1px dashed color-mix(in srgb, var(--profile-board-border) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--profile-board-card) 72%, transparent);
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetEmptyState,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetEmptyBoard {
+  color: var(--profile-board-muted) !important;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetEmptyBoard {
+  padding: 12px;
+  border: 1px solid var(--profile-board-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--profile-board-card) 82%, transparent);
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetFeaturedSlot {
+  min-width: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 82%, var(--altara-accent, #e8cfae) 10%) !important;
+  border-radius: 13px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--profile-board-card) 90%, var(--altara-accent, #e8cfae) 3%), #141414) !important;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--altara-text, #f2f0ec) 4%, transparent) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: stretch;
+  min-height: 94px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured .profileWidgetItemMedia {
+  width: 74px;
+  height: 100%;
+  min-height: 94px;
+  aspect-ratio: auto;
+  border-right: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 82%, var(--altara-accent, #e8cfae) 10%);
+  border-bottom: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--tile {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--tile .profileWidgetItemMedia {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-bottom: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 82%, var(--altara-accent, #e8cfae) 10%);
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMedia {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 90%, #000 10%) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMedia img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemFallback {
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 82%, var(--altara-text, #f2f0ec) 18%);
+  font-size: 20px;
+  font-weight: 780;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemBody {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 9px 10px 10px !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemTitle {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--altara-text, #f2f0ec) !important;
+  font-size: 12.5px;
+  font-weight: 735;
+  line-height: 1.24;
+  letter-spacing: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured .profileWidgetItemTitle {
+  font-size: 14.5px;
+  font-weight: 770;
+  -webkit-line-clamp: 2;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--tile .profileWidgetItemMeta .profileWidgetMetaPill:nth-child(n+3) {
+  display: none;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemNote {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--profile-board-muted) !important;
+  font-size: 11.5px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--tile .profileWidgetItemNote {
+  -webkit-line-clamp: 1;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetStars {
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 86%, white 6%);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemLink {
+  width: max-content;
+  max-width: 100%;
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 86%, var(--altara-text, #f2f0ec) 14%) !important;
+  font-size: 11.5px;
+  font-weight: 720;
+  text-decoration: none;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 4px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetActionBtn {
+  flex: 0 1 auto;
+  min-height: 24px !important;
+  padding: 0 8px !important;
+  border-radius: 999px !important;
+  color: var(--profile-board-soft) !important;
+  font-size: 10.5px !important;
+  font-weight: 680 !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetActionBtn.is-danger {
+  color: color-mix(in srgb, var(--altara-danger, #df5266) 72%, var(--altara-text, #f2f0ec) 28%) !important;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetShowMoreRow {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 1px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetShowMore {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 86%, var(--altara-text, #f2f0ec) 14%);
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetShowMore:hover,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetShowMore:focus-visible {
+  color: var(--altara-text, #f2f0ec);
+  outline: none;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetShowMore span {
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 74%, var(--altara-accent, #e8cfae) 16%);
+  border-radius: 999px;
+  color: var(--profile-board-muted);
+  padding: 0 6px;
+  font-size: 10px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItem--tile {
+  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-rows: none;
+  min-height: 60px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItem--tile .profileWidgetItemMedia {
+  width: 52px;
+  height: 100%;
+  min-height: 60px;
+  aspect-ratio: auto;
+  border-right: 1px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.08)) 82%, var(--altara-accent, #e8cfae) 10%);
+  border-bottom: 0;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItem--featured {
+  grid-template-columns: 64px minmax(0, 1fr);
+  min-height: 72px;
+}
+
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItem--featured .profileWidgetItemMedia {
+  width: 64px;
+  min-height: 72px;
+}
+
+body:not(.authPage) :is(.profileWidgetModalCard, .profileWidgetItemModalCard) {
+  width: min(560px, calc(100vw - 24px));
+}
+
+body:not(.authPage) .profileWidgetModalBody {
+  gap: 10px !important;
+}
+
+body:not(.authPage) .profileWidgetModalCard .field {
+  gap: 6px;
+}
+
+body:not(.authPage) .profileWidgetModalCard .input {
+  min-height: 36px !important;
+  border-radius: 12px !important;
+}
+
+body:not(.authPage) .profileWidgetEnabledRow {
+  padding: 9px 10px !important;
+  border-radius: 13px !important;
+}
+
+@media (max-width: 720px) {
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetSectionHeader,
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetTopRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetHeaderActions {
+    justify-content: space-between;
+  }
+
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid,
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItem--tile {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 420px) {
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid,
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured .profileWidgetItemMedia {
+    width: 64px;
+  }
+}
+
+/* Shared profile banner proportions. Mini profile preview uses 4:1; every profile banner follows it. */
+:root {
+  --altara-profile-banner-ratio: 4 / 1;
+  --profile-banner-ratio: var(--altara-profile-banner-ratio);
+}
+
+.altaraProfileBanner,
+.addFriendPreviewBanner,
+.dmProfilePanel__banner,
+.meProfilePopout__banner,
+.userCardBanner,
+#profileOverlay .settingsIdentityBanner {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: var(--altara-profile-banner-ratio) !important;
+  height: auto !important;
+  min-height: 0 !important;
+  background-size: cover;
+  background-position: center;
+  border-radius: 0;
+}
+
+.altaraProfileBanner > .profileBannerMedia,
+.addFriendPreviewBanner > .profileBannerMedia,
+.dmProfilePanel__banner > .profileBannerMedia,
+.meProfilePopout__banner > .profileBannerMedia,
+.userCardBanner > .profileBannerMedia,
+#profileOverlay .settingsIdentityBanner > .profileBannerMedia,
+.altaraProfileBanner.has-banner-media img,
+.addFriendPreviewBanner.has-banner-media img,
+.dmProfilePanel__banner.has-banner-media img,
+.meProfilePopout__banner.has-banner-media img,
+.userCardBanner.has-banner-media img,
+#profileOverlay .settingsIdentityBanner.has-banner-media img,
+.altaraProfileBanner.has-media img,
+.addFriendPreviewBanner.has-media img,
+.dmProfilePanel__banner.has-media img,
+.meProfilePopout__banner.has-media img,
+.userCardBanner.has-media img,
+#profileOverlay .settingsIdentityBanner.has-media img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover !important;
+  object-position: center !important;
+  border-radius: inherit;
+}
+
+body:not(.authPage) #dmMain .dmProfilePanel__banner {
+  flex: 0 0 auto !important;
+}
+
+.addFriendPreviewIdentity {
+  margin-top: calc(82px / -2) !important;
+}
+
+.dmProfileAvatar,
+body:not(.authPage) #dmMain .dmProfileAvatar {
+  margin-top: calc(var(--dm-profile-avatar-size, 72px) / -2) !important;
+}
+
+.dmProfileAvatar {
+  --dm-profile-avatar-size: 88px;
+}
+
+body:not(.authPage) #dmMain .dmProfileAvatar {
+  --dm-profile-avatar-size: 72px;
+}
+
+.userCardIdentity {
+  margin-top: calc(var(--user-card-avatar-size, 100px) / -2) !important;
+}
+
+#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardIdentity {
+  --user-card-avatar-size: 82px;
+}
+
+#userCardModal.userCardModal--preview .userCardIdentity {
+  --user-card-avatar-size: 100px;
+}
+
+#profileOverlay.settingsOverlay .settingsAvatarPick {
+  margin-top: calc(var(--settings-profile-avatar-size, 92px) / -2) !important;
+}
+
+.meProfilePopout__profile {
+  margin-top: calc(var(--me-profile-popout-avatar-size, 58px) / -2) !important;
+}
+
+/* Discord-like DM request and privacy settings UI */
+.settingsDirectMessagesCard {
+  border-color: rgba(229, 199, 139, 0.18);
+  background:
+    linear-gradient(145deg, rgba(229, 199, 139, 0.06), rgba(255, 255, 255, 0.02)),
+    rgba(8, 10, 14, 0.64);
+}
+
+.settingsDirectMessagesHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.settingsDirectMessagesGrid {
+  gap: 14px;
+}
+
+.settingsDmPrivacyToggle {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.settingsDirectMessagesCard #btnSettingsDmPrivacySave {
+  margin-top: 14px;
+  min-height: 36px;
+  border-radius: 999px;
+}
+
+.addFriendPreviewMessageHint,
+.pendingReqPreview,
+.dm-request-mutual {
+  color: rgba(235, 226, 209, 0.64);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.addFriendPreviewMessageHint {
+  margin-top: 8px;
+}
+
+.pendingReqPreview {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pendingReqPreview--meta {
+  color: rgba(229, 199, 139, 0.7);
+}
+
+.leftDockDms #dmList .dmListSection--messageRequests {
+  display: grid;
+  gap: 8px;
+}
+
+.leftDockDms #dmList .dm-message-request-item {
+  align-items: flex-start;
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid rgba(229, 199, 139, 0.16);
+  background:
+    linear-gradient(135deg, rgba(229, 199, 139, 0.08), rgba(255, 255, 255, 0.025)),
+    rgba(12, 14, 19, 0.72);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.leftDockDms #dmList .dm-message-request-item--outgoing {
+  min-height: 58px;
+  align-items: center;
+  border-color: rgba(160, 171, 198, 0.18);
+  background:
+    linear-gradient(135deg, rgba(160, 171, 198, 0.07), rgba(255, 255, 255, 0.02)),
+    rgba(12, 14, 19, 0.66);
+}
+
+.leftDockDms #dmList .dm-message-request-item--draft {
+  min-height: 58px;
+  align-items: center;
+  border-color: rgba(229, 199, 139, 0.2);
+  background:
+    linear-gradient(135deg, rgba(229, 199, 139, 0.09), rgba(160, 171, 198, 0.035)),
+    rgba(12, 14, 19, 0.7);
+}
+
+.leftDockDms #dmList .dm-message-request-item .dm-text {
+  min-width: 0;
+}
+
+.leftDockDms #dmList .dm-message-request-item .dm-handle {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.dm-message-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  max-width: 112px;
+  margin-left: auto;
+}
+
+.dm-message-request-actions .smallBtn {
+  min-height: 24px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.dm-message-request-statusChip {
+  margin-left: auto;
+  height: 21px;
+  max-width: 92px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(229, 199, 139, 0.22);
+  background: rgba(229, 199, 139, 0.1);
+  color: rgba(255, 236, 191, 0.88);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.dm-message-request-item--outgoing .dm-message-request-statusChip {
+  border-color: rgba(160, 171, 198, 0.28);
+  background: rgba(160, 171, 198, 0.12);
+  color: rgba(231, 237, 248, 0.82);
+}
+
+.dm-message-request-item--draft .dm-message-request-statusChip {
+  border-color: rgba(229, 199, 139, 0.3);
+  background: rgba(229, 199, 139, 0.12);
+  color: rgba(255, 236, 191, 0.86);
+}
+
+.dmRequestBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 10px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(229, 199, 139, 0.18);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(229, 199, 139, 0.1), rgba(255, 255, 255, 0.035)),
+    rgba(8, 10, 14, 0.78);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.26);
+}
+
+.dmRequestBanner--outgoing {
+  border-color: rgba(160, 171, 198, 0.18);
+  background:
+    linear-gradient(135deg, rgba(160, 171, 198, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(8, 10, 14, 0.78);
+}
+
+.dmRequestBanner.hidden,
+.dmRequestBanner[hidden] {
+  display: none;
+}
+
+.dmRequestBanner__body {
+  min-width: 0;
+}
+
+.dmRequestBanner__title {
+  color: rgba(255, 248, 235, 0.94);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dmRequestBanner__text {
+  margin-top: 3px;
+  color: rgba(235, 226, 209, 0.66);
+  font-size: 12px;
+}
+
+.dmRequestBanner__text--preview {
+  max-width: 440px;
+  color: rgba(235, 226, 209, 0.78);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dmRequestBanner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dmRequestBanner__actions .btn {
+  min-height: 30px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.dmRequestPreview {
+  width: min(520px, calc(100% - 32px));
+  margin: 42px auto 0;
+  padding: 18px;
+  border: 1px solid rgba(229, 199, 139, 0.16);
+  border-radius: 16px;
+  background:
+    linear-gradient(145deg, rgba(229, 199, 139, 0.07), rgba(255, 255, 255, 0.025)),
+    rgba(10, 12, 17, 0.74);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+}
+
+.dmRequestPreview__eyebrow {
+  color: rgba(229, 199, 139, 0.78);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.dmRequestPreview__title {
+  margin-top: 6px;
+  color: rgba(255, 248, 235, 0.95);
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.dmRequestPreview__text {
+  margin-top: 10px;
+  color: rgba(235, 226, 209, 0.82);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.dmRequestPreview__meta {
+  margin-top: 10px;
+  color: rgba(229, 199, 139, 0.72);
+  font-size: 12px;
+}
+
+.dmRequestPreview--outgoing .dmRequestPreview__meta {
+  display: grid;
+  gap: 5px;
+  color: rgba(235, 226, 209, 0.72);
+}
+
+.dmRequestPreview--draft .dmRequestPreview__meta {
+  display: grid;
+  gap: 5px;
+  color: rgba(235, 226, 209, 0.72);
+}
+
+.dmRequestPreview--outgoing .dmRequestPreview__meta span,
+.dmRequestPreview--draft .dmRequestPreview__meta span {
+  color: rgba(229, 199, 139, 0.72);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dmRequestPreview--outgoing .dmRequestPreview__meta strong,
+.dmRequestPreview--draft .dmRequestPreview__meta strong {
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(229, 199, 139, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 248, 235, 0.88);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+@media (max-width: 680px) {
+  .dmRequestBanner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dmRequestBanner__actions {
+    justify-content: flex-start;
+  }
+
+  .dm-message-request-actions {
+    width: 100%;
+    max-width: none;
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+}
+
+html.altara-motion-off .widgetsDropGhost,
+html.altara-motion-off .widgetDragPreview,
+html.altara-motion-off .widgetCard.is-layout-animating {
+  transition: none !important;
+  animation: none !important;
+}
+
+html.altara-motion-off .widgetDragPreview {
+  opacity: 0.94;
+}
+
+/* ALTARA-owned motion runtime. These rules intentionally sit at the end so
+   the in-app motion setting can override OS-level animation preferences. */
+html.altara-motion-on body:not(.authPage) :is(
+  .btn,
+  button,
+  .chip,
+  .settingsNavItem,
+  .appearanceSwitchRow,
+  .dmHeaderIconBtn,
+  .meCtrlBtn,
+  .callMiniBtn,
+  .msg__reaction,
+  .profileWidgetCard__controls,
+  .profileWidgetIconBtn,
+  .userCardWidgetBtn,
+  .userCardWidgetItemActionBtn,
+  .userCardWidgetMenuTrigger,
+  .profileWidgetInlineResultBtn
+) {
+  transition-duration: var(--altara-motion-fast) !important;
+  transition-timing-function: var(--altara-ease-out) !important;
+}
+
+html.altara-motion-on body:not(.authPage) :is(
+  .msgMenu,
+  .callAudioMenu,
+  .callShareMenu,
+  .serverVoiceMemberMenu,
+  .desktopInboxPanel,
+  .userCardWidgetMenuList,
+  .profileWidgetInlinePopover,
+  .dmEmojiShortcodeMenu,
+  #meStatusMenu.meStatusMenu
+) {
+  transition:
+    opacity var(--altara-motion-fast) var(--altara-ease-out),
+    transform var(--altara-motion-fast) var(--altara-ease-snap),
+    border-color var(--altara-motion-fast) var(--altara-ease-out),
+    background-color var(--altara-motion-fast) var(--altara-ease-out),
+    box-shadow var(--altara-motion-fast) var(--altara-ease-out) !important;
+  transform-origin: top left;
+}
+
+html.altara-motion-on body:not(.authPage) :is(
+  .modal:not(.hidden) .modal__card,
+  .modal:not(.hidden) .modalCard,
+  .profileOverlay:not(.hidden) .profileOverlay__card,
+  #userCardModal:not(.hidden) .userCardCard
+) {
+  animation: altaraPopIn var(--altara-motion-med) var(--altara-ease-snap) both;
+}
+
+html.altara-motion-on body:not(.authPage) :is(
+  .connectionToast,
+  .connectionStatusBanner,
+  .dmPrivacyToast,
+  .toast,
+  .tooltip,
+  [role="tooltip"]
+) {
+  transition:
+    opacity var(--altara-motion-fast) var(--altara-ease-out),
+    transform var(--altara-motion-fast) var(--altara-ease-snap),
+    background-color var(--altara-motion-fast) var(--altara-ease-out),
+    border-color var(--altara-motion-fast) var(--altara-ease-out) !important;
+}
+
+html.altara-motion-on body:not(.authPage) :is(.dm-item, .friend-row, .presenceRow):active {
+  transform: scale(var(--altara-motion-scale-pop, .985));
+}
+
+html.altara-motion-on body:not(.authPage) :is(
+  .dm-item,
+  .friend-row,
+  .presenceRow,
+  .serverChannelItem,
+  .widgetCard,
+  .profileWidgetCard,
+  .userCardWidgetCard,
+  .userCardWidgetItem,
+  .profileWidgetCatalogResult,
+  .msg,
+  .messageRow,
+  .sidebarRow,
+  .searchResultRow,
+  .widgetTodoItem,
+  .widgetChecklistToast,
+  .notepadWidget,
+  .timerWidget
+) {
+  animation: none !important;
+}
+
+html.altara-motion-on body:not(.authPage) :is(
+  .dm-item,
+  .friend-row,
+  .presenceRow,
+  .serverChannelItem,
+  .widgetCard:not(.is-layout-animating):not(.is-dragging):not(.is-drop-target),
+  .profileWidgetCard:not(.is-profile-widget-layout-animating):not(.is-profile-widget-drop-reveal),
+  .userCardWidgetCard,
+  .userCardWidgetItem,
+  .profileWidgetCatalogResult,
+  .searchResultRow,
+  .widgetTodoItem
+) {
+  transition-property: background-color, border-color, color, box-shadow !important;
+}
+
+html.altara-motion-on body:not(.authPage) :is(
+  .dm-item:hover,
+  .dm-item:active,
+  .friend-row:hover,
+  .friend-row:active,
+  .presenceRow:hover,
+  .presenceRow:active,
+  .serverChannelItem:hover,
+  .serverChannelItem:active
+) {
+  transition-property: background-color, border-color, color, box-shadow, transform !important;
+}
+
+html.altara-motion-off *,
+html.altara-motion-off *::before,
+html.altara-motion-off *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.altara-motion-on body:not(.authPage) :is(
+    .profileWidgetCard__controls,
+    .profileWidgetIconBtn,
+    .connectionOverlay,
+    .connectionStatusBanner,
+    .connectionToast,
+    .profileWidgetInlineResultBtn,
+    .userCardWidgetBtn,
+    .userCardWidgetItemActionBtn,
+    .userCardWidgetMenuTrigger
+  ) {
+    transition:
+      opacity var(--altara-motion-fast) var(--altara-ease-out),
+      transform var(--altara-motion-fast) var(--altara-ease-snap),
+      background-color var(--altara-motion-fast) var(--altara-ease-out),
+      border-color var(--altara-motion-fast) var(--altara-ease-out),
+      box-shadow var(--altara-motion-fast) var(--altara-ease-out),
+      color var(--altara-motion-fast) var(--altara-ease-out) !important;
+  }
+
+  html.altara-motion-on body.motion-ready:not(.authPage) :is(
+    .msgMenu.is-open,
+    .callAudioMenu.is-open,
+    .callShareMenu.is-open,
+    .serverVoiceMemberMenu,
+    .emojiPicker:not(.hidden)
+  ) {
+    animation: altaraPopupEnter var(--altara-motion-fast) var(--altara-ease-snap) both !important;
+  }
+
+  html.altara-motion-on body.motion-ready:not(.authPage) :is(
+    .modal:not(.hidden) .modal__card,
+    .modal:not(.hidden) .modalCard,
+    .profileOverlay:not(.hidden) .profileOverlay__card,
+    #userCardModal:not(.hidden) .userCardCard
+  ) {
+    animation: altaraPopIn var(--altara-motion-med) var(--altara-ease-snap) both !important;
   }
 }
