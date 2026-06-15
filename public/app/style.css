@@ -20263,6 +20263,42 @@ body::after {
   background: rgba(255, 113, 113, 0.075);
 }
 
+.botAuthorizeErrorDetails {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 113, 113, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 113, 113, 0.055);
+}
+
+.botAuthorizeErrorDetails summary {
+  cursor: pointer;
+  color: rgba(255, 235, 196, 0.96);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.botAuthorizeErrorDetails div {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.botAuthorizeErrorDetails span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.botAuthorizeErrorDetails code {
+  color: rgba(255, 225, 225, 0.98);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .botAuthorizeInvalidId {
   display: grid;
   gap: 6px;
