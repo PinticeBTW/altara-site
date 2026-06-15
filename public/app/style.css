@@ -20044,6 +20044,261 @@ body::after {
   justify-content: flex-end;
 }
 
+.botRouteShell--authorize {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr;
+  place-items: center;
+  padding: 28px 16px;
+  overflow: auto;
+  background:
+    linear-gradient(135deg, rgba(7, 10, 16, 0.96), rgba(21, 18, 28, 0.94) 52%, rgba(16, 23, 30, 0.96)),
+    radial-gradient(circle at top, rgba(218, 190, 130, 0.13), transparent 42%);
+}
+
+.botRouteShell--authorize .botRouteSidebar {
+  display: none;
+}
+
+.botRouteShell--authorize .botRouteMain {
+  width: 100%;
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+}
+
+.botRouteShell--authorize .botRouteRoot {
+  width: min(540px, calc(100vw - 32px));
+  min-height: auto;
+  padding: 0;
+  align-content: center;
+}
+
+.botRouteShell--authorize .botAuthorizeCard {
+  position: relative;
+  width: min(540px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid rgba(218, 190, 130, 0.22);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(26, 28, 34, 0.98), rgba(13, 15, 21, 0.98));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.botAuthorizeClose {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text-soft);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.botAuthorizeClose:hover,
+.botAuthorizeClose:focus-visible {
+  color: var(--text-main);
+  border-color: rgba(218, 190, 130, 0.34);
+  background: rgba(218, 190, 130, 0.1);
+  outline: none;
+}
+
+.botAuthorizeMiniBrand {
+  width: max-content;
+  padding: 4px 8px;
+  border: 1px solid rgba(218, 190, 130, 0.24);
+  border-radius: 999px;
+  color: rgba(239, 219, 176, 0.96);
+  background: rgba(218, 190, 130, 0.08);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.botAuthorizeIdentityRow {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding-top: 8px;
+}
+
+.botAuthorizePerson {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.botAuthorizePerson--bot {
+  border-color: rgba(218, 190, 130, 0.18);
+  background: rgba(218, 190, 130, 0.055);
+}
+
+.botAuthorizePerson span,
+.botAuthorizeTitleBlock,
+.botAuthorizeServerField {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.botAuthorizePerson b,
+.botAuthorizePerson small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.botAuthorizePerson small,
+.botAuthorizeTitleBlock p,
+.botAuthorizeServerField small,
+.botAuthorizeSuccessCopy p,
+.botAuthorizeErrorCard p,
+.botAuthorizeCard--loading p {
+  color: var(--text-soft);
+}
+
+.botAuthorizeConnector {
+  display: flex;
+  gap: 4px;
+}
+
+.botAuthorizeConnector span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(218, 190, 130, 0.58);
+}
+
+.botAuthorizeTitleBlock h2,
+.botAuthorizeSuccessCopy h2,
+.botAuthorizeErrorCard h2,
+.botAuthorizeCard--loading h2 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 24px;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.botAuthorizeTitleBlock p,
+.botAuthorizeSuccessCopy p,
+.botAuthorizeErrorCard p,
+.botAuthorizeCard--loading p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.botAuthorizeNotice {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.botAuthorizeNotice[data-tone="error"] {
+  border-color: rgba(255, 113, 113, 0.34);
+  color: rgba(255, 205, 205, 0.98);
+  background: rgba(255, 113, 113, 0.075);
+}
+
+.botAuthorizePermissionList {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.botAuthorizePermissionList li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  color: rgba(242, 241, 236, 0.96);
+  font-weight: 800;
+}
+
+.botAuthorizeCheck {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(112, 221, 164, 0.34);
+  border-radius: 50%;
+  background: rgba(112, 221, 164, 0.11);
+}
+
+.botAuthorizeCheck::before {
+  content: "";
+  width: 8px;
+  height: 4px;
+  border-left: 2px solid rgba(172, 244, 204, 0.98);
+  border-bottom: 2px solid rgba(172, 244, 204, 0.98);
+  transform: rotate(-45deg) translateY(-1px);
+}
+
+.botAuthorizeServerField > span {
+  color: var(--text-main);
+  font-weight: 900;
+}
+
+.botAuthorizeServerField .input {
+  width: 100%;
+}
+
+.botRouteShell--authorize .botAuthorizeActions {
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.botAuthorizeSuccessCard,
+.botAuthorizeErrorCard,
+.botAuthorizeCard--loading {
+  justify-items: start;
+  text-align: left;
+}
+
+.botAuthorizeSuccessCard .botRouteAppIcon--large {
+  width: 64px;
+  height: 64px;
+}
+
+.botAuthorizeSpinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: rgba(218, 190, 130, 0.9);
+  border-radius: 50%;
+  animation: botAuthorizeSpin 0.9s linear infinite;
+}
+
+@keyframes botAuthorizeSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .serverSettingsBotRow {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -20151,6 +20406,30 @@ body::after {
   .botRouteOverlay .settingsDeveloperCreate textarea,
   .botRouteOverlay .settingsDeveloperFormGrid textarea {
     grid-column: auto;
+  }
+
+  .botRouteShell--authorize {
+    padding: 16px;
+  }
+
+  .botRouteShell--authorize .botRouteRoot,
+  .botRouteShell--authorize .botAuthorizeCard {
+    width: 100%;
+  }
+
+  .botAuthorizeIdentityRow {
+    grid-template-columns: 1fr;
+  }
+
+  .botAuthorizeConnector {
+    justify-content: center;
+  }
+
+  .botAuthorizeTitleBlock h2,
+  .botAuthorizeSuccessCopy h2,
+  .botAuthorizeErrorCard h2,
+  .botAuthorizeCard--loading h2 {
+    font-size: 21px;
   }
 
   .botSlashCommandPicker__item {
