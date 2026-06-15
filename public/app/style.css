@@ -20422,41 +20422,63 @@ body::after {
 .botSlashCommandPicker {
   position: fixed;
   z-index: 9200;
-  width: min(460px, calc(100vw - 24px));
-  max-height: 260px;
-  overflow: auto;
+  width: min(520px, calc(100vw - 16px));
+  max-height: min(340px, calc(100vh - 24px));
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid var(--stroke-strong);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    linear-gradient(180deg, var(--surface-1), var(--ui-shell-bg));
+  box-shadow:
+    var(--shadow-soft),
+    0 22px 60px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(var(--theme-blur, 12px));
+}
+
+.botSlashCommandPicker__title {
+  margin: 2px 4px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.botSlashCommandPicker__list {
   display: grid;
   gap: 4px;
-  padding: 8px;
-  border: 1px solid rgba(124, 212, 255, 0.28);
-  border-radius: 8px;
-  background: rgba(18, 22, 30, 0.98);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
+  max-height: 286px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .botSlashCommandPicker__item {
   min-width: 0;
-  min-height: 40px;
+  min-height: 56px;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(92px, auto);
+  gap: 10px;
   align-items: center;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 8px;
-  background: transparent;
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--ui-row-bg);
   color: var(--text-main);
   text-align: left;
+  cursor: pointer;
 }
 
 .botSlashCommandPicker__avatar {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   overflow: hidden;
   border: 1px solid rgba(218, 190, 130, 0.22);
-  border-radius: 8px;
+  border-radius: 10px;
   background: rgba(218, 190, 130, 0.1);
   color: rgba(239, 219, 176, 0.96);
   font-size: 12px;
@@ -20469,33 +20491,102 @@ body::after {
   object-fit: cover;
 }
 
-.botSlashCommandPicker__item > span {
+.botSlashCommandPicker__body {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 3px;
 }
 
-.botSlashCommandPicker__item em {
-  color: var(--text-soft);
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 800;
+.botSlashCommandPicker__command {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
-.botSlashCommandPicker__item:hover,
-.botSlashCommandPicker__item:focus-visible {
-  border-color: rgba(124, 212, 255, 0.32);
-  background: rgba(124, 212, 255, 0.1);
-  outline: none;
+.botSlashCommandPicker__command b {
+  color: var(--text-main);
+  font-size: 15px;
+  letter-spacing: 0;
 }
 
-.botSlashCommandPicker__item small,
-.botSlashCommandPicker__item em {
+.botSlashCommandPicker__command small,
+.botSlashCommandPicker__desc {
   min-width: 0;
   color: var(--text-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.botSlashCommandPicker__desc {
+  font-size: 12px;
+}
+
+.botSlashCommandPicker__bot {
+  min-width: 0;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.botSlashCommandPicker__bot > span,
+.botSlashCommandPicker__bot em {
+  max-width: 128px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.botSlashCommandPicker__bot i {
+  display: inline-grid;
+  place-items: center;
+  min-height: 16px;
+  padding: 1px 6px;
+  border: 1px solid rgba(232, 207, 174, 0.26);
+  border-radius: 999px;
+  background: rgba(232, 207, 174, 0.1);
+  color: rgba(239, 219, 176, 0.96);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.botSlashCommandPicker__bot em {
+  color: var(--text-muted);
+  font-style: normal;
+}
+
+.botSlashCommandPicker__item:hover,
+.botSlashCommandPicker__item:focus-visible,
+.botSlashCommandPicker__item.is-active {
+  border-color: var(--ui-btn-hover-border);
+  background: var(--ui-btn-hover-bg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  outline: none;
+}
+
+.botCommandComposerNotice {
+  position: fixed;
+  z-index: 9300;
+  padding: 10px 12px;
+  border: 1px solid var(--stroke-strong);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    linear-gradient(180deg, var(--surface-1), var(--ui-shell-bg));
+  box-shadow:
+    var(--shadow-soft),
+    0 16px 44px rgba(0, 0, 0, 0.34);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.35;
+  backdrop-filter: blur(var(--theme-blur, 12px));
 }
 
 @media (max-width: 820px) {
@@ -20567,11 +20658,15 @@ body::after {
   }
 
   .botSlashCommandPicker__item {
-    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-columns: 34px minmax(0, 1fr);
   }
 
-  .botSlashCommandPicker__item em {
+  .botSlashCommandPicker__bot {
     grid-column: 2;
+    justify-items: start;
+    grid-auto-flow: column;
+    align-items: center;
+    justify-content: start;
   }
 }
 
