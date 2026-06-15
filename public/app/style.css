@@ -19890,11 +19890,42 @@ body::after {
   align-items: start;
 }
 
+.botRouteOverlay .settingsDeveloperFormGrid--commands {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
 .botRouteOverlay .settingsDeveloperCreate textarea,
 .botRouteOverlay .settingsDeveloperFormGrid textarea {
   grid-column: 1 / -2;
   min-height: 74px;
   resize: vertical;
+}
+
+.botRouteOverlay .settingsDeveloperWideField,
+.botRouteOverlay .settingsDeveloperFormGrid--commands .settingsDeveloperWideField,
+.botRouteOverlay .settingsDeveloperFormGrid--commands .settingsDeveloperWideField textarea {
+  grid-column: 1 / -1;
+}
+
+.botCommandDesigner .input,
+.botInteractionPanel .input {
+  width: 100%;
+}
+
+.botCommandDesigner textarea.input {
+  min-height: 132px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.botInteractionPanel .settingsDeveloperInviteUrl code {
+  display: block;
+  max-height: 260px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .botRouteOverlay .settingsDeveloperActions,
@@ -20337,7 +20368,7 @@ body::after {
   min-width: 0;
   min-height: 40px;
   display: grid;
-  grid-template-columns: minmax(100px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   border: 1px solid transparent;
@@ -20348,6 +20379,39 @@ body::after {
   text-align: left;
 }
 
+.botSlashCommandPicker__avatar {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(218, 190, 130, 0.22);
+  border-radius: 8px;
+  background: rgba(218, 190, 130, 0.1);
+  color: rgba(239, 219, 176, 0.96);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.botSlashCommandPicker__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.botSlashCommandPicker__item > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.botSlashCommandPicker__item em {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .botSlashCommandPicker__item:hover,
 .botSlashCommandPicker__item:focus-visible {
   border-color: rgba(124, 212, 255, 0.32);
@@ -20356,7 +20420,7 @@ body::after {
 }
 
 .botSlashCommandPicker__item small,
-.botSlashCommandPicker__item span {
+.botSlashCommandPicker__item em {
   min-width: 0;
   color: var(--text-soft);
   overflow: hidden;
@@ -20433,7 +20497,11 @@ body::after {
   }
 
   .botSlashCommandPicker__item {
-    grid-template-columns: 1fr;
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .botSlashCommandPicker__item em {
+    grid-column: 2;
   }
 }
 
