@@ -50,6 +50,14 @@
   --left-sidebar-width: calc(var(--left-rail-column-width, 82px) + var(--friends-sidebar-width, 308px));
   --right-sidebar-width: 320px;
   --dm-stage-height: 56vh;
+  --dashboard-max-width: 1560px;
+  --dashboard-max-width-wide: 1760px;
+  --dashboard-grid-gap: 16px;
+  --dashboard-grid-gap-wide: 18px;
+  --dashboard-row-size: 154px;
+  --dashboard-row-size-wide: 172px;
+  --dashboard-card-min-height-wide: 166px;
+  --dashboard-left-offset: clamp(24px, 3vw, 72px);
 
   --shadow-main: 0 24px 70px rgba(0, 0, 0, 0.55);
   --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.28);
@@ -3957,7 +3965,13 @@ body.desktop-install-welcome-open {
   isolation: isolate;
   display: grid;
   --widgets-cols: 4;
-  --widgets-gap: 14px;
+  --widgets-gap: var(--dashboard-grid-gap, 16px);
+  width: 100%;
+  max-width: min(100%, var(--dashboard-max-width, 1560px));
+  min-width: 0;
+  margin-left: 0;
+  margin-right: auto;
+  box-sizing: border-box;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-flow: row;
   --widgets-row-size: 164px;
@@ -4011,6 +4025,23 @@ body.desktop-install-welcome-open {
   }
 }
 
+@media (min-width: 2800px) {
+  .widgetsGrid {
+    max-width: min(100%, var(--dashboard-max-width-wide, 1760px));
+    margin-left: var(--dashboard-left-offset, clamp(24px, 3vw, 72px));
+    margin-right: auto;
+  }
+}
+
+@media (max-width: 1400px) {
+  .widgetsGrid {
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
 @media (max-width: 980px) {
   .widgetsGrid {
     --widgets-cols: 2;
@@ -4030,7 +4061,41 @@ body.desktop-install-welcome-open {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+  overflow-x: hidden;
   padding-bottom: 70px;
+}
+
+.widgetsTab > .widgetsEditBar,
+.widgetsTab > .widgetsAddPanel,
+.widgetsTab > .widgetsEditFabRow {
+  width: 100%;
+  max-width: min(100%, var(--dashboard-max-width, 1560px));
+  min-width: 0;
+  margin-left: 0;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+@media (min-width: 2800px) {
+  .widgetsTab > .widgetsEditBar,
+  .widgetsTab > .widgetsAddPanel,
+  .widgetsTab > .widgetsEditFabRow {
+    max-width: min(100%, var(--dashboard-max-width-wide, 1760px));
+    margin-left: var(--dashboard-left-offset, clamp(24px, 3vw, 72px));
+    margin-right: auto;
+  }
+}
+
+@media (max-width: 1400px) {
+  .widgetsTab > .widgetsEditBar,
+  .widgetsTab > .widgetsAddPanel,
+  .widgetsTab > .widgetsEditFabRow {
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+  }
 }
 
 .widgetsEditBar {
@@ -8346,6 +8411,36 @@ body.has-profile-checklist-sheet {
 .msg__time {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.msg__botBadge,
+.serverMemberRow__botBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 16px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid rgba(124, 212, 255, 0.34);
+  background: rgba(124, 212, 255, 0.12);
+  color: rgba(202, 237, 255, 0.96);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+
+.msg--bot .msg__avatar {
+  box-shadow: 0 0 0 2px rgba(124, 212, 255, 0.12);
+}
+
+.serverMemberRow--bot {
+  cursor: default;
+}
+
+.serverMemberRow--bot .statusDot {
+  display: none !important;
 }
 
 .msg__pin {
@@ -19361,6 +19456,708 @@ body::after {
   align-content: start;
 }
 
+#profileOverlay .settingsDeveloperPortalRoot {
+  display: grid;
+  gap: 12px;
+}
+
+#profileOverlay .settingsDeveloperCreate,
+#profileOverlay .settingsDeveloperFormGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+#profileOverlay .settingsDeveloperCreate textarea,
+#profileOverlay .settingsDeveloperFormGrid textarea {
+  grid-column: 1 / -2;
+  min-height: 70px;
+  resize: vertical;
+}
+
+#profileOverlay .settingsDeveloperShell {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+#profileOverlay .settingsDeveloperAppsList,
+#profileOverlay .settingsDeveloperDetail,
+#profileOverlay .settingsDeveloperPanelBlock {
+  display: grid;
+  gap: 10px;
+}
+
+#profileOverlay .settingsDeveloperAppRow,
+#profileOverlay .settingsDeveloperCommandRow,
+#profileOverlay .settingsDeveloperSecretBox,
+#profileOverlay .settingsDeveloperInviteUrl,
+#profileOverlay .settingsDeveloperPanelBlock {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: var(--ui-row-bg);
+}
+
+#profileOverlay .settingsDeveloperAppRow {
+  width: 100%;
+  grid-template-columns: 34px minmax(0, 1fr);
+  display: grid;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  color: inherit;
+  text-align: left;
+}
+
+#profileOverlay .settingsDeveloperAppRow.is-active,
+#profileOverlay .settingsDeveloperAppRow:hover,
+#profileOverlay .settingsDeveloperAppRow:focus-visible {
+  border-color: color-mix(in srgb, var(--accent, #e8cfae) 42%, var(--stroke));
+  outline: none;
+}
+
+#profileOverlay .settingsDeveloperAppIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: rgba(124, 212, 255, 0.12);
+  color: rgba(218, 242, 255, 0.96);
+  font-weight: 800;
+}
+
+#profileOverlay .settingsDeveloperAppRow__text,
+#profileOverlay .settingsDeveloperBlockHead > div,
+#profileOverlay .settingsDeveloperCommandRow > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+#profileOverlay .settingsDeveloperAppRow small,
+#profileOverlay .settingsDeveloperBlockHead small,
+#profileOverlay .settingsDeveloperCommandRow small,
+#profileOverlay .settingsDeveloperDetail p {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+#profileOverlay .settingsDeveloperDetailTop,
+#profileOverlay .settingsDeveloperBlockHead,
+#profileOverlay .settingsDeveloperCommandRow,
+#profileOverlay .settingsDeveloperSecretBox {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#profileOverlay .settingsDeveloperDetailTop h3 {
+  margin: 0 0 3px;
+  font-size: 20px;
+}
+
+#profileOverlay .settingsDeveloperDetailTop p {
+  margin: 0;
+}
+
+#profileOverlay .settingsDeveloperPanelBlock {
+  padding: 10px;
+}
+
+#profileOverlay .settingsDeveloperBotMeta,
+#profileOverlay .settingsDeveloperActions,
+#profileOverlay .settingsDeveloperPermGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+#profileOverlay .settingsDeveloperBotMeta {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+#profileOverlay .settingsDeveloperSecretBox {
+  padding: 10px;
+  border-color: rgba(255, 202, 122, 0.32);
+  background: rgba(255, 202, 122, 0.08);
+}
+
+#profileOverlay .settingsDeveloperSecretBox code,
+#profileOverlay .settingsDeveloperInviteUrl code,
+#profileOverlay .settingsDeveloperBotMeta code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+#profileOverlay .settingsDeveloperStatus,
+#profileOverlay .settingsDeveloperStatusPill {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: var(--ui-row-bg);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#profileOverlay .settingsDeveloperStatus {
+  padding: 8px 10px;
+}
+
+#profileOverlay .settingsDeveloperStatus[data-tone="error"] {
+  border-color: rgba(255, 113, 113, 0.32);
+  color: rgba(255, 180, 180, 0.96);
+}
+
+#profileOverlay .settingsDeveloperStatus[data-tone="success"] {
+  border-color: rgba(107, 217, 155, 0.32);
+  color: rgba(180, 245, 207, 0.96);
+}
+
+#profileOverlay .settingsDeveloperStatusPill {
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+#profileOverlay .settingsDeveloperPermRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+#profileOverlay .settingsDeveloperInviteUrl,
+#profileOverlay .settingsDeveloperCommandRow {
+  padding: 8px;
+}
+
+#profileOverlay .settingsDeveloperCommandList {
+  display: grid;
+  gap: 8px;
+}
+
+#profileOverlay .settingsDeveloperEmpty {
+  padding: 10px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  #profileOverlay .settingsDeveloperShell,
+  #profileOverlay .settingsDeveloperCreate,
+  #profileOverlay .settingsDeveloperFormGrid {
+    grid-template-columns: 1fr;
+  }
+
+  #profileOverlay .settingsDeveloperCreate textarea,
+  #profileOverlay .settingsDeveloperFormGrid textarea {
+    grid-column: auto;
+  }
+}
+
+#profileOverlay .settingsDeveloperFullPortal {
+  margin-left: auto;
+}
+
+.botRouteOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9400;
+  display: grid;
+  background: rgba(5, 7, 12, 0.88);
+  backdrop-filter: blur(12px);
+}
+
+.botRouteOverlay.hidden {
+  display: none !important;
+}
+
+.botRouteShell {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  overflow: hidden;
+  color: var(--text-main);
+  background: linear-gradient(180deg, rgba(20, 24, 32, 0.98), rgba(12, 14, 20, 0.98));
+}
+
+.botRouteSidebar {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 14px;
+  border-right: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.botRouteBrand {
+  display: grid;
+  gap: 2px;
+  padding: 4px 4px 12px;
+}
+
+.botRouteBrand b {
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.botRouteBrand span,
+.botRouteSubtitle,
+.botRouteFields small,
+.botAuthorizeIdentity p,
+.botAuthorizeBotLine,
+.botInstallContext small {
+  color: var(--text-soft);
+}
+
+.botRouteNav {
+  display: grid;
+  gap: 6px;
+}
+
+.botRouteNavItem,
+.botRouteClose {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text-soft);
+  background: transparent;
+  text-align: left;
+  font-weight: 800;
+}
+
+.botRouteNavItem:hover,
+.botRouteNavItem:focus-visible,
+.botRouteNavItem.is-active {
+  border-color: rgba(124, 212, 255, 0.28);
+  color: var(--text-main);
+  background: rgba(124, 212, 255, 0.09);
+  outline: none;
+}
+
+.botRouteClose {
+  margin-top: auto;
+  border-color: var(--stroke);
+  background: var(--ui-row-bg);
+  text-align: center;
+}
+
+.botRouteMain {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.botRouteRoot {
+  width: min(1080px, calc(100vw - 292px));
+  min-height: 100%;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 28px;
+}
+
+.botRouteLoading {
+  margin: auto;
+  color: var(--text-soft);
+  font-weight: 800;
+}
+
+.botRouteHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.botRouteTitle {
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.botRouteSubtitle {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.botRoutePanel,
+.botAuthorizeCard,
+.botAppCard,
+.serverSettingsBotRow {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.botRoutePanel,
+.botAuthorizeCard {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.botRouteGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.botAppCard {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  color: inherit;
+  text-align: left;
+}
+
+.botAppCard:hover,
+.botAppCard:focus-visible {
+  border-color: rgba(124, 212, 255, 0.36);
+  background: rgba(124, 212, 255, 0.08);
+  outline: none;
+}
+
+.botRouteAppIcon,
+.botRouteAvatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+  flex: 0 0 auto;
+  border: 1px solid rgba(124, 212, 255, 0.22);
+  background: rgba(124, 212, 255, 0.12);
+  color: rgba(225, 246, 255, 0.98);
+  font-weight: 900;
+}
+
+.botRouteAppIcon img,
+.botRouteAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.botRouteAppIcon--large {
+  width: 72px;
+  height: 72px;
+}
+
+.botRouteAvatar--small {
+  width: 32px;
+  height: 32px;
+}
+
+.botRouteIdentityPanel {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.botRouteFields,
+.botRouteOverlay .settingsDeveloperCreate,
+.botRouteOverlay .settingsDeveloperFormGrid,
+.botRouteOverlay .settingsDeveloperCommandList {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.botRouteOverlay .settingsDeveloperCreate,
+.botRouteOverlay .settingsDeveloperFormGrid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.botRouteOverlay .settingsDeveloperCreate textarea,
+.botRouteOverlay .settingsDeveloperFormGrid textarea {
+  grid-column: 1 / -2;
+  min-height: 74px;
+  resize: vertical;
+}
+
+.botRouteOverlay .settingsDeveloperActions,
+.botRouteOverlay .settingsDeveloperBotMeta,
+.botRouteOverlay .settingsDeveloperPermGrid,
+.botAuthorizeActions,
+.serverSettingsBotPerms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.botRouteOverlay .settingsDeveloperPanelBlock,
+.botRouteOverlay .settingsDeveloperCommandRow,
+.botRouteOverlay .settingsDeveloperSecretBox,
+.botRouteOverlay .settingsDeveloperInviteUrl {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: var(--ui-row-bg);
+}
+
+.botRouteOverlay .settingsDeveloperBlockHead,
+.botRouteOverlay .settingsDeveloperCommandRow,
+.botRouteOverlay .settingsDeveloperSecretBox {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.botRouteOverlay .settingsDeveloperStatus,
+.botRouteOverlay .settingsDeveloperStatusPill,
+.botRouteOverlay .settingsDeveloperPermRow,
+.serverSettingsBotPerms span {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.botRouteOverlay .settingsDeveloperStatus,
+.botRouteOverlay .settingsDeveloperPermRow,
+.serverSettingsBotPerms span {
+  padding: 6px 8px;
+}
+
+.botRouteOverlay .settingsDeveloperStatus[data-tone="error"] {
+  border-color: rgba(255, 113, 113, 0.36);
+  color: rgba(255, 190, 190, 0.98);
+}
+
+.botRouteOverlay .settingsDeveloperStatus[data-tone="success"] {
+  border-color: rgba(107, 217, 155, 0.36);
+  color: rgba(190, 247, 215, 0.98);
+}
+
+.botRouteOverlay code,
+.botAuthorizeReviewGrid code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.botPreviewName,
+.botAuthorizeBotLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.botAuthorizePeople {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.botAuthorizePeople > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.botAuthorizePeople span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.botAuthorizePeople small {
+  color: var(--text-soft);
+}
+
+.botInstallContextGrid,
+.botAuthorizeReviewGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.botInstallContext,
+.botAuthorizeReviewGrid > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.botInstallContext.is-active {
+  border-color: rgba(107, 217, 155, 0.34);
+}
+
+.botInstallContext.is-disabled {
+  opacity: 0.62;
+}
+
+.botAuthorizeCard {
+  width: min(720px, 100%);
+}
+
+.botAuthorizeIdentity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.botAuthorizeIdentity h2,
+.botAuthorizeIdentity p {
+  margin: 0;
+}
+
+.botAuthorizeActions {
+  justify-content: flex-end;
+}
+
+.serverSettingsBotRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+}
+
+.serverSettingsBotRow__body {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.serverSettingsBotRow__body small {
+  color: var(--text-soft);
+  line-height: 1.35;
+}
+
+.botSlashCommandPicker {
+  position: fixed;
+  z-index: 9200;
+  width: min(460px, calc(100vw - 24px));
+  max-height: 260px;
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(124, 212, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(18, 22, 30, 0.98);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
+}
+
+.botSlashCommandPicker__item {
+  min-width: 0;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: minmax(100px, auto) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px;
+  background: transparent;
+  color: var(--text-main);
+  text-align: left;
+}
+
+.botSlashCommandPicker__item:hover,
+.botSlashCommandPicker__item:focus-visible {
+  border-color: rgba(124, 212, 255, 0.32);
+  background: rgba(124, 212, 255, 0.1);
+  outline: none;
+}
+
+.botSlashCommandPicker__item small,
+.botSlashCommandPicker__item span {
+  min-width: 0;
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 820px) {
+  .botRouteShell {
+    grid-template-columns: 1fr;
+  }
+
+  .botRouteSidebar {
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--stroke);
+  }
+
+  .botRouteNav {
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    overflow-x: auto;
+  }
+
+  .botRouteClose {
+    width: auto;
+    margin-top: 0;
+    white-space: nowrap;
+  }
+
+  .botRouteRoot {
+    width: 100%;
+    padding: 18px;
+  }
+
+  .botRouteOverlay .settingsDeveloperCreate,
+  .botRouteOverlay .settingsDeveloperFormGrid,
+  .botRouteIdentityPanel,
+  .botAuthorizeIdentity,
+  .botAuthorizePeople,
+  .serverSettingsBotRow {
+    grid-template-columns: 1fr;
+  }
+
+  .botRouteOverlay .settingsDeveloperCreate textarea,
+  .botRouteOverlay .settingsDeveloperFormGrid textarea {
+    grid-column: auto;
+  }
+
+  .botSlashCommandPicker__item {
+    grid-template-columns: 1fr;
+  }
+}
+
 #profileOverlay .settingsPrivacyModeCard {
   gap: 12px;
 }
@@ -27694,9 +28491,21 @@ body:not(.authPage) .widgetsTab {
 }
 
 body:not(.authPage) .widgetsGrid {
-  --widgets-gap: 12px;
-  --widgets-row-size: 154px;
+  --widgets-gap: var(--dashboard-grid-gap, 16px);
+  --widgets-row-size: var(--dashboard-row-size, 154px);
   gap: var(--widgets-gap);
+}
+
+@media (min-width: 2800px) {
+  body:not(.authPage) .widgetsGrid {
+    --widgets-gap: var(--dashboard-grid-gap-wide, 18px);
+    --widgets-row-size: var(--dashboard-row-size-wide, 172px);
+  }
+
+  body:not(.authPage) .widgetsGrid > .widgetCard {
+    min-height: var(--dashboard-card-min-height-wide, 166px);
+    padding: 17px;
+  }
 }
 
 body:not(.authPage) .widgetCard {

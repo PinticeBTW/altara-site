@@ -17,6 +17,22 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async rewrites() {
+    return [
+      {
+        source: "/oauth2/authorize",
+        destination: "/app/index.html",
+      },
+      {
+        source: "/developers",
+        destination: "/app/index.html",
+      },
+      {
+        source: "/developers/:path*",
+        destination: "/app/index.html",
+      },
+    ];
+  },
 };
 
 export default nextConfig;

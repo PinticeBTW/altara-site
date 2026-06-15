@@ -1,6 +1,7 @@
 ﻿<!doctype html>
 <html lang="pt-PT">
 <head>
+  <base href="/app/" />
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>altara</title>
@@ -961,6 +962,17 @@
 
   </div>
 
+  <div id="botRouteOverlay" class="botRouteOverlay hidden" aria-hidden="true">
+    <div class="botRouteShell" role="dialog" aria-modal="true" aria-labelledby="botRouteTitle">
+      <aside id="botRouteSidebar" class="botRouteSidebar"></aside>
+      <main id="botRouteMain" class="botRouteMain">
+        <div id="botRouteRoot" class="botRouteRoot">
+          <div class="botRouteLoading">Loading...</div>
+        </div>
+      </main>
+    </div>
+  </div>
+
   <!-- SETTINGS OVERLAY -->
   <div id="profileOverlay" class="modal hidden settingsOverlay" aria-hidden="true" data-close="1">
     <div class="modalCard settingsCard" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
@@ -1029,6 +1041,9 @@
             </button>
             <button class="settingsNavItem" type="button" data-settings-tab="activity">
               <span id="settingsNavActivity">Activity</span>
+            </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="developer">
+              <span id="settingsNavDeveloper">Developer Portal</span>
             </button>
             <button class="settingsNavItem" type="button" data-settings-tab="keybinds">
               <span id="settingsNavKeybinds">Binds</span>
@@ -1712,6 +1727,15 @@
               </div>
               <div id="settingsActivityGamesList" class="settingsActivityGamesList">
                 <div class="settingsActivityEmpty">No registered apps loaded.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="developer">
+            <div class="settingsCardSection settingsDeveloperSection">
+              <div id="settingsSectionDeveloper" class="settingsSectionTitle">Developer Portal</div>
+              <div id="settingsDeveloperPortalRoot" class="settingsDeveloperPortalRoot" aria-live="polite">
+                <div class="settingsPlaceholder">Loading Developer Portal...</div>
               </div>
             </div>
           </div>
@@ -2698,6 +2722,9 @@
               <span>Moderation / Safety</span>
               <small>soon</small>
             </button>
+            <button class="serverSettingsNavItem" type="button" data-server-settings-nav="bots">
+              <span>Bots &amp; Integrations</span>
+            </button>
           </nav>
         </div>
 
@@ -2842,6 +2869,18 @@
             <div class="serverSettingsPlaceholder">
               <h2>Moderation / Safety</h2>
               <p>Moderation tools are not changed by this redesign. Existing server permissions continue to apply.</p>
+            </div>
+          </div>
+
+          <div class="serverSettingsPanel" data-server-settings-panel="bots">
+            <div class="serverSettingsPanelIntro">
+              <div>
+                <h2>Bots &amp; Integrations</h2>
+                <p>Review installed bots and remove access when needed.</p>
+              </div>
+            </div>
+            <div id="serverSettingsBotsRoot" class="serverSettingsBotsRoot">
+              <div class="serverSettingsPlaceholder">Loading bots...</div>
             </div>
           </div>
 

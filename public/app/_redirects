@@ -1,0 +1,3 @@
+/oauth2/authorize /index.html 200
+/developers /index.html 200
+/developers/* /index.html 200

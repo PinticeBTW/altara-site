@@ -1,0 +1,19 @@
+{
+  "hosting": {
+    "public": ".",
+    "rewrites": [
+      {
+        "source": "/oauth2/authorize",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/developers",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/developers/**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

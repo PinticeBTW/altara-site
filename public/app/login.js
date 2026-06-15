@@ -215,6 +215,31 @@ function syncOfflineLoginWarning() {
   }
 }
 
+function resolvePostLoginReturnUrl() {
+  try {
+    const url = new URL(window.location.href);
+    const raw = String(url.searchParams.get("return_to") || url.searchParams.get("returnTo") || "").trim();
+    if (!raw) return "./index.html";
+    const target = new URL(raw, window.location.origin);
+    if (target.origin !== window.location.origin) return "./index.html";
+    const path = String(target.pathname || "/");
+    const hash = String(target.hash || "");
+    const allowedPath = path === "/oauth2/authorize"
+      || path === "/developers"
+      || path.startsWith("/developers/");
+    const allowedHash = hash.startsWith("#/oauth2/authorize")
+      || hash.startsWith("#/developers");
+    if (!allowedPath && !allowedHash) return "./index.html";
+    return `${target.pathname}${target.search || ""}${target.hash || ""}`;
+  } catch (_) {
+    return "./index.html";
+  }
+}
+
+function redirectAfterSuccessfulLogin() {
+  window.location.replace(resolvePostLoginReturnUrl());
+}
+
 function readLoginErrorMessage(err) {
   const raw = String(err?.message || err || "").trim();
   const msg = raw.toLowerCase();
@@ -946,7 +971,7 @@ async function consumeConfirmationUrlIfPresent(rawUrl, { clearCurrentLocation = 
       },
     });
     setTimeout(() => {
-      window.location.replace("./index.html");
+      redirectAfterSuccessfulLogin();
     }, 220);
     return true;
   } catch (error) {
@@ -1177,7 +1202,7 @@ async function doLogin() {
     writeLastLoginEmail(email);
     clearPendingConfirmationEmail();
     setAuthFeedback(tAuth("login.successProgress", "Signing in..."), "success");
-    window.location.replace("./index.html");
+    redirectAfterSuccessfulLogin();
   } catch (e) {
     setAuthFeedback(readLoginErrorMessage(e), "error");
   } finally {

@@ -1,0 +1,14 @@
+[[redirects]]
+  from = "/oauth2/authorize"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/developers"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/developers/*"
+  to = "/index.html"
+  status = 200
