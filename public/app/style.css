@@ -19928,6 +19928,52 @@ body::after {
   line-height: 1.45;
 }
 
+.botInteractionStatusRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.botInteractionStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.botInteractionStatusBadge[data-tone="success"] {
+  border-color: rgba(107, 217, 155, 0.38);
+  color: rgba(195, 249, 219, 0.98);
+  background: rgba(107, 217, 155, 0.09);
+}
+
+.botInteractionStatusBadge[data-tone="warning"] {
+  border-color: rgba(216, 180, 106, 0.42);
+  color: rgba(255, 238, 204, 0.98);
+  background: rgba(216, 180, 106, 0.1);
+}
+
+.botInteractionStatusBadge[data-tone="error"] {
+  border-color: rgba(255, 113, 113, 0.42);
+  color: rgba(255, 201, 201, 0.98);
+  background: rgba(255, 113, 113, 0.09);
+}
+
+.botInteractionStatusDetail {
+  color: rgba(232, 238, 247, 0.78);
+  line-height: 1.5;
+}
+
 .botInstallWarning {
   padding: 10px 12px;
   border: 1px solid rgba(255, 190, 96, 0.28);
