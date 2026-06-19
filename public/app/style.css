@@ -19939,6 +19939,359 @@ body::after {
   line-height: 1.4;
 }
 
+.botDocsShell {
+  width: min(100%, 1040px);
+  display: grid;
+  gap: 18px;
+}
+
+.botDocsHero,
+.botDocsSection {
+  border: 1px solid rgba(216, 180, 106, 0.22);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+    rgba(10, 12, 18, 0.74);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.22);
+}
+
+.botDocsHero {
+  display: grid;
+  gap: 10px;
+  padding: clamp(22px, 4vw, 34px);
+}
+
+.botDocsKicker,
+.botDocsEyebrow {
+  color: rgba(216, 180, 106, 0.98);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.botDocsHero h2,
+.botDocsSectionHeader h3,
+.botDocsStepCard h3,
+.botDocsInfoCard h3 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.botDocsHero h2 {
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.05;
+  font-weight: 950;
+}
+
+.botDocsHero p,
+.botDocsSectionHeader p,
+.botDocsStepCard p,
+.botDocsInfoCard p {
+  margin: 0;
+  color: rgba(232, 238, 247, 0.74);
+  line-height: 1.62;
+}
+
+.botDocsHero p {
+  max-width: 760px;
+  font-size: 15px;
+}
+
+.botDocsNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.botDocsNavItem,
+.botDocsAction,
+.botDocsCopyBtn {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.botDocsNavItem {
+  min-height: 36px;
+  padding: 8px 12px;
+}
+
+.botDocsNavItem:hover,
+.botDocsNavItem:focus-visible,
+.botDocsNavItem.is-active {
+  border-color: rgba(216, 180, 106, 0.42);
+  color: rgba(255, 243, 216, 0.98);
+  background: rgba(216, 180, 106, 0.12);
+  outline: none;
+}
+
+.botDocsSection {
+  display: grid;
+  gap: 18px;
+  padding: clamp(18px, 3vw, 26px);
+}
+
+.botDocsSectionHeader {
+  display: grid;
+  gap: 7px;
+  max-width: 820px;
+}
+
+.botDocsSectionHeader h3 {
+  font-size: clamp(20px, 2.5vw, 27px);
+  line-height: 1.16;
+}
+
+.botDocsSteps,
+.botDocsGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.botDocsSteps {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.botDocsGrid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.botDocsGrid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.botDocsStepCard,
+.botDocsInfoCard {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.botDocsStepCard {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 13px;
+  padding: 14px;
+}
+
+.botDocsInfoCard {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 16px;
+}
+
+.botDocsStepNumber {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(216, 180, 106, 0.38);
+  border-radius: 8px;
+  background: rgba(216, 180, 106, 0.12);
+  color: rgba(255, 236, 195, 0.98);
+  font-weight: 950;
+}
+
+.botDocsStepBody,
+.botDocsStepTop {
+  min-width: 0;
+}
+
+.botDocsStepBody {
+  display: grid;
+  gap: 9px;
+}
+
+.botDocsStepTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.botDocsStepCard h3,
+.botDocsInfoCard h3 {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.botDocsBadge {
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid rgba(124, 212, 255, 0.23);
+  border-radius: 999px;
+  color: rgba(202, 239, 255, 0.95);
+  background: rgba(124, 212, 255, 0.08);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.botDocsAction {
+  width: fit-content;
+  min-height: 32px;
+  padding: 7px 10px;
+}
+
+.botDocsAction:hover,
+.botDocsAction:focus-visible,
+.botDocsCopyBtn:hover,
+.botDocsCopyBtn:focus-visible {
+  border-color: rgba(216, 180, 106, 0.42);
+  color: rgba(255, 243, 216, 0.98);
+  outline: none;
+}
+
+.botDocsWarning,
+.botDocsNote {
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.botDocsWarning {
+  border: 1px solid rgba(255, 190, 96, 0.36);
+  color: rgba(255, 238, 204, 0.98);
+  background: rgba(255, 190, 96, 0.09);
+}
+
+.botDocsNote {
+  border: 1px solid rgba(124, 212, 255, 0.26);
+  color: rgba(214, 243, 255, 0.98);
+  background: rgba(124, 212, 255, 0.08);
+}
+
+.botDocsCodeBlock {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(216, 180, 106, 0.24);
+  border-radius: 8px;
+  background: rgba(4, 6, 10, 0.82);
+}
+
+.botDocsCodeBlock__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(216, 180, 106, 0.98);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.botDocsCopyBtn {
+  min-height: 28px;
+  padding: 5px 9px;
+  color: rgba(232, 238, 247, 0.82);
+  font-size: 12px;
+}
+
+.botDocsCodeBlock pre {
+  margin: 0;
+  max-width: 100%;
+  overflow: auto;
+  padding: 14px;
+}
+
+.botDocsCodeBlock code {
+  display: block;
+  min-width: max-content;
+  overflow-wrap: normal;
+  white-space: pre;
+  color: rgba(235, 242, 250, 0.96);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.botDocsChecklist {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.botDocsChecklist li {
+  position: relative;
+  padding: 11px 12px 11px 36px;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(232, 238, 247, 0.82);
+  line-height: 1.45;
+}
+
+.botDocsChecklist li::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 16px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(216, 180, 106, 0.96);
+  box-shadow: 0 0 0 4px rgba(216, 180, 106, 0.11);
+}
+
+.botDocsMapTable {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.095);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.botDocsMapRow {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.85fr) minmax(150px, 0.85fr) minmax(220px, 1.3fr);
+  gap: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.botDocsMapRow:first-child {
+  border-top: 0;
+}
+
+.botDocsMapRow span {
+  min-width: 0;
+  padding: 13px 14px;
+  color: rgba(232, 238, 247, 0.8);
+  line-height: 1.45;
+}
+
+.botDocsMapRow span + span {
+  border-left: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.botDocsMapRow--head {
+  background: rgba(216, 180, 106, 0.1);
+}
+
+.botDocsMapRow--head span {
+  color: rgba(255, 239, 207, 0.98);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
 .botRouteOverlay .settingsDeveloperActions,
 .botRouteOverlay .settingsDeveloperBotMeta,
 .botRouteOverlay .settingsDeveloperPermGrid,
@@ -20631,6 +20984,33 @@ body::after {
   .botRouteOverlay .settingsDeveloperCreate textarea,
   .botRouteOverlay .settingsDeveloperFormGrid textarea {
     grid-column: auto;
+  }
+
+  .botDocsHero,
+  .botDocsSection {
+    padding: 16px;
+  }
+
+  .botDocsGrid--two,
+  .botDocsGrid--three,
+  .botDocsSteps {
+    grid-template-columns: 1fr;
+  }
+
+  .botDocsStepCard {
+    grid-template-columns: 1fr;
+  }
+
+  .botDocsStepTop {
+    display: grid;
+  }
+
+  .botDocsMapTable {
+    overflow-x: auto;
+  }
+
+  .botDocsMapRow {
+    min-width: 720px;
   }
 
   .botRouteShell--authorize {
