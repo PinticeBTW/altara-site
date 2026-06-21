@@ -21103,6 +21103,114 @@ body::after {
   outline: none;
 }
 
+.botProfileOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10040;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(8, 10, 16, 0.62);
+}
+
+.botProfileCard {
+  position: relative;
+  width: min(520px, 100%);
+  max-height: min(720px, calc(100vh - 40px));
+  overflow: auto;
+  border: 1px solid var(--stroke-strong);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text-main);
+  box-shadow: var(--shadow-strong);
+}
+
+.botProfileCard__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+  cursor: pointer;
+}
+
+.botProfileCard__banner {
+  height: 118px;
+  background:
+    linear-gradient(135deg, rgba(84, 183, 164, 0.28), rgba(110, 168, 254, 0.2)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.botProfileCard__head {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: end;
+  padding: 0 20px 16px;
+  margin-top: -30px;
+}
+
+.botProfileCard__avatar {
+  width: 76px;
+  height: 76px;
+  border: 4px solid var(--surface-1);
+}
+
+.botProfileCard__head h2 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 6px;
+  font-size: 1.25rem;
+  letter-spacing: 0;
+}
+
+.botProfileCard__head p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.botProfileCard__meta {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0 20px 18px;
+}
+
+.botProfileCard__meta div {
+  display: grid;
+  gap: 3px;
+}
+
+.botProfileCard__meta dt {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.botProfileCard__meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.botProfileCard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 20px;
+}
+
+.botProfileCard__status {
+  margin: 0 20px 20px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
 .botCommandComposerNotice {
   position: fixed;
   z-index: 9300;
