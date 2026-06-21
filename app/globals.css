@@ -604,6 +604,47 @@ body.developerPortalPage .cursor-ring {
   min-height: 94px;
 }
 
+.botCard {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.botCardMeta {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  color: #9aa3b5;
+  font-size: 12px;
+}
+
+.botBadgeInline {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(88, 101, 242, 0.18);
+  color: #c6ceff;
+  font-size: 10px;
+  font-weight: 900;
+  vertical-align: 1px;
+}
+
+.botProfilePreview {
+  align-content: start;
+}
+
+.botProfilePreview h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.botProfilePreview p {
+  color: #b7bfcc;
+}
+
 .developerAppCard:hover {
   border-color: rgba(88, 101, 242, 0.5);
   background: #1d2230;
@@ -631,8 +672,41 @@ body.developerPortalPage .cursor-ring {
   border-color: rgba(88, 101, 242, 0.55);
 }
 
+.permissionLine {
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: #151922;
+}
+
+.permissionLine span {
+  display: grid;
+  gap: 3px;
+}
+
+.permissionLine small {
+  margin-left: 0;
+}
+
+.futureDetails {
+  margin-top: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.futureDetails summary {
+  padding: 4px 2px 8px;
+  color: #9aa3b5;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .commandRow {
-  grid-template-columns: 140px 1fr 90px 90px 150px;
+  grid-template-columns: 140px 1fr 90px 90px;
 }
 
 .logRow {
