@@ -94,13 +94,13 @@ type RouteState = {
 
 const ALTARA_PUBLIC_ORIGIN = "https://altaraapp.com";
 const SUPPORTED_PERMISSIONS = [
-  { key: "bot:send_messages", label: "Send messages", group: "Text permissions", enabled: true },
-  { key: "bot:use_slash_commands", label: "Use slash commands", group: "Text permissions", enabled: true },
-  { key: "bot:read_basic_channel_metadata", label: "Read channel names", group: "General permissions", enabled: true },
-  { key: "bot:manage_own_commands", label: "Manage own commands", group: "General permissions", enabled: true },
-  { key: "bot:admin", label: "Admin", group: "General permissions", enabled: false },
-  { key: "bot:manage_server", label: "Manage server", group: "General permissions", enabled: false },
-  { key: "bot:manage_channels", label: "Manage channels", group: "General permissions", enabled: false },
+  { key: "bot:admin", label: "Administrator", group: "General permissions", enabled: false },
+  { key: "bot:manage_server", label: "Manage Server", group: "General permissions", enabled: false },
+  { key: "bot:manage_channels", label: "Manage Channels", group: "General permissions", enabled: false },
+  { key: "bot:read_basic_channel_metadata", label: "Read Channel Names", group: "General permissions", enabled: true },
+  { key: "bot:manage_own_commands", label: "Manage Own Commands", group: "General permissions", enabled: true },
+  { key: "bot:send_messages", label: "Send Messages", group: "Text permissions", enabled: true },
+  { key: "bot:use_slash_commands", label: "Use Slash Commands", group: "Text permissions", enabled: true },
   { key: "bot:read_message_history", label: "Read message history", group: "Text permissions", enabled: false },
   { key: "bot:voice_connect", label: "Connect", group: "Voice permissions", enabled: false },
   { key: "bot:voice_speak", label: "Speak", group: "Voice permissions", enabled: false },
@@ -210,6 +210,7 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
   const [authLoading, setAuthLoading] = useState(true);
   const [apps, setApps] = useState<DeveloperApp[]>([]);
   const [appsLoading, setAppsLoading] = useState(false);
+  const [appsError, setAppsError] = useState("");
   const [commands, setCommands] = useState<BotCommand[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [endpoint, setEndpoint] = useState<EndpointInfo | null>(null);
@@ -217,6 +218,7 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
   const [secretNotice, setSecretNotice] = useState<SecretNotice | null>(null);
   const [permissions, setPermissions] = useState<string[]>(DEFAULT_PERMISSIONS);
   const [busyAction, setBusyAction] = useState("");
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   const selectedApp = useMemo(() => {
     if (route.appId) return apps.find((app) => app.app_id === route.appId) || null;
@@ -250,7 +252,7 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
   }, [supabase]);
 
   async function rpc<T>(name: string, payload: Record<string, unknown> = {}): Promise<T> {
-    const rpcCall = supabase.rpc as unknown as DynamicRpc;
+    const rpcCall = supabase.rpc.bind(supabase) as unknown as DynamicRpc;
     const { data, error } = await rpcCall(name, payload);
     if (error) throw error;
     return data as T;
@@ -261,9 +263,9 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
     try {
       const rows = await rpc<DeveloperApp[]>("bots_list_my_apps", {});
       setApps(Array.isArray(rows) ? rows : []);
-      setNotice(null);
+      setAppsError("");
     } catch (error) {
-      setNotice({ tone: "error", message: `Could not load Developer Portal: ${errorMessage(error)}` });
+      setAppsError(`Could not load applications: ${errorMessage(error)}`);
       setApps([]);
     } finally {
       setAppsLoading(false);
@@ -403,6 +405,7 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
       }
       await loadApps();
       router.push(`${appBase(appRow.app_id)}/bot`);
+      setCreateModalOpen(false);
       setNotice({ tone: "success", message: "Bot created. Copy the token now; it will not be shown again." });
     });
   }
@@ -532,17 +535,21 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
   }
 
   return (
-    <DeveloperPortalFrame route={route} apps={apps} selectedApp={selectedApp} userEmail={user.email || ""}>
+    <DeveloperPortalFrame route={route} apps={apps} selectedApp={selectedApp} user={user} onOpenCreate={() => setCreateModalOpen(true)}>
       <StatusNotice notice={notice} secret={secretNotice} onCopySecret={() => secretNotice ? copyText(secretNotice.value, "Secret copied.") : undefined} />
       {renderContent()}
+      {createModalOpen ? <CreateApplicationModal onClose={() => setCreateModalOpen(false)} onCreate={handleCreateBot} busy={busyAction} /> : null}
     </DeveloperPortalFrame>
   );
 
   function renderContent() {
-    if (route.kind === "home") return <Overview apps={apps} appsLoading={appsLoading} onCreate={handleCreateBot} busy={busyAction} />;
-    if (route.kind === "applications") return <Applications apps={apps} loading={appsLoading} onCreate={handleCreateBot} busy={busyAction} />;
+    if (route.kind === "home") return <Applications apps={apps} loading={appsLoading} error={appsError} onOpenCreate={() => setCreateModalOpen(true)} />;
+    if (route.kind === "applications") return <Applications apps={apps} loading={appsLoading} error={appsError} onOpenCreate={() => setCreateModalOpen(true)} />;
     if (route.kind === "docs") return <Docs />;
-    if (!selectedApp) return <EmptyState title="Application not found" body="Create an application or choose one from the app menu." />;
+    if (appsLoading) return <PageLoading label="Loading application..." />;
+    if (appsError) return <ScopedError title="Application unavailable" body={appsError} />;
+    if (!apps.length) return <Applications apps={apps} loading={appsLoading} error={appsError} onOpenCreate={() => setCreateModalOpen(true)} />;
+    if (!selectedApp) return <EmptyState title="Application not found" body="Choose an application from the sidebar or create a new one." actionLabel="Back to Applications" actionHref="/developers/applications" />;
     if (route.section === "general") return <General app={selectedApp} onSave={handleSaveGeneral} busy={busyAction} copyText={copyText} />;
     if (route.section === "bot") return <BotPage app={selectedApp} onCreate={handleCreateBotForApp} onSave={handleSaveBot} onToken={handleToken} busy={busyAction} />;
     if (route.section === "installation" || route.section === "oauth2") return <Installation app={selectedApp} permissions={permissions} setPermissions={setPermissions} installUrl={installUrl} copyText={copyText} />;
@@ -560,22 +567,25 @@ function DeveloperPortalFrame({
   route,
   apps = [],
   selectedApp = null,
-  userEmail = "",
+  user = null,
+  onOpenCreate,
   children,
 }: {
   route: RouteState;
   apps?: DeveloperApp[];
   selectedApp?: DeveloperApp | null;
-  userEmail?: string;
+  user?: User | null;
+  onOpenCreate?: () => void;
   children: ReactNode;
 }) {
   const router = useRouter();
   const selectedId = selectedApp?.app_id || "";
   const base = selectedId ? appBase(selectedId) : "/developers/applications";
-  const nav = [
+  const primaryNav = selectedId ? [
     ["Overview", base],
     ["General Information", `${base}/general`],
-    ["Installation / OAuth2", `${base}/installation`],
+    ["Installation", `${base}/installation`],
+    ["OAuth2", `${base}/oauth2`],
     ["Bot", `${base}/bot`],
     ["Bot Permissions", `${base}/permissions`],
     ["Commands", `${base}/commands`],
@@ -583,37 +593,60 @@ function DeveloperPortalFrame({
     ["Hosting", `${base}/hosting`],
     ["Advanced Webhook Mode", `${base}/webhooks`],
     ["Logs", `${base}/logs`],
-  ];
+  ] : [];
+  const futureNav = ["Emojis", "Webhooks", "Rich Presence", "App Testers", "App Verification", "Games", "Activities", "Premium Apps"];
+  const userInitial = String(user?.email || "A").trim().charAt(0).toUpperCase() || "A";
   return (
     <main className="developerPortal">
-      <aside className="developerSidebar">
-        <Link className="developerBrand" href="/developers">
+      <header className="developerTopBar">
+        <Link className="developerTopBrand" href="/developers">
           <span>ALT</span>
-          <div><b>ALTARA</b><small>Developer Portal</small></div>
+          <strong>ALTARA Developer Portal</strong>
         </Link>
-        <label className="developerAppSelect">
-          <span>Application</span>
-          <select
-            value={selectedId}
-            onChange={(event) => event.target.value ? router.push(appBase(event.target.value)) : router.push("/developers/applications")}
-          >
-            <option value="">Applications</option>
-            {apps.map((app) => <option key={app.app_id} value={app.app_id}>{app.app_name || "Application"}</option>)}
-          </select>
-        </label>
-        <nav className="developerNav" aria-label="Developer sections">
-          <Link className={route.kind === "applications" ? "active" : ""} href="/developers/applications">Applications</Link>
-          {selectedId ? nav.map(([label, href]) => (
-            <Link key={href} className={(route.kind === "app" && href.endsWith(route.section)) || (route.section === "overview" && href === base) ? "active" : ""} href={href}>{label}</Link>
-          )) : null}
-          <Link className={route.kind === "docs" ? "active" : ""} href="/developers/docs">Docs</Link>
-        </nav>
-        <div className="developerSidebarFoot">
-          <span>{userEmail || "Signed in"}</span>
+        <nav className="developerTopNav" aria-label="Developer top navigation">
+          <Link href="/developers/docs">Docs</Link>
+          <button type="button" disabled>Teams <small>Soon</small></button>
           <a href="/app">Open ALTARA</a>
+        </nav>
+        <button className="devButton primary developerCreateTop" type="button" onClick={onOpenCreate} disabled={!onOpenCreate}>+ Create</button>
+        <div className="developerUserMenu" aria-label="Current user">
+          <span>{userInitial}</span>
+          <small>{user?.email || "Signed in"}</small>
         </div>
-      </aside>
-      <section className="developerMain">{children}</section>
+      </header>
+      <div className="developerShell">
+        <aside className="developerSidebar">
+          <Link className="developerBackLink" href="/developers/applications">← Applications</Link>
+          <div className="developerAppCardMini">
+            <AvatarPreview url={selectedApp?.app_icon_url || selectedApp?.bot_avatar_url} label={selectedApp?.app_name || "ALTARA"} />
+            <div>
+              <b>{selectedApp?.app_name || "No application selected"}</b>
+              <small>{selectedApp?.bot_name ? `Bot: ${selectedApp.bot_name}` : selectedId ? "Application" : "Choose or create an app"}</small>
+            </div>
+          </div>
+          <label className="developerAppSelect">
+            <span>Application</span>
+            <select
+              value={selectedId}
+              onChange={(event) => event.target.value ? router.push(appBase(event.target.value)) : router.push("/developers/applications")}
+            >
+              <option value="">Applications</option>
+              {apps.map((app) => <option key={app.app_id} value={app.app_id}>{app.app_name || "Application"}</option>)}
+            </select>
+          </label>
+          <nav className="developerNav" aria-label="Developer sections">
+            <Link className={route.kind === "applications" || route.kind === "home" ? "active" : ""} href="/developers/applications">Applications</Link>
+            {selectedId ? <span className="developerNavSection">Overview</span> : null}
+            {primaryNav.map(([label, href]) => (
+              <Link key={href} className={(route.kind === "app" && href.endsWith(route.section)) || (route.section === "overview" && href === base) ? "active" : ""} href={href}>{label}</Link>
+            ))}
+            <Link className={route.kind === "docs" ? "active" : ""} href="/developers/docs">Docs</Link>
+            {selectedId ? <span className="developerNavSection">Future</span> : null}
+            {selectedId ? futureNav.map((label) => <button className="developerNavDisabled" type="button" disabled key={label}>{label} <small>{label === "Emojis" || label === "Webhooks" ? "NEW" : "Soon"}</small></button>) : null}
+          </nav>
+        </aside>
+        <section className="developerMain">{children}</section>
+      </div>
     </main>
   );
 }
@@ -633,72 +666,89 @@ function StatusNotice({ notice, secret, onCopySecret }: { notice: Notice | null;
   );
 }
 
-function Overview({ apps, appsLoading, onCreate, busy }: { apps: DeveloperApp[]; appsLoading: boolean; onCreate: (formData: FormData) => Promise<void>; busy: string }) {
+function Applications({ apps, loading, error, onOpenCreate }: { apps: DeveloperApp[]; loading: boolean; error: string; onOpenCreate: () => void }) {
+  const [sortMode, setSortMode] = useState<"created" | "name">("created");
+  const [gridSize, setGridSize] = useState<"large" | "small">("large");
+  const sortedApps = useMemo(() => {
+    const list = [...apps];
+    if (sortMode === "name") {
+      list.sort((a, b) => String(a.app_name || "").localeCompare(String(b.app_name || "")));
+      return list;
+    }
+    list.sort((a, b) => Date.parse(String(b.app_created_at || "")) - Date.parse(String(a.app_created_at || "")));
+    return list;
+  }, [apps, sortMode]);
   return (
     <>
-      <PageHeader title="Developer Portal" eyebrow="ALTARA Developers" description="Create applications, configure bots, sync commands from code, and generate install links." />
-      <div className="developerGrid two">
-        <section className="developerPanel">
-          <h2>Create</h2>
-          <div className="createChoices">
-            <button className="createChoice active" type="button"><b>Create Bot</b><span>Active now</span></button>
-            <button className="createChoice" type="button" disabled><b>Create Mod / Plugin</b><span>Coming Soon</span></button>
+      <header className="applicationsHeader">
+        <div>
+          <h1>Applications</h1>
+          <p>Build bots and apps for ALTARA.</p>
+        </div>
+        <button className="devButton primary" type="button" onClick={onOpenCreate}>New Application</button>
+      </header>
+      <section className="developerPanel applicationsPanel">
+        <div className="applicationsToolbar">
+          <div>
+            <b>My Applications</b>
+            <small>{apps.length ? `${apps.length} total` : "No applications yet"}</small>
           </div>
-          <CreateBotForm onCreate={onCreate} busy={busy} />
-        </section>
-        <section className="developerPanel">
-          <h2>Your applications</h2>
-          {appsLoading ? <p className="developerMuted">Loading applications...</p> : <AppCards apps={apps} />}
-        </section>
-      </div>
+          <label>Sort
+            <select value={sortMode} onChange={(event) => setSortMode(event.target.value === "name" ? "name" : "created")}>
+              <option value="created">Date Created</option>
+              <option value="name">Name</option>
+            </select>
+          </label>
+          <div className="segmented compact" aria-label="Grid size">
+            <button className={gridSize === "large" ? "active" : ""} type="button" onClick={() => setGridSize("large")}>Large</button>
+            <button className={gridSize === "small" ? "active" : ""} type="button" onClick={() => setGridSize("small")}>Small</button>
+          </div>
+        </div>
+        {error ? <ScopedError title="Could not load applications" body={error} /> : null}
+        {loading ? <PageLoading label="Loading applications..." /> : <AppCards apps={sortedApps} gridSize={gridSize} onOpenCreate={onOpenCreate} />}
+      </section>
     </>
   );
 }
 
-function Applications(props: { apps: DeveloperApp[]; loading: boolean; onCreate: (formData: FormData) => Promise<void>; busy: string }) {
+function CreateApplicationModal({ onClose, onCreate, busy }: { onClose: () => void; onCreate: (formData: FormData) => Promise<void>; busy: string }) {
   return (
-    <>
-      <PageHeader title="Applications" eyebrow="Create Application" description="Start with an application, then choose Bot. Mods and plugins come later." />
-      <div className="developerGrid two">
-        <section className="developerPanel">
-          <h2>Create chooser</h2>
-          <div className="createChoices">
-            <button className="createChoice active" type="button"><b>Create Bot</b><span>Bot Token Connection</span></button>
-            <button className="createChoice" type="button" disabled><b>Create Mod / Plugin</b><span>Coming Soon</span></button>
+    <div className="developerModalBackdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="developerModal" role="dialog" aria-modal="true" aria-labelledby="createApplicationTitle">
+        <button className="developerModalClose" type="button" onClick={onClose} aria-label="Close">×</button>
+        <div id="createApplicationTitle"><PageHeader title="New Application" eyebrow="Create" description="Choose what to create. Bots are available now; mods and plugins are coming later." nested /></div>
+        <div className="createChoices">
+          <button className="createChoice active" type="button"><b>Create Bot</b><span>Bot Token Connection</span></button>
+          <button className="createChoice" type="button" disabled><b>Create Mod / Plugin</b><span>Coming Soon</span></button>
+        </div>
+        <form className="developerForm" action={(formData) => { void onCreate(formData); }}>
+          <label>Application name<input name="app_name" required maxLength={80} placeholder="My ALTARA Bot" /></label>
+          <label>Bot display name<input name="bot_name" maxLength={80} placeholder="My Bot" /></label>
+          <label>Description<textarea name="description" maxLength={400} rows={3} placeholder="What this bot does" /></label>
+          <label className="uploadButton">Avatar upload optional<input name="avatar_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label>
+          <div className="developerActions">
+            <button className="devButton secondary" type="button" onClick={onClose}>Cancel</button>
+            <button className="devButton primary" type="submit" disabled={busy === "create-bot"}>{busy === "create-bot" ? "Creating..." : "Create Bot"}</button>
           </div>
-          <CreateBotForm onCreate={props.onCreate} busy={props.busy} />
-        </section>
-        <section className="developerPanel">
-          <h2>Applications</h2>
-          {props.loading ? <p className="developerMuted">Loading applications...</p> : <AppCards apps={props.apps} />}
-        </section>
-      </div>
-    </>
+        </form>
+      </section>
+    </div>
   );
 }
 
-function CreateBotForm({ onCreate, busy }: { onCreate: (formData: FormData) => Promise<void>; busy: string }) {
+function AppCards({ apps, gridSize, onOpenCreate }: { apps: DeveloperApp[]; gridSize: "large" | "small"; onOpenCreate: () => void }) {
+  if (!apps.length) return <EmptyState title="No applications yet" body="Create your first bot." actionLabel="New Application" onAction={onOpenCreate} />;
   return (
-    <form className="developerForm" action={(formData) => { void onCreate(formData); }}>
-      <label>Application name<input name="app_name" required maxLength={80} placeholder="My ALTARA Bot" /></label>
-      <label>Bot display name<input name="bot_name" maxLength={80} placeholder="My Bot" /></label>
-      <label>Description<textarea name="description" maxLength={400} rows={3} placeholder="What this bot does" /></label>
-      <label>Bot avatar upload<input name="avatar_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label>
-      <button className="devButton primary" type="submit" disabled={busy === "create-bot"}>{busy === "create-bot" ? "Creating..." : "Create Bot"}</button>
-    </form>
-  );
-}
-
-function AppCards({ apps }: { apps: DeveloperApp[] }) {
-  if (!apps.length) return <EmptyState title="No applications yet" body="Create a bot to make your first developer application." />;
-  return (
-    <div className="developerCards">
+    <div className={`developerCards ${gridSize === "small" ? "small" : ""}`}>
       {apps.map((app) => (
-        <a className="developerAppCard" href={appBase(app.app_id)} key={app.app_id}>
-          <AvatarPreview url={app.app_icon_url} label={app.app_name || "App"} />
-          <div><b>{app.app_name || "Application"}</b><small>{app.bot_name ? `Bot: ${app.bot_name}` : "No bot yet"}</small></div>
+        <Link className="developerAppCard" href={appBase(app.app_id)} key={app.app_id}>
+          <AvatarPreview url={app.app_icon_url || app.bot_avatar_url} label={app.app_name || "App"} />
+          <div>
+            <b>{app.app_name || "Application"}</b>
+            <small>{app.bot_name ? `Bot · ${app.bot_name}` : "Application · No bot yet"}</small>
+          </div>
           <span>{app.app_status || "active"}</span>
-        </a>
+        </Link>
       ))}
     </div>
   );
@@ -707,7 +757,7 @@ function AppCards({ apps }: { apps: DeveloperApp[] }) {
 function AppOverview({ app, commands }: { app: DeveloperApp; commands: BotCommand[] }) {
   return (
     <>
-      <PageHeader title={app.app_name || "Application"} eyebrow="Overview" description="A Discord-like application shell for bot identity, install settings, and synced command definitions." />
+      <PageHeader title={app.app_name || "Application"} eyebrow="Overview" description="Build bots and apps for ALTARA with identity, install settings, synced commands, and external hosting." />
       <div className="developerGrid three">
         <Metric label="Application ID" value={app.app_id} />
         <Metric label="Installs" value={String(app.install_count || 0)} />
@@ -735,14 +785,14 @@ function General({ app, onSave, busy, copyText }: { app: DeveloperApp; onSave: (
           <div className="developerMediaColumn">
             <AvatarPreview url={app.app_icon_url} label={app.app_name || "App"} className="large" />
             <label className="uploadButton">Upload app icon<input name="icon_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label>
-            <small>PNG, JPG, WEBP, or GIF. Square image recommended.</small>
+            <small>PNG, JPG/JPEG, WEBP, or GIF. Square image recommended. Max 10MB.</small>
           </div>
           <div className="developerForm">
             <label>Name<input name="name" defaultValue={app.app_name || ""} maxLength={80} required /></label>
             <label>Description<textarea name="description" defaultValue={app.app_description || ""} maxLength={400} rows={4} /></label>
-            <label>Tags optional<input name="tags" placeholder="Coming later" disabled /></label>
-            <label>Use image URL <input name="icon_url" defaultValue={app.app_icon_url || ""} placeholder="Advanced fallback URL" /></label>
-            <div className="copyRow"><code>{app.app_id}</code><button className="devButton secondary" type="button" onClick={() => { void copyText(app.app_id, "Application ID copied."); }}>Copy ID</button></div>
+            <label>Tags optional<input name="tags" placeholder="Up to 5 tags, coming later" disabled /></label>
+            <details className="advancedDetails"><summary>Advanced: use image URL</summary><label>Image URL<input name="icon_url" defaultValue={app.app_icon_url || ""} placeholder="https://..." /></label></details>
+            <div className="developerMeta"><span>Application ID / Client ID</span><code>{app.app_id}</code><button className="devButton secondary" type="button" onClick={() => { void copyText(app.app_id, "Application ID copied."); }}>Copy ID</button></div>
             <button className="devButton primary" type="submit" disabled={busy === "save-general"}>{busy === "save-general" ? "Saving..." : "Save changes"}</button>
           </div>
         </form>
@@ -796,14 +846,13 @@ function BotPage({ app, onCreate, onSave, onToken, busy }: {
             <AvatarPreview url={app.bot_avatar_url} label={app.bot_name || "Bot"} className="large overlap" />
             <label className="uploadButton">Upload avatar<input name="avatar_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label>
             <label className="uploadButton">Upload banner<input name="banner_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label>
-            <small>Avatar: square. Banner: wide 16:9 recommended. Max 10MB.</small>
+            <small>Avatar: square. Banner: wide 16:9 recommended. PNG, JPG/JPEG, WEBP, or GIF. Max 10MB.</small>
           </div>
           <div className="developerForm">
             <div className="botPreviewName"><b>{app.bot_name || "Bot"}</b><span>BOT</span></div>
             <label>Username / Bot display name<input name="name" defaultValue={app.bot_name || ""} maxLength={80} required /></label>
             <label>Description<textarea name="description" defaultValue={app.bot_description || ""} maxLength={400} rows={3} /></label>
-            <label>Use avatar URL<input name="avatar_url" defaultValue={app.bot_avatar_url || ""} placeholder="Advanced fallback URL" /></label>
-            <label>Use banner URL<input name="banner_url" defaultValue={app.bot_banner_url || ""} placeholder="Advanced fallback URL" /></label>
+            <details className="advancedDetails"><summary>Advanced: use image URL</summary><label>Avatar URL<input name="avatar_url" defaultValue={app.bot_avatar_url || ""} placeholder="https://..." /></label><label>Banner URL<input name="banner_url" defaultValue={app.bot_banner_url || ""} placeholder="https://..." /></label></details>
             <label className="toggleLine"><input name="is_public" type="checkbox" defaultChecked={app.bot_is_public === true} /> Public Bot</label>
             <button className="devButton primary" type="submit" disabled={busy === "save-bot"}>{busy === "save-bot" ? "Saving..." : "Save changes"}</button>
           </div>
@@ -820,7 +869,7 @@ function BotPage({ app, onCreate, onSave, onToken, busy }: {
       </section>
       <section className="developerGrid two">
         <div className="developerPanel"><h2>Authorization Flow</h2><label className="toggleLine"><input type="checkbox" checked={app.bot_is_public === true} readOnly /> Public Bot</label><label className="toggleLine disabled"><input type="checkbox" disabled /> Requires OAuth2 Code Grant</label></div>
-        <div className="developerPanel"><h2>Connection Status</h2><div className={`connectionBadge ${online ? "online" : ""}`}>{online ? "Online" : "Offline"}</div><p>Last connected: {formatDate(app.bot_last_used_at)}</p><p>Mode: Bot Token Connection</p><p className="developerMuted">Run your bot process locally or on a host. No public endpoint required.</p></div>
+        <div className="developerPanel"><h2>Connection Status</h2><div className={`connectionBadge ${online ? "online" : ""}`}>{online ? "Online" : "Offline"}</div><p>Last connected: {formatDate(app.bot_last_used_at)}</p><p>Mode: Bot Token Connection</p><p className="developerMuted">Run your bot locally, on a VPS, or on an app host. No public endpoint required.</p></div>
       </section>
       <section className="developerPanel">
         <h2>Privileged Gateway Intents</h2>
@@ -839,12 +888,18 @@ function Installation({ app, permissions, setPermissions, installUrl, copyText }
 }) {
   return (
     <>
-      <PageHeader title="Installation / OAuth2" eyebrow="Install Link" description="Installing adds the bot to a server. It does not host or run your bot code." />
-      <section className="developerPanel">
-        <h2>Install Link mode</h2>
-        <div className="segmented"><button className="active" type="button">ALTARA Provided Link</button><button type="button" disabled>Custom Link Coming Soon</button></div>
-        <p className="developerMuted">Scopes: <code>bot</code> <code>applications.commands</code></p>
-      </section>
+      <PageHeader title="Installation / OAuth2" eyebrow="Install generator" description="Installing adds the bot to a server. It does not host or run your bot code." />
+      <div className="developerGrid two">
+        <section className="developerPanel">
+          <h2>Install Link</h2>
+          <div className="segmented"><button className="active" type="button">ALTARA Provided Link</button><button type="button" disabled>Custom Link Coming Soon</button></div>
+          <div className="scopeList"><span>Server Install</span><code>bot</code><code>applications.commands</code></div>
+        </section>
+        <section className="developerPanel subtlePanel">
+          <h2>Default Install Settings</h2>
+          <p className="developerMuted">Choose scopes and permissions here, then copy the generated authorization URL below.</p>
+        </section>
+      </div>
       <Permissions permissions={permissions} setPermissions={setPermissions} copyText={copyText} compact />
       <section className="developerPanel">
         <h2>Generated URL</h2>
@@ -885,7 +940,11 @@ function Permissions({ permissions, setPermissions, copyText, compact = false }:
           ))}
         </div>
       ))}
-      <div className="copyRow"><code>{output}</code><button className="devButton secondary" type="button" onClick={() => { void copyText(output, "Permissions copied."); }}>Copy</button></div>
+      <div className="permissionOutput">
+        <span>ALTARA permission list</span>
+        <code>{output || "No permissions selected"}</code>
+        <button className="devButton secondary" type="button" onClick={() => { void copyText(output, "Permissions copied."); }}>Copy</button>
+      </div>
       <p className="developerMuted">Message content is controlled by a privileged intent, not a normal permission.</p>
     </section>
   );
@@ -894,12 +953,12 @@ function Permissions({ permissions, setPermissions, copyText, compact = false }:
 function Commands({ app, commands, onManual, busy }: { app: DeveloperApp; commands: BotCommand[]; onManual: (formData: FormData) => Promise<void>; busy: string }) {
   return (
     <>
-      <PageHeader title="Synced Commands" eyebrow="Code first" description="Commands are defined in code using bot.command(). The portal displays what your running bot syncs." />
+      <PageHeader title="Synced Commands" eyebrow="Code first" description="Commands are defined in your bot code with bot.command(). When your bot starts, ALTARA syncs them automatically." />
       <section className="developerPanel">
-        <CodeBlock title="Example" code={'bot.command("hello", { description: "Says hello" }, async (ctx) => {\n  await ctx.reply("Hello!");\n});'} />
+        <CodeBlock title="Example" code={'bot.command("hello", {\n  description: "Says hello",\n}, async (ctx) => {\n  await ctx.reply("Hello!");\n});'} />
       </section>
       <section className="developerPanel">
-        <h2>Commands</h2>
+        <h2>Synced commands</h2>
         <div className="commandTable">
           {commands.length ? commands.map((cmd) => (
             <div className="commandRow" key={cmd.command_id}>
@@ -923,14 +982,15 @@ function Commands({ app, commands, onManual, busy }: { app: DeveloperApp; comman
 }
 
 function CodeQuickstart({ app }: { app: DeveloperApp }) {
+  const jsExample = 'const { AltaraClient } = require("./altara-client");\n\nconst bot = new AltaraClient({\n  token: process.env.ALTARA_BOT_TOKEN,\n});\n\nbot.command("hello", {\n  description: "Says hello",\n}, async (ctx) => {\n  await ctx.reply("Hello from ALTARA!");\n});\n\nbot.login();';
   return (
     <>
       <PageHeader title="Code / Quickstart" eyebrow="Bot Token Connection" description="You do not paste code into ALTARA. You run this code on your PC, VPS, or hosting provider." />
       <section className="developerPanel">
         <div className="segmented"><button className="active" type="button">JavaScript</button><button type="button" disabled>Python Coming Soon</button></div>
-        <CodeBlock title="index.js" code={'const { AltaraClient } = require("./altara-client");\n\nconst bot = new AltaraClient({ token: process.env.ALTARA_BOT_TOKEN });\n\nbot.command("hello", { description: "Says hello" }, async (ctx) => {\n  await ctx.reply("Hello from ALTARA!");\n});\n\nbot.login();'} />
         <CodeBlock title=".env" code="ALTARA_BOT_TOKEN=altara_bot_..." />
         <CodeBlock title="Commands" code="npm install\nnpm start" />
+        <CodeBlock title="index.js" code={jsExample} />
         <p className="developerMuted">Application ID: <code>{app.app_id}</code></p>
       </section>
     </>
@@ -986,10 +1046,22 @@ function Logs({ logs, onRefresh }: { logs: AuditLog[]; onRefresh: () => void | P
 }
 
 function Docs() {
+  const docs = [
+    ["Quickstart", "Create a bot, copy the token once, define commands in code, and run bot.login()."],
+    ["Hosting", "Run locally for testing, then move to a VPS or app host for production."],
+    ["Discord-like adaptation", "ALTARA uses application identity, install URLs, synced commands, and Bot Token Connection."],
+    ["Security", "Keep tokens out of URLs, frontend code, screenshots, and public logs."],
+    ["Token safety", "Rotate tokens immediately if they leak. Signing secrets are only for Advanced Webhook Mode."],
+    ["Bot lifecycle", "A bot is online while its external process is running and connected to ALTARA."],
+  ];
   return (
     <>
       <PageHeader title="Docs" eyebrow="Discord-like model" description="ALTARA bots use application identity, Bot Token Connection runtime, synced slash commands, and external hosting." />
+      <section className="developerDocsGrid">
+        {docs.map(([title, body]) => <article className="developerPanel docCard" key={title}><h2>{title}</h2><p>{body}</p></article>)}
+      </section>
       <section className="developerPanel">
+        <h2>Core flow</h2>
         <ol className="developerSteps">
           <li>Create an application and bot.</li>
           <li>Copy the one-time bot token into <code>ALTARA_BOT_TOKEN</code>.</li>
@@ -1012,9 +1084,35 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function CodeBlock({ title, code }: { title: string; code: string }) {
-  return <div className="codeBlock"><div>{title}</div><pre><code>{code}</code></pre></div>;
+  const [copied, setCopied] = useState(false);
+  async function copyCode() {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  }
+  return (
+    <div className="codeBlock">
+      <div><span>{title}</span><button className="devButton secondary compactButton" type="button" onClick={() => { void copyCode(); }}>{copied ? "Copied" : "Copy"}</button></div>
+      <pre><code>{code}</code></pre>
+    </div>
+  );
 }
 
-function EmptyState({ title, body }: { title: string; body: string }) {
-  return <div className="emptyState"><b>{title}</b><p>{body}</p></div>;
+function EmptyState({ title, body, actionLabel, actionHref, onAction }: { title: string; body: string; actionLabel?: string; actionHref?: string; onAction?: () => void }) {
+  return (
+    <div className="emptyState">
+      <b>{title}</b>
+      <p>{body}</p>
+      {actionLabel && actionHref ? <Link className="devButton primary" href={actionHref}>{actionLabel}</Link> : null}
+      {actionLabel && onAction ? <button className="devButton primary" type="button" onClick={onAction}>{actionLabel}</button> : null}
+    </div>
+  );
+}
+
+function PageLoading({ label }: { label: string }) {
+  return <div className="devLoading"><span className="developerSpinner" aria-hidden="true" />{label}</div>;
+}
+
+function ScopedError({ title, body }: { title: string; body: string }) {
+  return <div className="developerScopedError"><b>{title}</b><p>{body}</p></div>;
 }

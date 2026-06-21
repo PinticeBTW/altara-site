@@ -1,9 +1,19 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 export function CustomCursor() {
+  const pathname = usePathname();
+  const disabled = pathname === "/developers" || pathname.startsWith("/developers/");
+
   useEffect(() => {
+    document.body.classList.toggle("developerPortalPage", disabled);
+    if (disabled) {
+      document.querySelectorAll(".cursor-dot, .cursor-ring").forEach((node) => node.remove());
+      return () => document.body.classList.remove("developerPortalPage");
+    }
+
     if (window.matchMedia("(pointer: coarse)").matches) {
       return;
     }
@@ -193,8 +203,9 @@ export function CustomCursor() {
       resetPreviewTilt();
       dot.remove();
       ring.remove();
+      document.body.classList.remove("developerPortalPage");
     };
-  }, []);
+  }, [disabled]);
 
   return null;
 }
