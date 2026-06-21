@@ -19668,6 +19668,38 @@ body::after {
   }
 }
 
+.settingsDeveloperExternalOnly {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border, rgba(255, 255, 255, .12));
+  border-radius: 8px;
+  background: var(--panel, rgba(255, 255, 255, .045));
+}
+
+.settingsDeveloperExternalOnly__icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent, #6d8cff);
+  color: #fff;
+  font-size: .76rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.settingsDeveloperExternalOnly h3,
+.settingsDeveloperExternalOnly p {
+  margin: 0;
+}
+
+.settingsDeveloperExternalOnly p {
+  color: var(--muted, rgba(255, 255, 255, .68));
+  line-height: 1.45;
+}
+
 #profileOverlay .settingsDeveloperFullPortal {
   margin-left: auto;
 }

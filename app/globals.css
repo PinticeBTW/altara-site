@@ -27,6 +27,458 @@
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Developer Portal */
+.developerPortal,
+.developerPortal * {
+  cursor: auto !important;
+}
+
+.developerPortal {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  color: #eef2f8;
+  background: #101217;
+}
+
+.developerSidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: #161922;
+}
+
+.developerBrand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.developerBrand > span,
+.settingsDeveloperExternalOnly__icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: #4f8cff;
+  color: #fff;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.developerBrand b,
+.developerBrand small,
+.developerAppSelect span,
+.developerSidebarFoot span {
+  display: block;
+}
+
+.developerBrand small,
+.developerAppSelect span,
+.developerSidebarFoot,
+.developerMuted,
+.developerHeader p,
+.developerPanel small {
+  color: #9ba7bc;
+}
+
+.developerAppSelect select,
+.developerForm input,
+.developerForm textarea,
+.developerForm select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #0f1219;
+  color: #eef2f8;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.developerForm textarea {
+  resize: vertical;
+}
+
+.developerNav {
+  display: grid;
+  gap: 4px;
+}
+
+.developerNav a {
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: #bac4d6;
+}
+
+.developerNav a:hover,
+.developerNav a.active {
+  color: #fff;
+  background: rgba(79, 140, 255, 0.16);
+}
+
+.developerSidebarFoot {
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.developerSidebarFoot a {
+  color: #72d6b5;
+}
+
+.developerMain {
+  width: min(1180px, 100%);
+  padding: 32px;
+}
+
+.developerHeader {
+  margin-bottom: 20px;
+}
+
+.developerHeader > span {
+  display: inline-flex;
+  margin-bottom: 8px;
+  color: #72d6b5;
+  font-weight: 800;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.developerHeader h1 {
+  font-size: clamp(30px, 4vw, 44px);
+  letter-spacing: 0;
+}
+
+.developerHeader p {
+  max-width: 760px;
+  margin-top: 10px;
+}
+
+.developerGrid {
+  display: grid;
+  gap: 16px;
+}
+
+.developerGrid.two {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+}
+
+.developerGrid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.developerPanel {
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: #1a1e29;
+}
+
+.developerPanel h2 {
+  margin-bottom: 12px;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.developerPanel h3 {
+  margin: 12px 0 8px;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.developerForm,
+.developerSplitForm,
+.developerMediaColumn {
+  display: grid;
+  gap: 12px;
+}
+
+.developerSplitForm {
+  grid-template-columns: 240px minmax(0, 1fr);
+  align-items: start;
+}
+
+.devAvatar {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background-color: #2a3040;
+  background-position: center;
+  background-size: cover;
+  color: #d8e2f5;
+  font-weight: 900;
+}
+
+.devAvatar.large {
+  width: 112px;
+  height: 112px;
+  border: 4px solid #1a1e29;
+}
+
+.devAvatar.overlap {
+  margin-top: -54px;
+  margin-left: 16px;
+}
+
+.devBannerPreview {
+  aspect-ratio: 16 / 7;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(79, 140, 255, 0.34), rgba(114, 214, 181, 0.2)),
+    #222838;
+  background-position: center;
+  background-size: cover;
+  color: #b8c4d8;
+}
+
+.uploadButton,
+.toggleLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.uploadButton {
+  justify-content: center;
+  min-height: 40px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #d7dfef;
+}
+
+.uploadButton input {
+  display: none;
+}
+
+.toggleLine.disabled {
+  opacity: 0.55;
+}
+
+.toggleLine small {
+  margin-left: auto;
+}
+
+.devButton,
+.segmented button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #252b39;
+  color: #eef2f8;
+  font-weight: 800;
+}
+
+.devButton.primary,
+.segmented button.active {
+  border-color: #4f8cff;
+  background: #4f8cff;
+  color: #fff;
+}
+
+.devButton.danger {
+  border-color: rgba(255, 113, 113, 0.35);
+  background: rgba(255, 113, 113, 0.12);
+  color: #ffb7b7;
+}
+
+.devButton:disabled,
+.segmented button:disabled {
+  opacity: 0.55;
+}
+
+.developerActions,
+.copyRow,
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.copyRow code {
+  flex: 1;
+  min-width: 220px;
+  overflow-wrap: anywhere;
+}
+
+.developerNotice,
+.developerSecret,
+.developerWarning,
+.emptyState {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.developerNotice.success {
+  background: rgba(114, 214, 181, 0.14);
+}
+
+.developerNotice.error,
+.developerWarning {
+  background: rgba(255, 185, 107, 0.13);
+}
+
+.developerSecret {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(0, 2fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(114, 214, 181, 0.26);
+}
+
+.developerSecret code,
+.copyRow code,
+.codeBlock pre,
+.developerMeta code,
+.logRow code {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0d1017;
+  color: #dbe7ff;
+  font-family: var(--font-jetbrains-mono), monospace;
+}
+
+.createChoices,
+.developerCards,
+.permissionGroup,
+.commandTable,
+.logList,
+.developerSteps,
+.developerList {
+  display: grid;
+  gap: 10px;
+}
+
+.createChoice,
+.developerAppCard,
+.commandRow,
+.logRow,
+.developerMeta {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: #151922;
+}
+
+.createChoice {
+  grid-template-columns: 1fr auto;
+  text-align: left;
+}
+
+.createChoice.active {
+  border-color: rgba(79, 140, 255, 0.5);
+}
+
+.commandRow {
+  grid-template-columns: 140px 1fr 90px 90px 150px;
+}
+
+.logRow {
+  grid-template-columns: 180px 150px minmax(0, 1fr);
+}
+
+.metric {
+  display: grid;
+  gap: 6px;
+}
+
+.metric b {
+  overflow-wrap: anywhere;
+  font-family: var(--font-jetbrains-mono), monospace;
+}
+
+.botPreviewName {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.botPreviewName span,
+.connectionBadge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(79, 140, 255, 0.16);
+  color: #bcd3ff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.connectionBadge.online {
+  background: rgba(114, 214, 181, 0.18);
+  color: #a7f2d8;
+}
+
+.codeBlock {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.codeBlock pre {
+  overflow: auto;
+  line-height: 1.55;
+}
+
+.settingsDeveloperExternalOnly {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--stroke-strong, rgba(255, 255, 255, 0.14));
+  border-radius: 8px;
+  background: var(--surface-1, rgba(255, 255, 255, 0.05));
+}
+
+@media (max-width: 900px) {
+  .developerPortal,
+  .developerGrid.two,
+  .developerGrid.three,
+  .developerSplitForm {
+    grid-template-columns: 1fr;
+  }
+
+  .developerSidebar {
+    position: static;
+    height: auto;
+  }
+
+  .developerMain {
+    padding: 20px;
+  }
+
+  .commandRow,
+  .logRow,
+  .developerSecret {
+    grid-template-columns: 1fr;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

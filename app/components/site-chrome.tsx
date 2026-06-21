@@ -6,7 +6,7 @@ export const DOWNLOAD_URL =
 export const TRY_IN_BROWSER_URL = "/try";
 export const RELEASES_URL = "https://github.com/PinticeBTW/altara-updates/releases";
 
-type NavPage = "home" | "features" | "faq" | "about";
+type NavPage = "home" | "features" | "faq" | "about" | "developers";
 type FooterLink = {
   label: string;
   href: string;
@@ -48,6 +48,9 @@ export function SiteNav({ active }: { active?: NavPage }) {
           </Link>
           <Link href="/about" className={active === "about" ? "active" : undefined}>
             About
+          </Link>
+          <Link href="/developers" className={active === "developers" ? "active" : undefined}>
+            Developers
           </Link>
         </div>
       </div>

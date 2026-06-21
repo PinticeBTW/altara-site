@@ -10,14 +10,6 @@ const nextConfig: NextConfig = {
         destination: "/app/index.html",
       },
       {
-        source: "/developers",
-        destination: "/app/index.html",
-      },
-      {
-        source: "/developers/:path*",
-        destination: "/app/index.html",
-      },
-      {
         source: "/login.html",
         destination: "/app/login.html",
       },
