@@ -8436,7 +8436,7 @@ body.has-profile-checklist-sheet {
 }
 
 .serverMemberRow--bot {
-  cursor: default;
+  cursor: pointer;
 }
 
 .serverMemberRow--bot .statusDot {
@@ -21176,6 +21176,8 @@ body::after {
   background:
     linear-gradient(135deg, rgba(84, 183, 164, 0.28), rgba(110, 168, 254, 0.2)),
     rgba(255, 255, 255, 0.04);
+  background-position: center;
+  background-size: cover;
 }
 
 .botProfileCard__head {
@@ -21241,6 +21243,52 @@ body::after {
   margin: 0 20px 20px;
   color: var(--text-muted);
   font-size: 0.88rem;
+}
+
+.botProfileCard__commands {
+  display: grid;
+  gap: 8px;
+  margin: 0 20px 20px;
+  padding: 14px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.botProfileCard__commands h3 {
+  margin: 0 0 2px;
+  font-size: 0.92rem;
+  letter-spacing: 0;
+}
+
+.botProfileCommandRow {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.botProfileCommandRow b {
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.botProfileCommandRow span,
+.botProfileCommandRow small,
+.botProfileCard__empty {
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.botProfileCommandRow small,
+.botProfileCard__empty {
+  font-size: 0.8rem;
+}
+
+.botContextMenu {
+  min-width: 286px;
 }
 
 .botCommandComposerNotice {
