@@ -20973,6 +20973,33 @@ body::after {
   padding: 10px;
 }
 
+.serverSettingsBotSection {
+  display: grid;
+  gap: 10px;
+}
+
+.serverSettingsBotSection + .serverSettingsBotSection {
+  margin-top: 16px;
+}
+
+.serverSettingsBotSection h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  letter-spacing: 0;
+}
+
+.serverSettingsBotRow--banned {
+  border-color: rgba(224, 92, 92, 0.24);
+  background: rgba(224, 92, 92, 0.07);
+}
+
+.serverSettingsBotRow__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .serverSettingsBotRow__body {
   min-width: 0;
   display: grid;
@@ -21347,6 +21374,10 @@ body::after {
   .botAuthorizePeople,
   .serverSettingsBotRow {
     grid-template-columns: 1fr;
+  }
+
+  .serverSettingsBotRow__actions {
+    justify-content: flex-start;
   }
 
   .botRouteOverlay .settingsDeveloperCreate textarea,
