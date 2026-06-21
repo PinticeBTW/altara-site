@@ -19919,6 +19919,140 @@ body::after {
   line-height: 1.45;
 }
 
+.botCreateChooser,
+.botPermissionGroup,
+.botToggleGrid,
+.botCodeTabs,
+.botGeneralIconStack,
+.botPermissionOutput {
+  min-width: 0;
+}
+
+.botCreateChoiceGrid,
+.botToggleGrid,
+.botGeneralIconStack,
+.botPermissionOutput {
+  display: grid;
+  gap: 10px;
+}
+
+.botCreateChoiceGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.botCreateChoice,
+.botToggleRow,
+.botPermissionGroup,
+.botPermissionOutput > div,
+.botBannerPlaceholder {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.botCreateChoice {
+  min-height: 92px;
+  display: grid;
+  gap: 6px;
+  align-content: center;
+  padding: 14px;
+  color: var(--text-main);
+  text-align: left;
+}
+
+.botCreateChoice.is-active {
+  border-color: rgba(124, 212, 255, 0.34);
+  background: rgba(124, 212, 255, 0.08);
+}
+
+.botCreateChoice.is-disabled,
+.botToggleRow input:disabled + span,
+.settingsDeveloperPermRow.is-disabled {
+  opacity: 0.62;
+}
+
+.botCreateChoice small,
+.botToggleRow small,
+.settingsDeveloperPermRow small,
+.botGeneralIconStack span,
+.botPermissionOutput span {
+  color: var(--text-soft);
+  line-height: 1.4;
+}
+
+.botBannerPlaceholder {
+  min-height: 86px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  background:
+    linear-gradient(135deg, rgba(124, 212, 255, 0.1), rgba(216, 180, 106, 0.08)),
+    rgba(255, 255, 255, 0.035);
+}
+
+.botToggleRow {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+}
+
+.botToggleRow input,
+.settingsDeveloperPermRow input {
+  margin-top: 2px;
+}
+
+.botToggleRow span,
+.settingsDeveloperPermRow span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.botPermissionGroup {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.settingsDeveloperPermGrid--stacked {
+  display: grid !important;
+  align-items: stretch !important;
+}
+
+.settingsDeveloperPermGrid--stacked .settingsDeveloperPermRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.botPermissionOutput {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.botPermissionOutput > div {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
+.botPermissionOutput code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.botCodeTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .botInteractionPanel .settingsDeveloperInviteUrl code {
   display: block;
   max-height: 260px;
@@ -21039,7 +21173,9 @@ body::after {
 
   .botDocsGrid--two,
   .botDocsGrid--three,
-  .botDocsSteps {
+  .botDocsSteps,
+  .botCreateChoiceGrid,
+  .botPermissionOutput {
     grid-template-columns: 1fr;
   }
 
