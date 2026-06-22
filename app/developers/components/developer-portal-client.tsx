@@ -3,7 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { getSupabaseBrowserClient } from "@/app/lib/supabase-browser";
 
@@ -54,6 +54,19 @@ type EndpointInfo = {
   endpoint_url?: string | null;
   last_status?: string | null;
   last_error?: string | null;
+};
+
+type DeveloperUserProfile = {
+  display_name?: string | null;
+  username?: string | null;
+  avatar_url?: string | null;
+};
+
+type DeveloperUserIdentity = {
+  displayName: string;
+  handle: string;
+  avatarUrl: string;
+  initial: string;
 };
 
 type Notice = {
@@ -168,6 +181,28 @@ function botDescription(app: DeveloperApp | null | undefined): string {
   return String(app?.bot_description || app?.app_description || "").trim();
 }
 
+function cleanIdentityText(value: unknown): string {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 80);
+}
+
+function normalizeProfileUsername(value: unknown): string {
+  return cleanIdentityText(value).replace(/^@+/, "").slice(0, 32);
+}
+
+function getUserMetadata(user: User | null | undefined): Record<string, unknown> {
+  return asRecord(user?.user_metadata);
+}
+
+function getDeveloperUserIdentity(user: User | null | undefined, profile: DeveloperUserProfile | null | undefined): DeveloperUserIdentity {
+  const metadata = getUserMetadata(user);
+  const username = normalizeProfileUsername(profile?.username || metadata.username || metadata.user_name || metadata.preferred_username);
+  const displayName = cleanIdentityText(profile?.display_name || metadata.display_name || metadata.full_name || metadata.name || username) || "ALTARA User";
+  const avatarUrl = cleanIdentityText(profile?.avatar_url || metadata.avatar_url || metadata.picture);
+  const handle = username ? `@${username}` : "";
+  const initial = (displayName || username || "A").trim().charAt(0).toUpperCase() || "A";
+  return { displayName, handle, avatarUrl, initial };
+}
+
 function AvatarPreview({ url, label, className = "" }: { url?: string | null; label: string; className?: string }) {
   const initial = String(label || "A").trim().charAt(0).toUpperCase() || "A";
   return (
@@ -201,6 +236,7 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
   const [endpoint, setEndpoint] = useState<EndpointInfo | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [secretNotice, setSecretNotice] = useState<SecretNotice | null>(null);
+  const [userProfile, setUserProfile] = useState<DeveloperUserProfile | null>(null);
   const [permissions, setPermissions] = useState<string[]>(DEFAULT_PERMISSIONS);
   const [busyAction, setBusyAction] = useState("");
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -235,6 +271,46 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
       sub.subscription.unsubscribe();
     };
   }, [supabase]);
+
+  useEffect(() => {
+    let disposed = false;
+    if (!user?.id) {
+      window.setTimeout(() => {
+        if (!disposed) setUserProfile(null);
+      }, 0);
+      return () => {
+        disposed = true;
+      };
+    }
+
+    async function loadUserProfile() {
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("display_name, username, avatar_url")
+          .eq("id", user?.id || "")
+          .maybeSingle();
+        if (disposed) return;
+        if (error || !data) {
+          setUserProfile(null);
+          return;
+        }
+        const row = asRecord(data);
+        setUserProfile({
+          display_name: cleanIdentityText(row.display_name),
+          username: normalizeProfileUsername(row.username),
+          avatar_url: cleanIdentityText(row.avatar_url),
+        });
+      } catch {
+        if (!disposed) setUserProfile(null);
+      }
+    }
+
+    void loadUserProfile();
+    return () => {
+      disposed = true;
+    };
+  }, [supabase, user?.id]);
 
   async function rpc<T>(name: string, payload: Record<string, unknown> = {}): Promise<T> {
     const rpcCall = supabase.rpc.bind(supabase) as unknown as DynamicRpc;
@@ -483,6 +559,11 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
     });
   }
 
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    window.location.assign("/login.html?return_to=%2Fdevelopers");
+  }
+
   if (authLoading) {
     return <DeveloperPortalFrame route={route}><PageLoading label="Checking session..." /></DeveloperPortalFrame>;
   }
@@ -492,7 +573,7 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
   }
 
   return (
-    <DeveloperPortalFrame route={route} bots={bots} selectedBot={selectedBot} user={user} onOpenCreate={() => setCreateModalOpen(true)}>
+    <DeveloperPortalFrame route={route} bots={bots} selectedBot={selectedBot} user={user} userProfile={userProfile} onOpenCreate={() => setCreateModalOpen(true)} onSignOut={handleSignOut}>
       <StatusNotice notice={notice} secret={secretNotice} onCopySecret={() => secretNotice ? copyText(secretNotice.value, "Token copied.") : undefined} />
       {renderContent()}
       {createModalOpen ? <CreateBotModal onClose={() => setCreateModalOpen(false)} onCreate={handleCreateBot} busy={busyAction} /> : null}
@@ -527,17 +608,24 @@ function DeveloperPortalFrame({
   bots = [],
   selectedBot = null,
   user = null,
+  userProfile = null,
   onOpenCreate,
+  onSignOut,
   children,
 }: {
   route: RouteState;
   bots?: DeveloperApp[];
   selectedBot?: DeveloperApp | null;
   user?: User | null;
+  userProfile?: DeveloperUserProfile | null;
   onOpenCreate?: () => void;
+  onSignOut?: () => void | Promise<void>;
   children: ReactNode;
 }) {
   const router = useRouter();
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [themeMode, setThemeMode] = useState<"dark" | "midnight">("dark");
   const selectedId = selectedBot?.app_id || "";
   const base = selectedId ? appBase(selectedId) : "/developers/applications";
   const nav = selectedId ? [
@@ -553,11 +641,29 @@ function DeveloperPortalFrame({
     ["Logs", `${base}/logs`],
     ["Advanced IDs", `${base}/advanced-ids`],
   ] : [];
-  const userInitial = String(user?.email || "A").trim().charAt(0).toUpperCase() || "A";
+  const identity = getDeveloperUserIdentity(user, userProfile);
   const activePath = (href: string) => route.kind === "bot" && (href.endsWith(route.section) || (route.section === "overview" && href.endsWith("/profile")));
 
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && userMenuRef.current?.contains(target)) return;
+      setUserMenuOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setUserMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [userMenuOpen]);
+
   return (
-    <main className="developerPortal">
+    <main className={`developerPortal developerPortal--${themeMode}`}>
       <header className="developerTopBar">
         <Link className="developerTopBrand" href="/developers">
           <span>ALT</span>
@@ -569,9 +675,34 @@ function DeveloperPortalFrame({
           <a href="/app">Open ALTARA</a>
         </nav>
         <button className="devButton primary developerCreateTop" type="button" onClick={onOpenCreate} disabled={!onOpenCreate}>New Bot</button>
-        <div className="developerUserMenu" aria-label="Current user">
-          <span>{userInitial}</span>
-          <small>{user?.email || "Signed in"}</small>
+        <div className={`developerUserMenu${userMenuOpen ? " is-open" : ""}`} aria-label="Current user" ref={userMenuRef}>
+          <button className="developerUserButton" type="button" aria-haspopup="menu" aria-expanded={userMenuOpen} onClick={() => setUserMenuOpen((open) => !open)}>
+            <DeveloperUserAvatar identity={identity} />
+            <span className="developerUserButtonName">{identity.displayName}</span>
+          </button>
+          {userMenuOpen ? (
+            <div className="developerUserDropdown" role="menu" aria-label="Account menu">
+              <div className="developerUserHeader">
+                <DeveloperUserAvatar identity={identity} large />
+                <div>
+                  <strong>{identity.displayName}</strong>
+                  <span>{identity.handle || "ALTARA account"}</span>
+                </div>
+              </div>
+              <button className="developerUserMenuItem" type="button" role="menuitem" onClick={() => setThemeMode((mode) => mode === "dark" ? "midnight" : "dark")}>
+                Theme toggle <span>{themeMode === "dark" ? "Dark" : "Midnight"}</span>
+              </button>
+              <a className="developerUserMenuItem" role="menuitem" href="/app">
+                Manage account <span>Open ALTARA</span>
+              </a>
+              <button className="developerUserMenuItem" type="button" role="menuitem" disabled>
+                Language <span>English</span>
+              </button>
+              <button className="developerUserMenuItem danger" type="button" role="menuitem" onClick={() => { setUserMenuOpen(false); void onSignOut?.(); }}>
+                Log Out
+              </button>
+            </div>
+          ) : null}
         </div>
       </header>
       <div className="developerShell">
@@ -609,6 +740,18 @@ function DeveloperPortalFrame({
         <section className="developerMain">{children}</section>
       </div>
     </main>
+  );
+}
+
+function DeveloperUserAvatar({ identity, large = false }: { identity: DeveloperUserIdentity; large?: boolean }) {
+  return (
+    <span
+      className={`developerUserAvatar${large ? " large" : ""}`}
+      style={identity.avatarUrl ? { backgroundImage: `url("${identity.avatarUrl}")` } : undefined}
+      aria-hidden="true"
+    >
+      {!identity.avatarUrl ? identity.initial : null}
+    </span>
   );
 }
 
