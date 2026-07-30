@@ -1,7 +1,43 @@
 ﻿import { supabase } from "./supabaseClient.js";
 
+import {
+  ALTARA_AUTH_STATE,
+  classifyAuthFailure,
+  getSafeAuthErrorCode,
+} from "./lib/offlineCoordinator.js";
+
 const AUTH_SOFT_TIMEOUT_MS = 10000;
 const PROFILE_QUERY_TIMEOUT_MS = 10000;
+const PROFILE_BASE_SELECT_COLUMNS = ["id", "username", "display_name", "bio", "avatar_url", "theme_settings", "pronouns", "created_at"];
+const PROFILE_OPTIONAL_SELECT_COLUMNS = ["bio", "status", "theme_settings", "name_color", "call_tile_color", "banner_url", "pronouns", "connected_accounts"];
+const unavailableProfileColumns = new Set();
+
+function isMissingProfileColumnError(error) {
+  const msg = String(error?.message || error?.details || error?.hint || "").toLowerCase();
+  const code = String(error?.code || "").trim().toUpperCase();
+  return code === "PGRST204" || code === "42703" || ((msg.includes("column") || msg.includes("schema cache")) && (msg.includes("not found") || msg.includes("could not find") || msg.includes("does not exist")));
+}
+
+function getMissingProfileColumnsFromError(error, attemptedColumns = []) {
+  const msg = String(error?.message || error?.details || error?.hint || "").toLowerCase();
+  const code = String(error?.code || "").trim().toUpperCase();
+  const attempted = (Array.isArray(attemptedColumns) ? attemptedColumns : [])
+    .map((column) => String(column || "").trim())
+    .filter((column) => PROFILE_OPTIONAL_SELECT_COLUMNS.includes(column));
+  const exact = attempted.filter((column) => msg.includes(column.toLowerCase()) && (msg.includes("column") || msg.includes("schema cache") || code === "PGRST204" || code === "42703"));
+  if (exact.length) return Array.from(new Set(exact));
+  if (isMissingProfileColumnError(error)) return attempted;
+  return [];
+}
+
+function buildProfileSelect(optionalColumns = []) {
+  const columns = [
+    ...PROFILE_BASE_SELECT_COLUMNS,
+    ...optionalColumns.filter((column) => !unavailableProfileColumns.has(column)),
+  ];
+  const unique = Array.from(new Set(columns));
+  return { columns: unique, select: unique.join(", ") };
+}
 
 export function $(id) { return document.getElementById(id); }
 
@@ -91,20 +127,6 @@ export function enhancePasswordVisibilityToggles(root = document) {
   });
 }
 
-function readErrorMessage(err) {
-  return String(err?.message || err || "").trim();
-}
-
-function looksLikeAuthSessionError(err) {
-  const msg = readErrorMessage(err).toLowerCase();
-  return (
-    msg.includes("auth session missing")
-    || msg.includes("jwt")
-    || msg.includes("session")
-    || msg.includes("refresh token")
-  );
-}
-
 function clearStoredAuthState() {
   const shouldRemove = (key) => {
     const k = String(key || "").toLowerCase();
@@ -154,22 +176,115 @@ async function withTimeout(promiseLike, timeoutMs = 3500) {
   } catch (_) {}
 }
 
-async function resolveAuthenticatedUser() {
+let lastAuthResolution = {
+  category: ALTARA_AUTH_STATE.NO_LOCAL_SESSION,
+  user: null,
+  sessionPresent: false,
+  safeErrorCode: "",
+};
+
+function getAuthNavigatorOnline() {
   try {
-    await raceWithTimeout(supabase.auth.getSession(), AUTH_SOFT_TIMEOUT_MS, "auth.getSession");
+    return typeof navigator === "undefined" ? true : navigator.onLine !== false;
   } catch (_) {
-    return null;
+    return true;
+  }
+}
+
+function setLastAuthResolution(category, {
+  user = null,
+  sessionPresent = false,
+  error = null,
+} = {}) {
+  lastAuthResolution = {
+    category,
+    user: user || null,
+    sessionPresent: !!sessionPresent,
+    safeErrorCode: error ? getSafeAuthErrorCode(error, category) : "",
+  };
+  return { ...lastAuthResolution, error: error || null };
+}
+
+function classifyAuthRequestFailure(error) {
+  return classifyAuthFailure(error, {
+    navigatorOnline: getAuthNavigatorOnline(),
+    authOperation: true,
+  });
+}
+
+async function resolveAuthenticatedSessionState({ cachedSession = null } = {}) {
+  let localSession = cachedSession || null;
+  if (localSession?.user && getAuthNavigatorOnline() === false) {
+    return setLastAuthResolution(ALTARA_AUTH_STATE.NETWORK_INDETERMINATE, {
+      user: localSession.user,
+      sessionPresent: true,
+      error: new Error("network_offline"),
+    });
+  }
+
+  let sessionResult = null;
+  try {
+    sessionResult = await raceWithTimeout(supabase.auth.getSession(), AUTH_SOFT_TIMEOUT_MS, "auth.getSession");
+  } catch (error) {
+    const category = classifyAuthRequestFailure(error);
+    return setLastAuthResolution(category, {
+      user: localSession?.user || null,
+      sessionPresent: !!localSession,
+      error,
+    });
+  }
+  if (sessionResult?.error) {
+    const category = classifyAuthRequestFailure(sessionResult.error);
+    return setLastAuthResolution(category, {
+      user: localSession?.user || null,
+      sessionPresent: !!localSession,
+      error: sessionResult.error,
+    });
+  }
+  localSession = sessionResult?.data?.session || localSession || null;
+  if (!localSession?.user) {
+    return setLastAuthResolution(ALTARA_AUTH_STATE.NO_LOCAL_SESSION);
+  }
+
+  if (getAuthNavigatorOnline() === false) {
+    return setLastAuthResolution(ALTARA_AUTH_STATE.NETWORK_INDETERMINATE, {
+      user: localSession.user,
+      sessionPresent: true,
+      error: new Error("network_offline"),
+    });
   }
 
   let firstUserResult = null;
   try {
     firstUserResult = await raceWithTimeout(supabase.auth.getUser(), AUTH_SOFT_TIMEOUT_MS, "auth.getUser");
-  } catch (_) {
-    return null;
+  } catch (error) {
+    const category = classifyAuthRequestFailure(error);
+    return setLastAuthResolution(category, {
+      user: localSession.user,
+      sessionPresent: true,
+      error,
+    });
   }
-  if (firstUserResult?.data?.user) return firstUserResult.data.user;
-
-  if (!looksLikeAuthSessionError(firstUserResult?.error)) return null;
+  if (firstUserResult?.data?.user) {
+    return setLastAuthResolution(ALTARA_AUTH_STATE.VALID_SESSION, {
+      user: firstUserResult.data.user,
+      sessionPresent: true,
+    });
+  }
+  if (firstUserResult?.error) {
+    const firstCategory = classifyAuthRequestFailure(firstUserResult.error);
+    if (
+      firstCategory === ALTARA_AUTH_STATE.NETWORK_INDETERMINATE
+      || firstCategory === ALTARA_AUTH_STATE.BACKEND_TEMPORARILY_UNAVAILABLE
+      || firstCategory === ALTARA_AUTH_STATE.UNEXPECTED_BOOT_ERROR
+    ) {
+      return setLastAuthResolution(firstCategory, {
+        user: localSession.user,
+        sessionPresent: true,
+        error: firstUserResult.error,
+      });
+    }
+  }
 
   let refreshResult = null;
   try {
@@ -178,10 +293,24 @@ async function resolveAuthenticatedUser() {
       AUTH_SOFT_TIMEOUT_MS,
       "auth.refreshSession"
     );
-  } catch (_) {
-    return null;
+  } catch (error) {
+    const category = classifyAuthRequestFailure(error);
+    return setLastAuthResolution(category, {
+      user: localSession.user,
+      sessionPresent: true,
+      error,
+    });
   }
-  if (refreshResult?.error && !looksLikeAuthSessionError(refreshResult.error)) return null;
+  if (refreshResult?.error) {
+    const category = classifyAuthRequestFailure(refreshResult.error);
+    return setLastAuthResolution(category, {
+      user: localSession.user,
+      sessionPresent: true,
+      error: refreshResult.error,
+    });
+  }
+  const refreshedSession = refreshResult?.data?.session || null;
+  if (refreshedSession?.user) localSession = refreshedSession;
 
   let secondUserResult = null;
   try {
@@ -190,53 +319,80 @@ async function resolveAuthenticatedUser() {
       AUTH_SOFT_TIMEOUT_MS,
       "auth.getUser.retry"
     );
-  } catch (_) {
-    return null;
+  } catch (error) {
+    const category = classifyAuthRequestFailure(error);
+    return setLastAuthResolution(category, {
+      user: localSession.user,
+      sessionPresent: true,
+      error,
+    });
   }
-  if (secondUserResult?.data?.user) return secondUserResult.data.user;
-  return null;
+  if (secondUserResult?.data?.user) {
+    return setLastAuthResolution(ALTARA_AUTH_STATE.VALID_SESSION, {
+      user: secondUserResult.data.user,
+      sessionPresent: true,
+    });
+  }
+  const finalError = secondUserResult?.error || firstUserResult?.error || new Error("auth_user_validation_empty");
+  const finalCategory = classifyAuthRequestFailure(finalError);
+  return setLastAuthResolution(finalCategory, {
+    user: localSession.user,
+    sessionPresent: true,
+    error: finalError,
+  });
 }
 
-export async function requireAuth(redirectUrl) {
-  try {
-    const user = await resolveAuthenticatedUser();
-    if (user) return user;
-  } catch (_) {}
+export function getLastAuthResolution() {
+  return { ...lastAuthResolution };
+}
 
-  // replace avoids returning to previous protected view via back navigation
+export async function resolveAuthState(options = {}) {
+  return resolveAuthenticatedSessionState(options);
+}
+
+export function clearConclusiveInvalidAuthStateAndRedirect(redirectUrl = "./login.html") {
   clearStoredAuthState();
   window.location.replace(redirectUrl);
-  return null;
+}
+
+export async function requireAuth(redirectUrl, options = {}) {
+  const resolution = await resolveAuthenticatedSessionState(options);
+  if (
+    resolution.category === ALTARA_AUTH_STATE.VALID_SESSION
+    || resolution.category === ALTARA_AUTH_STATE.NETWORK_INDETERMINATE
+    || resolution.category === ALTARA_AUTH_STATE.BACKEND_TEMPORARILY_UNAVAILABLE
+  ) {
+    return resolution.user || null;
+  }
+  if (resolution.category === ALTARA_AUTH_STATE.NO_LOCAL_SESSION) {
+    window.location.replace(redirectUrl);
+    return null;
+  }
+  if (resolution.category === ALTARA_AUTH_STATE.CONCLUSIVELY_INVALID_SESSION) {
+    clearConclusiveInvalidAuthStateAndRedirect(redirectUrl);
+    return null;
+  }
+
+  const safeError = new Error("ALTARA could not validate the saved session yet.");
+  safeError.code = resolution.safeErrorCode || "auth_boot_unexpected";
+  safeError.authStateCategory = ALTARA_AUTH_STATE.UNEXPECTED_BOOT_ERROR;
+  throw safeError;
 }
 
 export async function getMyProfile(uid) {
-  const baseSelect = "id, username, display_name, bio, avatar_url";
-  let includeStatus = true;
-  let includeTheme = true;
-  let includeName = true;
-  let includeCallTile = true;
-  let includeBanner = true;
-  let includePronouns = true;
-  let includeConnectedAccounts = true;
+  const id = String(uid || "").trim();
+  if (!id) return {};
+  let optionalColumns = [];
   let lastError = null;
 
-  for (let i = 0; i < 7; i += 1) {
-    const select = [
-      baseSelect,
-      ...(includeStatus ? ["status"] : []),
-      ...(includeTheme ? ["theme_settings"] : []),
-      ...(includeName ? ["name_color"] : []),
-      ...(includeCallTile ? ["call_tile_color"] : []),
-      ...(includeBanner ? ["banner_url"] : []),
-      ...(includePronouns ? ["pronouns"] : []),
-      ...(includeConnectedAccounts ? ["connected_accounts"] : []),
-    ].join(", ");
+  for (let i = 0; i < 4; i += 1) {
+    const selectState = buildProfileSelect(optionalColumns);
 
     const result = await raceWithTimeout(
       supabase
         .from("profiles")
-        .select(select)
-        .eq("id", uid)
+        .select(selectState.select)
+        .eq("id", id)
         .single(),
       PROFILE_QUERY_TIMEOUT_MS,
       "profiles.getMyProfile"
@@ -244,48 +400,17 @@ export async function getMyProfile(uid) {
 
     if (!result.error) {
       const data = result.data || {};
-      if (!includeStatus && typeof data.status === "undefined") data.status = null;
-      if (!includeTheme && typeof data.theme_settings === "undefined") data.theme_settings = null;
-      if (!includeName && typeof data.name_color === "undefined") data.name_color = null;
-      if (!includeCallTile && typeof data.call_tile_color === "undefined") data.call_tile_color = null;
-      if (!includeBanner && typeof data.banner_url === "undefined") data.banner_url = null;
-      if (!includePronouns && typeof data.pronouns === "undefined") data.pronouns = null;
-      if (!includeConnectedAccounts && typeof data.connected_accounts === "undefined") data.connected_accounts = null;
+      PROFILE_OPTIONAL_SELECT_COLUMNS.forEach((column) => {
+        if (typeof data[column] === "undefined") data[column] = null;
+      });
       return data;
     }
 
     lastError = result.error;
-    const msg = String(result?.error?.message || "").toLowerCase();
-    let changed = false;
-    if (includeStatus && msg.includes("status") && msg.includes("column")) {
-      includeStatus = false;
-      changed = true;
-    }
-    if (includeTheme && msg.includes("theme_settings") && msg.includes("column")) {
-      includeTheme = false;
-      changed = true;
-    }
-    if (includeName && msg.includes("name_color") && msg.includes("column")) {
-      includeName = false;
-      changed = true;
-    }
-    if (includeCallTile && msg.includes("call_tile_color") && msg.includes("column")) {
-      includeCallTile = false;
-      changed = true;
-    }
-    if (includeBanner && msg.includes("banner_url") && msg.includes("column")) {
-      includeBanner = false;
-      changed = true;
-    }
-    if (includePronouns && msg.includes("pronouns") && msg.includes("column")) {
-      includePronouns = false;
-      changed = true;
-    }
-    if (includeConnectedAccounts && msg.includes("connected_accounts") && msg.includes("column")) {
-      includeConnectedAccounts = false;
-      changed = true;
-    }
-    if (!changed) break;
+    const missingColumns = getMissingProfileColumnsFromError(result.error, selectState.columns);
+    if (!missingColumns.length) break;
+    missingColumns.forEach((column) => unavailableProfileColumns.add(column));
+    optionalColumns = optionalColumns.filter((column) => !missingColumns.includes(column));
   }
 
   throw lastError;

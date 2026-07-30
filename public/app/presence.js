@@ -1,9 +1,18 @@
 // presence.js
 // Supabase Realtime Presence (Discord-like)
 
-export function createPresenceSystem({ supabase, getMe, onPresenceList, onError, onStatus }) {
+export function createPresenceSystem({
+  supabase,
+  getMe,
+  onPresenceList,
+  onError,
+  onStatus,
+  manageReconnectExternally = false,
+}) {
   const PRESENCE_CHANNEL_NAME = "altara-presence-global";
   const PRESENCE_HEARTBEAT_MS = 25000;
+  const PRESENCE_TRACK_MIN_INTERVAL_MS = 8000;
+  const PRESENCE_TRACK_SAME_STATE_REFRESH_MS = 20000;
   const REMOTE_PRESENCE_GRACE_MS = Math.max(60000, PRESENCE_HEARTBEAT_MS * 2);
 
   let channel = null;
@@ -31,6 +40,13 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError,
   let ownSessionVisibleCheckTimer = null;
   let ownSessionMissingRetryTimer = null;
   let ownSessionInitialRetrackDone = false;
+  let trackGeneration = 0;
+  let trackInFlight = null;
+  let activeTrackSignature = "";
+  let pendingTrackRequest = null;
+  let pendingTrackTimer = null;
+  let lastTrackSignature = "";
+  let lastTrackSentAt = 0;
 
   function isPresenceLiveDebugEnabled() {
     try {
@@ -345,6 +361,44 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError,
     reconnectTimer = null;
   }
 
+  function clearPendingTrackTimer() {
+    if (!pendingTrackTimer) return;
+    clearTimeout(pendingTrackTimer);
+    pendingTrackTimer = null;
+  }
+
+  function getTrackPayloadSignature(payload = {}) {
+    const {
+      last_seen_at: _lastSeenAt,
+      last_seen: _lastSeen,
+      ...stablePayload
+    } = payload && typeof payload === "object" ? payload : {};
+    return JSON.stringify(stablePayload);
+  }
+
+  function storePendingTrackRequest(statusOverride = "", force = false) {
+    pendingTrackRequest = {
+      statusOverride: String(statusOverride || currentStatus || "online"),
+      force: force === true || pendingTrackRequest?.force === true,
+    };
+  }
+
+  function schedulePendingTrackRequest() {
+    if (!pendingTrackRequest || pendingTrackTimer || trackInFlight) return;
+    const elapsed = Date.now() - Math.max(0, Number(lastTrackSentAt || 0));
+    const delayMs = Math.max(0, PRESENCE_TRACK_MIN_INTERVAL_MS - elapsed);
+    pendingTrackTimer = setTimeout(() => {
+      pendingTrackTimer = null;
+      const request = pendingTrackRequest;
+      pendingTrackRequest = null;
+      if (!request) return;
+      void trackNow(request.statusOverride, { force: request.force }).catch((error) => {
+        lastPresenceError = String(error?.message || error || "presence_track_flush_failed");
+        onError?.(error);
+      });
+    }, delayMs);
+  }
+
   function normalizeActivity(raw) {
     if (!raw || typeof raw !== "object") return null;
     const type = String(raw.type || "").trim().toLowerCase();
@@ -444,29 +498,68 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError,
     return { userId, sessionId, manualStatus: nextManualStatus, trackedPayload };
   }
 
-  async function trackNow(statusOverride = "") {
-    if (!channel) return null;
+  async function trackNow(statusOverride = "", { force = false } = {}) {
+    if (!channel || channelStatus !== "SUBSCRIBED") return null;
     try {
       const built = buildTrackPayload(statusOverride);
       if (!built) return null;
       const { userId, sessionId, manualStatus, trackedPayload } = built;
+      const signature = getTrackPayloadSignature(trackedPayload);
+      const nowMs = Date.now();
+      if (
+        force !== true
+        && signature === lastTrackSignature
+        && nowMs - Math.max(0, Number(lastTrackSentAt || 0)) < PRESENCE_TRACK_SAME_STATE_REFRESH_MS
+      ) {
+        return "deduped";
+      }
+      if (trackInFlight) {
+        if (force !== true && signature === activeTrackSignature) return trackInFlight;
+        storePendingTrackRequest(statusOverride, force);
+        return trackInFlight;
+      }
+      const elapsed = nowMs - Math.max(0, Number(lastTrackSentAt || 0));
+      if (lastTrackSentAt && elapsed < PRESENCE_TRACK_MIN_INTERVAL_MS) {
+        storePendingTrackRequest(statusOverride, force);
+        schedulePendingTrackRequest();
+        return "queued";
+      }
+
+      clearPendingTrackTimer();
+      const targetChannel = channel;
+      const targetGeneration = trackGeneration;
+      activeTrackSignature = signature;
       lastTrackPayload = { ...trackedPayload };
       logPresenceLiveDebug("track payload", { userId, sessionId, manualStatus });
-      const result = await channel.track(trackedPayload);
-      lastPresenceTrackAt = Date.now();
-      if (result && String(result).toLowerCase() !== "ok") {
-        lastPresenceError = String(result);
-      } else {
-        lastPresenceError = "";
+      const trackTask = (async () => {
+        const result = await targetChannel.track(trackedPayload);
+        if (targetGeneration === trackGeneration && targetChannel === channel) {
+          lastTrackSentAt = Date.now();
+          lastPresenceTrackAt = lastTrackSentAt;
+          lastTrackSignature = signature;
+          if (result && String(result).toLowerCase() !== "ok") {
+            lastPresenceError = String(result);
+          } else {
+            lastPresenceError = "";
+          }
+          lastTrackResult = typeof result === "undefined" ? "" : String(result);
+          logPresenceLiveDebug("track result", {
+            userId,
+            sessionId,
+            manualStatus,
+            result: lastTrackResult,
+          });
+        }
+        return result;
+      })();
+      trackInFlight = trackTask;
+      try {
+        return await trackTask;
+      } finally {
+        if (trackInFlight === trackTask) trackInFlight = null;
+        if (activeTrackSignature === signature) activeTrackSignature = "";
+        schedulePendingTrackRequest();
       }
-      lastTrackResult = typeof result === "undefined" ? "" : String(result);
-      logPresenceLiveDebug("track result", {
-        userId,
-        sessionId,
-        manualStatus,
-        result: lastTrackResult,
-      });
-      return result;
     } catch (e) {
       lastPresenceError = String(e?.message || e || "unknown");
       lastTrackResult = "error";
@@ -686,7 +779,7 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError,
     if (!initial && nowMs - Number(lastMissingOwnRetrackAt || 0) < 10000) return false;
     lastMissingOwnRetrackAt = nowMs;
     logPresenceLiveDebug("own session missing, retracking", { userId, initial: !!initial });
-    await trackNow(currentStatus);
+    await trackNow(currentStatus, { force: true });
     return stopOwnSessionRetryIfVisible(userId);
   }
 
@@ -861,6 +954,7 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError,
 
     await removeExistingGlobalPresenceChannels();
 
+    trackGeneration += 1;
     const sessionId = getSessionId(me || {});
     channel = supabase.channel(PRESENCE_CHANNEL_NAME, {
       config: { presence: { key: sessionId } },
@@ -882,7 +976,17 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError,
         logPresenceLiveDebug("presence leave observed", { topic: getChannelTopic(channel) });
       });
 
+    const subscribedChannel = channel;
+    const subscribedGeneration = trackGeneration;
     const { error } = await channel.subscribe(async (status) => {
+      if (
+        subscribedGeneration !== trackGeneration
+        || subscribedChannel !== channel
+        || !started
+      ) {
+        logPresenceLiveDebug("stale channel status ignored", { status: String(status || "") });
+        return;
+      }
       channelStatus = String(status || "");
       logPresenceLiveDebug("channel status", { status: channelStatus });
       try { onStatus?.(channelStatus, { source: "presence", channelName: PRESENCE_CHANNEL_NAME }); } catch (_) {}
@@ -892,6 +996,11 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError,
           const payload = getMe?.() || {};
           currentStatus = normalizeManualStatus(payload?.manual_status || payload?.manualStatus || payload?.status || currentStatus || "online");
           await trackNow(currentStatus);
+          if (
+            subscribedGeneration !== trackGeneration
+            || subscribedChannel !== channel
+            || !started
+          ) return;
           scheduleOwnSessionVisibilityCheck();
           startHeartbeat();
           startGracePruneTimer();
@@ -907,7 +1016,7 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError,
         clearHeartbeat();
         clearOwnSessionTimers();
         emitCurrentPresenceList("channel-unstable");
-        scheduleReconnect(status);
+        if (!manageReconnectExternally) scheduleReconnect(status);
       }
     });
 
@@ -925,6 +1034,13 @@ export function createPresenceSystem({ supabase, getMe, onPresenceList, onError,
     clearHeartbeat();
     clearGracePruneTimer();
     clearOwnSessionTimers();
+    clearPendingTrackTimer();
+    pendingTrackRequest = null;
+    trackGeneration += 1;
+    trackInFlight = null;
+    activeTrackSignature = "";
+    lastTrackSignature = "";
+    lastTrackSentAt = 0;
     if (!channel) {
       if (!oldStarted) lastTrackResult = "";
       lastLiveSessionsByUserId = new Map();

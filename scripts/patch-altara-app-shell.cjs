@@ -5,6 +5,17 @@ const path = require("path");
 
 const siteRoot = path.resolve(__dirname, "..");
 const appRoot = path.join(siteRoot, "public", "app");
+const appJsPath = path.join(appRoot, "app.js");
+const appJsSource = fs.existsSync(appJsPath) ? fs.readFileSync(appJsPath, "utf8") : "";
+const assetVersion = appJsSource.match(/const assetVersion = "([^"]+)"/)?.[1] || "";
+const offlineReconnectMarker =
+  appJsSource.match(/const offlineReconnectMarker = "([^"]+)"/)?.[1] || "";
+const appJsQuery = [
+  assetVersion ? `v=${encodeURIComponent(assetVersion)}` : "",
+  offlineReconnectMarker
+    ? `hotfix=${encodeURIComponent(offlineReconnectMarker)}`
+    : "",
+].filter(Boolean).join("&amp;");
 
 const shellFiles = [
   "index.html",
@@ -36,7 +47,10 @@ function stripBaseTag(html) {
 function patchAppShell(html) {
   let out = stripBaseTag(html);
   out = out.replace(/href=(["'])(?:\.\/)?style\.css\1/g, 'href="/app/style.css"');
-  out = out.replace(/src=(["'])(?:\.\/)?app\.js\1/g, 'src="/app/app.js"');
+  out = out.replace(
+    /src=(["'])(?:(?:\.\/)|(?:\/app\/))?app\.js(?:\?[^"']*)?\1/g,
+    `src="/app/app.js${appJsQuery ? `?${appJsQuery}` : ""}"`,
+  );
   out = out.replace(/src=(["'])(?:\.\/)?build\/icon\.jpg\1/g, 'src="/app/build/icon.jpg"');
   out = out.replace(/href=(["'])(?:\.\/)?build\/icon\.png\1/g, 'href="/app/build/icon.png"');
   return out;

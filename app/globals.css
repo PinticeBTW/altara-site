@@ -3061,20 +3061,34 @@ p {
   color: var(--fg);
 }
 
+.linux-installer-grid,
 .linux-help-layout,
 .linux-dependency-grid {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
   gap: 22px;
   align-items: start;
 }
 
+.linux-installer-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 22px;
+}
+
+.linux-portable-fallback-card {
+  border-style: dashed;
+}
+
 .linux-dependency-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 22px;
+  margin: 22px 0;
 }
 
 .linux-help-card {
+  min-width: 0;
+  max-width: 100%;
   padding: 28px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
@@ -3240,6 +3254,7 @@ p {
 }
 
 @media (max-width: 860px) {
+  .linux-installer-grid,
   .linux-help-layout,
   .linux-dependency-grid {
     grid-template-columns: 1fr;
@@ -3252,6 +3267,20 @@ p {
 
   .download-chooser-platforms .platform-btn {
     min-width: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .linux-download-hero h1 {
+    max-width: 100%;
+    font-size: clamp(38px, 11vw, 44px);
+    overflow-wrap: anywhere;
+  }
+
+  .linux-help-card .btn {
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
   }
 }
 

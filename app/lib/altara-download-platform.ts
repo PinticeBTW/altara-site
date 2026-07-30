@@ -3,6 +3,7 @@ export const ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER =
 
 export type AltaraDownloadPlatform =
   | "windows"
+  | "linux_deb_x64"
   | "linux_x64"
   | "linux_unsupported"
   | "macos"
@@ -11,7 +12,8 @@ export type AltaraDownloadPlatform =
 
 type DownloadResolvers = {
   windows: () => Promise<Response>;
-  linux: () => Promise<Response>;
+  linuxDebian: () => Promise<Response>;
+  linuxGeneric: () => Promise<Response>;
 };
 
 const MOBILE_USER_AGENT =
@@ -20,6 +22,8 @@ const LINUX_ARM_ARCHITECTURE =
   /\b(?:aarch64|arm64|armv[5-9](?:l)?|armhf|armel)\b/i;
 const LINUX_X64_ARCHITECTURE =
   /\b(?:x86_64|x86-64|amd64|x64)\b/i;
+const DEBIAN_FAMILY_USER_AGENT =
+  /\b(?:ubuntu|debian|linux mint)\b/i;
 
 function normalizeClientHint(value: string | null): string {
   return String(value || "")
@@ -34,7 +38,9 @@ function classifyLinuxArchitecture(userAgent: string): AltaraDownloadPlatform {
     return "linux_unsupported";
   }
   if (LINUX_X64_ARCHITECTURE.test(userAgent)) {
-    return "linux_x64";
+    return DEBIAN_FAMILY_USER_AGENT.test(userAgent)
+      ? "linux_deb_x64"
+      : "linux_x64";
   }
   return "linux_unsupported";
 }
@@ -120,8 +126,11 @@ export async function createPlatformAwareDownloadResponse(
   if (platform === "windows") {
     return enforcePrivateNoStore(await resolvers.windows());
   }
+  if (platform === "linux_deb_x64") {
+    return enforcePrivateNoStore(await resolvers.linuxDebian());
+  }
   if (platform === "linux_x64") {
-    return enforcePrivateNoStore(await resolvers.linux());
+    return enforcePrivateNoStore(await resolvers.linuxGeneric());
   }
 
   return chooserRedirect(platform);

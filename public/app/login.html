@@ -6,9 +6,32 @@
   <title>Login - Altara</title>
   <link rel="icon" href="/app/build/icon.png" />
   <link rel="stylesheet" href="/app/style.css" />
+  <link rel="stylesheet" href="runtimeChrome.css" />
 </head>
 <body class="authPage auth-checking" data-auth-page="login">
   <div class="authDesktopDragRegion" aria-hidden="true"></div>
+  <div id="desktopWindowControls" class="desktopWindowControls desktopWindowControls--auth hidden" role="group" aria-label="Window controls">
+    <button id="btnDesktopWindowMin" class="desktopWindowBtn" type="button" aria-label="Minimize" title="Minimize">
+      <svg class="desktopWindowIcon desktopWindowIcon--min" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.5 12.5h11"></path>
+      </svg>
+    </button>
+    <button id="btnDesktopWindowMax" class="desktopWindowBtn" type="button" aria-label="Maximize" title="Maximize">
+      <svg class="desktopWindowBtn__iconMax desktopWindowIcon desktopWindowIcon--max" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="6.5" y="6.5" width="11" height="11" rx="1.6"></rect>
+      </svg>
+      <svg class="desktopWindowBtn__iconRestore desktopWindowIcon desktopWindowIcon--restore" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7.5 9.5h8v8h-8z"></path>
+        <path d="M9.5 7.5h8v8"></path>
+      </svg>
+    </button>
+    <button id="btnDesktopWindowClose" class="desktopWindowBtn desktopWindowBtn--close" type="button" aria-label="Close" title="Close">
+      <svg class="desktopWindowIcon desktopWindowIcon--close" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m8 8 8 8"></path>
+        <path d="m16 8-8 8"></path>
+      </svg>
+    </button>
+  </div>
   <div class="authLangDock">
     <button id="btnAuthLang" class="authLangBtn" type="button" aria-label="Switch language" title="Switch language">PT</button>
   </div>

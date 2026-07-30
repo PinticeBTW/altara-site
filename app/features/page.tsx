@@ -45,7 +45,11 @@ const specItems = [
   { title: "ALTARA+ supported", description: "ALTARA+ helps fund development while the core app stays focused." },
   { title: "76MB Windows download", description: "Latest Windows installer is about 76MB." },
   { title: "Browser access", description: "Jump into ALTARA from the web when you need it." },
-  { title: "Linux x64 preview", description: "A portable tar.gz preview is available alongside Windows." },
+  {
+    title: "Linux x64 preview",
+    description:
+      "AppImage and DEB installers are available, with a portable tar.gz fallback.",
+  },
   { title: "Voice rooms", description: "Voice calls, rooms, and screen sharing for hanging out." },
   { title: "Widget dashboard", description: "Calendar, checklist, notepad, calls, status, and unread DMs." },
   { title: "Small communities", description: "Spaces for gaming groups, friend groups, and communities that should stay human." },

@@ -3,110 +3,174 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Steam account received - ALTARA</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Steam connection - ALTARA</title>
   <style>
     :root {
       color-scheme: dark;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f172a;
-      color: #f8fafc;
+      background: #101014;
+      color: #f5f2eb;
     }
+    * { box-sizing: border-box; }
     body {
       min-height: 100vh;
       margin: 0;
       display: grid;
       place-items: center;
       padding: 24px;
-      background: radial-gradient(circle at top left, rgba(56, 189, 248, .18), transparent 34%), #0f172a;
+      background: #101014;
     }
     main {
-      width: min(640px, 100%);
-      border: 1px solid rgba(255, 255, 255, .14);
+      width: min(430px, 100%);
+      padding: 28px;
+      border: 1px solid rgba(214, 189, 136, 0.2);
       border-radius: 10px;
-      background: rgba(15, 23, 42, .94);
-      box-shadow: 0 24px 80px rgba(0, 0, 0, .45);
-      padding: 26px;
+      background: #191b20;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+      text-align: center;
     }
-    h1 {
-      margin: 0 0 10px;
-      font-size: 24px;
-      line-height: 1.2;
+    .mark {
+      min-width: 82px;
+      height: 42px;
+      margin-bottom: 18px;
+      padding: 0 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid rgba(214, 189, 136, 0.36);
+      border-radius: 9px;
+      background: #14283a;
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 850;
     }
-    p {
-      margin: 0 0 14px;
-      color: #cbd5e1;
-      line-height: 1.5;
+    .mark b { color: #d6bd88; font-size: 1rem; }
+    .mark i { width: 1px; height: 18px; background: rgba(255, 255, 255, 0.22); }
+    h1 { margin: 0 0 9px; font-size: 1.35rem; line-height: 1.25; }
+    p { margin: 0 0 8px; color: #e3dfd6; line-height: 1.5; }
+    .secondary { margin-bottom: 20px; color: #aaa69e; font-size: 0.9rem; }
+    .button {
+      min-height: 38px;
+      padding: 0 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(214, 189, 136, 0.25);
+      border-radius: 7px;
+      background: #292a2f;
+      color: #f5f2eb;
+      font-weight: 800;
+      text-decoration: none;
     }
-    code {
-      display: block;
-      margin-top: 12px;
-      padding: 12px;
-      border-radius: 8px;
-      background: rgba(15, 23, 42, .82);
-      border: 1px solid rgba(148, 163, 184, .22);
-      color: #bfdbfe;
-      word-break: break-all;
-    }
+    .button:hover { background: #323339; }
   </style>
 </head>
 <body>
   <main>
-    <h1 id="steamCallbackTitle">Steam account received</h1>
-    <p id="steamCallbackMessage">Reading Steam OpenID response...</p>
-    <code id="steamCallbackSteamId" hidden></code>
+    <div class="mark" aria-hidden="true"><b>A</b><i></i><span>Steam</span></div>
+    <h1 id="steamCallbackTitle">Steam could not be connected</h1>
+    <p id="steamCallbackMessage">Return to ALTARA and try again.</p>
+    <p id="steamCallbackSecondary" class="secondary">No account changes were made by this page.</p>
+    <a id="steamCallbackReturn" class="button" href="../../">Return to ALTARA</a>
   </main>
   <script>
     (function () {
-      function getAllParams() {
-        const params = new URLSearchParams(window.location.search || "");
-        const hash = String(window.location.hash || "");
-        if (hash.startsWith("#?")) {
-          const hashParams = new URLSearchParams(hash.slice(2));
-          hashParams.forEach(function (value, key) {
-            if (!params.has(key)) params.set(key, value);
-          });
-        }
-        return params;
-      }
+      "use strict";
 
-      const params = getAllParams();
-      const claimedId = String(params.get("openid.claimed_id") || "").trim();
-      const mode = String(params.get("openid.mode") || "").trim().toLowerCase();
-      const match = claimedId.match(/^https?:\/\/steamcommunity\.com\/openid\/id\/(\d{12,24})$/i);
-      const steamid64 = match ? match[1] : "";
+      const safeReasons = new Set([
+        "steam_account_link_limit_reached",
+        "steam_user_already_linked",
+        "steam_login_cancelled",
+        "invalid_state",
+        "expired_state",
+        "invalid_return_url",
+        "steam_verification_failed",
+        "persistence_failed",
+        "callback_failed"
+      ]);
+      const copyByReason = {
+        steam_account_link_limit_reached: {
+          title: "Steam connection limit reached",
+          message: "This Steam account is already connected to the maximum of 2 ALTARA accounts.",
+          secondary: "Disconnect it from one ALTARA account before trying again."
+        },
+        steam_user_already_linked: {
+          title: "Disconnect your current Steam account first",
+          message: "Your ALTARA account already has a different Steam account connected.",
+          secondary: "Return to ALTARA to manage your existing connection."
+        },
+        steam_login_cancelled: {
+          title: "Steam connection cancelled",
+          message: "No Steam account was connected.",
+          secondary: "Return to ALTARA whenever you are ready."
+        },
+        expired_state: {
+          title: "Steam connection expired",
+          message: "Return to ALTARA and start Steam Connect again.",
+          secondary: "No account changes were made."
+        }
+      };
+
+      const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const provider = String(params.get("provider") || "").trim().toLowerCase();
+      const status = String(params.get("status") || "").trim().toLowerCase();
+      const reasonInput = String(params.get("reason") || "").trim().toLowerCase();
+      const state = String(params.get("state") || "").trim();
+      const stateIsValid = /^[A-Za-z0-9._~-]{8,256}$/.test(state);
+      const reasonIsValid = !reasonInput || safeReasons.has(reasonInput);
+      const payloadIsValid = (
+        provider === "steam"
+        && (status === "connected" || status === "error")
+        && stateIsValid
+        && reasonIsValid
+        && (status === "connected" || !!reasonInput)
+      );
+
       const title = document.getElementById("steamCallbackTitle");
       const message = document.getElementById("steamCallbackMessage");
-      const steamIdEl = document.getElementById("steamCallbackSteamId");
+      const secondary = document.getElementById("steamCallbackSecondary");
+      const returnLink = document.getElementById("steamCallbackReturn");
+      returnLink.href = new URL("../../", window.location.href).href;
 
-      if (steamid64) {
-        title.textContent = "Steam account received";
-        message.textContent = "ALTARA received a Steam OpenID claimed_id. Backend verification and saving will be wired next.";
-        steamIdEl.hidden = false;
-        steamIdEl.textContent = "SteamID64: " + steamid64;
-        console.log("[SteamConnect] callback SteamID64 received", { steamid64: steamid64, claimedId: claimedId });
-      } else if (mode === "cancel") {
-        title.textContent = "Steam login cancelled";
-        message.textContent = "Steam returned without a claimed_id.";
-        console.warn("[SteamConnect] Steam login cancelled");
-      } else {
-        title.textContent = "Steam account not received";
-        message.textContent = "Steam did not include a valid openid.claimed_id in this callback.";
-        console.warn("[SteamConnect] missing or invalid openid.claimed_id", { claimedId: claimedId });
+      let payload = null;
+      if (payloadIsValid && status === "connected") {
+        title.textContent = "Steam connected";
+        message.textContent = "You can return to ALTARA.";
+        secondary.textContent = window.opener ? "This window will close automatically." : "Use the button below to return.";
+        payload = {
+          type: "altara:steam-connected",
+          provider: "steam",
+          status: "connected",
+          state
+        };
+      } else if (payloadIsValid) {
+        const safeReason = safeReasons.has(reasonInput) ? reasonInput : "callback_failed";
+        const copy = copyByReason[safeReason] || {
+          title: "Steam could not be connected",
+          message: "Return to ALTARA and try again.",
+          secondary: "No account changes were made by this page."
+        };
+        title.textContent = copy.title;
+        message.textContent = copy.message;
+        secondary.textContent = window.opener ? copy.secondary + " This window will close automatically." : copy.secondary;
+        payload = {
+          type: "altara:steam-connect-error",
+          provider: "steam",
+          status: "error",
+          reason: safeReason,
+          state
+        };
       }
 
-      const payload = {
-        type: steamid64 ? "altara:steam-openid-callback" : "altara:steam-openid-error",
-        provider: "steam",
-        steamid64: steamid64,
-        claimedId: claimedId,
-        mode: mode,
-        href: window.location.href
-      };
+      if (!payload || !window.opener || window.opener.closed) return;
       try {
-        if (window.opener && !window.opener.closed) window.opener.postMessage(payload, "*");
-      } catch (_) {}
-      try {
-        window.parent && window.parent !== window && window.parent.postMessage(payload, "*");
+        window.opener.postMessage(payload, window.location.origin);
+        window.setTimeout(function () {
+          try { window.close(); } catch (_) {}
+        }, 750);
       } catch (_) {}
     })();
   </script>

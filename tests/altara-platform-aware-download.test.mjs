@@ -118,7 +118,8 @@ function binaryRedirect(filename) {
 async function smartResponse(requestHeaders) {
   return createPlatformAwareDownloadResponse(requestHeaders, {
     windows: async () => binaryRedirect("Altara.Setup.0.1.121.exe"),
-    linux: async () => binaryRedirect("Altara.0.1.121.tar.gz"),
+    linuxDebian: async () => binaryRedirect("Altara-0.1.122-amd64.deb"),
+    linuxGeneric: async () => binaryRedirect("Altara-0.1.122-x86_64.AppImage"),
   });
 }
 
@@ -130,8 +131,8 @@ test("Windows Firefox is classified as windows", () => {
   assert.equal(detectDownloadPlatform(headers(userAgents.windowsFirefox)), "windows");
 });
 
-test("Ubuntu Firefox Linux x86_64 is classified as linux_x64", () => {
-  assert.equal(detectDownloadPlatform(headers(userAgents.ubuntuFirefox)), "linux_x64");
+test("Ubuntu Firefox Linux x86_64 is classified as linux_deb_x64", () => {
+  assert.equal(detectDownloadPlatform(headers(userAgents.ubuntuFirefox)), "linux_deb_x64");
 });
 
 test("generic X11 Linux x86_64 is classified as linux_x64", () => {
@@ -186,7 +187,7 @@ test("quoted Sec-CH-UA-Platform Windows takes priority", () => {
 test("quoted Sec-CH-UA-Platform Linux uses the x86_64 UA architecture", () => {
   assert.equal(
     detectDownloadPlatform(headers(userAgents.ubuntuFirefox, '"Linux"')),
-    "linux_x64",
+    "linux_deb_x64",
   );
 });
 
@@ -210,12 +211,18 @@ test("/download sends a Windows UA to the latest Windows resolver", async () => 
   assert.match(response.headers.get("location"), /Altara\.Setup\.0\.1\.121\.exe$/);
 });
 
-test("/download sends a Linux x64 UA to the shared Linux resolver", async () => {
+test("/download sends an Ubuntu x64 UA to the shared DEB resolver", async () => {
   const response = await smartResponse(headers(userAgents.ubuntuFirefox));
   assert.equal(response.status, 302);
-  assert.match(response.headers.get("location"), /Altara\.0\.1\.121\.tar\.gz$/);
+  assert.match(response.headers.get("location"), /Altara-0\.1\.122-amd64\.deb$/);
   assert.doesNotMatch(response.headers.get("location"), /\.sha256$/);
   assert.doesNotMatch(response.headers.get("location"), /README/i);
+});
+
+test("/download sends a generic Linux x64 UA to the shared AppImage resolver", async () => {
+  const response = await smartResponse(headers(userAgents.genericLinux));
+  assert.equal(response.status, 302);
+  assert.match(response.headers.get("location"), /Altara-0\.1\.122-x86_64\.AppImage$/);
 });
 
 test("Linux ARM is sent to the chooser instead of the x64 archive", async () => {
@@ -345,6 +352,7 @@ test("smart and explicit routes share resolvers without redirect loops", async (
     source("app/api/download/linux/route.ts"),
   ]);
   assert.match(smartRoute, /createWindowsArtifactRedirectResponse/);
+  assert.match(smartRoute, /createLinuxArtifactRedirectResponse\("debian"\)/);
   assert.match(smartRoute, /createLinuxArtifactRedirectResponse\("application"\)/);
   assert.match(smartRoute, /request\.headers/);
   assert.doesNotMatch(smartRoute, /searchParams|request\.url/);
@@ -381,8 +389,8 @@ test("Linux is active and its truthful preview copy remains visible", async () =
   )?.[0];
   assert.ok(linuxOption);
   assert.match(combined, /Download for Linux/);
-  assert.match(combined, /Linux x64 Preview · Portable \.tar\.gz/);
-  assert.match(combined, /Manual updates are currently required/);
+  assert.match(combined, /Linux x64 Preview · AppImage preferred/);
+  assert.match(combined, /portable tar\.gz fallback/i);
   assert.doesNotMatch(linuxOption, /platform-btn-disabled/);
 });
 
@@ -401,13 +409,13 @@ test("platform-neutral copy replaces stale Linux coming-soon wording", async () 
 
 test("chooser states Linux ARM64 unavailable and keeps browser access visible", async () => {
   const chooser = await source("app/downloads/page.tsx");
-  assert.match(chooser, /Linux ARM64 is not currently available/);
+  assert.match(chooser, /Linux\s+ARM64 is not currently available/);
   assert.match(chooser, /<BrowserDownloadOption \/>/);
   assert.match(chooser, /<MacDownloadOption \/>/);
   assert.match(chooser, /Open Linux help/);
 });
 
-test("both download build markers are emitted through the site metadata", async () => {
+test("all download build markers are emitted through the site metadata", async () => {
   const [layout, platformHelper, linuxHelper] = await Promise.all([
     source("app/layout.tsx"),
     source("app/lib/altara-download-platform.ts"),
@@ -419,8 +427,10 @@ test("both download build markers are emitted through the site metadata", async 
   );
   assert.match(platformHelper, /altara-site-platform-aware-download-v1/);
   assert.match(linuxHelper, /altara-site-linux-download-v1/);
+  assert.match(linuxHelper, /altara-site-linux-installers-v2/);
   assert.match(layout, /ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER/);
   assert.match(layout, /ALTARA_SITE_LINUX_DOWNLOAD_MARKER/);
+  assert.match(layout, /ALTARA_SITE_LINUX_INSTALLERS_MARKER/);
 });
 
 test("the website implementation does not hard-code release 0.1.121", async () => {

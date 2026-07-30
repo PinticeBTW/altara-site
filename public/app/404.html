@@ -5,8 +5,132 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>altara</title>
   <link rel="stylesheet" href="/app/style.css" />
+  <link rel="stylesheet" href="runtimeChrome.css" />
+  <style id="serverPermissionsInvitesV1Styles">
+    .serverSettingsInvitesRoot{min-height:0;overflow:auto}
+    .serverSettingsInvitesToolbar{display:grid;grid-template-columns:minmax(180px,1fr) auto auto auto;gap:8px;align-items:center;margin-bottom:12px}
+    .serverSettingsInvitesSearch,.serverSettingsInvitesSearch .input{min-width:0;width:100%}
+    .serverSettingsInvitesCount{color:var(--muted);font-size:13px;white-space:nowrap}
+    .serverSettingsInvitesList{display:grid;gap:6px}
+    .serverSettingsInviteRow{width:100%;display:grid;grid-template-columns:minmax(180px,1.4fr) minmax(230px,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);text-align:left}
+    .serverSettingsInviteRow:hover,.serverSettingsInviteRow.is-selected{background:var(--hover)}
+    .serverSettingsInviteMain,.serverSettingsInviteMeta,.serverSettingsInviteActions{display:flex;min-width:0;align-items:center;gap:8px}
+    .serverSettingsInviteMain{align-items:flex-start;flex-direction:column}
+    .serverSettingsInviteMain strong,.serverSettingsInviteMain span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .serverSettingsInviteMain span,.serverSettingsInviteMeta{color:var(--muted);font-size:12px}
+    .serverSettingsInviteMeta{justify-content:flex-end}
+    .serverSettingsInviteStatus{padding:3px 6px;border:1px solid var(--border);border-radius:4px;color:var(--text)}
+    .serverSettingsInviteStatus.is-active{color:var(--success)}
+    .serverSettingsInviteStatus.is-expired,.serverSettingsInviteStatus.is-exhausted{color:var(--warning)}
+    .serverSettingsInviteStatus.is-revoked,.serverSettingsInvitesNotice.is-error{color:var(--danger)}
+    .serverSettingsInvitesNotice{margin-bottom:10px;padding:8px 10px;border:1px solid var(--border);border-radius:6px}
+    @media (max-width:900px){.serverSettingsInvitesToolbar,.serverSettingsInviteRow{grid-template-columns:1fr}.serverSettingsInviteMeta,.serverSettingsInviteActions{justify-content:flex-start;flex-wrap:wrap}}
+  </style>
+  <style id="serverMessageHistoryUxV3Styles">
+    .dmHistoryBoundaryState{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;padding:10px 18px;text-align:center}
+    .dmHistoryBoundaryState.is-preserved{padding-block:6px}
+    .dmHistoryRetryBtn:disabled{cursor:wait;opacity:.55}
+    .dmHistoryRestrictedEmpty{flex:1 0 auto;min-height:240px;display:grid;place-items:center;padding:36px 24px;text-align:center}
+    .dmHistoryRestrictedEmpty__content{width:min(100%,440px);display:grid;justify-items:center;gap:8px}
+    .dmHistoryRestrictedEmpty__icon{width:42px;height:42px;display:grid;place-items:center;color:var(--altara-accent-strong,#f0d8b8);opacity:.78}
+    .dmHistoryRestrictedEmpty__icon svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+    .dmHistoryRestrictedEmpty__title{color:var(--altara-text,#f2f0ec);font-size:17px;font-weight:800;line-height:1.3}
+    .dmHistoryRestrictedEmpty__description{color:var(--altara-text-muted,rgba(242,240,236,.62));font-size:13px;line-height:1.55}
+    .dmHistoryBoundaryMarker{display:flex;align-items:center;gap:10px;margin:8px 14px 6px;color:var(--altara-text-muted,rgba(242,240,236,.56));font-size:12px;line-height:1.35;text-align:center;flex:0 0 auto}
+    .dmHistoryBoundaryMarker::before,.dmHistoryBoundaryMarker::after{content:"";height:1px;min-width:18px;flex:1;background:var(--altara-border,rgba(255,255,255,.1))}
+    @media (max-height:640px){.dmHistoryRestrictedEmpty{min-height:180px;padding-block:24px}}
+  </style>
 </head>
 <body class="boot-hide-call-chrome">
+  <script>
+    (() => {
+      const assetVersion = "server-read-message-history-ux-v3";
+      const offlineReconnectMarker = "offline-auth-reconnect-v1";
+      const nowIso = () => { try { return new Date().toISOString(); } catch (_) { return ""; } };
+      const safe = (value, limit = 260) => String(value == null ? "" : value).slice(0, limit);
+      window.__ALTARA_ASSET_VERSION__ = assetVersion;
+      window.__ALTARA_OFFLINE_RECONNECT_MARKER__ = offlineReconnectMarker;
+      window.__ALTARA_BOOT_TRACE__ = Array.isArray(window.__ALTARA_BOOT_TRACE__) ? window.__ALTARA_BOOT_TRACE__ : [];
+      window.__ALTARA_RUNTIME_ERRORS__ = Array.isArray(window.__ALTARA_RUNTIME_ERRORS__) ? window.__ALTARA_RUNTIME_ERRORS__ : [];
+      const pushTrace = (phase, details = {}) => {
+        const entry = { at: nowIso(), ts: Date.now(), phase: safe(phase, 120), ...(details || {}) };
+        try {
+          window.__ALTARA_BOOT_TRACE__.push(entry);
+          while (window.__ALTARA_BOOT_TRACE__.length > 200) window.__ALTARA_BOOT_TRACE__.shift();
+        } catch (_) {}
+        return entry;
+      };
+      const recordRuntimeError = (source, error = null, extra = {}) => {
+        const entry = {
+          at: nowIso(),
+          ts: Date.now(),
+          source: safe(source, 120),
+          message: safe(error?.message || error?.reason?.message || error?.reason || error || source, 500),
+          filename: safe(error?.filename || extra?.filename || "", 260),
+          lineno: Number(error?.lineno || extra?.lineno || 0) || null,
+          colno: Number(error?.colno || extra?.colno || 0) || null,
+          stack: safe(error?.error?.stack || error?.stack || error?.reason?.stack || "", 900),
+        };
+        try {
+          window.__ALTARA_RUNTIME_ERRORS__.push(entry);
+          while (window.__ALTARA_RUNTIME_ERRORS__.length > 80) window.__ALTARA_RUNTIME_ERRORS__.shift();
+          window.__ALTARA_STATIC_BOOT_STATE__.lastFatalBootError = entry;
+          window.__ALTARA_LAST_FATAL_BOOT_ERROR__ = entry;
+        } catch (_) {}
+        return entry;
+      };
+      window.__ALTARA_PUSH_BOOT_TRACE__ = pushTrace;
+      window.__ALTARA_RECORD_RUNTIME_ERROR__ = recordRuntimeError;
+      window.__ALTARA_DEBUG_BOOT_TRACE__ = () => window.__ALTARA_BOOT_TRACE__ || [];
+      window.__ALTARA_DEBUG_RUNTIME_ERRORS__ = () => window.__ALTARA_RUNTIME_ERRORS__ || [];
+      window.__ALTARA_BOOT_PROOF__ = {
+        version: "server-read-message-history-ux-v3",
+        assetVersion,
+        offlineReconnectMarker,
+        appJsExecuted: false,
+        staticHtmlFallbackPresent: true,
+        loadedAt: nowIso(),
+        href: location.href,
+        scriptSrc: ""
+      };
+      window.__ALTARA_DEBUG_BOOT_PROOF__ = () => window.__ALTARA_BOOT_PROOF__;
+      window.__ALTARA_STATIC_BOOT_STATE__ = {
+        staticFallbackShellPresent: true,
+        lastFatalBootError: null
+      };
+      pushTrace("static_html_boot_stub_executed", { assetVersion, href: location.href });
+      window.__ALTARA_DEBUG_BOOT_STATE__ = window.__ALTARA_DEBUG_BOOT_STATE__ || (() => ({
+        bootProof: window.__ALTARA_BOOT_PROOF__,
+        assetVersion: window.__ALTARA_ASSET_VERSION__,
+        scriptSrc: document.querySelector('script[src*="app.js"]')?.src || "",
+        staticFallbackShellPresent: !!document.querySelector("[data-static-fallback-shell]"),
+        shellRendered: false,
+        shellRenderCount: 0,
+        lastShellReason: "static_html",
+        domTargets: {},
+        visibleLoadingTexts: Array.from(document.querySelectorAll(".hint,.loading,.spinner,[aria-busy='true']")).map((el) => String(el.textContent || "").trim()).filter(Boolean),
+        patchedNodesCount: 0,
+        lastFatalBootError: window.__ALTARA_STATIC_BOOT_STATE__?.lastFatalBootError || null,
+        runtimeErrors: window.__ALTARA_RUNTIME_ERRORS__ || [],
+        bootTrace: window.__ALTARA_BOOT_TRACE__ || [],
+        safeBootEnabled: /[?&]safeBoot=1\b/.test(location.search) || localStorage.getItem("ALTARA_SAFE_BOOT") === "1",
+        appReady: false,
+        normalBootStarted: false,
+        normalBootDone: false,
+        normalBootError: null
+      }));
+      window.addEventListener("error", (event) => recordRuntimeError("window_error", event));
+      window.addEventListener("unhandledrejection", (event) => recordRuntimeError("unhandledrejection", event));
+      document.addEventListener("DOMContentLoaded", () => {
+        const scriptSrc = document.querySelector('script[src*="app.js"]')?.src || "";
+        window.__ALTARA_BOOT_PROOF__.scriptSrc = scriptSrc;
+        pushTrace("static_fallback_present", {
+          present: !!document.querySelector("[data-static-fallback-shell]"),
+          scriptSrc
+        });
+      });
+    })();
+  </script>
   <script>
     (() => {
       const APPEARANCE_STORAGE_KEY = "altara.appearance.v1";
@@ -527,12 +651,12 @@
 
           <div id="meProfileCard" class="meRow">
             <div class="meAvatarWrap">
-              <div id="meAvatar" class="meAvatar" role="button" tabindex="0" aria-label="Open profile"></div>
+              <div id="meAvatar" class="meAvatar" role="button" tabindex="0" aria-label="Open profile" data-static-fallback-shell="1">Y</div>
             </div>
 
             <div class="meText">
-              <div id="meName" class="meName">...</div>
-              <div id="meTag" class="meTag">@...</div>
+              <div id="meName" class="meName" data-static-fallback-shell="1">You</div>
+              <div id="meTag" class="meTag" data-static-fallback-shell="1">@you</div>
 
               <button id="meStatusBtn" class="statusPill" type="button">
                 <span class="dotMini" data-status-mini="online"></span>
@@ -586,15 +710,21 @@
 
       <div class="leftList leftDock">
         <section class="leftDockGroups">
-          <div id="leftGroupsRail" class="groupsRail">
-            <div id="leftGroupsLoadingHint" class="hint">Loading...</div>
+          <div id="leftGroupsRail" class="groupsRail" data-static-fallback-shell="1">
+            <button class="groupOrb groupOrb--app-home is-active" type="button" data-open-rail-home="1" title="Altara Home" aria-label="Altara Home" data-static-fallback-shell="1"><span class="groupOrbFallback">A</span></button>
+            <button class="groupOrb groupOrb--create" type="button" data-create-server-quick="1" title="Create server" aria-label="Create server" data-static-fallback-shell="1"><span class="groupOrbPlus" aria-hidden="true">+</span></button>
           </div>
         </section>
 
         <section class="leftDockDms">
           <aside id="serverChannelsPanel" class="serverChannelsPanel hidden" aria-hidden="true"></aside>
-          <div id="dmList" class="list">
-            <div id="dmListLoadingHint" class="hint">Loading...</div>
+          <div id="dmList" class="list" data-static-fallback-shell="1">
+            <div class="dmListSectionTitle" data-static-fallback-shell="1">BEST FRIENDS</div>
+            <div class="dmListSection" data-static-fallback-shell="1"><div class="hint">Waiting for connection&#8230;</div></div>
+            <div class="dmListSectionTitle" data-static-fallback-shell="1">FRIENDS / MESSAGES</div>
+            <div class="dmListSection" data-static-fallback-shell="1"><div class="hint">Waiting for connection&#8230;</div></div>
+            <div class="dmListSectionTitle" data-static-fallback-shell="1">GROUP DMS</div>
+            <div class="dmListSection" data-static-fallback-shell="1"><div class="hint">Waiting for connection&#8230;</div></div>
           </div>
         </section>
 
@@ -631,7 +761,14 @@
       <section id="tabWidgets" class="midBody widgetsTab">
         <div id="widgetsEditBar" class="widgetsEditBar hidden" aria-hidden="true"></div>
         <div id="widgetsAddPanel" class="widgetsAddPanel hidden" aria-hidden="true"></div>
-        <div id="widgetsGrid" class="widgetsGrid"></div>
+        <div id="widgetsGrid" class="widgetsGrid" data-static-fallback-shell="1">
+          <section class="widgetCard" data-static-fallback-shell="1"><div class="widgetTitle">Online Now</div><strong>0</strong></section>
+          <section class="widgetCard" data-static-fallback-shell="1"><div class="widgetTitle">Unread DMs</div><strong>0</strong></section>
+          <section class="widgetCard" data-static-fallback-shell="1"><div class="widgetTitle">Calendar</div><strong>Today</strong></section>
+          <section class="widgetCard" data-static-fallback-shell="1"><div class="widgetTitle">Call</div><strong>Sem chamada ativa</strong></section>
+          <section class="widgetCard" data-static-fallback-shell="1"><div class="widgetTitle">Notepad</div><div class="hint">Ready offline.</div></section>
+          <section class="widgetCard" data-static-fallback-shell="1"><div class="widgetTitle">Checklist</div><div class="hint">Ready offline.</div></section>
+        </div>
         <div class="widgetsEditFabRow">
           <button id="btnWidgetsEditMode" class="btn ghost widgetsEditFab" type="button" title="Edit widgets">
             Edit widgets
@@ -644,8 +781,8 @@
         <div class="search friendsSearch">
           <input id="friendSearchMain" class="input" placeholder="Search friends..." />
         </div>
-        <div id="friendsList" class="list">
-          <div id="friendsListLoadingHint" class="hint">Loading...</div>
+        <div id="friendsList" class="list" data-static-fallback-shell="1">
+            <div class="hint" role="status">Waiting for connection&#8230;</div>
         </div>
       </section>
 
@@ -827,7 +964,7 @@
             <div id="dmRequestBanner" class="dmRequestBanner hidden" hidden></div>
 
             <div id="dmMessages" class="dmMessages">
-              <div id="dmMessagesEmpty" class="hint">No messages yet. Say hi &#x1F44B;</div>
+              <div id="dmMessagesEmpty" class="hint" role="status">Waiting for connection to load messages.</div>
             </div>
             <button id="btnDmJumpLatest" class="dmJumpLatest" type="button" aria-hidden="true" title="Jump to latest messages">
               <span class="dmJumpLatest__icon" aria-hidden="true">&#8595;</span>
@@ -939,7 +1076,7 @@
         </div>
 
         <div class="rightSectionLabel">ACTIVE NOW</div>
-        <div id="activeNow" class="list"></div>
+        <div id="activeNow" class="list" data-static-fallback-shell="1"><div class="hint">No one online right now.</div></div>
 
         <div class="rightSectionLabel">OFFLINE</div>
         <div id="offlineList" class="list"></div>
@@ -2534,43 +2671,11 @@
           </div>
         </section>
 
-        <section id="serverChannelCreateVoiceSettingsSection" class="serverChannelCreateSection">
-          <div class="serverChannelCreateSectionTitle">Voice Settings</div>
-
-          <div id="serverChannelCreateUserLimitSection" class="field">
-            <label for="serverChannelCreateUserLimit">User Limit</label>
-            <input
-              id="serverChannelCreateUserLimit"
-              class="input"
-              type="number"
-              min="0"
-              max="99"
-              step="1"
-              inputmode="numeric"
-              value="0"
-            />
-            <div class="hint">Set to 0 to use only the technical media cap.</div>
-          </div>
-
-          <div id="serverChannelCreateMediaModeSection" class="field">
-            <label for="serverChannelCreateMediaMode">Media Mode</label>
-            <div class="serverChannelCreateSelectWrap">
-              <select id="serverChannelCreateMediaMode" class="serverChannelCreateCategorySelect" aria-label="Voice channel media mode">
-                <option value="audio_only" selected>Audio only</option>
-                <option value="video_enabled">Video enabled</option>
-                <option value="screenshare_enabled">Screen share enabled</option>
-                <option value="stage_like" disabled>Stage-like (coming soon)</option>
-              </select>
-            </div>
-          </div>
-
-          <div id="serverChannelCreateVoiceMetaHint" class="hint"></div>
-        </section>
-
         <section id="serverChannelCreatePrivateSection" class="serverChannelCreateSection serverChannelCreatePrivate">
+          <div class="serverChannelCreatePrivate__icon" aria-hidden="true">&#128274;</div>
           <div class="serverChannelCreatePrivate__text">
             <div class="serverChannelCreatePrivate__title">Private Channel</div>
-            <div class="serverChannelCreatePrivate__hint">Only selected members and roles will be able to view this channel.</div>
+            <div class="serverChannelCreatePrivate__hint">Only selected roles and members can find and open this channel.</div>
           </div>
           <label class="serverChannelCreatePrivate__switch" aria-label="Private Channel">
             <input id="serverChannelCreatePrivate" type="checkbox" />
@@ -2579,8 +2684,25 @@
         </section>
 
         <section id="serverChannelCreateAccessSection" class="serverChannelCreateSection serverChannelCreateAccess">
-          <div class="serverChannelCreateSectionTitle">Who Can Access</div>
-          <div id="serverChannelCreateAccessMeta" class="hint">Select roles or members. You always keep access.</div>
+          <div class="serverChannelCreateAccessHeader">
+            <div>
+              <div class="serverChannelCreateSectionTitle">Who Can Access</div>
+              <div id="serverChannelCreateAccessMeta" class="hint">0 roles · 0 members</div>
+            </div>
+            <div id="serverChannelCreateSelectionSummary" class="serverChannelCreateSelectionSummary">No additional access</div>
+          </div>
+          <label class="serverChannelCreateAccessSearch">
+            <span aria-hidden="true">&#128269;</span>
+            <input id="serverChannelCreateAccessSearch" type="search" placeholder="Search roles and members" autocomplete="off" />
+          </label>
+          <div id="serverChannelCreateOwnerAccess" class="serverChannelCreateOwnerAccess">
+            <div class="serverChannelCreateOwnerRow is-loading">
+              <span class="serverChannelCreateAccessRow__text">
+                <span class="serverChannelCreateAccessRow__title">Server owner</span>
+                <span class="serverChannelCreateAccessRow__meta">Always has access</span>
+              </span>
+            </div>
+          </div>
           <div class="serverChannelCreateAccessGrid">
             <div class="serverChannelCreateAccessGroup">
               <div class="serverChannelCreateAccessGroup__title">Roles</div>
@@ -2636,11 +2758,10 @@
               <label for="serverInviteExpireSelect">Expire After</label>
               <select id="serverInviteExpireSelect" class="input">
                 <option value="1">1 hour</option>
+                <option value="6">6 hours</option>
                 <option value="12">12 hours</option>
                 <option value="24">1 day</option>
-                <option value="72">3 days</option>
                 <option value="168" selected>7 days</option>
-                <option value="720">30 days</option>
                 <option value="0">Never</option>
               </select>
             </div>
@@ -2653,7 +2774,6 @@
                 <option value="10">10 uses</option>
                 <option value="25">25 uses</option>
                 <option value="50">50 uses</option>
-                <option value="100">100 uses</option>
               </select>
             </div>
           </div>
@@ -2699,13 +2819,14 @@
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="roles">
               <span>Roles</span>
             </button>
+            <button class="serverSettingsNavItem" type="button" data-server-settings-nav="members">
+              <span>Members</span>
+            </button>
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="channels">
               <span>Channels</span>
-              <small>soon</small>
             </button>
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="access">
               <span>Permissions / Access</span>
-              <small>soon</small>
             </button>
           </nav>
         </div>
@@ -2715,7 +2836,6 @@
           <nav class="serverSettingsNav" aria-label="Server community settings navigation">
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="invites">
               <span>Invites</span>
-              <small>soon</small>
             </button>
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="moderation">
               <span>Moderation / Safety</span>
@@ -2768,6 +2888,19 @@
                     </div>
                   </div>
                   <input id="serverSettingsIconFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+                </div>
+
+                <div class="serverSettingsBannerBlock">
+                  <div class="serverSettingsFieldLabel">Server Banner</div>
+                  <div id="serverSettingsBannerPreview" class="serverSettingsBannerPreview" aria-label="Server banner preview">
+                    <span>Server Banner</span>
+                  </div>
+                  <div class="serverSettingsFieldHint">Recommended: 16:9, 960x540 or larger.</div>
+                  <div class="serverSettingsButtonRow">
+                    <button id="btnServerSettingsBannerPick" class="btn ghost" type="button">Upload Banner</button>
+                    <button id="btnServerSettingsBannerClear" class="btn ghost" type="button">Remove Banner</button>
+                  </div>
+                  <input id="serverSettingsBannerFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
                 </div>
 
                 <div class="field">
@@ -2825,7 +2958,7 @@
                 />
                 <select id="serverSettingsRolePreset" class="input serverSettingsRolePresetSelect" aria-label="Role preset">
                   <option value="custom">Custom Permissions</option>
-                  <option value="staff">STAFF Preset</option>
+                  <option value="safe">Safe Defaults</option>
                 </select>
                 <button id="btnServerSettingsRoleCreate" class="btn ghost" type="button">Create Role</button>
               </div>
@@ -2844,23 +2977,51 @@
           </div>
 
           <div class="serverSettingsPanel" data-server-settings-panel="channels">
-            <div class="serverSettingsPlaceholder">
-              <h2>Channels</h2>
-              <p>Channel creation and editing remain available from the existing channel menus. This section is reserved for a fuller channel management surface.</p>
+            <div class="serverSettingsPanelIntro">
+              <div>
+                <h2>Channels</h2>
+                <p>Create, organize, and configure the channels people use in this server.</p>
+              </div>
+              <div class="serverSettingsChannelsHeaderActions">
+                <button class="btn ghost" type="button" data-server-settings-channels-create-category="1">Create Category</button>
+                <button class="btn primary" type="button" data-server-settings-channels-create-channel="1">Create Channel</button>
+              </div>
+            </div>
+            <div id="serverSettingsChannelsRoot" class="serverSettingsChannelsRoot">
+              <div class="serverSettingsPlaceholder">Loading channels...</div>
+            </div>
+          </div>
+
+          <div class="serverSettingsPanel" data-server-settings-panel="members">
+            <div class="serverSettingsPanelIntro">
+              <div>
+                <h2>Members</h2>
+                <p>Search server members, review their roles, and apply membership actions with role hierarchy checks.</p>
+              </div>
+            </div>
+            <div id="serverSettingsMembersRoot" class="serverSettingsBotsRoot">
+              <div class="serverSettingsPlaceholder">Loading members...</div>
             </div>
           </div>
 
           <div class="serverSettingsPanel" data-server-settings-panel="access">
-            <div class="serverSettingsPlaceholder">
-              <h2>Permissions / Access</h2>
-              <p>Access controls are currently managed through roles and existing channel settings. No new permission behavior has been added here.</p>
+            <div id="serverSettingsAccessRoot">
+              <div class="serverSettingsPlaceholder">
+                <h2>Permissions / Access</h2>
+                <p>Open a server to view its access diagnostics.</p>
+              </div>
             </div>
           </div>
 
           <div class="serverSettingsPanel" data-server-settings-panel="invites">
-            <div class="serverSettingsPlaceholder">
-              <h2>Invites</h2>
-              <p>Invite creation still uses the existing server invite flow. This section is prepared for future invite management.</p>
+            <div class="serverSettingsPanelIntro">
+              <div>
+                <h2>Invites</h2>
+                <p>Create and revoke server invite links. Only members with Manage Invites can view this list.</p>
+              </div>
+            </div>
+            <div id="serverSettingsInvitesRoot" class="serverSettingsInvitesRoot">
+              <div class="serverSettingsPlaceholder">Loading invites...</div>
             </div>
           </div>
 
@@ -2875,7 +3036,7 @@
             <div class="serverSettingsPanelIntro">
               <div>
                 <h2>Bots &amp; Integrations</h2>
-                <p>Review installed bots and remove access when needed.</p>
+                <p>Review installed apps and manage them when authorized.</p>
               </div>
             </div>
             <div id="serverSettingsBotsRoot" class="serverSettingsBotsRoot">
@@ -3645,11 +3806,6 @@
     </div>
   </div>
 
-  <script type="module" src="/app/app.js"></script>
+  <script type="module" src="/app/app.js?v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"></script>
 </body>
 </html>
-
-
-
-
-

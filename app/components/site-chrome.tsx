@@ -7,6 +7,9 @@ export const WINDOWS_DOWNLOAD_URL = "/api/download/windows";
 export const TRY_IN_BROWSER_URL = "/try";
 export const RELEASES_URL = "https://github.com/PinticeBTW/altara-updates/releases";
 export const LINUX_DOWNLOAD_URL = "/api/download/linux";
+export const LINUX_APPIMAGE_DOWNLOAD_URL = "/api/download/linux/appimage";
+export const LINUX_DEB_DOWNLOAD_URL = "/api/download/linux/deb";
+export const LINUX_PORTABLE_DOWNLOAD_URL = "/api/download/linux/portable";
 export const LINUX_HELP_URL = "/download/linux";
 export const LINUX_README_URL = "/api/download/linux/readme";
 export const LINUX_CHECKSUM_URL = "/api/download/linux/checksum";
@@ -38,7 +41,7 @@ export function LinuxDownloadOption() {
     <a
       href={LINUX_DOWNLOAD_URL}
       className="platform-btn platform-btn-linux"
-      aria-label="Download ALTARA for Linux x64 as a portable tar.gz"
+      aria-label="Download the recommended ALTARA package for Linux x64"
     >
       <span className="platform-icon" aria-hidden="true">
         <svg
@@ -56,7 +59,7 @@ export function LinuxDownloadOption() {
       </span>
       <span className="platform-copy">
         <span className="platform-name">Download for Linux</span>
-        <span className="platform-detail">Linux x64 Preview · Portable .tar.gz</span>
+        <span className="platform-detail">Linux x64 Preview · AppImage preferred</span>
       </span>
     </a>
   );
@@ -131,8 +134,8 @@ export function BrowserDownloadOption() {
 export function LinuxPreviewNote() {
   return (
     <p className="linux-preview-note">
-      First Linux preview. Manual updates are currently required.{" "}
-      <Link href={LINUX_HELP_URL}>Read Linux setup help.</Link>
+      Linux x64 installers include AppImage and DEB, with a portable tar.gz fallback.{" "}
+      <Link href={LINUX_HELP_URL}>Choose a format or read setup help.</Link>
     </p>
   );
 }
@@ -175,7 +178,7 @@ const footerColumns = [
       { label: "FAQ", href: "/faq" },
       { label: "Download options", href: DOWNLOADS_URL },
       { label: "Download for Windows", href: WINDOWS_DOWNLOAD_URL },
-      { label: "Linux x64 preview", href: LINUX_HELP_URL },
+      { label: "Linux x64 installers", href: LINUX_HELP_URL },
       { label: "Try in browser", href: TRY_IN_BROWSER_URL },
       { label: "Release notes", href: RELEASES_URL },
     ],

@@ -2,6 +2,7 @@
 import { $, setDebug, enhancePasswordVisibilityToggles } from "./ui.js";
 import { initAuthInstallWelcome } from "./authOnboarding.js";
 import { initAuthLanguage, onAuthLanguageChange, tAuth } from "./authI18n.js";
+import { initDesktopWindowControls } from "./desktopWindowControls.js";
 
 const $email = $("email");
 const $password = $("password");
@@ -1351,6 +1352,7 @@ void (async () => {
 
 ensureLoginInputsReady();
 enhancePasswordVisibilityToggles(document);
+initDesktopWindowControls();
 void initAuthInstallWelcome({
   onDone: ({ shown }) => {
     ensureLoginInputsReady();

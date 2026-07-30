@@ -1,4 +1,6 @@
 export const ALTARA_SITE_LINUX_DOWNLOAD_MARKER = "altara-site-linux-download-v1";
+export const ALTARA_SITE_LINUX_INSTALLERS_MARKER =
+  "altara-site-linux-installers-v2";
 export const ALTARA_GITHUB_RELEASES_URL =
   "https://github.com/PinticeBTW/altara-updates/releases";
 export const LINUX_RELEASE_CACHE_SECONDS = 600;
@@ -40,11 +42,22 @@ export type LinuxReleaseArtifacts = {
   tagName: string;
   publishedAt: string;
   application: ResolvedReleaseAsset;
+  appImage: ResolvedReleaseAsset | null;
+  deb: ResolvedReleaseAsset | null;
+  portable: ResolvedReleaseAsset | null;
+  updateMetadata: ResolvedReleaseAsset | null;
   readme: ResolvedReleaseAsset | null;
   checksum: ResolvedReleaseAsset | null;
 };
 
-export type LinuxArtifactKind = "application" | "readme" | "checksum";
+export type LinuxArtifactKind =
+  | "application"
+  | "debian"
+  | "appimage"
+  | "deb"
+  | "portable"
+  | "readme"
+  | "checksum";
 
 export type WindowsReleaseArtifacts = {
   version: string;
@@ -181,22 +194,26 @@ export function isSafeGitHubReleaseAssetUrl(
   }
 }
 
-function selectOptionalAsset(
+function selectReleaseAsset(
   assets: GitHubReleaseAsset[],
   expectedFilename: string,
   tagName: string,
+  artifactCode: string,
 ): ResolvedReleaseAsset | null {
   const matches = assets.filter(
     (asset) => asset.state === "uploaded" && asset.name === expectedFilename,
   );
 
-  if (matches.length !== 1) {
+  if (matches.length === 0) {
     return null;
+  }
+  if (matches.length !== 1) {
+    fail(`multiple_${artifactCode}_assets`);
   }
 
   const [asset] = matches;
   if (!isSafeGitHubReleaseAssetUrl(asset.browserDownloadUrl, tagName, expectedFilename)) {
-    return null;
+    fail(`unsafe_${artifactCode}_asset_url`);
   }
 
   return {
@@ -209,48 +226,66 @@ function selectOptionalAsset(
 export function resolveLinuxRelease(payload: unknown): LinuxReleaseArtifacts {
   const release = parseStableRelease(payload);
   const { assets: validAssets, publishedAt, tagName, version } = release;
-  const applicationFilename = `Altara.${version}.tar.gz`;
-  const applicationMatches = validAssets.filter(
-    (asset) => asset.state === "uploaded" && asset.name === applicationFilename,
+  const appImage = selectReleaseAsset(
+    validAssets,
+    `Altara-${version}-x86_64.AppImage`,
+    tagName,
+    "linux_appimage",
   );
-
-  if (applicationMatches.length === 0) {
+  const deb = selectReleaseAsset(
+    validAssets,
+    `Altara-${version}-amd64.deb`,
+    tagName,
+    "linux_deb",
+  );
+  const portable = selectReleaseAsset(
+    validAssets,
+    `Altara.${version}.tar.gz`,
+    tagName,
+    "linux_portable",
+  );
+  const application = appImage ?? portable;
+  if (!application) {
     fail("missing_linux_asset");
   }
-  if (applicationMatches.length !== 1) {
-    fail("multiple_linux_assets");
-  }
-
-  const [applicationAsset] = applicationMatches;
-  if (
-    !isSafeGitHubReleaseAssetUrl(
-      applicationAsset.browserDownloadUrl,
-      tagName,
-      applicationFilename,
-    )
-  ) {
-    fail("unsafe_linux_asset_url");
-  }
+  const updateMetadata = selectReleaseAsset(
+    validAssets,
+    "latest-linux.yml",
+    tagName,
+    "linux_update_metadata",
+  );
+  const readme = selectReleaseAsset(
+    validAssets,
+    `README-LINUX-${version}.txt`,
+    tagName,
+    "linux_readme",
+  );
+  const checksumManifest = selectReleaseAsset(
+    validAssets,
+    `SHA256SUMS-linux-${version}.txt`,
+    tagName,
+    "linux_checksum",
+  );
+  const legacyChecksum = portable
+    ? selectReleaseAsset(
+        validAssets,
+        `${portable.filename}.sha256`,
+        tagName,
+        "linux_legacy_checksum",
+      )
+    : null;
 
   return {
     version,
     tagName,
     publishedAt,
-    application: {
-      filename: applicationAsset.name,
-      size: applicationAsset.size,
-      url: applicationAsset.browserDownloadUrl,
-    },
-    readme: selectOptionalAsset(
-      validAssets,
-      `README-LINUX-${version}.txt`,
-      tagName,
-    ),
-    checksum: selectOptionalAsset(
-      validAssets,
-      `${applicationFilename}.sha256`,
-      tagName,
-    ),
+    application,
+    appImage,
+    deb,
+    portable,
+    updateMetadata,
+    readme,
+    checksum: checksumManifest ?? legacyChecksum,
   };
 }
 
@@ -302,7 +337,7 @@ export async function fetchLatestLinuxRelease(
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent":
-          `ALTARA-Website-Linux-Download/1.0 (${ALTARA_SITE_LINUX_DOWNLOAD_MARKER})`,
+          `ALTARA-Website-Linux-Download/2.0 (${ALTARA_SITE_LINUX_INSTALLERS_MARKER})`,
         "X-GitHub-Api-Version": "2022-11-28",
       },
       next: {
@@ -391,12 +426,15 @@ export async function createLinuxArtifactRedirectResponse(
 ): Promise<Response> {
   try {
     const release = await fetchLatestLinuxRelease(fetchImplementation);
-    const artifact =
-      artifactKind === "application"
-        ? release.application
-        : artifactKind === "readme"
-          ? release.readme
-          : release.checksum;
+    const artifact = {
+      application: release.application,
+      debian: release.deb ?? release.portable,
+      appimage: release.appImage,
+      deb: release.deb,
+      portable: release.portable,
+      readme: release.readme,
+      checksum: release.checksum,
+    }[artifactKind];
 
     if (!artifact) {
       fail(`missing_${artifactKind}_asset`);

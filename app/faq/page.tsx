@@ -54,12 +54,12 @@ const faqs = [
   {
     question: "Can I use ALTARA in the browser?",
     answer:
-      "Yes. You can try ALTARA in the browser, and Windows plus a portable Linux x64 preview are available now.",
+      "Yes. You can try ALTARA in the browser, and Windows plus Linux x64 AppImage, DEB, and portable downloads are available now.",
   },
   {
     question: "What platforms are supported?",
     answer:
-      "Windows is available now. A portable Linux x64 preview is also available with manual updates; macOS is planned, and browser access remains open.",
+      "Windows is available now. Linux x64 is available as AppImage or DEB, with a manually updated portable tar.gz fallback; macOS is planned, and browser access remains open.",
   },
   {
     question: "Is ALTARA still in beta?",
@@ -149,7 +149,7 @@ export default function FAQPage() {
                   <a
                     href={LINUX_DOWNLOAD_URL}
                     className="btn btn-secondary"
-                    aria-label="Download ALTARA for Linux x64 as a portable tar.gz"
+                    aria-label="Download the recommended ALTARA package for Linux x64"
                   >
                     Download Linux x64
                   </a>

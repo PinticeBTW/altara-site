@@ -125,7 +125,7 @@ test("rejects latest.yml", () => {
   expectResolutionError("missing_linux_asset", () => resolveLinuxRelease(payload));
 });
 
-test("rejects AppImage, ARM64, and failed artifacts", () => {
+test("rejects malformed AppImage names, ARM64, and failed artifacts", () => {
   for (const asset of [
     releaseAsset("0.1.121", "Altara.0.1.121.AppImage"),
     releaseAsset("0.1.121", "Altara.0.1.121-arm64.tar.gz"),
@@ -181,7 +181,7 @@ test("handles a release with no matching Linux asset", () => {
 
 test("rejects multiple matching Linux assets safely", () => {
   const matching = releaseAsset("0.1.121");
-  expectResolutionError("multiple_linux_assets", () =>
+  expectResolutionError("multiple_linux_portable_assets", () =>
     resolveLinuxRelease(releasePayload("0.1.121", { assets: [matching, matching] })),
   );
 });
@@ -262,7 +262,7 @@ test("produces a temporary safe redirect for the valid Linux asset", async () =>
   assert.equal(requestHeaders.Accept, "application/vnd.github+json");
   assert.equal(
     requestHeaders["User-Agent"],
-    "ALTARA-Website-Linux-Download/1.0 (altara-site-linux-download-v1)",
+    "ALTARA-Website-Linux-Download/2.0 (altara-site-linux-installers-v2)",
   );
   assert.equal(requestNext.revalidate, 600);
 
@@ -284,15 +284,17 @@ test("Linux website buttons target the server-side resolver", async () => {
   assert.match(faq, /href=\{LINUX_DOWNLOAD_URL\}/);
 });
 
-test("Linux copy states x64 Preview, portable tar.gz, and manual updates", async () => {
+test("Linux copy presents AppImage and DEB while keeping tar manual-only", async () => {
   const [chrome, help] = await Promise.all([
     source("app/components/site-chrome.tsx"),
     source("app/download/linux/page.tsx"),
   ]);
   const combined = `${chrome}\n${help}`;
   assert.match(combined, /Download for Linux/);
-  assert.match(combined, /Linux x64 Preview · Portable \.tar\.gz/);
-  assert.match(combined, /First Linux preview\. Manual updates are currently required\./);
+  assert.match(combined, /Linux x64 Preview · AppImage preferred/);
+  assert.match(combined, /Install for Ubuntu \/ Debian/);
+  assert.match(combined, /Portable fallback · Manual setup · Advanced users/);
+  assert.match(combined, /Manual updates are required for the portable tar\.gz/);
   assert.doesNotMatch(combined, /README-LINUX-0\.1\.121/);
 });
 
@@ -319,5 +321,19 @@ test("embedded web app route behavior remains unchanged across platform line end
   assert.equal(
     await sha256("app/app/route.ts"),
     "758c6cb7427526c47a517521921ab0603a50b43ae1e8c71a0964fe5d6d324947",
+  );
+});
+
+test("embedded app shell preserves the offline hotfix cache-buster", async () => {
+  const [patcher, appShell] = await Promise.all([
+    source("scripts/patch-altara-app-shell.cjs"),
+    source("public/app/index.html"),
+  ]);
+  assert.match(patcher, /const offlineReconnectMarker/);
+  assert.match(patcher, /hotfix=\$\{encodeURIComponent\(offlineReconnectMarker\)\}/);
+  assert.match(patcher, /appJsQuery/);
+  assert.match(
+    appShell,
+    /src="\/app\/app\.js\?v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"/,
   );
 });

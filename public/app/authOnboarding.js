@@ -67,12 +67,19 @@ function bindAuthInstallWelcomeOnce(onDismiss) {
   root.dataset.bound = "1";
 
   const dismiss = () => {
+    if (root.classList.contains("hidden")) return;
     markInstallWelcomeSeen();
     setAuthInstallWelcomeVisible(false);
     if (typeof onDismiss === "function") onDismiss();
   };
 
   btnStart?.addEventListener("click", dismiss);
+  btnStart?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopPropagation();
+    dismiss();
+  });
 
   root.addEventListener("click", (e) => {
     const target = e.target;
@@ -84,7 +91,7 @@ function bindAuthInstallWelcomeOnce(onDismiss) {
     const { root: currentRoot } = getOverlayEls();
     if (!(currentRoot instanceof HTMLElement)) return;
     if (currentRoot.classList.contains("hidden")) return;
-    if (e.key !== "Escape" && e.key !== "Enter" && e.key !== " ") return;
+    if (e.key !== "Escape") return;
     e.preventDefault();
     e.stopPropagation();
     dismiss();

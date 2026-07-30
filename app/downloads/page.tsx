@@ -13,11 +13,12 @@ import {
   WindowsDownloadOption,
 } from "../components/site-chrome";
 import { ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER } from "../lib/altara-download-platform";
+import { ALTARA_SITE_LINUX_INSTALLERS_MARKER } from "../lib/altara-linux-release";
 
 export const metadata: Metadata = {
   title: "Desktop downloads",
   description:
-    "Choose ALTARA for Windows, the portable Linux x64 preview, or browser access. macOS and Linux ARM64 are not available yet.",
+    "Choose ALTARA for Windows, Linux x64 as AppImage or DEB, a portable Linux fallback, or browser access. macOS and Linux ARM64 are not available yet.",
   alternates: {
     canonical: "/downloads",
   },
@@ -56,7 +57,9 @@ export default async function DownloadsPage({ searchParams }: DownloadsPageProps
     (status ? statusMessages[status] : undefined);
 
   return (
-    <div data-build-marker={ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER}>
+    <div
+      data-build-marker={`${ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER} ${ALTARA_SITE_LINUX_INSTALLERS_MARKER}`}
+    >
       <SiteNav />
 
       <main>
@@ -73,8 +76,9 @@ export default async function DownloadsPage({ searchParams }: DownloadsPageProps
               <span className="gradient-text">want to hang out.</span>
             </h1>
             <p>
-              ALTARA is available for Windows and as a Linux x64 Preview. Browser access is open
-              too; macOS is planned next.
+              ALTARA is available for Windows and Linux x64. Linux offers AppImage,
+              DEB, and a portable fallback; browser access is open too, and macOS
+              is planned next.
             </p>
           </div>
         </section>
@@ -99,8 +103,9 @@ export default async function DownloadsPage({ searchParams }: DownloadsPageProps
 
               <div className="download-chooser-notes">
                 <p>
-                  <strong>Linux compatibility:</strong> the current portable preview supports
-                  x64/amd64 only. Linux ARM64 is not currently available.
+                  <strong>Linux compatibility:</strong> AppImage is the generic x64
+                  option; DEB is recommended for Ubuntu, Debian and Mint. Linux
+                  ARM64 is not currently available.
                 </p>
                 <p>
                   Need setup commands? <Link href={LINUX_HELP_URL}>Open Linux help</Link>. If a

@@ -241,8 +241,9 @@ export default function Home() {
               <div className="release-copy">
                 <h2>v1.0 is the public beta.</h2>
                 <p>
-                  Windows and the portable Linux x64 preview are live now. Browser access is open
-                  too; macOS is planned next.
+                  Windows and Linux x64 installers are live now. Linux includes
+                  AppImage, DEB, and a portable fallback; browser access is open
+                  too, and macOS is planned next.
                 </p>
               </div>
               <div className="release-actions">
