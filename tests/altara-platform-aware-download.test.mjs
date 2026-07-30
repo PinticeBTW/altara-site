@@ -271,7 +271,8 @@ test("the explicit Windows resolver selects only the exact stable installer", as
     response.headers.get("location"),
     "https://github.com/PinticeBTW/altara-updates/releases/download/v0.1.121/Altara.Setup.0.1.121.exe",
   );
-  assert.equal(requestNext.revalidate, 300);
+  assert.equal(requestNext.revalidate, 90);
+  assert.deepEqual(requestNext.tags, ["altara-latest-stable-release"]);
 });
 
 test("the Windows selector rejects blockmap and latest.yml as installers", () => {
@@ -428,9 +429,11 @@ test("all download build markers are emitted through the site metadata", async (
   assert.match(platformHelper, /altara-site-platform-aware-download-v1/);
   assert.match(linuxHelper, /altara-site-linux-download-v1/);
   assert.match(linuxHelper, /altara-site-linux-installers-v2/);
+  assert.match(linuxHelper, /altara-linux-branding-routing-v3/);
   assert.match(layout, /ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER/);
   assert.match(layout, /ALTARA_SITE_LINUX_DOWNLOAD_MARKER/);
   assert.match(layout, /ALTARA_SITE_LINUX_INSTALLERS_MARKER/);
+  assert.match(layout, /ALTARA_LINUX_BRANDING_ROUTING_MARKER/);
 });
 
 test("the website implementation does not hard-code release 0.1.121", async () => {

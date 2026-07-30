@@ -1,10 +1,13 @@
 export const ALTARA_SITE_LINUX_DOWNLOAD_MARKER = "altara-site-linux-download-v1";
 export const ALTARA_SITE_LINUX_INSTALLERS_MARKER =
   "altara-site-linux-installers-v2";
+export const ALTARA_LINUX_BRANDING_ROUTING_MARKER =
+  "altara-linux-branding-routing-v3";
 export const ALTARA_GITHUB_RELEASES_URL =
   "https://github.com/PinticeBTW/altara-updates/releases";
-export const LINUX_RELEASE_CACHE_SECONDS = 600;
-export const WINDOWS_RELEASE_CACHE_SECONDS = 300;
+export const ALTARA_RELEASE_CACHE_SECONDS = 90;
+export const LINUX_RELEASE_CACHE_SECONDS = ALTARA_RELEASE_CACHE_SECONDS;
+export const WINDOWS_RELEASE_CACHE_SECONDS = ALTARA_RELEASE_CACHE_SECONDS;
 
 const ALTARA_GITHUB_RELEASE_API_URL =
   "https://api.github.com/repos/PinticeBTW/altara-updates/releases/latest";
@@ -330,45 +333,26 @@ export function resolveWindowsRelease(payload: unknown): WindowsReleaseArtifacts
 export async function fetchLatestLinuxRelease(
   fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch,
 ): Promise<LinuxReleaseArtifacts> {
-  let response: Response;
-
-  try {
-    response = await fetchImplementation(ALTARA_GITHUB_RELEASE_API_URL, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent":
-          `ALTARA-Website-Linux-Download/2.0 (${ALTARA_SITE_LINUX_INSTALLERS_MARKER})`,
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      next: {
-        revalidate: LINUX_RELEASE_CACHE_SECONDS,
-        tags: ["altara-latest-linux-release"],
-      },
-    });
-  } catch {
-    fail("github_api_unavailable");
-  }
-
-  if (!response.ok) {
-    fail("github_api_unavailable");
-  }
-
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch {
-    fail("malformed_github_response");
-  }
-
-  return resolveLinuxRelease(payload);
+  return resolveLinuxRelease(
+    await fetchLatestStableReleasePayload(fetchImplementation),
+  );
 }
 
 export async function fetchLatestWindowsRelease(
   fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch,
 ): Promise<WindowsReleaseArtifacts> {
+  return resolveWindowsRelease(
+    await fetchLatestStableReleasePayload(fetchImplementation),
+  );
+}
+
+async function fetchLatestStableReleasePayload(
+  fetchImplementation: LinuxReleaseFetch,
+): Promise<unknown> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
-    "User-Agent": "ALTARA-Website-Windows-Download/2.0",
+    "User-Agent":
+      `ALTARA-Website-Downloads/3.0 (${ALTARA_LINUX_BRANDING_ROUTING_MARKER})`,
     "X-GitHub-Api-Version": "2022-11-28",
   };
   const token = process.env.GITHUB_TOKEN?.trim();
@@ -381,8 +365,8 @@ export async function fetchLatestWindowsRelease(
     response = await fetchImplementation(ALTARA_GITHUB_RELEASE_API_URL, {
       headers,
       next: {
-        revalidate: WINDOWS_RELEASE_CACHE_SECONDS,
-        tags: ["altara-latest-windows-release"],
+        revalidate: ALTARA_RELEASE_CACHE_SECONDS,
+        tags: ["altara-latest-stable-release"],
       },
     });
   } catch {
@@ -400,7 +384,7 @@ export async function fetchLatestWindowsRelease(
     fail("malformed_github_response");
   }
 
-  return resolveWindowsRelease(payload);
+  return payload;
 }
 
 function getErrorCode(error: unknown): string {

@@ -262,12 +262,13 @@ test("produces a temporary safe redirect for the valid Linux asset", async () =>
   assert.equal(requestHeaders.Accept, "application/vnd.github+json");
   assert.equal(
     requestHeaders["User-Agent"],
-    "ALTARA-Website-Linux-Download/2.0 (altara-site-linux-installers-v2)",
+    "ALTARA-Website-Downloads/3.0 (altara-linux-branding-routing-v3)",
   );
-  assert.equal(requestNext.revalidate, 600);
+  assert.equal(requestNext.revalidate, 90);
+  assert.deepEqual(requestNext.tags, ["altara-latest-stable-release"]);
 
   const route = await source("app/api/download/linux/route.ts");
-  assert.match(route, /export const revalidate = 600/);
+  assert.match(route, /export const revalidate = 0/);
   assert.match(route, /createLinuxArtifactRedirectResponse\("application"\)/);
 });
 

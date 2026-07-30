@@ -3,6 +3,7 @@ import { Bricolage_Grotesque, Inter, JetBrains_Mono } from "next/font/google";
 import { CustomCursor } from "./components/custom-cursor";
 import { ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER } from "./lib/altara-download-platform";
 import {
+  ALTARA_LINUX_BRANDING_ROUTING_MARKER,
   ALTARA_SITE_LINUX_DOWNLOAD_MARKER,
   ALTARA_SITE_LINUX_INSTALLERS_MARKER,
 } from "./lib/altara-linux-release";
@@ -83,6 +84,8 @@ export const metadata: Metadata = {
       ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER,
     "altara-site-linux-installers-marker":
       ALTARA_SITE_LINUX_INSTALLERS_MARKER,
+    "altara-linux-branding-routing-marker":
+      ALTARA_LINUX_BRANDING_ROUTING_MARKER,
   },
 };
 

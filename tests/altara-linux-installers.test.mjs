@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   createLinuxArtifactRedirectResponse,
+  fetchLatestLinuxRelease,
+  fetchLatestWindowsRelease,
   LinuxReleaseResolutionError,
   resolveLinuxRelease,
 } from "../app/lib/altara-linux-release.ts";
@@ -185,6 +187,45 @@ test("generic and Debian-family routes fall back to the same-release tar", async
   assert.equal(generic.headers.get("location"), debian.headers.get("location"));
 });
 
+test("a newly resolved stable release replaces an older portable fallback", async () => {
+  const oldRelease = await fetchLatestLinuxRelease(async () =>
+    Response.json(portableRelease()),
+  );
+  const newRelease = await fetchLatestLinuxRelease(async () =>
+    Response.json(installerRelease("0.1.123")),
+  );
+
+  assert.equal(oldRelease.application.filename, "Altara.0.1.121.tar.gz");
+  assert.equal(
+    newRelease.application.filename,
+    "Altara-0.1.123-x86_64.AppImage",
+  );
+  assert.equal(newRelease.deb?.filename, "Altara-0.1.123-amd64.deb");
+  assert.equal(newRelease.portable?.filename, "Altara.0.1.123.tar.gz");
+});
+
+test("Windows and Linux use one shared latest-release cache identity", async () => {
+  const calls = [];
+  const fetchMock = async (input, init) => {
+    calls.push({
+      input: String(input),
+      headers: { ...init?.headers },
+      next: { ...init?.next },
+    });
+    return Response.json(installerRelease());
+  };
+
+  await Promise.all([
+    fetchLatestLinuxRelease(fetchMock),
+    fetchLatestWindowsRelease(fetchMock),
+  ]);
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0], calls[1]);
+  assert.equal(calls[0].next.revalidate, 90);
+  assert.deepEqual(calls[0].next.tags, ["altara-latest-stable-release"]);
+});
+
 test("Debian-family detection is explicit and generic Linux stays AppImage-oriented", () => {
   const ubuntu =
     "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0";
@@ -245,6 +286,7 @@ test("explicit route sources cannot loop through the smart /download route", asy
   assert.match(routeSources[3], /createLinuxArtifactRedirectResponse\("portable"\)/);
   for (const route of routeSources) {
     assert.doesNotMatch(route, /["']\/download["']/);
+    assert.match(route, /export const revalidate = 0/);
   }
 });
 
@@ -278,5 +320,7 @@ test("all three download markers are preserved in production metadata", async ()
   assert.match(releaseHelper, /altara-site-linux-download-v1/);
   assert.match(platformHelper, /altara-site-platform-aware-download-v1/);
   assert.match(releaseHelper, /altara-site-linux-installers-v2/);
+  assert.match(releaseHelper, /altara-linux-branding-routing-v3/);
   assert.match(layout, /ALTARA_SITE_LINUX_INSTALLERS_MARKER/);
+  assert.match(layout, /ALTARA_LINUX_BRANDING_ROUTING_MARKER/);
 });
