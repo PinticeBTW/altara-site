@@ -2605,6 +2605,7 @@ p {
 }
 
 .platform-btn .platform-name {
+  display: block;
   font-weight: 600;
 }
 
@@ -2623,7 +2624,30 @@ p {
 }
 
 .platform-btn .platform-copy {
+  min-width: 0;
   text-align: left;
+}
+
+.platform-btn .platform-detail {
+  display: block;
+  margin-top: 3px;
+  color: var(--fg-dim);
+  font-size: 11px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.platform-btn-linux {
+  min-width: 272px;
+}
+
+.btn:focus-visible,
+.platform-btn:focus-visible,
+.release-inline-link:focus-visible,
+.linux-file-links a:focus-visible,
+.download-chooser-notes a:focus-visible {
+  outline: 3px solid var(--accent-2);
+  outline-offset: 3px;
 }
 
 .platform-btn .platform-soon {
@@ -2652,6 +2676,24 @@ p {
 
 .platform-btn:disabled {
   cursor: not-allowed;
+}
+
+.cta-band .linux-preview-note {
+  margin: 18px auto 0;
+  color: var(--fg-dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.linux-preview-note a {
+  color: var(--accent-1);
+  font-weight: 700;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.linux-preview-note a:hover {
+  color: var(--accent-2);
+  border-color: var(--accent-2);
 }
 
 /* footer */
@@ -2975,6 +3017,242 @@ p {
   max-width: 620px;
   font-size: 19px;
   color: var(--fg-muted);
+}
+
+/* linux download */
+.linux-download-hero {
+  padding-bottom: 74px;
+}
+
+.linux-help-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 30px;
+}
+
+.page-hero .linux-preview-copy {
+  margin-top: 16px;
+  color: var(--fg-dim);
+  font-size: 13px;
+  font-family: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
+}
+
+.linux-help-section {
+  padding: 72px 0 120px;
+  border-top: 1px solid var(--border);
+}
+
+.linux-download-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 22px;
+  padding: 16px 18px;
+  border: 1px solid rgba(232, 205, 176, 0.34);
+  border-radius: 14px;
+  background: rgba(232, 205, 176, 0.08);
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.linux-download-alert strong {
+  color: var(--fg);
+}
+
+.linux-help-layout,
+.linux-dependency-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.linux-dependency-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 22px;
+}
+
+.linux-help-card {
+  padding: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(360px 180px at 92% 0%, rgba(232, 205, 176, 0.1), transparent 70%),
+    var(--bg-card);
+}
+
+.linux-help-card-primary {
+  background:
+    radial-gradient(520px 220px at 88% 0%, rgba(232, 205, 176, 0.14), transparent 70%),
+    var(--bg-soft);
+}
+
+.linux-help-card h2 {
+  margin-top: 18px;
+  font-size: clamp(28px, 3.4vw, 42px);
+  letter-spacing: -0.02em;
+}
+
+.linux-help-card h3 {
+  margin: 24px 0 10px;
+  color: var(--accent-1);
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.linux-help-card p {
+  margin-top: 16px;
+  color: var(--fg-muted);
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+.linux-help-card code {
+  font-family: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
+}
+
+.linux-help-card p code,
+.linux-help-steps code {
+  color: var(--accent-1);
+}
+
+.linux-help-card pre {
+  max-width: 100%;
+  margin: 12px 0 0;
+  padding: 15px 16px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #101010;
+  color: #f3eee8;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.linux-help-steps {
+  display: grid;
+  gap: 14px;
+  margin: 24px 0 0;
+  padding-left: 24px;
+  color: var(--fg-muted);
+}
+
+.linux-help-steps li {
+  padding-left: 4px;
+  line-height: 1.6;
+}
+
+.linux-help-note {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.linux-release-files {
+  position: sticky;
+  top: 104px;
+}
+
+.linux-file-links {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.linux-file-links .btn {
+  justify-content: center;
+}
+
+.linux-help-card .linux-help-warning {
+  color: var(--accent-1);
+  font-weight: 700;
+}
+
+.download-chooser-hero {
+  padding-bottom: 72px;
+}
+
+.download-chooser-section {
+  padding: 72px 0 120px;
+  border-top: 1px solid var(--border);
+}
+
+.download-chooser-section .container,
+.download-chooser-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.download-chooser-panel {
+  text-align: center;
+  overflow: hidden;
+}
+
+.download-chooser-platforms {
+  align-items: stretch;
+  min-width: 0;
+}
+
+.download-chooser-platforms .platform-btn {
+  flex: 1 1 230px;
+  max-width: 100%;
+  min-width: 230px;
+}
+
+.download-chooser-panel .linux-preview-note {
+  margin: 22px auto 0;
+  color: var(--fg-dim);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.download-chooser-notes {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  max-width: 760px;
+  margin: 28px auto 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.download-chooser-notes p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.download-chooser-notes a {
+  color: var(--accent-1);
+  font-weight: 700;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.download-chooser-notes a:hover {
+  color: var(--accent-2);
+  border-color: var(--accent-2);
+}
+
+@media (max-width: 860px) {
+  .linux-help-layout,
+  .linux-dependency-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .linux-release-files {
+    position: relative;
+    top: auto;
+  }
+
+  .download-chooser-platforms .platform-btn {
+    min-width: 0;
+  }
 }
 
 /* legal pages */
@@ -4305,6 +4583,28 @@ p {
     border-radius: 12px;
   }
 
+  .platform-btn-linux {
+    min-width: 0;
+  }
+
+  .linux-help-actions {
+    justify-content: flex-start;
+  }
+
+  .linux-help-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .linux-help-section,
+  .download-chooser-section {
+    padding: 52px 0 80px;
+  }
+
+  .linux-help-card {
+    padding: 20px;
+  }
+
   .footer {
     margin-top: 72px;
     padding: 48px 0 28px;
@@ -4340,6 +4640,27 @@ p {
     margin: 18px 0 0;
     max-width: 100%;
     font-size: 16px;
+  }
+
+  .download-chooser-hero h1 {
+    max-width: 100%;
+    font-size: clamp(38px, 11vw, 48px);
+    overflow-wrap: anywhere;
+  }
+
+  .download-chooser-panel {
+    padding: 20px;
+  }
+
+  .download-chooser-platforms {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .download-chooser-platforms .platform-btn {
+    width: 100%;
+    min-width: 0;
   }
 
   .legal-meta {

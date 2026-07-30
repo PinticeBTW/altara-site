@@ -2,15 +2,18 @@ import Image from "next/image";
 import type { Metadata } from "next";
 
 import {
-  DOWNLOAD_URL,
+  BrowserDownloadOption,
+  LinuxDownloadOption,
+  LinuxPreviewNote,
+  MacDownloadOption,
   RELEASES_URL,
   SiteFooter,
   SiteNav,
-  TRY_IN_BROWSER_URL,
+  WindowsDownloadOption,
 } from "../components/site-chrome";
 
 const description =
-  "Explore ALTARA features: widgets, private DMs, voice calls, browser access, friend groups, small communities, and the Windows download.";
+  "Explore ALTARA features: widgets, private DMs, voice calls, browser access, friend groups, small communities, and Windows or Linux x64 downloads.";
 
 export const metadata: Metadata = {
   title: "Features",
@@ -42,7 +45,7 @@ const specItems = [
   { title: "ALTARA+ supported", description: "ALTARA+ helps fund development while the core app stays focused." },
   { title: "76MB Windows download", description: "Latest Windows installer is about 76MB." },
   { title: "Browser access", description: "Jump into ALTARA from the web when you need it." },
-  { title: "macOS/Linux planned", description: "Desktop support is starting with Windows, then expanding." },
+  { title: "Linux x64 preview", description: "A portable tar.gz preview is available alongside Windows." },
   { title: "Voice rooms", description: "Voice calls, rooms, and screen sharing for hanging out." },
   { title: "Widget dashboard", description: "Calendar, checklist, notepad, calls, status, and unread DMs." },
   { title: "Small communities", description: "Spaces for gaming groups, friend groups, and communities that should stay human." },
@@ -313,98 +316,24 @@ export default function FeaturesPage() {
               <div className="blob blob-1" />
               <div className="blob blob-2" />
               <span className="eyebrow" style={{ marginBottom: "18px" }}>
-                <span className="dot" /> Free - 76MB - Windows now
+                <span className="dot" /> Windows and Linux x64 available
               </span>
               <h2>
                 Get the gang together.
                 <br />
-                Download ALTARA for Windows.
+                Download ALTARA for desktop.
               </h2>
               <p>
-                Browser access is open too. macOS and Linux are planned next, once the core app
-                feels right.
+                Available for Windows and Linux x64. Browser access is open too; macOS is planned
+                next.
               </p>
               <div className="cta-platforms">
-                <button
-                  type="button"
-                  className="platform-btn platform-btn-disabled"
-                  disabled
-                  aria-disabled="true"
-                >
-                  <span className="platform-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
-                    </svg>
-                  </span>
-                  <div className="platform-copy">
-                    <small>Download for</small>
-                    <span className="platform-name">macOS</span>
-                    <span className="platform-soon">Coming soon</span>
-                  </div>
-                </button>
-                <a
-                  href={DOWNLOAD_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="platform-btn"
-                >
-                  <span className="platform-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M3 5.557 9.836 4.62v6.687H3zm0 12.886V12.69h6.836v6.687zM10.673 4.5 21 3v8.307H10.673zm0 15v-7.81H21v9.31z" />
-                    </svg>
-                  </span>
-                  <div className="platform-copy">
-                    <small>Download for</small>
-                    <span className="platform-name">Windows</span>
-                  </div>
-                </a>
-                <button
-                  type="button"
-                  className="platform-btn platform-btn-disabled"
-                  disabled
-                  aria-disabled="true"
-                >
-                  <span className="platform-icon" aria-hidden="true">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="2" y="4" width="20" height="16" rx="2" />
-                      <path d="m7 10 3 2-3 2" />
-                      <path d="M12 14h5" />
-                    </svg>
-                  </span>
-                  <div className="platform-copy">
-                    <small>Download for</small>
-                    <span className="platform-name">Linux</span>
-                    <span className="platform-soon">Coming soon</span>
-                  </div>
-                </button>
-                <a href={TRY_IN_BROWSER_URL} className="platform-btn">
-                  <span className="platform-icon" aria-hidden="true">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-                      <path d="M2 12h20" />
-                    </svg>
-                  </span>
-                  <div className="platform-copy">
-                    <small>Or just</small>
-                    <span className="platform-name">Try in browser</span>
-                  </div>
-                </a>
+                <MacDownloadOption />
+                <WindowsDownloadOption />
+                <LinuxDownloadOption />
+                <BrowserDownloadOption />
               </div>
+              <LinuxPreviewNote />
               <a
                 href={RELEASES_URL}
                 target="_blank"

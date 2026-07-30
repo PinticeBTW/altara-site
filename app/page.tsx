@@ -2,11 +2,18 @@ import Image from "next/image";
 import type { Metadata } from "next";
 
 import {
+  BrowserDownloadOption,
   DOWNLOAD_URL,
+  LINUX_DOWNLOAD_URL,
+  LinuxDownloadOption,
+  LinuxPreviewNote,
+  MacDownloadOption,
   RELEASES_URL,
   SiteFooter,
   SiteNav,
   TRY_IN_BROWSER_URL,
+  WINDOWS_DOWNLOAD_URL,
+  WindowsDownloadOption,
 } from "./components/site-chrome";
 
 const description =
@@ -141,7 +148,7 @@ export default function Home() {
                   <span className="dot" /> Free forever
                 </span>
                 <span>
-                  <span className="dot" /> Windows now - macOS/Linux soon
+                  <span className="dot" /> Windows and Linux x64 available
                 </span>
               </div>
             </div>
@@ -234,18 +241,19 @@ export default function Home() {
               <div className="release-copy">
                 <h2>v1.0 is the public beta.</h2>
                 <p>
-                  Windows is live now. Browser access is open, and macOS/Linux builds are coming
-                  next.
+                  Windows and the portable Linux x64 preview are live now. Browser access is open
+                  too; macOS is planned next.
                 </p>
               </div>
               <div className="release-actions">
                 <a
-                  href={DOWNLOAD_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={WINDOWS_DOWNLOAD_URL}
                   className="btn btn-primary"
                 >
-                  Download Windows
+                  Download for Windows
+                </a>
+                <a href={LINUX_DOWNLOAD_URL} className="btn btn-secondary">
+                  Download Linux
                 </a>
                 <a
                   href={RELEASES_URL}
@@ -266,95 +274,21 @@ export default function Home() {
               <div className="blob blob-1" />
               <div className="blob blob-2" />
               <span className="eyebrow">
-                <span className="dot" /> Free - 76MB - Windows now
+                <span className="dot" /> Windows and Linux x64 available
               </span>
-              <h2>Get the gang together. Download ALTARA for Windows.</h2>
+              <h2>Get the gang together. Download ALTARA for desktop.</h2>
               <p>
-                Browser access is open too. macOS and Linux are planned next, once the core app
-                feels right.
+                Available for Windows and Linux x64. Browser access is open too; macOS is planned
+                next.
               </p>
 
               <div className="cta-platforms">
-                <button
-                  type="button"
-                  className="platform-btn platform-btn-disabled"
-                  disabled
-                  aria-disabled="true"
-                >
-                  <span className="platform-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
-                    </svg>
-                  </span>
-                  <div className="platform-copy">
-                    <small>Download for</small>
-                    <span className="platform-name">macOS</span>
-                    <span className="platform-soon">Coming soon</span>
-                  </div>
-                </button>
-                <a
-                  href={DOWNLOAD_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="platform-btn"
-                >
-                  <span className="platform-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M3 5.557 9.836 4.62v6.687H3zm0 12.886V12.69h6.836v6.687zM10.673 4.5 21 3v8.307H10.673zm0 15v-7.81H21v9.31z" />
-                    </svg>
-                  </span>
-                  <div className="platform-copy">
-                    <small>Download for</small>
-                    <span className="platform-name">Windows</span>
-                  </div>
-                </a>
-                <button
-                  type="button"
-                  className="platform-btn platform-btn-disabled"
-                  disabled
-                  aria-disabled="true"
-                >
-                  <span className="platform-icon" aria-hidden="true">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="2" y="4" width="20" height="16" rx="2" />
-                      <path d="m7 10 3 2-3 2" />
-                      <path d="M12 14h5" />
-                    </svg>
-                  </span>
-                  <div className="platform-copy">
-                    <small>Download for</small>
-                    <span className="platform-name">Linux</span>
-                    <span className="platform-soon">Coming soon</span>
-                  </div>
-                </button>
-                <a href={TRY_IN_BROWSER_URL} className="platform-btn">
-                  <span className="platform-icon" aria-hidden="true">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-                      <path d="M2 12h20" />
-                    </svg>
-                  </span>
-                  <div className="platform-copy">
-                    <small>Or just</small>
-                    <span className="platform-name">Try in browser</span>
-                  </div>
-                </a>
+                <MacDownloadOption />
+                <WindowsDownloadOption />
+                <LinuxDownloadOption />
+                <BrowserDownloadOption />
               </div>
+              <LinuxPreviewNote />
             </div>
           </div>
         </section>

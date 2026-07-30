@@ -2,15 +2,17 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import {
-  DOWNLOAD_URL,
+  LINUX_DOWNLOAD_URL,
+  LINUX_HELP_URL,
   RELEASES_URL,
   SiteFooter,
   SiteNav,
   TRY_IN_BROWSER_URL,
+  WINDOWS_DOWNLOAD_URL,
 } from "../components/site-chrome";
 
 const description =
-  "Answers about ALTARA pricing, browser access, Windows download, beta status, Discord alternative features, gaming groups, and small communities.";
+  "Answers about ALTARA pricing, browser access, Windows and Linux x64 downloads, beta status, Discord alternative features, gaming groups, and small communities.";
 
 export const metadata: Metadata = {
   title: "FAQ",
@@ -52,12 +54,12 @@ const faqs = [
   {
     question: "Can I use ALTARA in the browser?",
     answer:
-      "Yes. You can try ALTARA in the browser, and the Windows download is available now.",
+      "Yes. You can try ALTARA in the browser, and Windows plus a portable Linux x64 preview are available now.",
   },
   {
     question: "What platforms are supported?",
     answer:
-      "Windows is available now. macOS and Linux are planned next, and browser access is available through the site.",
+      "Windows is available now. A portable Linux x64 preview is also available with manual updates; macOS is planned, and browser access remains open.",
   },
   {
     question: "Is ALTARA still in beta?",
@@ -110,8 +112,8 @@ export default function FAQPage() {
               you <span className="gradient-text">download.</span>
             </h1>
             <p>
-              Plain answers about ALTARA, the Windows beta, browser access, and what kind of
-              groups it is being built for.
+              Plain answers about ALTARA, desktop previews, browser access, and what kind of groups
+              it is being built for.
             </p>
           </div>
         </section>
@@ -134,20 +136,28 @@ export default function FAQPage() {
                 </span>
                 <h2>Try ALTARA now.</h2>
                 <p>
-                  Download the Windows beta, open it in your browser, or check what changed in the
-                  latest release.
+                  Download the Windows beta or Linux x64 preview, open ALTARA in your browser, or
+                  check what changed in the latest release.
                 </p>
                 <div className="faq-aside-actions">
                   <a
-                    href={DOWNLOAD_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={WINDOWS_DOWNLOAD_URL}
                     className="btn btn-primary"
                   >
-                    Download Windows
+                    Download for Windows
+                  </a>
+                  <a
+                    href={LINUX_DOWNLOAD_URL}
+                    className="btn btn-secondary"
+                    aria-label="Download ALTARA for Linux x64 as a portable tar.gz"
+                  >
+                    Download Linux x64
                   </a>
                   <Link href={TRY_IN_BROWSER_URL} className="btn btn-secondary">
                     Try in browser
+                  </Link>
+                  <Link href={LINUX_HELP_URL} className="release-inline-link">
+                    Linux setup help
                   </Link>
                   <a
                     href={RELEASES_URL}

@@ -1,10 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
 
-export const DOWNLOAD_URL =
-  "/download";
+export const DOWNLOAD_URL = "/download";
+export const DOWNLOADS_URL = "/downloads";
+export const WINDOWS_DOWNLOAD_URL = "/api/download/windows";
 export const TRY_IN_BROWSER_URL = "/try";
 export const RELEASES_URL = "https://github.com/PinticeBTW/altara-updates/releases";
+export const LINUX_DOWNLOAD_URL = "/api/download/linux";
+export const LINUX_HELP_URL = "/download/linux";
+export const LINUX_README_URL = "/api/download/linux/readme";
+export const LINUX_CHECKSUM_URL = "/api/download/linux/checksum";
 
 type NavPage = "home" | "features" | "faq" | "about" | "developers";
 type FooterLink = {
@@ -25,6 +30,110 @@ function Brand() {
       />
       <span>ALTARA</span>
     </>
+  );
+}
+
+export function LinuxDownloadOption() {
+  return (
+    <a
+      href={LINUX_DOWNLOAD_URL}
+      className="platform-btn platform-btn-linux"
+      aria-label="Download ALTARA for Linux x64 as a portable tar.gz"
+    >
+      <span className="platform-icon" aria-hidden="true">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="2" y="4" width="20" height="16" rx="2" />
+          <path d="m7 10 3 2-3 2" />
+          <path d="M12 14h5" />
+        </svg>
+      </span>
+      <span className="platform-copy">
+        <span className="platform-name">Download for Linux</span>
+        <span className="platform-detail">Linux x64 Preview · Portable .tar.gz</span>
+      </span>
+    </a>
+  );
+}
+
+export function WindowsDownloadOption() {
+  return (
+    <a
+      href={WINDOWS_DOWNLOAD_URL}
+      className="platform-btn"
+      aria-label="Download the latest stable ALTARA installer for Windows"
+    >
+      <span className="platform-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M3 5.557 9.836 4.62v6.687H3zm0 12.886V12.69h6.836v6.687zM10.673 4.5 21 3v8.307H10.673zm0 15v-7.81H21v9.31z" />
+        </svg>
+      </span>
+      <span className="platform-copy">
+        <span className="platform-name">Download for Windows</span>
+        <span className="platform-detail">Latest stable installer</span>
+      </span>
+    </a>
+  );
+}
+
+export function MacDownloadOption() {
+  return (
+    <button
+      type="button"
+      className="platform-btn platform-btn-disabled"
+      disabled
+      aria-disabled="true"
+    >
+      <span className="platform-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
+        </svg>
+      </span>
+      <span className="platform-copy">
+        <span className="platform-name">macOS</span>
+        <span className="platform-soon">Coming soon</span>
+      </span>
+    </button>
+  );
+}
+
+export function BrowserDownloadOption() {
+  return (
+    <Link href={TRY_IN_BROWSER_URL} className="platform-btn">
+      <span className="platform-icon" aria-hidden="true">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+          <path d="M2 12h20" />
+        </svg>
+      </span>
+      <span className="platform-copy">
+        <span className="platform-name">Try in browser</span>
+        <span className="platform-detail">No desktop install required</span>
+      </span>
+    </Link>
+  );
+}
+
+export function LinuxPreviewNote() {
+  return (
+    <p className="linux-preview-note">
+      First Linux preview. Manual updates are currently required.{" "}
+      <Link href={LINUX_HELP_URL}>Read Linux setup help.</Link>
+    </p>
   );
 }
 
@@ -64,7 +173,9 @@ const footerColumns = [
     links: [
       { label: "Features", href: "/features" },
       { label: "FAQ", href: "/faq" },
-      { label: "Download for Windows", href: "/#download" },
+      { label: "Download options", href: DOWNLOADS_URL },
+      { label: "Download for Windows", href: WINDOWS_DOWNLOAD_URL },
+      { label: "Linux x64 preview", href: LINUX_HELP_URL },
       { label: "Try in browser", href: TRY_IN_BROWSER_URL },
       { label: "Release notes", href: RELEASES_URL },
     ],

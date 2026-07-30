@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Inter, JetBrains_Mono } from "next/font/google";
 import { CustomCursor } from "./components/custom-cursor";
+import { ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER } from "./lib/altara-download-platform";
+import { ALTARA_SITE_LINUX_DOWNLOAD_MARKER } from "./lib/altara-linux-release";
 import "./globals.css";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://altara.app";
@@ -71,6 +73,11 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
+  },
+  other: {
+    "altara-site-build-marker": ALTARA_SITE_LINUX_DOWNLOAD_MARKER,
+    "altara-site-platform-aware-download-marker":
+      ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER,
   },
 };
 
