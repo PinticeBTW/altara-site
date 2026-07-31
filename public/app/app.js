@@ -2,12 +2,16 @@
   const root = typeof window !== "undefined" ? window : globalThis;
   const assetVersion = "server-read-message-history-ux-v3";
   const offlineReconnectMarker = "offline-auth-reconnect-v1";
+  const reactionEventsRealtimeMarker = "server-reaction-events-realtime-v1";
+  const embedLinksPermissionsMarker = "server-embed-links-permissions-batch6a-v1";
   const nowIso = () => {
     try { return new Date().toISOString(); } catch (_) { return ""; }
   };
   const safeString = (value, limit = 240) => String(value == null ? "" : value).slice(0, limit);
   root.__ALTARA_ASSET_VERSION__ = assetVersion;
   root.__ALTARA_OFFLINE_RECONNECT_MARKER__ = offlineReconnectMarker;
+  root.__ALTARA_REACTION_EVENTS_REALTIME_MARKER__ = reactionEventsRealtimeMarker;
+  root.__ALTARA_EMBED_LINKS_PERMISSIONS_MARKER__ = embedLinksPermissionsMarker;
   root.__ALTARA_BOOT_TRACE__ = Array.isArray(root.__ALTARA_BOOT_TRACE__) ? root.__ALTARA_BOOT_TRACE__ : [];
   root.__ALTARA_RUNTIME_ERRORS__ = Array.isArray(root.__ALTARA_RUNTIME_ERRORS__) ? root.__ALTARA_RUNTIME_ERRORS__ : [];
   const pushBootTrace = (phase = "event", details = {}) => {
@@ -50,6 +54,8 @@
     version: "server-read-message-history-ux-v3",
     assetVersion,
     offlineReconnectMarker,
+    reactionEventsRealtimeMarker,
+    embedLinksPermissionsMarker,
     appJsExecuted: true,
     loadedAt: nowIso(),
     href: typeof location !== "undefined" ? location.href : "",
@@ -80,6 +86,9 @@ import {
   sanitizeComposerDraft,
   sanitizeOfflineNavigationSnapshot,
 } from "./lib/offlineCoordinator.js";
+import {
+  createReactionEventRefreshQueue,
+} from "./lib/reactionEventStream.js";
 import {
   createCallChannel as createRealtimeCallChannel,
   joinCallChannel as joinRealtimeCallChannel,
@@ -2766,6 +2775,7 @@ function resetAltaraRealtimeSubscriptionsForRecovery(reason = "connection-recove
 
   dmChannel = null;
   dmReactionsChannel = null;
+  dmReactionEventRefreshQueue.reset();
   globalDmMessageChannel = null;
   typingRealtimeChannel = null;
   typingInboxChannel = null;
@@ -8833,7 +8843,7 @@ const ALTARA_SERVER_PERMISSION_CATALOG = Object.freeze([
   { key: "send_messages_in_threads", label: "Send Messages in Threads", hint: "Allows members to send messages in threads/posts.", category: "Text Channel Permissions", risk: "normal", implemented: false },
   { key: "create_public_threads", label: "Create Public Threads", hint: "Allows members to create public threads.", category: "Text Channel Permissions", risk: "normal", implemented: false },
   { key: "create_private_threads", label: "Create Private Threads", hint: "Allows members to create private threads.", category: "Text Channel Permissions", risk: "normal", implemented: false },
-  { key: "embed_links", label: "Embed Links", hint: "Allows links sent by members to show embedded previews.", category: "Text Channel Permissions", risk: "normal", implemented: false },
+  { key: "embed_links", label: "Embed Links", hint: "Allows ALTARA server-invite links sent by members to show invite cards.", category: "Text Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true },
   { key: "attach_files", label: "Attach Files", hint: "Allows members to upload images, videos, and files.", category: "Text Channel Permissions", risk: "normal", implemented: true, defaultEnabled: false },
   { key: "add_reactions", label: "Add Reactions", hint: "Allows members to react to messages.", category: "Text Channel Permissions", risk: "normal", implemented: true, defaultEnabled: false },
   { key: "use_external_emojis", label: "Use External Emojis", hint: "Allows members to use emojis from other servers if ALTARA supports them.", category: "Text Channel Permissions", risk: "normal", implemented: false },
@@ -48962,6 +48972,56 @@ async function verifyCanSendPlainTextMessageToConversation(conversationId, reaso
   return { ok: false, permissionResult, error: permissionError };
 }
 
+function getOptimisticEmbedServerContext(conversationId = "") {
+  const convId = normId(conversationId || "");
+  if (!convId) return null;
+  const resolved = getServerPermissionContextForConversation(convId);
+  if (resolved?.serverId) return { ...resolved, resolved: true };
+
+  // If the UI already knows this is a server timeline but its channel mapping
+  // snapshot is unresolved, fail closed for the optimistic card. The database
+  // remains authoritative and the returned row replaces this snapshot.
+  const meta = getConversationMeta(convId) || {};
+  const active = normId(activeDmId || state.activeDm?.conversationId || "") === convId
+    ? (state.activeDm || {})
+    : {};
+  const serverId = normId(meta?.serverId || meta?.server_id || active?.serverId || active?.server_id || "");
+  if (!serverId) return null;
+  return {
+    serverId,
+    conversationId: convId,
+    channelId: normId(meta?.channelId || meta?.channel_id || active?.channelId || active?.channel_id || ""),
+    channelType: normalizeConversationChannelType(meta?.channelType || meta?.channel_type || active?.channelType || active?.channel_type || "text"),
+    resolved: false,
+  };
+}
+
+async function resolveOptimisticHumanMessageSuppressEmbeds(
+  conversationId,
+  { permissionResult = null } = {}
+) {
+  const context = getOptimisticEmbedServerContext(conversationId);
+  if (!context?.serverId) return false;
+
+  let resolvedPermissions = permissionResult?.ok === true ? permissionResult : null;
+  if (!resolvedPermissions) {
+    try {
+      resolvedPermissions = await resolveCurrentUserMessagePermission({
+        serverId: context.serverId,
+        channelId: context.channelId || context.conversationId,
+        reason: "embed-links-optimistic-snapshot",
+      });
+    } catch (_) {
+      resolvedPermissions = null;
+    }
+  }
+
+  return !(
+    resolvedPermissions?.ok === true
+    && resolvedPermissions?.permissions?.embed_links === true
+  );
+}
+
 async function verifyCanAttachFilesToConversation(conversationId, reason = "attach-files-preflight") {
   const convId = normId(conversationId || "");
   const context = getServerPermissionContextForConversation(convId);
@@ -49017,11 +49077,16 @@ async function sendPlainTextMessageToConversation(conversationId, text, { replyT
     return { ok: false, error: permissionPreflight?.error || new Error(MESSAGE_COMPOSER_NO_SEND_PERMISSION_TEXT), permissionBlocked: true };
   }
 
+  const optimisticSuppressEmbeds = await resolveOptimisticHumanMessageSuppressEmbeds(convId, {
+    permissionResult: permissionPreflight.permissionResult,
+  });
+
   markPerfStart("message_send_total", { conversationId: convId });
   const optimisticMessage = createOptimisticOutgoingMessage({
     conversationId: convId,
     content,
     replyToId,
+    suppressEmbeds: optimisticSuppressEmbeds,
     retryPayload: {
       kind: "text",
       conversationId: convId,
@@ -65651,9 +65716,10 @@ async function submitServerSettingsRolePermissionPreset(roleId, presetName) {
     nextPermissions.manage_server = false;
     nextPermissions.manage_roles = false;
     nextPermissions.manage_apps = false;
-    // Safe Defaults keeps @everyone usable after Batches 3A/4A/5A, while
-    // custom roles remain opt-in for history, voice, and app commands.
+    // Safe Defaults keeps @everyone usable after Batches 3A/4A/5A/6A, while
+    // custom roles remain opt-in for history, embeds, voice, and app commands.
     if (isDefaultServerRole(role)) {
+      nextPermissions.embed_links = true;
       nextPermissions.connect = true;
       nextPermissions.connect_voice = true;
       nextPermissions.speak = true;
@@ -88152,6 +88218,16 @@ const dmReactionsByMessage = new Map();
 const dmMineReactionKeys = new Set();
 const DM_REACTIONS_FETCH_VISIBLE_MIN_MS = 15000;
 const DM_REACTIONS_FETCH_HIDDEN_MIN_MS = 60000;
+const dmReactionEventRefreshQueue = createReactionEventRefreshQueue({
+  onRefresh: (conversationId, messageIds) =>
+    refreshReactionsForMessageIds(conversationId, messageIds),
+  onError: (error) => {
+    console.warn(
+      "reaction event refresh failed",
+      String(error?.message || error || "unknown_error").slice(0, 220),
+    );
+  },
+});
 const QUICK_REACTIONS = ["\u{1F410}", "\u{1F346}", "\u{1F913}", "\u2705"];
 const DM_PIN_LIMIT = 100;
 const DM_SERVER_EDIT_WINDOW_MS = 30 * 60 * 1000;
@@ -89662,6 +89738,7 @@ const SERVER_VOICE_MEDIA_READY_TIMEOUT_MS = 8000;
 const dmFeatureCaps = {
   checked: false,
   advancedMessages: false,
+  humanEmbedSnapshots: false,
   botMessages: false,
   messageReactions: false,
   e2eeMessages: false,
@@ -92206,6 +92283,7 @@ function openMessageRequestPreview(requestId = "", { direction = "" } = {}) {
     try { supabase.removeChannel(dmReactionsChannel); } catch (_) {}
     dmReactionsChannel = null;
   }
+  dmReactionEventRefreshQueue.reset();
   stopActiveDmPrivacyListener();
 
   const uid = getMessageRequestPeerUserId(row);
@@ -92305,6 +92383,7 @@ function openDraftMessageRequest(draftIdOrUserId = "") {
     try { supabase.removeChannel(dmReactionsChannel); } catch (_) {}
     dmReactionsChannel = null;
   }
+  dmReactionEventRefreshQueue.reset();
   stopActiveDmPrivacyListener();
 
   const username = String(row?.username || "").trim();
@@ -92714,14 +92793,15 @@ function renderDmMessageLoadError(conversationId = "", error = null, { reason = 
 
 function dmMessageSelectColumns({ minimal = false } = {}) {
   const profileJoin = ", profiles:profiles!messages_user_id_fkey(username, display_name, avatar_url)";
-  if (minimal) return `id, conversation_id, user_id, content, created_at${profileJoin}`;
+  const embedSnapshotColumn = dmFeatureCaps.humanEmbedSnapshots ? ", suppress_embeds" : "";
+  if (minimal) return `id, conversation_id, user_id, content, created_at${embedSnapshotColumn}${profileJoin}`;
   const e2eeColumns = dmFeatureCaps.e2eeMessages
     ? `, message_mode, ciphertext, cipher_iv, cipher_alg, cipher_version, sender_key_id, recipient_key_id${dmFeatureCaps.dmPrivacyEpoch ? ", dm_privacy_epoch" : ""}`
     : "";
   if (dmFeatureCaps.advancedMessages) {
-    return `id, conversation_id, user_id, content, created_at, edited_at, reply_to_id, is_pinned, pinned_by, pinned_at${e2eeColumns}${profileJoin}`;
+    return `id, conversation_id, user_id, content, created_at, edited_at, reply_to_id, is_pinned, pinned_by, pinned_at${embedSnapshotColumn}${e2eeColumns}${profileJoin}`;
   }
-  return `id, conversation_id, user_id, content, created_at${e2eeColumns}${profileJoin}`;
+  return `id, conversation_id, user_id, content, created_at${embedSnapshotColumn}${e2eeColumns}${profileJoin}`;
 }
 
 function disableDmMessageColumnsFromError(error = null) {
@@ -92729,6 +92809,10 @@ function disableDmMessageColumnsFromError(error = null) {
   let changed = false;
   if (isMissingColumnError(error, "edited_at") || isMissingColumnError(error, "reply_to_id") || isMissingColumnError(error, "is_pinned") || isMissingColumnError(error, "pinned_by") || isMissingColumnError(error, "pinned_at")) {
     dmFeatureCaps.advancedMessages = false;
+    changed = true;
+  }
+  if (isMissingColumnError(error, "suppress_embeds")) {
+    dmFeatureCaps.humanEmbedSnapshots = false;
     changed = true;
   }
   if (isMissingColumnError(error, "message_mode") || isMissingColumnError(error, "ciphertext") || isMissingColumnError(error, "cipher_iv") || isMissingColumnError(error, "cipher_alg") || isMissingColumnError(error, "cipher_version") || isMissingColumnError(error, "sender_key_id") || isMissingColumnError(error, "recipient_key_id")) {
@@ -92769,6 +92853,7 @@ async function runDmMessageSelectWithSchemaFallback(buildQuery, { reason = "mess
   if (result?.error && isMissingColumnError(result.error)) {
     logMessageLoadState("human_query_retry", { reason, conversationId: convId, token, selectMode: "minimal" });
     dmFeatureCaps.advancedMessages = false;
+    dmFeatureCaps.humanEmbedSnapshots = false;
     dmFeatureCaps.e2eeMessages = false;
     dmFeatureCaps.dmPrivacyEpoch = false;
     dmFeatureCaps.botMessages = false;
@@ -92791,6 +92876,7 @@ async function ensureDmFeatureCaps(force = false) {
   if (dmFeatureCaps.checked && !force) return dmFeatureCaps;
   dmFeatureCaps.checked = true;
   dmFeatureCaps.advancedMessages = false;
+  dmFeatureCaps.humanEmbedSnapshots = false;
   dmFeatureCaps.botMessages = false;
   dmFeatureCaps.messageReactions = false;
   dmFeatureCaps.e2eeMessages = false;
@@ -92807,6 +92893,17 @@ async function ensureDmFeatureCaps(force = false) {
     else console.warn("advanced message columns unavailable:", error?.message || error);
   } catch (e) {
     console.warn("advanced message columns check failed:", e?.message || e);
+  }
+
+  try {
+    const { error } = await supabase
+      .from("messages")
+      .select("id, suppress_embeds")
+      .limit(1);
+    if (!error) dmFeatureCaps.humanEmbedSnapshots = true;
+    else console.warn("human embed snapshot column unavailable:", error?.message || error);
+  } catch (e) {
+    console.warn("human embed snapshot column check failed:", e?.message || e);
   }
 
   // Bot-authored replies live in public.bot_channel_messages, not public.messages.
@@ -92871,6 +92968,7 @@ async function ensureDmFeatureCaps(force = false) {
   logDmPrivacyDebug("feature caps result", {
     ...getDmPrivacyDebugContext(),
     advancedMessages: !!dmFeatureCaps.advancedMessages,
+    humanEmbedSnapshots: !!dmFeatureCaps.humanEmbedSnapshots,
     e2eeMessages: !!dmFeatureCaps.e2eeMessages,
     dmPrivacyState: !!dmFeatureCaps.dmPrivacyState,
     dmPrivacyEpoch: !!dmFeatureCaps.dmPrivacyEpoch,
@@ -93164,7 +93262,13 @@ async function buildConversationMessageUpdatePayload({
 }
 
 async function hydrateDmRowsForDisplay(rows, { conversationId = "" } = {}) {
-  const list = Array.isArray(rows) ? rows : [];
+  // Persisted legacy rows and schema-compatible fallback rows predate Batch
+  // 6A, so a missing snapshot deliberately preserves the historical card.
+  const list = (Array.isArray(rows) ? rows : []).map((row) => (
+    row && typeof row === "object"
+      ? { ...row, suppress_embeds: row.suppress_embeds === true }
+      : row
+  ));
   if (!list.length || !state.user?.id) return list;
   const caps = await ensureDmFeatureCaps();
   if (!caps?.e2eeMessages) return list;
@@ -93347,6 +93451,7 @@ function createOptimisticOutgoingMessage({
   conversationId,
   content,
   replyToId = null,
+  suppressEmbeds = null,
   retryPayload = null,
   previewUrls = [],
 } = {}) {
@@ -93362,6 +93467,9 @@ function createOptimisticOutgoingMessage({
   });
 
   const tempId = `tmp_msg_${Date.now().toString(36)}_${(++optimisticMessageSeq).toString(36)}`;
+  const safeSuppressEmbeds = typeof suppressEmbeds === "boolean"
+    ? suppressEmbeds
+    : !!getOptimisticEmbedServerContext(convId);
   const optimisticMessage = {
     id: tempId,
     conversation_id: convId,
@@ -93373,6 +93481,7 @@ function createOptimisticOutgoingMessage({
     is_pinned: false,
     pinned_by: null,
     pinned_at: null,
+    suppress_embeds: safeSuppressEmbeds,
     profiles: {
       username: profile.username,
       display_name: profile.display_name,
@@ -94948,6 +95057,9 @@ function sortConversationMessagesAsc(rows = []) {
 function cloneMessageForConversationCache(row = {}, { persistent = false } = {}) {
   if (!row || typeof row !== "object") return null;
   const next = { ...row };
+  if (!isBotMessageRow(next) && !isPersistedBotChannelMessageRow(next)) {
+    next.suppress_embeds = next.suppress_embeds === true;
+  }
   if (next.profiles && typeof next.profiles === "object") next.profiles = { ...next.profiles };
   if (persistent) {
     delete next._optimistic;
@@ -98316,7 +98428,7 @@ function getMessageMetadataAttachments(m = {}) {
 }
 
 function shouldAllowMessageRichEmbeds(m = {}) {
-  if (!isBotMessageRow(m)) return true;
+  if (!isBotMessageRow(m)) return m?.suppress_embeds !== true;
   const metadata = m?.metadata && typeof m.metadata === "object" ? m.metadata : {};
   return metadata.suppress_embeds !== true;
 }
@@ -99488,7 +99600,7 @@ async function fetchReactionsForMessages(conversationId, { force = false } = {})
 
   const fetchKey = `${convId}:${ids.slice().sort().join(",")}:bot:${botIds.slice().sort().join(",")}`;
   const now = Date.now();
-  if (!force && dmReactionsFetchInFlight?.key === fetchKey) {
+  if (dmReactionsFetchInFlight?.key === fetchKey) {
     return dmReactionsFetchInFlight.promise;
   }
   if (
@@ -99577,6 +99689,67 @@ async function fetchReactionsForMessages(conversationId, { force = false } = {})
       dmReactionsFetchInFlight = null;
     }
   }
+}
+
+async function refreshReactionsForMessageIds(conversationId, messageIds = []) {
+  if (!dmFeatureCaps.messageReactions) return false;
+  const convId = normId(conversationId || "");
+  if (!convId || normId(activeDmId || "") !== convId) return false;
+
+  const eligibleMessageIds = new Set(getReactionEligibleHumanMessageIds(dmMessagesCache));
+  const ids = Array.from(
+    new Set(
+      (Array.isArray(messageIds) ? messageIds : [])
+        .map((messageId) => normId(messageId || ""))
+        .filter((messageId) => isPostgresUuid(messageId) && eligibleMessageIds.has(messageId)),
+    ),
+  );
+  if (!ids.length) return true;
+
+  if (dmReactionsFetchInFlight?.promise) {
+    try { await dmReactionsFetchInFlight.promise; } catch (_) {}
+    if (normId(activeDmId || "") !== convId) return false;
+  }
+
+  const rows = [];
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const batch = ids.slice(offset, offset + 100);
+    const { data, error } = await supabase
+      .from("message_reactions")
+      .select("message_id, user_id, emoji")
+      .eq("conversation_id", convId)
+      .in("message_id", batch);
+    if (error) throw error;
+    rows.push(...(Array.isArray(data) ? data : []));
+  }
+
+  if (normId(activeDmId || "") !== convId) return false;
+
+  const nextByMessage = new Map(ids.map((messageId) => [messageId, new Map()]));
+  const nextMine = new Set();
+  rows.forEach((row) => {
+    const messageId = normId(row?.message_id || "");
+    const userId = normId(row?.user_id || "");
+    const emoji = String(row?.emoji || "").trim();
+    const counts = nextByMessage.get(messageId);
+    if (!counts || !userId || !emoji) return;
+    counts.set(emoji, Number(counts.get(emoji) || 0) + 1);
+    if (userId === normId(state.user?.id || "")) {
+      nextMine.add(reactionKey(messageId, emoji));
+    }
+  });
+
+  ids.forEach((messageId) => {
+    dmReactionsByMessage.delete(messageId);
+    for (const key of Array.from(dmMineReactionKeys)) {
+      if (key.startsWith(`${messageId}|`)) dmMineReactionKeys.delete(key);
+    }
+    const counts = nextByMessage.get(messageId);
+    if (counts?.size) dmReactionsByMessage.set(messageId, counts);
+  });
+  nextMine.forEach((key) => dmMineReactionKeys.add(key));
+  ids.forEach((messageId) => updateMessageReactionsUi(messageId));
+  return true;
 }
 
 function normalizeRenderReason(reasonInput = "") {
@@ -115924,6 +116097,7 @@ function normalizeTimelineMessage(row = {}, { conversationId = "", source = "" }
     server_id: normId(row?.server_id || row?.serverId || ""),
     channelId: normId(row?.channelId || row?.channel_id || ""),
     channel_id: normId(row?.channel_id || row?.channelId || ""),
+    suppress_embeds: row?.suppress_embeds === true,
   };
 }
 
@@ -170002,6 +170176,7 @@ function leaveActiveDmView({ captureHistory = true } = {}) {
     supabase.removeChannel(dmReactionsChannel);
     dmReactionsChannel = null;
   }
+  dmReactionEventRefreshQueue.reset();
   stopActiveDmPrivacyListener();
   setCallStatus("", false);
   refreshCallUI();
@@ -170411,6 +170586,8 @@ async function showDm(conversationId, opts = {}) {
     supabase.removeChannel(dmReactionsChannel);
     dmReactionsChannel = null;
   }
+  dmReactionEventRefreshQueue.reset();
+  dmReactionEventRefreshQueue.setConversation(conversationId);
 
   let dmPeerUserId = isGroupConversation ? "" : normId(state.activeDm?.otherUserId || state.activeDm?.other_user_id || "");
   let dmPeerLabel = state.activeDm?.displayName || state.activeDm?.username || callOtherLabel || (isGroupConversation ? "Group DM" : "");
@@ -170927,42 +171104,31 @@ async function showDm(conversationId, opts = {}) {
 
   if (dmFeatureCaps.messageReactions) {
     dmReactionsChannel = supabase
-      .channel("dm-reactions:" + conversationId)
+      .channel("dm-reaction-events:" + conversationId)
       .on("postgres_changes", {
         event: "INSERT",
         schema: "public",
-        table: "message_reactions",
+        table: "message_reaction_events",
         filter: `conversation_id=eq.${conversationId}`
       }, (payload) => {
-        const r = payload?.new;
-        if (!r?.message_id || !r?.emoji || !r?.user_id) return;
-        if (!dmMessageIds.has(normId(r.message_id))) return;
-        if (normId(r.user_id) === normId(state.user?.id) && dmMineReactionKeys.has(reactionKey(r.message_id, r.emoji))) {
-          updateMessageReactionsUi(r.message_id);
-          return;
-        }
-        applyReactionDelta(r.message_id, r.emoji, r.user_id, true);
-        updateMessageReactionsUi(r.message_id);
-      })
-      .on("postgres_changes", {
-        event: "DELETE",
-        schema: "public",
-        table: "message_reactions",
-        filter: `conversation_id=eq.${conversationId}`
-      }, (payload) => {
-        const r = payload?.old;
-        if (!r?.message_id || !r?.emoji || !r?.user_id) return;
-        if (!dmMessageIds.has(normId(r.message_id))) return;
-        if (normId(r.user_id) === normId(state.user?.id) && !dmMineReactionKeys.has(reactionKey(r.message_id, r.emoji))) {
-          updateMessageReactionsUi(r.message_id);
-          return;
-        }
-        applyReactionDelta(r.message_id, r.emoji, r.user_id, false);
-        updateMessageReactionsUi(r.message_id);
+        if (normId(activeDmId || "") !== normId(conversationId)) return;
+        dmReactionEventRefreshQueue.enqueue(payload?.new);
       })
       .subscribe((status) => {
-        if (status === "CHANNEL_ERROR") {
-          console.warn("dm reactions realtime channel error:", conversationId);
+        if (status === "SUBSCRIBED") {
+          void fetchReactionsForMessages(conversationId, { force: true })
+            .then((ok) => {
+              if (!ok || normId(activeDmId || "") !== normId(conversationId)) return;
+              renderAllReactionChips();
+            })
+            .catch((error) => {
+              console.warn(
+                "reaction event subscription refresh failed:",
+                String(error?.message || error || "unknown_error").slice(0, 220),
+              );
+            });
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          console.warn("dm reaction events realtime channel error:", conversationId, status);
         }
       });
   }
