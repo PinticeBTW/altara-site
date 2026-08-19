@@ -135,6 +135,14 @@ import {
 import { createPresenceSystem } from "./presence.js";
 import { renderPresenceUI } from "./presence-ui.js";
 import { getMyStatus, getStoredMyStatus, setMyStatus } from "./statusstore.js";
+import {
+  consumeTrustedYouTubeCallbackMessage,
+  consumeTrustedYouTubeReturnSignal,
+  isValidYouTubeOAuthState,
+  parseYouTubeDesktopCallbackStatus,
+  readYouTubeOAuthStateFromAuthorizationUrl,
+  YOUTUBE_OAUTH_CALLBACK_TYPE,
+} from "./lib/youtubeOAuthSecurity.js";
 
 
 /* ========================= SHELL-FIRST BOOT RECOVERY ========================= */
@@ -175301,15 +175309,67 @@ const SPOTIFY_ACTIVITY_IDLE_SLOWDOWN_MS = 60000;
 const SPOTIFY_ACTIVITY_STALE_MS = 20000;
 const SPOTIFY_CONNECT_COMPLETION_POLL_MS = 2000;
 const SPOTIFY_CONNECT_COMPLETION_TIMEOUT_MS = 60000;
+const YOUTUBE_OAUTH_PENDING_STORAGE_KEY = "altara.youtubeOAuth.pending.v1";
 
 let connectionsSettingsUiBound = false;
 let steamConnectGlobalClickBound = false;
 let steamOpenIdCallbackConsumed = false;
 let pendingSteamWebConnect = null;
+let pendingYouTubeConnect = null;
+let connectionsDeepLinkEventsBound = false;
 let steamConnectInFlight = null;
 let steamConnectPopupCloseTimer = null;
 let steamConnectTimeoutTimer = null;
 let steamConnectionNotice = null;
+
+function clearPendingYouTubeConnect() {
+  pendingYouTubeConnect = null;
+  try { sessionStorage.removeItem(YOUTUBE_OAUTH_PENDING_STORAGE_KEY); } catch (_) {}
+}
+
+function persistPendingYouTubeConnect() {
+  const pending = pendingYouTubeConnect;
+  if (!pending || !isValidYouTubeOAuthState(pending.state) || !state.user?.id) return false;
+  try {
+    sessionStorage.setItem(YOUTUBE_OAUTH_PENDING_STORAGE_KEY, JSON.stringify({
+      state: pending.state,
+      callbackOrigin: String(pending.callbackOrigin || ""),
+      startedAt: Number(pending.startedAt || 0),
+      userId: String(state.user.id),
+    }));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function restorePendingYouTubeConnect() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(YOUTUBE_OAUTH_PENDING_STORAGE_KEY) || "null");
+    const startedAt = Number(saved?.startedAt || 0);
+    const ageMs = Date.now() - startedAt;
+    if (
+      String(saved?.userId || "") !== String(state.user?.id || "")
+      || !isValidYouTubeOAuthState(saved?.state)
+      || !Number.isFinite(ageMs)
+      || ageMs < 0
+      || ageMs > 10 * 60 * 1000
+    ) {
+      clearPendingYouTubeConnect();
+      return false;
+    }
+    pendingYouTubeConnect = {
+      state: saved.state,
+      callbackOrigin: String(saved.callbackOrigin || ""),
+      popup: null,
+      startedAt,
+    };
+    return true;
+  } catch (_) {
+    clearPendingYouTubeConnect();
+    return false;
+  }
+}
 const steamConnectionUxDebugState = {
   lastCallbackHandling: null,
   lastNoticeAssignment: null,
@@ -176043,6 +176103,7 @@ async function refreshConnectionAfterCallback({ provider = SPOTIFY_PROVIDER, sou
     if (showStatus) setConnectionsStatus(config.label + " connected.", "info");
     if (normalizedProvider === SPOTIFY_PROVIDER) await pollSpotifyCurrentlyPlaying({ manual: false, force: true });
     if (normalizedProvider === YOUTUBE_PROVIDER) {
+      clearPendingYouTubeConnect();
       await syncYouTubeProfileConnectedAccountFromState().catch((syncError) => {
         try { console.warn("[YouTubeConnect] profile connected_accounts sync failed", syncError?.message || syncError); } catch (_) {}
       });
@@ -176051,6 +176112,9 @@ async function refreshConnectionAfterCallback({ provider = SPOTIFY_PROVIDER, sou
     return true;
   }
   if (showStatus && source === "callback_error") setConnectionsStatus("Could not connect " + config.label + ".", "warn");
+  if (showStatus && normalizedProvider === YOUTUBE_PROVIDER && source.startsWith("trusted_youtube_")) {
+    setConnectionsStatus("YouTube connection was not confirmed. Try connecting again.", "warn");
+  }
   return false;
 }
 
@@ -176088,6 +176152,36 @@ function bindSpotifyConnectionCallbackEventsOnce() {
   window.addEventListener("message", (event) => {
     const payload = event?.data && typeof event.data === "object" ? event.data : null;
     const type = String(payload?.type || "").trim();
+    if (type === YOUTUBE_OAUTH_CALLBACK_TYPE) {
+      const consumed = consumeTrustedYouTubeCallbackMessage(pendingYouTubeConnect, event);
+      if (!consumed.accepted) {
+        try {
+          if (localStorage.getItem("altara_debug_connections") === "1") {
+            console.warn("[YouTubeConnect] ignored untrusted callback notification", {
+              type,
+              reason: consumed.reason,
+            });
+          }
+        } catch (_) {}
+        return;
+      }
+      clearPendingYouTubeConnect();
+      setConnectionsStatus("Checking YouTube connection...", "info");
+      void refreshConnectionAfterCallback({
+        provider: YOUTUBE_PROVIDER,
+        source: "trusted_youtube_callback",
+        showStatus: true,
+      });
+      return;
+    }
+    if (type === "altara:youtube-connected" || type === "altara:youtube-connect-error") {
+      try {
+        if (localStorage.getItem("altara_debug_connections") === "1") {
+          console.warn("[YouTubeConnect] ignored insecure legacy callback notification", { type });
+        }
+      } catch (_) {}
+      return;
+    }
     if (type === "altara:steam-connected" || type === "altara:steam-connect-error") {
       const pending = pendingSteamWebConnect;
       const messageState = String(payload?.state || "").trim();
@@ -176177,19 +176271,18 @@ function bindSpotifyConnectionCallbackEventsOnce() {
       } catch (_) {}
       return;
     }
-    if (type === "altara:spotify-connected" || type === "altara:youtube-connected") {
-      const provider = type === "altara:youtube-connected" ? YOUTUBE_PROVIDER : SPOTIFY_PROVIDER;
+    if (type === "altara:spotify-connected") {
+      const provider = SPOTIFY_PROVIDER;
       const label = getProfileConnectionProviderConfig(provider).label;
       setConnectionsStatus(label + " connected. Refreshing connection state...", "info");
       void refreshConnectionAfterCallback({ provider, source: "postMessage", showStatus: true });
       return;
     }
-    if (type === "altara:spotify-connect-error" || type === "altara:youtube-connect-error") {
-      const provider = type === "altara:youtube-connect-error" ? YOUTUBE_PROVIDER : SPOTIFY_PROVIDER;
+    if (type === "altara:spotify-connect-error") {
+      const provider = SPOTIFY_PROVIDER;
       const label = getProfileConnectionProviderConfig(provider).label;
-      const reason = String(payload?.reason || "").trim();
       stopSpotifyConnectionCompletionPolling();
-      setConnectionsStatus(provider === YOUTUBE_PROVIDER ? getYouTubeConnectionErrorMessage(reason, "connect") : "Could not connect " + label + ".", "warn");
+      setConnectionsStatus("Could not connect " + label + ".", "warn");
       void refreshConnectedAccounts({ force: true, silent: true });
     }
   });
@@ -177299,23 +177392,23 @@ async function openYouTubeAuthorizationUrl(url = "", pendingPopup = null) {
     closePendingSpotifyAuthorizationWindow(pendingPopup);
     const result = await bridge.openExternal(resolvedUrl);
     if (result === false || result?.ok === false) throw new Error("youtube_external_open_failed");
-    return { method: "electron-open-external" };
+    return { method: "electron-open-external", popup: null };
   }
   if (pendingPopup) {
     try {
       if (!pendingPopup.closed) {
         pendingPopup.location.replace(resolvedUrl);
-        return { method: "reserved-window" };
+        return { method: "reserved-window", popup: pendingPopup };
       }
     } catch (_) {}
   }
   if (typeof window.open === "function") {
-    const opened = window.open(resolvedUrl, "_blank", "noopener,noreferrer");
-    if (opened) return { method: "window-open" };
+    const opened = window.open(resolvedUrl, "_blank", "popup");
+    if (opened) return { method: "window-open", popup: opened };
   }
   try {
     window.location.assign(resolvedUrl);
-    return { method: "window-location" };
+    return { method: "window-location", popup: null };
   } catch (error) {
     throw new Error("youtube_login_window_open_failed");
   }
@@ -178015,6 +178108,14 @@ async function openYouTubeConnectFlow() {
   setConnectionsAction("youtube-connect");
   setConnectionsStatus("Opening Google authorization...", "info");
   const pendingPopup = openPendingSpotifyAuthorizationWindow("YouTube");
+  const trustedReturnTo = buildConnectionReturnToUrl(YOUTUBE_PROVIDER);
+  const desktopBridge = getDesktopBridge();
+  pendingYouTubeConnect = {
+    state: "",
+    callbackOrigin: desktopBridge ? "" : new URL(trustedReturnTo).origin,
+    popup: pendingPopup,
+    startedAt: Date.now(),
+  };
   try {
     const edgeFunctionName = YOUTUBE_CONNECT_START_FUNCTION_NAME;
     const authReady = await ensureSupabaseFunctionInvokeAuthReady({
@@ -178028,11 +178129,12 @@ async function openYouTubeConnectFlow() {
     });
     if (!authReady.ok) {
       closePendingSpotifyAuthorizationWindow(pendingPopup);
+      clearPendingYouTubeConnect();
       setConnectionsStatus("You need to sign in again.", "warn");
       return;
     }
     const { data, error } = await supabase.functions.invoke(edgeFunctionName, {
-      body: { return_to: buildConnectionReturnToUrl(YOUTUBE_PROVIDER) },
+      body: { return_to: trustedReturnTo },
     });
     const errorPayload = error ? await readSupabaseFunctionErrorPayload(error) : null;
     const responsePayload = data && typeof data === "object" ? data : errorPayload;
@@ -178040,19 +178142,30 @@ async function openYouTubeConnectFlow() {
     if (error || data?.ok === false) {
       const missing = normalizeSpotifyConnectMissingConfigList(responsePayload?.missing || []);
       closePendingSpotifyAuthorizationWindow(pendingPopup);
+      clearPendingYouTubeConnect();
       setConnectionsStatus(missing.length ? "YouTube connection is not configured. Missing: " + missing.join(", ") + "." : getYouTubeConnectionErrorMessage(responsePayload?.error || responsePayload?.reason || error?.message || "youtube_connect_start_failed", "connect"), "warn");
       return;
     }
-    if (!/^https:\/\/accounts\.google\.com\//i.test(authorizationUrl)) {
+    const authorizationState = readYouTubeOAuthStateFromAuthorizationUrl(authorizationUrl);
+    const responseState = String(responsePayload?.state || "").trim();
+    if (!authorizationState || (responseState && responseState !== authorizationState)) {
       closePendingSpotifyAuthorizationWindow(pendingPopup);
+      clearPendingYouTubeConnect();
       setConnectionsStatus("Could not start YouTube login.", "warn");
       return;
     }
-    await openYouTubeAuthorizationUrl(authorizationUrl, pendingPopup);
+    if (!pendingYouTubeConnect || pendingYouTubeConnect.popup !== pendingPopup) return;
+    pendingYouTubeConnect.state = authorizationState;
+    persistPendingYouTubeConnect();
+    const openResult = await openYouTubeAuthorizationUrl(authorizationUrl, pendingPopup);
+    if (pendingYouTubeConnect && openResult?.popup && pendingYouTubeConnect.popup !== openResult.popup) {
+      pendingYouTubeConnect.popup = openResult.popup;
+    }
     setConnectionsStatus("Finish connecting YouTube in the browser, then return to ALTARA.", "info");
     startSpotifyConnectionCompletionPolling({ reason: "youtube_connect_button", immediate: true, provider: YOUTUBE_PROVIDER });
   } catch (error) {
     closePendingSpotifyAuthorizationWindow(pendingPopup);
+    clearPendingYouTubeConnect();
     setConnectionsStatus(getYouTubeConnectionErrorMessage(error?.message || "youtube_connect_start_failed", "connect"), "warn");
   } finally {
     setConnectionsAction("");
@@ -179098,16 +179211,20 @@ function parseConnectionReturnSignalFromUrl(rawUrl = "") {
     const url = new URL(String(rawUrl || ""));
     const connection = String(url.searchParams.get("connection") || "").trim().toLowerCase();
     const status = String(url.searchParams.get("status") || "").trim().toLowerCase();
+    const youtubeDesktopResult = connection === YOUTUBE_PROVIDER
+      ? parseYouTubeDesktopCallbackStatus(url.searchParams.get("status") || "")
+      : null;
     const steamState = String(url.searchParams.get("steamConnection") || "").trim().toLowerCase();
     const spotifyState = String(url.searchParams.get("spotifyConnection") || url.searchParams.get("spotify") || "").trim().toLowerCase();
-    const youtubeState = String(url.searchParams.get("youtubeConnection") || "").trim().toLowerCase();
+    const youtubeState = String(url.searchParams.get("youtubeConnection") || youtubeDesktopResult?.status || "").trim().toLowerCase();
+    const oauthState = String(url.searchParams.get("oauth_state") || youtubeDesktopResult?.oauthState || "").trim();
     const provider = connection === STEAM_PROVIDER || steamState
       ? STEAM_PROVIDER
       : (connection === YOUTUBE_PROVIDER || youtubeState ? YOUTUBE_PROVIDER : SPOTIFY_PROVIDER);
     const state = String(steamState || youtubeState || spotifyState || (connection === SPOTIFY_PROVIDER || connection === STEAM_PROVIDER || connection === YOUTUBE_PROVIDER ? status : "") || "").trim().toLowerCase();
     const reason = String(url.searchParams.get("reason") || "").trim().slice(0, 80);
     if (!state) return null;
-    return { state, reason, provider };
+    return { state, reason, provider, oauthState };
   } catch (_) {
     return null;
   }
@@ -179124,7 +179241,7 @@ function consumeSpotifyConnectionReturnSignalFromLocation() {
   spotifyConnectionReturnSignalConsumed = true;
   try {
     const url = new URL(window.location.href);
-    ["spotifyConnection", "steamConnection", "youtubeConnection", "spotify", "connection", "status", "reason"].forEach((key) => url.searchParams.delete(key));
+    ["spotifyConnection", "steamConnection", "youtubeConnection", "spotify", "connection", "status", "reason", "oauth_state"].forEach((key) => url.searchParams.delete(key));
     const nextHref = url.pathname + url.search + url.hash;
     history.replaceState(history.state, "", nextHref);
   } catch (_) {}
@@ -179135,6 +179252,28 @@ function handleConnectionReturnSignal(signal = null, source = "location") {
   if (!signal) return false;
   const provider = normalizeConnectionProvider(signal.provider || SPOTIFY_PROVIDER) || SPOTIFY_PROVIDER;
   const label = getProfileConnectionProviderConfig(provider).label;
+  if (provider === YOUTUBE_PROVIDER) {
+    const consumed = consumeTrustedYouTubeReturnSignal(pendingYouTubeConnect, signal);
+    if (!consumed.accepted) {
+      try {
+        if (localStorage.getItem("altara_debug_connections") === "1") {
+          console.warn("[YouTubeConnect] ignored untrusted return signal", {
+            source,
+            reason: consumed.reason,
+          });
+        }
+      } catch (_) {}
+      return false;
+    }
+    clearPendingYouTubeConnect();
+    setConnectionsStatus("Checking YouTube connection...", "info");
+    void refreshConnectionAfterCallback({
+      provider: YOUTUBE_PROVIDER,
+      source: "trusted_youtube_return",
+      showStatus: true,
+    });
+    return true;
+  }
   if (signal.state === "connected" || signal.state === "success") {
     setConnectionsStatus(label + " connected. Refreshing connection state...", "info");
     void refreshConnectionAfterCallback({ provider, source, showStatus: true }).catch(() => {
@@ -179157,6 +179296,23 @@ function handleConnectionsDeepLink(rawUrl = "") {
   return handleConnectionReturnSignal(signal, "deep-link");
 }
 
+function readDesktopDeepLinkUrl(value = "") {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  return String(value.url || value.deepLink || value.deep_link || "").trim();
+}
+
+function bindConnectionsDeepLinkEventsOnce() {
+  if (connectionsDeepLinkEventsBound) return;
+  const bridge = typeof getDesktopBridge === "function" ? getDesktopBridge() : null;
+  if (!bridge || typeof bridge.onDeepLink !== "function") return;
+  connectionsDeepLinkEventsBound = true;
+  bridge.onDeepLink((payload) => {
+    const rawUrl = readDesktopDeepLinkUrl(payload);
+    if (rawUrl) handleConnectionsDeepLink(rawUrl);
+  });
+}
+
 async function consumeInitialDesktopDeepLinkIfPresent() {
   try {
     const bridge = typeof getDesktopBridge === "function" ? getDesktopBridge() : null;
@@ -179167,6 +179323,7 @@ async function consumeInitialDesktopDeepLinkIfPresent() {
         "consumeInitialDeepLink",
         "consumeInitialDesktopDeepLink",
         "getInitialDeepLink",
+        "getPendingDeepLink",
         "getInitialUrl",
         "getLaunchUrl",
       ];
@@ -179190,9 +179347,13 @@ async function consumeInitialDesktopDeepLinkIfPresent() {
     candidates.push(window?.__ALTARA_INITIAL_DESKTOP_DEEP_LINK__);
 
     for (const candidate of candidates) {
-      const rawUrl = String(candidate || "").trim();
+      const rawUrl = readDesktopDeepLinkUrl(candidate);
       if (!rawUrl) continue;
-      if (handleConnectionsDeepLink(rawUrl)) return true;
+      const signal = parseConnectionReturnSignalFromUrl(rawUrl);
+      if (!signal) continue;
+      if (handleConnectionReturnSignal(signal, "initial-deep-link")) {
+        return signal.provider === YOUTUBE_PROVIDER ? false : true;
+      }
     }
   } catch (error) {
     console.warn("[desktop] initial deep link consume failed", error);
@@ -182981,6 +183142,8 @@ async function startPresenceOnce() {
   }
   markPerfEnd("auth_ready", { ok: true });
   forceRenderBootSafeShell("auth-ready");
+  restorePendingYouTubeConnect();
+  bindConnectionsDeepLinkEventsOnce();
   if (typeof consumeInitialDesktopDeepLinkIfPresent === "function" && await consumeInitialDesktopDeepLinkIfPresent()) {
     setDesktopBootOverlayVisible(false);
     return;

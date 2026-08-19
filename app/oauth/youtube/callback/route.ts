@@ -1,19 +1,53 @@
+import {
+  getPostMessageTargetOrigin,
+  isValidOAuthState,
+  normalizeReason,
+  normalizeReturnTo,
+  serializeForInlineScript,
+  YOUTUBE_CALLBACK_MESSAGE_TYPE,
+  type YouTubeCallbackReason,
+} from "./security.ts";
+
 const YOUTUBE_CALLBACK_TARGET =
   "https://tbbgwjmmaiclkhssimhf.functions.supabase.co/youtube-connect-callback";
+
+const RESULT_QUERY_KEYS = new Set([
+  "altara_youtube_callback_result",
+  "connection",
+  "oauth_state",
+  "reason",
+  "return_to",
+  "status",
+  "youtubeConnection",
+]);
+
+type CallbackResult = {
+  status: "connected" | "error";
+  reason: YouTubeCallbackReason;
+  returnTo: string;
+  state: string;
+  targetOrigin: string;
+};
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const nonce = crypto.randomUUID();
   const url = new URL(request.url);
 
   if (url.searchParams.get("altara_youtube_callback_result") === "1") {
-    return new Response(buildCallbackResultHtml(url), {
+    const result = parseCallbackResult(url);
+
+    if (!result) {
+      return new Response(buildInvalidResultHtml(), {
+        status: 400,
+        headers: callbackHeaders(nonce),
+      });
+    }
+
+    return new Response(buildCallbackResultHtml(result, nonce), {
       status: 200,
-      headers: {
-        "Cache-Control": "no-store",
-        "Content-Type": "text/html; charset=utf-8",
-        "X-Content-Type-Options": "nosniff",
-      },
+      headers: callbackHeaders(nonce),
     });
   }
 
@@ -22,33 +56,62 @@ export async function GET(request: Request) {
   if (!rawSearch) {
     return new Response(buildMissingQueryHtml(), {
       status: 400,
-      headers: {
-        "Cache-Control": "no-store",
-        "Content-Type": "text/html; charset=utf-8",
-        "X-Content-Type-Options": "nosniff",
-      },
+      headers: callbackHeaders(nonce),
     });
   }
 
   return new Response("Redirecting to ALTARA YouTube callback.", {
     status: 302,
-    headers: {
-      "Cache-Control": "no-store",
-      "Content-Type": "text/plain; charset=utf-8",
+    headers: callbackHeaders(nonce, "text/plain; charset=utf-8", {
       Location: YOUTUBE_CALLBACK_TARGET + rawSearch,
-    },
+    }),
   });
 }
 
-function buildCallbackResultHtml(url: URL) {
-  const status = url.searchParams.get("status") === "connected" ? "connected" : "error";
-  const reason = normalizeReason(url.searchParams.get("reason") || "");
-  const returnTo = normalizeReturnTo(url.searchParams.get("return_to") || "");
+function parseCallbackResult(url: URL): CallbackResult | null {
+  const keys = Array.from(url.searchParams.keys());
+  if (keys.some((key) => !RESULT_QUERY_KEYS.has(key))) return null;
+  if (!hasSingleValue(url, "altara_youtube_callback_result", "1")) return null;
+  if (!hasSingleValue(url, "connection", "youtube")) return null;
+
+  const status = getSingleValue(url, "status");
+  if (status !== "connected" && status !== "error") return null;
+  if (!hasSingleValue(url, "youtubeConnection", status)) return null;
+
+  const state = getSingleValue(url, "oauth_state");
+  if (!state || !isValidOAuthState(state)) return null;
+
+  const rawReason = status === "error" ? getOptionalSingleValue(url, "reason") : "";
+  if (rawReason === null) return null;
+  if (status === "connected" && url.searchParams.has("reason")) return null;
+  const reason = normalizeReason(rawReason || "");
+
+  const rawReturnTo = getSingleValue(url, "return_to");
+  if (!rawReturnTo) return null;
+  const returnTo = normalizeReturnTo(rawReturnTo, {
+    allowLocalhost: process.env.NODE_ENV !== "production",
+    expectedState: state,
+    expectedStatus: status,
+  });
+  if (!returnTo) return null;
+
+  return {
+    status,
+    reason,
+    returnTo,
+    state,
+    targetOrigin: getPostMessageTargetOrigin(returnTo),
+  };
+}
+
+function buildCallbackResultHtml(result: CallbackResult, nonce: string) {
+  const { status, reason, returnTo, state, targetOrigin } = result;
   const copy = getCallbackCopy(status, reason);
-  const payload = status === "connected"
-    ? { type: "altara:youtube-connected", provider: "youtube", status: "connected" }
-    : { type: "altara:youtube-connect-error", provider: "youtube", status: "error", reason };
-  const actionHref = returnTo || "/try";
+  const payload = {
+    type: YOUTUBE_CALLBACK_MESSAGE_TYPE,
+    provider: "youtube",
+    state,
+  };
 
   return `<!doctype html>
 <html lang="en">
@@ -124,20 +187,21 @@ function buildCallbackResultHtml(url: URL) {
     <h1>${htmlEscape(copy.message)}</h1>
     <p>${htmlEscape(copy.subcopy)}</p>
     ${copy.note ? `<p class="note">${htmlEscape(copy.note)}</p>` : ""}
-    <div class="actions"><a href="${htmlEscape(actionHref)}">${htmlEscape(copy.actionLabel)}</a></div>
+    <div class="actions"><a href="${htmlEscape(returnTo)}">${htmlEscape(copy.actionLabel)}</a></div>
   </main>
-  <script>
+  <script nonce="${htmlEscape(nonce)}">
     (function () {
-      var payload = ${JSON.stringify(payload)};
-      var returnTo = ${JSON.stringify(returnTo)};
+      var payload = ${serializeForInlineScript(payload)};
+      var returnTo = ${serializeForInlineScript(returnTo)};
+      var targetOrigin = ${serializeForInlineScript(targetOrigin)};
       try {
-        if (window.opener && !window.opener.closed) {
-          window.opener.postMessage(payload, "*");
+        if (targetOrigin && window.opener && !window.opener.closed) {
+          window.opener.postMessage(payload, targetOrigin);
           setTimeout(function () { try { window.close(); } catch (_) {} }, 900);
           return;
         }
       } catch (_) {}
-      if (/^altara:\\/\\//i.test(returnTo)) {
+      if (/^altara:\/\/connections(?:[/?#]|$)/i.test(returnTo)) {
         setTimeout(function () {
           try { window.location.href = returnTo; } catch (_) {}
         }, 700);
@@ -148,13 +212,13 @@ function buildCallbackResultHtml(url: URL) {
 </html>`;
 }
 
-function getCallbackCopy(status: "connected" | "error", reason: string) {
+function getCallbackCopy(status: "connected" | "error", reason: YouTubeCallbackReason) {
   if (status === "connected") {
     return {
-      title: "YouTube connected",
-      message: "YouTube connected",
-      subcopy: "You can return to ALTARA.",
-      note: "This window can be closed.",
+      title: "Checking YouTube connection",
+      message: "Checking YouTube connection",
+      subcopy: "ALTARA will confirm the connection from your account.",
+      note: "This window can be closed after ALTARA finishes checking.",
       actionLabel: "Return to ALTARA",
     };
   }
@@ -198,32 +262,32 @@ function getCallbackCopy(status: "connected" | "error", reason: string) {
   };
 }
 
-function normalizeReason(reason: string) {
-  const raw = String(reason || "").trim().toLowerCase();
-  if (!raw) return "youtube_callback_failed";
-  if (raw === "access_denied" || raw.includes("denied") || raw.includes("cancel")) return "youtube_login_cancelled";
-  if (raw.includes("state") || raw.includes("session")) return "youtube_session_mismatch";
-  if (raw.includes("channel_not_found")) return "youtube_channel_not_found";
-  if (raw.includes("quota") || raw.includes("403")) return "youtube_api_unavailable";
-  return raw.slice(0, 80);
+function callbackHeaders(nonce: string, contentType = "text/html; charset=utf-8", extra: HeadersInit = {}) {
+  const headers = new Headers(extra);
+  headers.set("Cache-Control", "no-store");
+  headers.set("Content-Type", contentType);
+  headers.set(
+    "Content-Security-Policy",
+    `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+  );
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "no-referrer");
+  return headers;
 }
 
-function normalizeReturnTo(value: string) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
+function getSingleValue(url: URL, key: string): string | null {
+  const values = url.searchParams.getAll(key);
+  return values.length === 1 ? values[0] : null;
+}
 
-  try {
-    const url = new URL(raw);
-    const protocol = url.protocol.toLowerCase();
+function getOptionalSingleValue(url: URL, key: string): string | null {
+  const values = url.searchParams.getAll(key);
+  return values.length <= 1 ? (values[0] || "") : null;
+}
 
-    if (protocol === "altara:" || protocol === "https:" || protocol === "http:") {
-      return url.toString();
-    }
-  } catch {
-    return "";
-  }
-
-  return "";
+function hasSingleValue(url: URL, key: string, expected: string): boolean {
+  return getSingleValue(url, key) === expected;
 }
 
 function getRawSearch(requestUrl: string) {
@@ -245,68 +309,47 @@ function htmlEscape(value: string) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildInvalidResultHtml() {
+  return buildMessageHtml(
+    "Invalid YouTube callback",
+    "This YouTube callback could not be verified.",
+  );
 }
 
 function buildMissingQueryHtml() {
+  return buildMessageHtml(
+    "ALTARA YouTube callback",
+    "YouTube callback details are missing.",
+  );
+}
+
+function buildMessageHtml(title: string, message: string) {
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ALTARA YouTube callback</title>
+  <title>${htmlEscape(title)}</title>
   <style>
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 24px;
-      background: #090a0d;
-      color: #f5f0e4;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    main {
-      width: min(430px, 100%);
-      padding: 28px;
-      border: 1px solid rgba(238, 211, 151, .22);
-      border-radius: 18px;
-      background: linear-gradient(180deg, rgba(28,30,36,.96), rgba(15,16,20,.96));
-      box-shadow: 0 28px 90px rgba(0,0,0,.48);
-      text-align: center;
-    }
-    .brand {
-      margin-bottom: 16px;
-      color: #dec78c;
-      font-size: 13px;
-      font-weight: 900;
-      letter-spacing: .32em;
-      text-transform: uppercase;
-    }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #090a0d; color: #f5f0e4; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { width: min(430px, 100%); padding: 28px; border: 1px solid rgba(238, 211, 151, .22); border-radius: 18px; background: linear-gradient(180deg, rgba(28,30,36,.96), rgba(15,16,20,.96)); box-shadow: 0 28px 90px rgba(0,0,0,.48); text-align: center; }
+    .brand { margin-bottom: 16px; color: #dec78c; font-size: 13px; font-weight: 900; letter-spacing: .32em; text-transform: uppercase; }
     h1 { margin: 0 0 8px; font-size: 23px; line-height: 1.2; }
     p { margin: 0 0 20px; color: #c8c8c8; line-height: 1.5; }
-    a {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 40px;
-      padding: 0 17px;
-      border: 1px solid rgba(238,211,151,.32);
-      border-radius: 999px;
-      background: rgba(238,211,151,.11);
-      color: #f8efd7;
-      text-decoration: none;
-      font-weight: 800;
-    }
+    a { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 17px; border: 1px solid rgba(238,211,151,.32); border-radius: 999px; background: rgba(238,211,151,.11); color: #f8efd7; text-decoration: none; font-weight: 800; }
   </style>
 </head>
 <body>
   <main>
     <div class="brand">ALTARA</div>
-    <h1>YouTube callback is missing details</h1>
-    <p>Return to ALTARA and start Connect YouTube again.</p>
+    <h1>${htmlEscape(title)}</h1>
+    <p>${htmlEscape(message)}</p>
     <a href="/try">Open ALTARA</a>
   </main>
 </body>
