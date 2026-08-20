@@ -13,8 +13,10 @@ export const DM_E2EE_BACKUP_METHOD_RECOVERY_KEY = "recovery_key";
 const ACCOUNT_PASSWORD_MIN_LENGTH = 6;
 
 const IDB_NAME = "altara-dm-e2ee-v1";
-const IDB_VERSION = 1;
-const IDENTITY_STORE = "identityKeys";
+const IDB_VERSION = 2;
+const LEGACY_IDENTITY_STORE = "identityKeys";
+const IDENTITY_STORE = "identityKeysV2";
+const IDENTITY_STORAGE_VERSION = 2;
 const LOCAL_STORAGE_IDENTITY_PREFIX = "altara.dm_e2ee.identity.v1.";
 const BACKUP_TABLE = "dm_e2ee_key_backups";
 const BACKUP_SELECT_COLUMNS = "id, user_id, backup_version, key_algorithm, kdf, kdf_salt, kdf_iterations, encrypted_private_key, encryption_iv, encryption_alg, recovery_hint, created_at, updated_at";
@@ -25,6 +27,9 @@ const KEY_ALGORITHM = "ECDH-P256";
 const BACKUP_KDF_ALGORITHM = "PBKDF2-SHA256";
 const BACKUP_KDF_HASH = "SHA-256";
 const BACKUP_PBKDF2_ITERATIONS = 600000;
+const BACKUP_PBKDF2_MIN_ITERATIONS = 100000;
+const BACKUP_PBKDF2_MAX_ITERATIONS = 2000000;
+const MAX_ENCODED_PRIVATE_KEY_LENGTH = 16384;
 const BACKUP_CIPHER_ALGORITHM = "AES-GCM-256";
 const RECOVERY_KEY_PREFIX = "ALTARA";
 const RECOVERY_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -102,6 +107,8 @@ function classifyDmE2eeSetupError(error, fallback = "unknown_error") {
     code === "crypto_unavailable"
     || code === "indexeddb_unavailable"
     || code === "local_private_key_store_failed"
+    || code === "local_private_key_corrupt"
+    || code === "dm_e2ee_recovery_required"
     || code === "public_key_upload_failed"
     || code === "rpc_error"
     || code === "auth_missing"
@@ -190,21 +197,18 @@ function normalizeBackupRow(row = null) {
   const kdfParams = (row.kdf_params && typeof row.kdf_params === "object" && !Array.isArray(row.kdf_params))
     ? { ...row.kdf_params }
     : {};
-  const kdfIterations = Math.max(
-    100000,
-    Math.round(Number(row.kdf_iterations ?? row.kdfIterations ?? kdfParams.iterations ?? BACKUP_PBKDF2_ITERATIONS) || BACKUP_PBKDF2_ITERATIONS)
-  );
+  const kdfIterations = Math.round(Number(row.kdf_iterations ?? row.kdfIterations ?? kdfParams.iterations));
   return {
     id,
     userId,
-    backupVersion: Number(row.backup_version || row.backupVersion || DM_E2EE_BACKUP_VERSION) || DM_E2EE_BACKUP_VERSION,
+    backupVersion: Number(row.backup_version ?? row.backupVersion),
     keyVersion: Number(row.key_version || row.keyVersion || kdfParams.key_version || 1) || 1,
     keyAlgorithm: String(row.key_algorithm || row.keyAlgorithm || KEY_ALGORITHM).trim() || KEY_ALGORITHM,
     publicKeyJwk,
     encryptedPrivateKey,
     kdfAlgorithm: String(row.kdf || row.kdf_algorithm || row.kdfAlgorithm || BACKUP_KDF_ALGORITHM).trim() || BACKUP_KDF_ALGORITHM,
     kdfSalt,
-    kdfIterations,
+    kdfIterations: Number.isSafeInteger(kdfIterations) ? kdfIterations : 0,
     kdfParams: { ...kdfParams, iterations: kdfIterations },
     passwordSource: getDmE2eeBackupPasswordSource(row),
     cipherAlg: String(row.encryption_alg || row.encryptionAlg || row.cipher_alg || row.cipherAlg || BACKUP_CIPHER_ALGORITHM).trim() || BACKUP_CIPHER_ALGORITHM,
@@ -258,6 +262,16 @@ function normalizeIdentityRecord(record = null) {
   };
 }
 
+function isEcdhPrivateKey(privateKey, { requireNonExtractable = false } = {}) {
+  if (!isCryptoKey(privateKey) || privateKey.type !== "private") return false;
+  if (String(privateKey.algorithm?.name || "").toUpperCase() !== "ECDH") return false;
+  if (String(privateKey.algorithm?.namedCurve || "").toUpperCase() !== "P-256") return false;
+  const usages = Array.from(privateKey.usages || []);
+  if (usages.length !== 1 || usages[0] !== "deriveBits") return false;
+  if (requireNonExtractable && privateKey.extractable !== false) return false;
+  return true;
+}
+
 function normalizeStoredIdentityEnvelope(record = null) {
   if (!record || typeof record !== "object") return null;
   const userId = normalizeId(record.userId || record.user_id || "");
@@ -265,6 +279,7 @@ function normalizeStoredIdentityEnvelope(record = null) {
   const publicKeyJwk = normalizePublicKeyJwk(record.publicKeyJwk || record.public_key_jwk || null);
   if (!userId || !publicKeyJwk) return null;
   return {
+    storageVersion: Number(record.storageVersion || record.storage_version || 0) || 0,
     userId,
     keyId,
     keyVersion: Number(record.keyVersion || record.key_version || 1) || 1,
@@ -273,6 +288,22 @@ function normalizeStoredIdentityEnvelope(record = null) {
     privateKey: isCryptoKey(record.privateKey) ? record.privateKey : null,
     privateKeyPkcs8: String(record.privateKeyPkcs8 || record.private_key_pkcs8 || "").trim(),
   };
+}
+
+function validateHardenedStorageEnvelope(record = null) {
+  if (!record || typeof record !== "object" || Number(record.storageVersion) !== IDENTITY_STORAGE_VERSION) {
+    throw createDmE2eeSetupError("local_private_key_corrupt", "The hardened Vault identity record has an unsupported format.");
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(record, "privateKeyPkcs8")
+    || Object.prototype.hasOwnProperty.call(record, "private_key_pkcs8")
+    || Object.prototype.hasOwnProperty.call(record, "privateKeyJwk")
+    || Object.prototype.hasOwnProperty.call(record, "private_key_jwk")
+    || Object.prototype.hasOwnProperty.call(record, "d")
+  ) {
+    throw createDmE2eeSetupError("local_private_key_corrupt", "The hardened Vault identity record contains serialized private material.");
+  }
+  return record;
 }
 
 function publicKeysMatch(a = null, b = null) {
@@ -292,6 +323,14 @@ function requestToPromise(request) {
   });
 }
 
+function transactionToPromise(transaction) {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = () => reject(transaction.error || new Error("IndexedDB transaction aborted"));
+    transaction.onerror = () => reject(transaction.error || new Error("IndexedDB transaction failed"));
+  });
+}
+
 function getLocalStorageIdentityKey(userId) {
   const uid = normalizeId(userId);
   if (!uid) return "";
@@ -300,82 +339,186 @@ function getLocalStorageIdentityKey(userId) {
 
 function readLocalStorageIdentityEnvelope(userId) {
   const key = getLocalStorageIdentityKey(userId);
-  if (!key || typeof localStorage === "undefined") return null;
-  const raw = String(localStorage.getItem(key) || "").trim();
-  if (!raw) return null;
+  if (!key || typeof localStorage === "undefined") return { found: false, key, record: null };
+  let raw = "";
   try {
-    return normalizeStoredIdentityEnvelope(JSON.parse(raw));
+    raw = String(localStorage.getItem(key) || "").trim();
   } catch (error) {
-    logDmE2ee("local_storage_identity_parse_failed", {
-      userId: normalizeId(userId),
-      message: String(error?.message || error || "unknown"),
-    });
-    try { localStorage.removeItem(key); } catch (_) {}
-    return null;
+    throw createDmE2eeSetupError(
+      "local_private_key_store_failed",
+      "Legacy local Vault storage could not be inspected safely.",
+      error
+    );
+  }
+  if (!raw) return { found: false, key, record: null };
+  try {
+    const parsed = JSON.parse(raw);
+    return { found: true, key, record: parsed };
+  } catch (error) {
+    throw createDmE2eeSetupError(
+      "local_private_key_corrupt",
+      "Legacy local Vault identity data is corrupt. Restore the identity from Vault Recovery.",
+      error
+    );
   }
 }
 
-async function importStoredIdentityEnvelope(envelope = null) {
-  const result = normalizeStoredIdentityEnvelope(envelope);
-  if (!result) return null;
+function decodeLegacyPrivateKey(value = "") {
+  const encoded = String(value || "").trim();
+  if (!encoded || encoded.length > MAX_ENCODED_PRIVATE_KEY_LENGTH || !/^[A-Za-z0-9_-]+$/.test(encoded)) {
+    throw createDmE2eeSetupError(
+      "local_private_key_corrupt",
+      "Legacy local Vault identity data is invalid. Restore the identity from Vault Recovery."
+    );
+  }
+  try {
+    return base64UrlToBytes(encoded);
+  } catch (error) {
+    throw createDmE2eeSetupError(
+      "local_private_key_corrupt",
+      "Legacy local Vault identity data is invalid. Restore the identity from Vault Recovery.",
+      error
+    );
+  }
+}
 
-  let privateKey = result.privateKey;
-  if (!isCryptoKey(privateKey) && result.privateKeyPkcs8) {
-    try {
-      privateKey = await crypto.subtle.importKey(
-        "pkcs8",
-        base64UrlToBytes(result.privateKeyPkcs8),
-        {
-          name: "ECDH",
-          namedCurve: "P-256",
-        },
-        true,
-        ["deriveBits"]
-      );
-    } catch (error) {
-      logDmE2ee("local_key_import_failed", {
-        userId: result.userId,
-        message: String(error?.message || error || "unknown"),
-      });
-      return null;
-    }
+async function verifyIdentityKeyPair(privateKey, publicKeyJwk, { requireNonExtractable = true } = {}) {
+  if (!isEcdhPrivateKey(privateKey, { requireNonExtractable })) {
+    throw createDmE2eeSetupError(
+      "local_private_key_corrupt",
+      "The local Vault private key has unsafe or unsupported properties."
+    );
+  }
+  const publicKey = await importPeerPublicKey(publicKeyJwk);
+  const probePair = await crypto.subtle.generateKey(
+    { name: "ECDH", namedCurve: "P-256" },
+    false,
+    ["deriveBits"]
+  );
+  let left = null;
+  let right = null;
+  try {
+    left = new Uint8Array(await crypto.subtle.deriveBits(
+      { name: "ECDH", public: probePair.publicKey },
+      privateKey,
+      256
+    ));
+    right = new Uint8Array(await crypto.subtle.deriveBits(
+      { name: "ECDH", public: publicKey },
+      probePair.privateKey,
+      256
+    ));
+    if (left.length !== right.length) throw new Error("identity_pair_mismatch");
+    let difference = 0;
+    for (let index = 0; index < left.length; index += 1) difference |= left[index] ^ right[index];
+    if (difference !== 0) throw new Error("identity_pair_mismatch");
+  } catch (error) {
+    throw createDmE2eeSetupError(
+      "local_private_key_corrupt",
+      "The local Vault private key does not match its public identity.",
+      error
+    );
+  } finally {
+    left?.fill(0);
+    right?.fill(0);
+  }
+  return true;
+}
+
+async function importStoredIdentityEnvelope(envelope = null, expectedUserId = "", { captureRecoveryMaterial = false } = {}) {
+  const result = normalizeStoredIdentityEnvelope(envelope);
+  const uid = normalizeId(expectedUserId);
+  if (!result || (uid && result.userId !== uid)) {
+    throw createDmE2eeSetupError(
+      "local_private_key_corrupt",
+      "The stored Vault identity is invalid or belongs to another account."
+    );
   }
 
-  return normalizeIdentityRecord({
+  let privateKey = result.privateKey;
+  let migrated = false;
+  let recoveryPrivateKeyJwk = null;
+  if (isCryptoKey(privateKey)) {
+    if (!isEcdhPrivateKey(privateKey)) {
+      throw createDmE2eeSetupError("local_private_key_corrupt", "The stored Vault private key is invalid.");
+    }
+    if (privateKey.extractable !== false) {
+      let legacyJwk = null;
+      try {
+        legacyJwk = normalizePrivateKeyJwk(await crypto.subtle.exportKey("jwk", privateKey));
+        if (!legacyJwk) throw new Error("invalid_private_jwk");
+        if (captureRecoveryMaterial) recoveryPrivateKeyJwk = { ...legacyJwk };
+        privateKey = await crypto.subtle.importKey(
+          "jwk",
+          legacyJwk,
+          { name: "ECDH", namedCurve: "P-256" },
+          false,
+          ["deriveBits"]
+        );
+        migrated = true;
+      } catch (error) {
+        throw createDmE2eeSetupError(
+          "local_private_key_corrupt",
+          "The legacy Vault private key could not be hardened safely.",
+          error
+        );
+      } finally {
+        legacyJwk = null;
+      }
+    }
+  } else if (result.privateKeyPkcs8) {
+    let privateKeyBytes = null;
+    let extractableLegacyKey = null;
+    try {
+      privateKeyBytes = decodeLegacyPrivateKey(result.privateKeyPkcs8);
+      extractableLegacyKey = await crypto.subtle.importKey(
+        "pkcs8",
+        privateKeyBytes,
+        { name: "ECDH", namedCurve: "P-256" },
+        captureRecoveryMaterial,
+        ["deriveBits"]
+      );
+      if (captureRecoveryMaterial) {
+        recoveryPrivateKeyJwk = normalizePrivateKeyJwk(
+          await crypto.subtle.exportKey("jwk", extractableLegacyKey)
+        );
+        if (!recoveryPrivateKeyJwk) throw new Error("invalid_private_jwk");
+        privateKey = await crypto.subtle.importKey(
+          "jwk",
+          recoveryPrivateKeyJwk,
+          { name: "ECDH", namedCurve: "P-256" },
+          false,
+          ["deriveBits"]
+        );
+      } else {
+        privateKey = extractableLegacyKey;
+      }
+      migrated = true;
+    } catch (error) {
+      throw createDmE2eeSetupError(
+        "local_private_key_corrupt",
+        "The legacy Vault private key could not be imported safely.",
+        error
+      );
+    } finally {
+      privateKeyBytes?.fill(0);
+    }
+  } else {
+    throw createDmE2eeSetupError(
+      "local_private_key_corrupt",
+      "The stored Vault identity is missing its private key."
+    );
+  }
+
+  const identity = normalizeIdentityRecord({
     ...result,
     privateKey,
   });
-}
-
-async function readLocalStorageIdentityRecord(userId) {
-  const envelope = readLocalStorageIdentityEnvelope(userId);
-  return importStoredIdentityEnvelope(envelope);
-}
-
-async function writeLocalStorageIdentityRecord(record = {}, privateKeyPkcs8 = "") {
-  const normalized = normalizeIdentityRecord(record);
-  if (!normalized) throw createDmE2eeSetupError("local_private_key_store_failed", "Invalid local DM E2EE identity record.");
-  const key = getLocalStorageIdentityKey(normalized.userId);
-  if (!key || typeof localStorage === "undefined") {
-    throw createDmE2eeSetupError("local_private_key_store_failed", "Local storage is unavailable for this device.");
+  if (!identity) {
+    throw createDmE2eeSetupError("local_private_key_corrupt", "The stored Vault identity is invalid.");
   }
-  const pkcs8 = privateKeyPkcs8 || (normalized.privateKey?.extractable
-    ? bytesToBase64Url(new Uint8Array(await crypto.subtle.exportKey("pkcs8", normalized.privateKey)))
-    : "");
-  if (!pkcs8) {
-    throw createDmE2eeSetupError("local_private_key_store_failed", "The local DM private key is not exportable for persistence.");
-  }
-  localStorage.setItem(key, JSON.stringify({
-    userId: normalized.userId,
-    keyId: normalized.keyId,
-    keyVersion: normalized.keyVersion,
-    keyAlgorithm: normalized.keyAlgorithm,
-    publicKeyJwk: normalized.publicKeyJwk,
-    privateKeyPkcs8: pkcs8,
-  }));
-  identityCache.set(normalized.userId, normalized);
-  derivedKeyCache.clear();
-  return normalized;
+  await verifyIdentityKeyPair(identity.privateKey, identity.publicKeyJwk);
+  return { identity, migrated, recoveryPrivateKeyJwk };
 }
 
 function openIdentityDb() {
@@ -388,18 +531,182 @@ function openIdentityDb() {
     const request = indexedDB.open(IDB_NAME, IDB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
+      if (!db.objectStoreNames.contains(LEGACY_IDENTITY_STORE)) {
+        db.createObjectStore(LEGACY_IDENTITY_STORE, { keyPath: "userId" });
+      }
       if (!db.objectStoreNames.contains(IDENTITY_STORE)) {
         db.createObjectStore(IDENTITY_STORE, { keyPath: "userId" });
       }
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(createDmE2eeSetupError(
-      "indexeddb_unavailable",
-      "IndexedDB could not be opened for DM E2EE.",
-      request.error || null
-    ));
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+    const rejectOpen = () => {
+      idbPromise = null;
+      reject(createDmE2eeSetupError(
+        "indexeddb_unavailable",
+        "IndexedDB could not be opened for DM E2EE.",
+        request.error || null
+      ));
+    };
+    request.onerror = rejectOpen;
+    request.onblocked = rejectOpen;
   });
   return idbPromise;
+}
+
+async function readIdentityEnvelopeFromStore(db, storeName, userId) {
+  if (!db.objectStoreNames.contains(storeName)) return { found: false, record: null };
+  const tx = db.transaction(storeName, "readonly");
+  const result = await requestToPromise(tx.objectStore(storeName).get(userId));
+  return { found: result !== undefined && result !== null, record: result || null };
+}
+
+async function persistHardenedIdentityRecord(record = {}) {
+  const normalized = normalizeIdentityRecord(record);
+  if (!normalized || !isEcdhPrivateKey(normalized.privateKey, { requireNonExtractable: true })) {
+    throw createDmE2eeSetupError(
+      "local_private_key_store_failed",
+      "Only a non-extractable Vault private key can be persisted."
+    );
+  }
+  await verifyIdentityKeyPair(normalized.privateKey, normalized.publicKeyJwk);
+  const db = await openIdentityDb();
+  const tx = db.transaction(IDENTITY_STORE, "readwrite");
+  const committed = transactionToPromise(tx);
+  await requestToPromise(tx.objectStore(IDENTITY_STORE).put({
+    storageVersion: IDENTITY_STORAGE_VERSION,
+    userId: normalized.userId,
+    keyId: normalized.keyId,
+    keyVersion: normalized.keyVersion,
+    keyAlgorithm: normalized.keyAlgorithm,
+    publicKeyJwk: normalized.publicKeyJwk,
+    privateKey: normalized.privateKey,
+  }));
+  await committed;
+
+  const readback = await readIdentityEnvelopeFromStore(db, IDENTITY_STORE, normalized.userId);
+  if (!readback.found) {
+    throw createDmE2eeSetupError(
+      "local_private_key_store_failed",
+      "The hardened Vault private key could not be read back from IndexedDB."
+    );
+  }
+  validateHardenedStorageEnvelope(readback.record);
+  const verified = await importStoredIdentityEnvelope(readback.record, normalized.userId);
+  if (verified.migrated || !isEcdhPrivateKey(verified.identity.privateKey, { requireNonExtractable: true })) {
+    throw createDmE2eeSetupError(
+      "local_private_key_store_failed",
+      "IndexedDB did not preserve the hardened Vault private key safely."
+    );
+  }
+  return verified.identity;
+}
+
+async function removeLegacyIdentityRecords(userId) {
+  const uid = normalizeId(userId);
+  const db = await openIdentityDb();
+  if (db.objectStoreNames.contains(LEGACY_IDENTITY_STORE)) {
+    const tx = db.transaction(LEGACY_IDENTITY_STORE, "readwrite");
+    const committed = transactionToPromise(tx);
+    await requestToPromise(tx.objectStore(LEGACY_IDENTITY_STORE).delete(uid));
+    await committed;
+    const readback = await readIdentityEnvelopeFromStore(db, LEGACY_IDENTITY_STORE, uid);
+    if (readback.found) {
+      throw createDmE2eeSetupError(
+        "local_private_key_store_failed",
+        "The legacy IndexedDB Vault private-key record could not be removed."
+      );
+    }
+  }
+
+  const legacyLocal = readLocalStorageIdentityEnvelope(uid);
+  if (legacyLocal.found) {
+    try {
+      localStorage.removeItem(legacyLocal.key);
+      if (String(localStorage.getItem(legacyLocal.key) || "").trim()) {
+        throw new Error("legacy_local_record_still_present");
+      }
+    } catch (error) {
+      throw createDmE2eeSetupError(
+        "local_private_key_store_failed",
+        "The legacy localStorage Vault private-key record could not be removed.",
+        error
+      );
+    }
+  }
+}
+
+async function finalizeHardenedIdentity(record = {}) {
+  const persisted = await persistHardenedIdentityRecord(record);
+  await removeLegacyIdentityRecords(persisted.userId);
+  identityCache.set(persisted.userId, persisted);
+  derivedKeyCache.clear();
+  return persisted;
+}
+
+async function legacyEnvelopeNeedsRecoveryBeforeMigration(record = null, expectedUserId = "") {
+  const envelope = normalizeStoredIdentityEnvelope(record);
+  const uid = normalizeId(expectedUserId);
+  if (
+    !envelope
+    || (uid && envelope.userId !== uid)
+    || envelope.keyAlgorithm !== KEY_ALGORITHM
+  ) {
+    throw createDmE2eeSetupError(
+      "local_private_key_corrupt",
+      "The stored Vault identity is invalid or belongs to another account."
+    );
+  }
+  if (isCryptoKey(envelope.privateKey)) {
+    if (!isEcdhPrivateKey(envelope.privateKey)) {
+      throw createDmE2eeSetupError("local_private_key_corrupt", "The stored Vault private key is invalid.");
+    }
+    await verifyIdentityKeyPair(envelope.privateKey, envelope.publicKeyJwk, { requireNonExtractable: false });
+    return envelope.privateKey.extractable !== false;
+  }
+  if (envelope.privateKeyPkcs8) {
+    const encoded = envelope.privateKeyPkcs8;
+    if (
+      encoded.length > MAX_ENCODED_PRIVATE_KEY_LENGTH
+      || encoded.length % 4 === 1
+      || !/^[A-Za-z0-9_-]+$/.test(encoded)
+    ) {
+      throw createDmE2eeSetupError(
+        "local_private_key_corrupt",
+        "Legacy local Vault identity data is invalid. Restore the identity from Vault Recovery."
+      );
+    }
+    return true;
+  }
+  throw createDmE2eeSetupError(
+    "local_private_key_corrupt",
+    "The stored Vault identity is missing its private key."
+  );
+}
+
+async function requireRecoveryProvisioningForLegacyMigration(record = null, expectedUserId = "") {
+  if (!(await legacyEnvelopeNeedsRecoveryBeforeMigration(record, expectedUserId))) return;
+  throw createDmE2eeSetupError(
+    "dm_e2ee_recovery_required",
+    "Set up fresh encrypted Vault Recovery before hardening this legacy identity."
+  );
+}
+
+async function readLegacyIdentityForRecoveryProvisioning(userId) {
+  const uid = normalizeId(userId);
+  const db = await openIdentityDb();
+  const legacyIndexedDb = await readIdentityEnvelopeFromStore(db, LEGACY_IDENTITY_STORE, uid);
+  if (legacyIndexedDb.found) {
+    return importStoredIdentityEnvelope(legacyIndexedDb.record, uid, { captureRecoveryMaterial: true });
+  }
+  const legacyLocal = readLocalStorageIdentityEnvelope(uid);
+  if (legacyLocal.found) {
+    return importStoredIdentityEnvelope(legacyLocal.record, uid, { captureRecoveryMaterial: true });
+  }
+  return null;
 }
 
 async function readIdentityRecord(userId) {
@@ -407,93 +714,191 @@ async function readIdentityRecord(userId) {
   if (!uid) return null;
   try {
     const db = await openIdentityDb();
-    const tx = db.transaction(IDENTITY_STORE, "readonly");
-    const store = tx.objectStore(IDENTITY_STORE);
-    const result = normalizeStoredIdentityEnvelope(await requestToPromise(store.get(uid)));
-    const identity = await importStoredIdentityEnvelope(result);
-    if (identity) return identity;
+    const hardened = await readIdentityEnvelopeFromStore(db, IDENTITY_STORE, uid);
+    if (hardened.found) {
+      validateHardenedStorageEnvelope(hardened.record);
+      const imported = await importStoredIdentityEnvelope(hardened.record, uid);
+      if (imported.migrated) {
+        throw createDmE2eeSetupError("local_private_key_corrupt", "The hardened Vault identity unexpectedly contains an exportable key.");
+      }
+      const identity = imported.identity;
+      await removeLegacyIdentityRecords(uid);
+      identityCache.set(uid, identity);
+      return identity;
+    }
+
+    const legacyIndexedDb = await readIdentityEnvelopeFromStore(db, LEGACY_IDENTITY_STORE, uid);
+    if (legacyIndexedDb.found) {
+      await requireRecoveryProvisioningForLegacyMigration(legacyIndexedDb.record, uid);
+      const imported = await importStoredIdentityEnvelope(legacyIndexedDb.record, uid);
+      return finalizeHardenedIdentity(imported.identity);
+    }
+
+    const legacyLocal = readLocalStorageIdentityEnvelope(uid);
+    if (legacyLocal.found) {
+      await requireRecoveryProvisioningForLegacyMigration(legacyLocal.record, uid);
+      const imported = await importStoredIdentityEnvelope(legacyLocal.record, uid);
+      return finalizeHardenedIdentity(imported.identity);
+    }
+    return null;
   } catch (error) {
     logDmE2ee("indexeddb_identity_read_failed", {
       userId: uid,
-      reason: classifyDmE2eeSetupError(error, "indexeddb_unavailable"),
+      reason: classifyDmE2eeSetupError(error, "local_private_key_store_failed"),
       message: String(error?.message || error || "unknown"),
     });
+    throw error;
   }
-
-  return readLocalStorageIdentityRecord(uid);
 }
 
 async function writeIdentityRecord(record = {}) {
-  const normalized = normalizeIdentityRecord(record);
-  if (!normalized) throw createDmE2eeSetupError("local_private_key_store_failed", "Invalid DM E2EE identity record.");
-  let privateKeyPkcs8 = "";
   try {
-    if (normalized.privateKey?.extractable) {
-      privateKeyPkcs8 = bytesToBase64Url(
-        new Uint8Array(await crypto.subtle.exportKey("pkcs8", normalized.privateKey))
-      );
-    }
-  } catch (error) {
-    throw createDmE2eeSetupError("local_private_key_store_failed", "Could not export the local DM private key for persistence.", error);
-  }
-
-  try {
-    const db = await openIdentityDb();
-    const tx = db.transaction(IDENTITY_STORE, "readwrite");
-    const store = tx.objectStore(IDENTITY_STORE);
-    await requestToPromise(store.put({
-      userId: normalized.userId,
-      keyId: normalized.keyId,
-      keyVersion: normalized.keyVersion,
-      keyAlgorithm: normalized.keyAlgorithm,
-      publicKeyJwk: normalized.publicKeyJwk,
-      ...(privateKeyPkcs8
-        ? { privateKeyPkcs8 }
-        : { privateKey: normalized.privateKey }),
-    }));
-    identityCache.set(normalized.userId, normalized);
-    derivedKeyCache.clear();
-    return normalized;
+    return await finalizeHardenedIdentity(record);
   } catch (error) {
     logDmE2ee("indexeddb_identity_write_failed", {
-      userId: normalized.userId,
-      reason: classifyDmE2eeSetupError(error, "indexeddb_unavailable"),
+      userId: normalizeId(record?.userId || record?.user_id || ""),
+      reason: classifyDmE2eeSetupError(error, "local_private_key_store_failed"),
       message: String(error?.message || error || "unknown"),
     });
-  }
-
-  try {
-    return await writeLocalStorageIdentityRecord(normalized, privateKeyPkcs8);
-  } catch (fallbackError) {
-    throw createDmE2eeSetupError("local_private_key_store_failed", "Could not store the local DM private key on this device.", fallbackError);
+    throw createDmE2eeSetupError(
+      classifyDmE2eeSetupError(error, "local_private_key_store_failed"),
+      "Could not securely persist the local Vault private key in IndexedDB.",
+      error
+    );
   }
 }
 
-async function generateIdentityKeyPair() {
-  // The private key stays exportable only for local IndexedDB persistence in v1.
-  if (typeof crypto === "undefined" || !crypto?.subtle) {
-    throw createDmE2eeSetupError("crypto_unavailable", "Web Crypto is unavailable on this device.");
+async function provisionNewIdentityWithRecovery({
+  userId,
+  password,
+  passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
+  includeRecoveryKey = true,
+} = {}) {
+  const uid = normalizeId(userId);
+  let pair = null;
+  let privateKeyJwk = null;
+  try {
+    pair = await crypto.subtle.generateKey(
+      { name: "ECDH", namedCurve: "P-256" },
+      true,
+      ["deriveBits"]
+    );
+    const publicKeyJwk = normalizePublicKeyJwk(await crypto.subtle.exportKey("jwk", pair.publicKey));
+    privateKeyJwk = normalizePrivateKeyJwk(await crypto.subtle.exportKey("jwk", pair.privateKey));
+    if (!publicKeyJwk || !privateKeyJwk || !publicKeysMatch(publicKeyJwk, privateKeyJwk)) {
+      throw createDmE2eeSetupError("invalid_public_key", "Could not generate a valid Vault identity.");
+    }
+    const privateKey = await crypto.subtle.importKey(
+      "jwk",
+      privateKeyJwk,
+      { name: "ECDH", namedCurve: "P-256" },
+      false,
+      ["deriveBits"]
+    );
+    await verifyIdentityKeyPair(privateKey, publicKeyJwk);
+    pair = null;
+
+    const draftIdentity = {
+      status: "ready",
+      userId: uid,
+      keyId: "",
+      keyVersion: 1,
+      keyAlgorithm: KEY_ALGORITHM,
+      publicKeyJwk,
+      privateKey,
+    };
+    const backup = await persistIdentityBackupFromPrivateJwk({
+      identity: draftIdentity,
+      privateKeyJwk,
+      password,
+      passwordSource,
+      includeRecoveryKey,
+    });
+    privateKeyJwk = null;
+
+    const persisted = await writeIdentityRecord(draftIdentity);
+    const keyRow = await upsertMyKeyRow(publicKeyJwk);
+    const readyIdentity = await writeIdentityRecord({
+      ...persisted,
+      status: "ready",
+      keyId: keyRow.id,
+      keyVersion: keyRow.keyVersion,
+      keyAlgorithm: keyRow.keyAlgorithm,
+      publicKeyJwk: keyRow.publicKeyJwk,
+    });
+    return {
+      ...readyIdentity,
+      recoveryKey: String(backup?.recoveryKey || ""),
+      backupCreated: !!backup,
+    };
+  } finally {
+    pair = null;
+    privateKeyJwk = null;
   }
-  const pair = await crypto.subtle.generateKey(
-    {
-      name: "ECDH",
-      namedCurve: "P-256",
-    },
-    true,
-    ["deriveBits"]
-  );
-  const publicKeyJwk = normalizePublicKeyJwk(
-    await crypto.subtle.exportKey("jwk", pair.publicKey)
-  );
-  if (!publicKeyJwk) throw createDmE2eeSetupError("invalid_public_key", "Could not export a valid DM public key.");
-  return {
-    privateKey: pair.privateKey,
-    publicKeyJwk,
-  };
+}
+
+async function migrateLegacyIdentityWithRecovery({
+  userId,
+  password,
+  passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
+  includeRecoveryKey = true,
+} = {}) {
+  const uid = normalizeId(userId);
+  let prepared = await readLegacyIdentityForRecoveryProvisioning(uid);
+  if (!prepared?.identity || !prepared.recoveryPrivateKeyJwk) {
+    throw createDmE2eeSetupError(
+      "local_private_key_corrupt",
+      "The legacy Vault identity could not be prepared for secure migration."
+    );
+  }
+  try {
+    const activeKeyRow = await fetchActiveKeyRowForUser(uid, { force: true });
+    if (activeKeyRow && !publicKeysMatch(activeKeyRow.publicKeyJwk, prepared.identity.publicKeyJwk)) {
+      throw createDmE2eeSetupError(
+        "local_private_key_corrupt",
+        "The legacy Vault identity does not match the active public identity."
+      );
+    }
+    const backup = await persistIdentityBackupFromPrivateJwk({
+      identity: prepared.identity,
+      privateKeyJwk: prepared.recoveryPrivateKeyJwk,
+      password,
+      passwordSource,
+      includeRecoveryKey,
+    });
+    prepared.recoveryPrivateKeyJwk = null;
+
+    const persisted = await writeIdentityRecord(prepared.identity);
+    const resolvedKeyRow = activeKeyRow || await upsertMyKeyRow(persisted.publicKeyJwk);
+    const readyIdentity = await writeIdentityRecord({
+      ...persisted,
+      status: "ready",
+      keyId: resolvedKeyRow.id,
+      keyVersion: resolvedKeyRow.keyVersion,
+      keyAlgorithm: resolvedKeyRow.keyAlgorithm,
+      publicKeyJwk: resolvedKeyRow.publicKeyJwk,
+    });
+    return {
+      ...readyIdentity,
+      recoveryKey: String(backup?.recoveryKey || ""),
+      backupCreated: !!backup,
+      migrated: true,
+    };
+  } finally {
+    if (prepared) prepared.recoveryPrivateKeyJwk = null;
+    prepared = null;
+  }
 }
 
 async function deriveBackupEncryptionKey(password, saltBytes, iterations = BACKUP_PBKDF2_ITERATIONS) {
-  const normalizedIterations = Math.max(100000, Math.round(Number(iterations || BACKUP_PBKDF2_ITERATIONS) || BACKUP_PBKDF2_ITERATIONS));
+  const normalizedIterations = Math.round(Number(iterations));
+  if (
+    !Number.isSafeInteger(normalizedIterations)
+    || normalizedIterations < BACKUP_PBKDF2_MIN_ITERATIONS
+    || normalizedIterations > BACKUP_PBKDF2_MAX_ITERATIONS
+  ) {
+    throw createBackupError("dm_e2ee_backup_invalid_kdf", "Vault Recovery KDF parameters are unsupported.");
+  }
   const baseKey = await crypto.subtle.importKey(
     "raw",
     encoder.encode(String(password ?? "")),
@@ -526,6 +931,68 @@ function createBackupError(code, message) {
   const error = new Error(String(message || "DM key backup failed"));
   error.code = String(code || "dm_e2ee_backup_error");
   return error;
+}
+
+function decodeBackupField(value, { code, label, exactLength = 0, minLength = 0, maxLength = 0 } = {}) {
+  const encoded = String(value || "").trim();
+  if (!encoded || encoded.length > MAX_ENCODED_PRIVATE_KEY_LENGTH * 8 || !/^[A-Za-z0-9_-]+$/.test(encoded)) {
+    throw createBackupError(code || "dm_e2ee_backup_invalid_payload", `${label || "Vault Recovery data"} is invalid.`);
+  }
+  let bytes = null;
+  try {
+    bytes = base64UrlToBytes(encoded);
+  } catch (_) {
+    throw createBackupError(code || "dm_e2ee_backup_invalid_payload", `${label || "Vault Recovery data"} is invalid.`);
+  }
+  if (
+    (exactLength && bytes.length !== exactLength)
+    || (minLength && bytes.length < minLength)
+    || (maxLength && bytes.length > maxLength)
+  ) {
+    bytes.fill(0);
+    throw createBackupError(code || "dm_e2ee_backup_invalid_payload", `${label || "Vault Recovery data"} is invalid.`);
+  }
+  return bytes;
+}
+
+function validateBackupEnvelope(backupRow = null) {
+  if (!backupRow || backupRow.backupVersion !== DM_E2EE_BACKUP_VERSION) {
+    throw createBackupError("dm_e2ee_backup_unsupported_version", "This Vault Recovery backup version is unsupported.");
+  }
+  if (String(backupRow.keyAlgorithm || "") !== KEY_ALGORITHM) {
+    throw createBackupError("dm_e2ee_backup_invalid_algorithm", "This Vault Recovery key algorithm is unsupported.");
+  }
+  if (String(backupRow.kdfAlgorithm || "") !== BACKUP_KDF_ALGORITHM) {
+    throw createBackupError("dm_e2ee_backup_invalid_kdf", "This Vault Recovery KDF is unsupported.");
+  }
+  if (String(backupRow.cipherAlg || "") !== BACKUP_CIPHER_ALGORITHM) {
+    throw createBackupError("dm_e2ee_backup_invalid_cipher", "This Vault Recovery cipher is unsupported.");
+  }
+  const iterations = Math.round(Number(backupRow.kdfIterations));
+  if (
+    !Number.isSafeInteger(iterations)
+    || iterations < BACKUP_PBKDF2_MIN_ITERATIONS
+    || iterations > BACKUP_PBKDF2_MAX_ITERATIONS
+  ) {
+    throw createBackupError("dm_e2ee_backup_invalid_kdf", "Vault Recovery KDF parameters are unsupported.");
+  }
+  const salt = decodeBackupField(backupRow.kdfSalt, {
+    code: "dm_e2ee_backup_invalid_kdf",
+    label: "Vault Recovery salt",
+    exactLength: 16,
+  });
+  const iv = decodeBackupField(backupRow.cipherIv, {
+    code: "dm_e2ee_backup_invalid_cipher",
+    label: "Vault Recovery IV",
+    exactLength: 12,
+  });
+  const ciphertext = decodeBackupField(backupRow.encryptedPrivateKey, {
+    code: "dm_e2ee_backup_invalid_payload",
+    label: "Vault Recovery ciphertext",
+    minLength: 17,
+    maxLength: 65536,
+  });
+  return { iterations, salt, iv, ciphertext };
 }
 
 async function encryptBackupPlaintextWithCredential({
@@ -561,6 +1028,130 @@ async function encryptBackupPlaintextWithCredential({
     encryption_iv: bytesToBase64Url(iv),
     encrypted_private_key: bytesToBase64Url(new Uint8Array(ciphertextBuffer)),
   };
+}
+
+function buildIdentityBackupPlaintext(identity = {}, privateKeyJwk = null) {
+  const normalizedPrivateKeyJwk = normalizePrivateKeyJwk(privateKeyJwk);
+  const publicKeyJwk = normalizePublicKeyJwk(identity.publicKeyJwk || normalizedPrivateKeyJwk);
+  if (!normalizedPrivateKeyJwk || !publicKeyJwk || !publicKeysMatch(normalizedPrivateKeyJwk, publicKeyJwk)) {
+    throw createBackupError("dm_e2ee_backup_invalid_identity", "The Vault identity cannot be prepared for recovery.");
+  }
+  return encoder.encode(JSON.stringify({
+    backupVersion: DM_E2EE_BACKUP_VERSION,
+    privateKeyJwk: normalizedPrivateKeyJwk,
+    publicKeyJwk,
+    keyId: normalizeId(identity.keyId || ""),
+    keyVersion: Number(identity.keyVersion || 1) || 1,
+    keyAlgorithm: String(identity.keyAlgorithm || KEY_ALGORITHM).trim() || KEY_ALGORITHM,
+    createdAt: new Date().toISOString(),
+  }));
+}
+
+async function persistIdentityBackupFromPrivateJwk({
+  identity,
+  privateKeyJwk,
+  password,
+  passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
+  includeRecoveryKey = null,
+} = {}) {
+  const uid = normalizeId(identity?.userId || "");
+  const rawPassword = String(password ?? "");
+  const resolvedPasswordSource =
+    normalizeBackupPasswordSource(passwordSource) || DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL;
+  const minPasswordLength = resolveBackupPasswordMinLength(resolvedPasswordSource);
+  if (!uid) throw createBackupError("dm_e2ee_backup_missing_user", "Missing userId for DM key backup.");
+  if (rawPassword.length < minPasswordLength) {
+    throw createBackupError(
+      "dm_e2ee_backup_password_too_short",
+      `Backup password must be at least ${minPasswordLength} characters long.`
+    );
+  }
+
+  let backupPlaintext = null;
+  let passwordEncrypted = null;
+  let recoveryKeyEncrypted = null;
+  const shouldCreateRecoveryKey = includeRecoveryKey === null
+    ? resolvedPasswordSource === DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL
+    : includeRecoveryKey === true;
+  const generatedRecoveryKey = shouldCreateRecoveryKey ? generateDmE2eeRecoveryKey() : "";
+  try {
+    backupPlaintext = buildIdentityBackupPlaintext(identity, privateKeyJwk);
+    passwordEncrypted = await encryptBackupPlaintextWithCredential({
+      userId: uid,
+      credential: rawPassword,
+      backupPlaintext,
+      method: DM_E2EE_BACKUP_METHOD_PASSWORD,
+    });
+    recoveryKeyEncrypted = generatedRecoveryKey
+      ? await encryptBackupPlaintextWithCredential({
+        userId: uid,
+        credential: generatedRecoveryKey,
+        backupPlaintext,
+        method: DM_E2EE_BACKUP_METHOD_RECOVERY_KEY,
+      })
+      : null;
+  } finally {
+    backupPlaintext?.fill(0);
+    backupPlaintext = null;
+  }
+
+  const nowIso = new Date().toISOString();
+  const methodPayloads = [
+    {
+      user_id: uid,
+      backup_version: DM_E2EE_BACKUP_VERSION,
+      ...passwordEncrypted,
+      updated_at: nowIso,
+    },
+    ...(recoveryKeyEncrypted
+      ? [{
+        user_id: uid,
+        backup_version: DM_E2EE_BACKUP_VERSION,
+        ...recoveryKeyEncrypted,
+        updated_at: nowIso,
+      }]
+      : []),
+  ];
+
+  const { data: methodData, error: methodError } = await supabase
+    .from(BACKUP_METHODS_TABLE)
+    .upsert(methodPayloads, { onConflict: "user_id,method,backup_version" })
+    .select(BACKUP_METHOD_SELECT_COLUMNS);
+  if (methodError) throw methodError;
+  const methodRows = (Array.isArray(methodData) ? methodData : [])
+    .map((row) => normalizeBackupMethodRow(row))
+    .filter(Boolean);
+  keyBackupMethodsCacheByUserId.set(uid, methodRows);
+
+  const payload = {
+    user_id: uid,
+    backup_version: DM_E2EE_BACKUP_VERSION,
+    key_algorithm: String(identity.keyAlgorithm || KEY_ALGORITHM).trim() || KEY_ALGORITHM,
+    encrypted_private_key: passwordEncrypted.encrypted_private_key,
+    kdf: passwordEncrypted.kdf,
+    kdf_salt: passwordEncrypted.kdf_salt,
+    kdf_iterations: passwordEncrypted.kdf_iterations,
+    encryption_alg: passwordEncrypted.encryption_alg,
+    encryption_iv: passwordEncrypted.encryption_iv,
+    recovery_hint: resolvedPasswordSource === DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL ? "Manual sync password" : "Account password",
+    updated_at: nowIso,
+  };
+  const { data, error } = await supabase
+    .from(BACKUP_TABLE)
+    .upsert(payload, { onConflict: "user_id,backup_version" })
+    .select(BACKUP_SELECT_COLUMNS)
+    .single();
+  if (error) throw error;
+
+  const row = normalizeBackupRow(data);
+  if (row) {
+    row.hasPasswordMethod = true;
+    row.hasRecoveryKeyMethod = methodRows.some((methodRow) => methodRow.method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY);
+    row.methods = methodRows.map((methodRow) => methodRow.method);
+    if (generatedRecoveryKey) row.recoveryKey = generatedRecoveryKey;
+  }
+  keyBackupCacheByUserId.set(uid, row || null);
+  return row;
 }
 
 async function fetchActiveKeyRowForUser(userId, { force = false } = {}) {
@@ -831,6 +1422,12 @@ export async function getDmE2eeIdentityState({ userId, force = false } = {}) {
       force: !!force,
     });
     if (localIdentity) {
+      if (remoteKeyRow && !publicKeysMatch(remoteKeyRow.publicKeyJwk, localIdentity.publicKeyJwk)) {
+        throw createDmE2eeSetupError(
+          "local_private_key_corrupt",
+          "The local Vault identity does not match the active public identity."
+        );
+      }
       return {
         status: "ready",
         userId: uid,
@@ -868,6 +1465,16 @@ export async function getDmE2eeIdentityState({ userId, force = false } = {}) {
       hasRemotePublicKey: false,
     };
   } catch (error) {
+    if (String(error?.code || error?.reason || "") === "dm_e2ee_recovery_required") {
+      return {
+        status: "migration_requires_recovery",
+        userId: uid,
+        hasLocalPrivateKey: false,
+        localPrivateKeyExportable: false,
+        hasRemotePublicKey: false,
+        error,
+      };
+    }
     return {
       status: "error",
       userId: uid,
@@ -886,7 +1493,10 @@ export async function ensureDmE2eeIdentity({ userId } = {}) {
   try {
     localIdentity = await readIdentityRecord(uid);
   } catch (error) {
-    return { status: "error", error };
+    if (String(error?.code || error?.reason || "") === "dm_e2ee_recovery_required") {
+      return { status: "migration_requires_recovery", userId: uid, error };
+    }
+    return { status: "error", userId: uid, error };
   }
 
   let remoteKeyRow = null;
@@ -902,7 +1512,17 @@ export async function ensureDmE2eeIdentity({ userId } = {}) {
   }
 
   if (localIdentity) {
-    if (!remoteKeyRow || !publicKeysMatch(remoteKeyRow.publicKeyJwk, localIdentity.publicKeyJwk)) {
+    if (remoteKeyRow && !publicKeysMatch(remoteKeyRow.publicKeyJwk, localIdentity.publicKeyJwk)) {
+      return {
+        status: "error",
+        userId: uid,
+        error: createDmE2eeSetupError(
+          "local_private_key_corrupt",
+          "The local Vault identity does not match the active public identity."
+        ),
+      };
+    }
+    if (!remoteKeyRow) {
       remoteKeyRow = await upsertMyKeyRow(localIdentity.publicKeyJwk);
     }
     const readyIdentity = {
@@ -927,47 +1547,99 @@ export async function ensureDmE2eeIdentity({ userId } = {}) {
     };
   }
 
-  const generated = await generateIdentityKeyPair();
-  const keyRow = await upsertMyKeyRow(generated.publicKeyJwk);
-  const readyIdentity = {
-    status: "ready",
+  return {
+    status: "not_initialized",
     userId: uid,
-    keyId: keyRow.id,
-    keyVersion: keyRow.keyVersion,
-    keyAlgorithm: keyRow.keyAlgorithm,
-    publicKeyJwk: generated.publicKeyJwk,
-    privateKey: generated.privateKey,
+    keyId: "",
+    keyVersion: 0,
+    keyAlgorithm: KEY_ALGORITHM,
+    publicKeyJwk: null,
   };
-  await writeIdentityRecord(readyIdentity);
-  return readyIdentity;
 }
 
-export async function setupDmE2eeIdentityForCurrentDevice({ userId, forceNew = false } = {}) {
+export async function setupDmE2eeIdentityForCurrentDevice({
+  userId,
+  forceNew = false,
+  backupPassword = "",
+  passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
+  includeRecoveryKey = true,
+} = {}) {
   const uid = normalizeId(userId);
   if (!uid) return { status: "error", error: new Error("Missing userId for DM E2EE setup") };
-
-  let localIdentity = null;
-  if (!forceNew) {
-    try {
-      localIdentity = await readIdentityRecord(uid);
-    } catch (error) {
-      return { status: "error", error };
-    }
+  if (forceNew) {
+    return {
+      status: "error",
+      error: createDmE2eeSetupError(
+        "explicit_identity_reset_required",
+        "Vault identity replacement requires the separate confirmed reset flow."
+      ),
+    };
   }
 
-  const identityMaterial = localIdentity || await generateIdentityKeyPair();
-  const keyRow = await upsertMyKeyRow(identityMaterial.publicKeyJwk);
-  const readyIdentity = {
-    status: "ready",
-    userId: uid,
-    keyId: keyRow.id,
-    keyVersion: keyRow.keyVersion,
-    keyAlgorithm: keyRow.keyAlgorithm,
-    publicKeyJwk: identityMaterial.publicKeyJwk,
-    privateKey: identityMaterial.privateKey,
-  };
-  await writeIdentityRecord(readyIdentity);
-  return readyIdentity;
+  let localIdentity = null;
+  try {
+    localIdentity = await readIdentityRecord(uid);
+  } catch (error) {
+    if (String(error?.code || error?.reason || "") === "dm_e2ee_recovery_required") {
+      try {
+        return await migrateLegacyIdentityWithRecovery({
+          userId: uid,
+          password: backupPassword,
+          passwordSource,
+          includeRecoveryKey,
+        });
+      } catch (migrationError) {
+        return { status: "error", userId: uid, error: migrationError };
+      }
+    }
+    return { status: "error", userId: uid, error };
+  }
+
+  const remoteKeyRow = await fetchActiveKeyRowForUser(uid, { force: true });
+  if (localIdentity) {
+    if (remoteKeyRow && !publicKeysMatch(remoteKeyRow.publicKeyJwk, localIdentity.publicKeyJwk)) {
+      return {
+        status: "error",
+        userId: uid,
+        error: createDmE2eeSetupError(
+          "local_private_key_corrupt",
+          "The local Vault identity does not match the active public identity."
+        ),
+      };
+    }
+    const keyRow = remoteKeyRow || await upsertMyKeyRow(localIdentity.publicKeyJwk);
+    return writeIdentityRecord({
+      ...localIdentity,
+      status: "ready",
+      keyId: keyRow.id,
+      keyVersion: keyRow.keyVersion,
+      keyAlgorithm: keyRow.keyAlgorithm,
+      publicKeyJwk: keyRow.publicKeyJwk,
+    });
+  }
+
+  const backupMeta = await getDmE2eeKeyBackupMetadata({ userId: uid, force: true });
+  if (remoteKeyRow || backupMeta) {
+    return {
+      status: "missing_local_private",
+      userId: uid,
+      keyId: remoteKeyRow?.id || "",
+      keyVersion: remoteKeyRow?.keyVersion || backupMeta?.keyVersion || 1,
+      keyAlgorithm: remoteKeyRow?.keyAlgorithm || backupMeta?.keyAlgorithm || KEY_ALGORITHM,
+      publicKeyJwk: remoteKeyRow?.publicKeyJwk || backupMeta?.publicKeyJwk || null,
+    };
+  }
+
+  try {
+    return await provisionNewIdentityWithRecovery({
+      userId: uid,
+      password: backupPassword,
+      passwordSource,
+      includeRecoveryKey,
+    });
+  } catch (error) {
+    return { status: "error", userId: uid, error };
+  }
 }
 
 export async function getActiveDmE2eePeerKey(userId, { force = false } = {}) {
@@ -1044,106 +1716,34 @@ export async function createDmE2eeKeyBackup({
     );
   }
 
-  const nowIso = new Date().toISOString();
-  const privateKeyJwk = normalizePrivateKeyJwk(await crypto.subtle.exportKey("jwk", identity.privateKey));
+  let privateKeyJwk = normalizePrivateKeyJwk(await crypto.subtle.exportKey("jwk", identity.privateKey));
   if (!privateKeyJwk) {
     throw createBackupError(
       "dm_e2ee_backup_private_key_not_exportable",
       "Could not export the local Vault key for Vault Recovery."
     );
   }
-  const backupPlaintext = encoder.encode(JSON.stringify({
-    privateKeyJwk,
-    publicKeyJwk: identity.publicKeyJwk,
-    keyId: normalizeId(identity.keyId || ""),
-    keyVersion: Number(identity.keyVersion || 1) || 1,
-    keyAlgorithm: String(identity.keyAlgorithm || KEY_ALGORITHM).trim() || KEY_ALGORITHM,
-    createdAt: nowIso,
-  }));
-
-  const passwordEncrypted = await encryptBackupPlaintextWithCredential({
-    userId: uid,
-    credential: rawPassword,
-    backupPlaintext,
-    method: DM_E2EE_BACKUP_METHOD_PASSWORD,
-  });
-  const shouldCreateRecoveryKey = includeRecoveryKey === null
-    ? resolvedPasswordSource === DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL
-    : includeRecoveryKey === true;
-  const generatedRecoveryKey = shouldCreateRecoveryKey ? generateDmE2eeRecoveryKey() : "";
-  const recoveryKeyEncrypted = generatedRecoveryKey
-    ? await encryptBackupPlaintextWithCredential({
-      userId: uid,
-      credential: generatedRecoveryKey,
-      backupPlaintext,
-      method: DM_E2EE_BACKUP_METHOD_RECOVERY_KEY,
-    })
-    : null;
-
-  const methodPayloads = [
-    {
-      user_id: uid,
-      backup_version: DM_E2EE_BACKUP_VERSION,
-      ...passwordEncrypted,
-      updated_at: nowIso,
-    },
-    ...(recoveryKeyEncrypted
-      ? [{
-        user_id: uid,
-        backup_version: DM_E2EE_BACKUP_VERSION,
-        ...recoveryKeyEncrypted,
-        updated_at: nowIso,
-      }]
-      : []),
-  ];
-
-  let methodRows = [];
-  if (methodPayloads.length) {
-    const { data: methodData, error: methodError } = await supabase
-      .from(BACKUP_METHODS_TABLE)
-      .upsert(methodPayloads, { onConflict: "user_id,method,backup_version" })
-      .select(BACKUP_METHOD_SELECT_COLUMNS);
-    if (methodError) throw methodError;
-    const updatedRows = (Array.isArray(methodData) ? methodData : [])
-      .map((row) => normalizeBackupMethodRow(row))
-      .filter(Boolean);
-    const existingRows = keyBackupMethodsCacheByUserId.get(uid) || [];
-    const mergedByMethod = new Map(existingRows.map((row) => [row.method, row]));
-    updatedRows.forEach((row) => mergedByMethod.set(row.method, row));
-    methodRows = Array.from(mergedByMethod.values());
-    keyBackupMethodsCacheByUserId.set(uid, methodRows);
+  let row = null;
+  try {
+    row = await persistIdentityBackupFromPrivateJwk({
+      identity,
+      privateKeyJwk,
+      password: rawPassword,
+      passwordSource: resolvedPasswordSource,
+      includeRecoveryKey,
+    });
+    const hardenedPrivateKey = await crypto.subtle.importKey(
+      "jwk",
+      privateKeyJwk,
+      { name: "ECDH", namedCurve: "P-256" },
+      false,
+      ["deriveBits"]
+    );
+    await writeIdentityRecord({ ...identity, privateKey: hardenedPrivateKey });
+    return row;
+  } finally {
+    privateKeyJwk = null;
   }
-
-  const payload = {
-    user_id: uid,
-    backup_version: DM_E2EE_BACKUP_VERSION,
-    key_algorithm: String(identity.keyAlgorithm || KEY_ALGORITHM).trim() || KEY_ALGORITHM,
-    encrypted_private_key: passwordEncrypted.encrypted_private_key,
-    kdf: passwordEncrypted.kdf,
-    kdf_salt: passwordEncrypted.kdf_salt,
-    kdf_iterations: passwordEncrypted.kdf_iterations,
-    encryption_alg: passwordEncrypted.encryption_alg,
-    encryption_iv: passwordEncrypted.encryption_iv,
-    recovery_hint: resolvedPasswordSource === DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL ? "Manual sync password" : "Account password",
-    updated_at: nowIso,
-  };
-
-  const { data, error } = await supabase
-    .from(BACKUP_TABLE)
-    .upsert(payload, { onConflict: "user_id,backup_version" })
-    .select(BACKUP_SELECT_COLUMNS)
-    .single();
-  if (error) throw error;
-
-  const row = normalizeBackupRow(data);
-  if (row) {
-    row.hasPasswordMethod = methodRows.some((methodRow) => methodRow.method === DM_E2EE_BACKUP_METHOD_PASSWORD) || true;
-    row.hasRecoveryKeyMethod = methodRows.some((methodRow) => methodRow.method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY);
-    row.methods = methodRows.map((methodRow) => methodRow.method);
-    if (generatedRecoveryKey) row.recoveryKey = generatedRecoveryKey;
-  }
-  keyBackupCacheByUserId.set(uid, row || null);
-  return row;
 }
 
 export async function syncDmE2eeBackupWithLoginPassword({
@@ -1176,7 +1776,8 @@ export async function syncDmE2eeBackupWithLoginPassword({
 
   const missingLocalPrivateKey =
     identityState?.status === "missing_local_private"
-    || identityState?.status === "not_initialized";
+    || identityState?.status === "not_initialized"
+    || identityState?.status === "migration_requires_recovery";
 
   if (missingLocalPrivateKey && backupMeta) {
     try {
@@ -1285,10 +1886,40 @@ export async function syncDmE2eeBackupWithLoginPassword({
 
   if (identityState?.status === "ready" && !identityState.localPrivateKeyExportable) {
     return {
-      action: "skipped_legacy_non_exportable",
+      action: "noop_protected_identity",
       hadBackup: !!backupMeta,
       hadLocalKey: true,
     };
+  }
+
+  if (identityState?.status === "migration_requires_recovery") {
+    try {
+      const migratedIdentity = await setupDmE2eeIdentityForCurrentDevice({
+        userId: uid,
+        backupPassword: rawPassword,
+        passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_ACCOUNT_LOGIN,
+        includeRecoveryKey: false,
+      });
+      if (migratedIdentity?.status !== "ready") {
+        throw migratedIdentity?.error || createBackupError(
+          "dm_e2ee_identity_not_ready_after_migration",
+          "Could not securely migrate the Vault identity for this account."
+        );
+      }
+      return {
+        action: "migrated_identity_and_created_backup",
+        hadBackup: false,
+        hadLocalKey: true,
+        backupPasswordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_ACCOUNT_LOGIN,
+      };
+    } catch (error) {
+      return {
+        action: "migration_failed",
+        hadBackup: false,
+        hadLocalKey: true,
+        error,
+      };
+    }
   }
 
   if (identityState?.status === "missing_local_private") {
@@ -1305,18 +1936,18 @@ export async function syncDmE2eeBackupWithLoginPassword({
 
   if (identityState?.status === "not_initialized") {
     try {
-      const createdIdentity = await ensureDmE2eeIdentity({ userId: uid });
+      const createdIdentity = await setupDmE2eeIdentityForCurrentDevice({
+        userId: uid,
+        backupPassword: rawPassword,
+        passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_ACCOUNT_LOGIN,
+        includeRecoveryKey: false,
+      });
       if (createdIdentity?.status !== "ready") {
         throw createdIdentity?.error || createBackupError(
           "dm_e2ee_identity_not_ready_after_create",
           "Could not initialize the Vault identity for this account."
         );
       }
-      await createDmE2eeKeyBackup({
-        userId: uid,
-        password: rawPassword,
-        passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_ACCOUNT_LOGIN,
-      });
       logDmE2ee("login_identity_created_and_backed_up", {
         userId: uid,
         source: "login_sync",
@@ -1348,6 +1979,175 @@ export async function syncDmE2eeBackupWithLoginPassword({
     hadBackup: !!backupMeta,
     hadLocalKey: !!identityState?.hasLocalPrivateKey,
   };
+}
+
+export async function rewrapDmE2eeKeyBackup({
+  userId,
+  currentPassword = "",
+  currentRecoveryKey = "",
+  currentMethod = "",
+  newPassword,
+  passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
+  includeRecoveryKey = true,
+} = {}) {
+  const uid = normalizeId(userId);
+  const resolvedCurrentMethod = normalizeBackupMethod(
+    currentMethod
+    || (String(currentRecoveryKey || "").trim() ? DM_E2EE_BACKUP_METHOD_RECOVERY_KEY : DM_E2EE_BACKUP_METHOD_PASSWORD)
+  );
+  const normalizedCurrentRecoveryKey = normalizeDmE2eeRecoveryKeyInput(currentRecoveryKey);
+  const currentCredential = resolvedCurrentMethod === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY
+    ? normalizedCurrentRecoveryKey
+    : String(currentPassword ?? "");
+  const nextPassword = String(newPassword ?? "");
+  const resolvedPasswordSource = normalizeBackupPasswordSource(passwordSource)
+    || DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL;
+  const minPasswordLength = resolveBackupPasswordMinLength(resolvedPasswordSource);
+  if (!uid) throw createBackupError("dm_e2ee_backup_missing_user", "Missing userId for Vault Recovery update.");
+  if (!currentCredential) {
+    throw createBackupError(
+      resolvedCurrentMethod === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY
+        ? "dm_e2ee_backup_recovery_key_required"
+        : "dm_e2ee_backup_password_required",
+      "Your current Vault Recovery credential is required."
+    );
+  }
+  if (nextPassword.length < minPasswordLength) {
+    throw createBackupError(
+      "dm_e2ee_backup_password_too_short",
+      `Backup password must be at least ${minPasswordLength} characters long.`
+    );
+  }
+
+  const identity = await ensureDmE2eeIdentity({ userId: uid });
+  if (identity?.status !== "ready") {
+    throw createBackupError("dm_e2ee_backup_identity_unavailable", "The local Vault identity is unavailable.");
+  }
+
+  let plaintextBytes = null;
+  let backupPayload = null;
+  let privateKeyJwk = null;
+  let envelope = null;
+  try {
+    let backupRow = null;
+    if (resolvedCurrentMethod === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY) {
+      backupRow = await fetchOwnBackupMethodRow(uid, DM_E2EE_BACKUP_METHOD_RECOVERY_KEY, { force: true });
+    } else {
+      backupRow = await fetchOwnBackupMethodRow(uid, DM_E2EE_BACKUP_METHOD_PASSWORD, { force: true }).catch(() => null);
+      if (!backupRow) backupRow = await fetchOwnBackupRow(uid, { force: true });
+    }
+    if (!backupRow) {
+      throw createBackupError("dm_e2ee_backup_missing", "No Vault Recovery backup was found for this account.");
+    }
+
+    envelope = validateBackupEnvelope(backupRow);
+    const aesKey = await deriveBackupEncryptionKey(currentCredential, envelope.salt, envelope.iterations);
+    try {
+      const plaintextBuffer = await crypto.subtle.decrypt(
+        {
+          name: "AES-GCM",
+          iv: envelope.iv,
+          additionalData: buildBackupAad(uid, backupRow.backupVersion),
+          tagLength: 128,
+        },
+        aesKey,
+        envelope.ciphertext
+      );
+      plaintextBytes = new Uint8Array(plaintextBuffer);
+    } catch (_) {
+      throw createBackupError("dm_e2ee_backup_bad_password", "Could not decrypt the Vault Recovery backup with that credential.");
+    }
+
+    try {
+      backupPayload = JSON.parse(decoder.decode(plaintextBytes));
+    } catch (_) {
+      backupPayload = null;
+    }
+    if (
+      backupPayload
+      && backupPayload.backupVersion !== undefined
+      && Number(backupPayload.backupVersion) !== DM_E2EE_BACKUP_VERSION
+    ) {
+      throw createBackupError("dm_e2ee_backup_unsupported_version", "This Vault Recovery payload version is unsupported.");
+    }
+    if (backupPayload?.keyAlgorithm && String(backupPayload.keyAlgorithm) !== KEY_ALGORITHM) {
+      throw createBackupError("dm_e2ee_backup_invalid_algorithm", "This Vault Recovery key algorithm is unsupported.");
+    }
+
+    privateKeyJwk = normalizePrivateKeyJwk(backupPayload?.privateKeyJwk || backupPayload?.private_key_jwk || null);
+    let publicKeyJwk = normalizePublicKeyJwk(
+      backupPayload?.publicKeyJwk
+      || backupPayload?.public_key_jwk
+      || privateKeyJwk
+      || backupRow.publicKeyJwk
+      || null
+    );
+    let verificationPrivateKey = null;
+    if (privateKeyJwk) {
+      if (!publicKeyJwk || !publicKeysMatch(privateKeyJwk, publicKeyJwk)) {
+        throw createBackupError("dm_e2ee_backup_identity_mismatch", "The Vault Recovery private key does not match its public identity.");
+      }
+      verificationPrivateKey = await crypto.subtle.importKey(
+        "jwk",
+        privateKeyJwk,
+        { name: "ECDH", namedCurve: "P-256" },
+        false,
+        ["deriveBits"]
+      );
+    } else if (!backupPayload) {
+      const transientPrivateKey = await crypto.subtle.importKey(
+        "pkcs8",
+        plaintextBytes,
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        ["deriveBits"]
+      );
+      privateKeyJwk = normalizePrivateKeyJwk(await crypto.subtle.exportKey("jwk", transientPrivateKey));
+      publicKeyJwk = normalizePublicKeyJwk(privateKeyJwk);
+      if (!privateKeyJwk || !publicKeyJwk) {
+        throw createBackupError("dm_e2ee_backup_invalid_payload", "The Vault Recovery backup is missing its public identity.");
+      }
+      verificationPrivateKey = await crypto.subtle.importKey(
+        "jwk",
+        privateKeyJwk,
+        { name: "ECDH", namedCurve: "P-256" },
+        false,
+        ["deriveBits"]
+      );
+    } else {
+      throw createBackupError("dm_e2ee_backup_invalid_payload", "The Vault Recovery backup is missing its private key.");
+    }
+
+    await verifyIdentityKeyPair(verificationPrivateKey, publicKeyJwk);
+    if (!publicKeysMatch(identity.publicKeyJwk, publicKeyJwk)) {
+      throw createBackupError("dm_e2ee_backup_identity_mismatch", "This Vault Recovery backup does not match the local protected identity.");
+    }
+    const activeKeyRow = await fetchActiveKeyRowForUser(uid, { force: true });
+    if (activeKeyRow && !publicKeysMatch(activeKeyRow.publicKeyJwk, publicKeyJwk)) {
+      throw createBackupError("dm_e2ee_backup_identity_mismatch", "This Vault Recovery backup does not match the active account identity.");
+    }
+
+    const row = await persistIdentityBackupFromPrivateJwk({
+      identity,
+      privateKeyJwk,
+      password: nextPassword,
+      passwordSource: resolvedPasswordSource,
+      includeRecoveryKey,
+    });
+    logDmE2ee("backup_rewrapped", {
+      userId: uid,
+      method: resolvedCurrentMethod,
+      keyVersion: Number(identity.keyVersion || 0) || 0,
+    });
+    return row;
+  } finally {
+    plaintextBytes?.fill(0);
+    envelope?.salt?.fill(0);
+    envelope?.iv?.fill(0);
+    envelope?.ciphertext?.fill(0);
+    backupPayload = null;
+    privateKeyJwk = null;
+  }
 }
 
 export async function restoreDmE2eeKeyBackup({
@@ -1393,108 +2193,137 @@ export async function restoreDmE2eeKeyBackup({
       keyVersion: backupRow.keyVersion,
     });
 
-    const iterations = Math.max(
-      100000,
-      Math.round(Number(backupRow.kdfIterations || backupRow.kdfParams?.iterations || BACKUP_PBKDF2_ITERATIONS) || BACKUP_PBKDF2_ITERATIONS)
-    );
-    const aesKey = await deriveBackupEncryptionKey(restoreCredential, base64UrlToBytes(backupRow.kdfSalt), iterations);
-
-    let plaintextBytes;
-    try {
-      const plaintextBuffer = await crypto.subtle.decrypt(
-        {
-          name: "AES-GCM",
-          iv: base64UrlToBytes(backupRow.cipherIv),
-          additionalData: buildBackupAad(uid, backupRow.backupVersion),
-          tagLength: 128,
-        },
-        aesKey,
-        base64UrlToBytes(backupRow.encryptedPrivateKey)
-      );
-      plaintextBytes = new Uint8Array(plaintextBuffer);
-    } catch (_) {
-      throw createBackupError("dm_e2ee_backup_bad_password", "Could not decrypt the DM key backup with that credential.");
-    }
-
+    const envelope = validateBackupEnvelope(backupRow);
+    let plaintextBytes = null;
     let backupPayload = null;
+    let privateKeyJwk = null;
     try {
-      const decoded = decoder.decode(plaintextBytes);
-      backupPayload = JSON.parse(decoded);
-    } catch (_) {
+      const aesKey = await deriveBackupEncryptionKey(restoreCredential, envelope.salt, envelope.iterations);
+      try {
+        const plaintextBuffer = await crypto.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv: envelope.iv,
+            additionalData: buildBackupAad(uid, backupRow.backupVersion),
+            tagLength: 128,
+          },
+          aesKey,
+          envelope.ciphertext
+        );
+        plaintextBytes = new Uint8Array(plaintextBuffer);
+      } catch (_) {
+        throw createBackupError("dm_e2ee_backup_bad_password", "Could not decrypt the DM key backup with that credential.");
+      }
+
+      try {
+        backupPayload = JSON.parse(decoder.decode(plaintextBytes));
+      } catch (_) {
+        backupPayload = null;
+      }
+      if (
+        backupPayload
+        && backupPayload.backupVersion !== undefined
+        && Number(backupPayload.backupVersion) !== DM_E2EE_BACKUP_VERSION
+      ) {
+        throw createBackupError("dm_e2ee_backup_unsupported_version", "This Vault Recovery payload version is unsupported.");
+      }
+      if (
+        backupPayload?.keyAlgorithm
+        && String(backupPayload.keyAlgorithm) !== KEY_ALGORITHM
+      ) {
+        throw createBackupError("dm_e2ee_backup_invalid_algorithm", "This Vault Recovery key algorithm is unsupported.");
+      }
+
+      privateKeyJwk = normalizePrivateKeyJwk(backupPayload?.privateKeyJwk || backupPayload?.private_key_jwk || null);
+      let publicKeyJwk = normalizePublicKeyJwk(
+        backupPayload?.publicKeyJwk
+        || backupPayload?.public_key_jwk
+        || privateKeyJwk
+        || backupRow.publicKeyJwk
+        || null
+      );
+      let privateKey = null;
+      if (privateKeyJwk) {
+        if (!publicKeyJwk || !publicKeysMatch(privateKeyJwk, publicKeyJwk)) {
+          throw createBackupError("dm_e2ee_backup_identity_mismatch", "The Vault Recovery private key does not match its public identity.");
+        }
+        privateKey = await crypto.subtle.importKey(
+          "jwk",
+          privateKeyJwk,
+          { name: "ECDH", namedCurve: "P-256" },
+          false,
+          ["deriveBits"]
+        );
+      } else if (!backupPayload) {
+        const transientPrivateKey = await crypto.subtle.importKey(
+          "pkcs8",
+          plaintextBytes,
+          { name: "ECDH", namedCurve: "P-256" },
+          true,
+          ["deriveBits"]
+        );
+        privateKeyJwk = normalizePrivateKeyJwk(await crypto.subtle.exportKey("jwk", transientPrivateKey));
+        publicKeyJwk = normalizePublicKeyJwk(privateKeyJwk);
+        if (!privateKeyJwk || !publicKeyJwk) {
+          throw createBackupError("dm_e2ee_backup_invalid_payload", "The Vault Recovery backup is missing its public identity.");
+        }
+        privateKey = await crypto.subtle.importKey(
+          "jwk",
+          privateKeyJwk,
+          { name: "ECDH", namedCurve: "P-256" },
+          false,
+          ["deriveBits"]
+        );
+      } else {
+        throw createBackupError("dm_e2ee_backup_invalid_payload", "The Vault Recovery backup is missing its private key.");
+      }
+      await verifyIdentityKeyPair(privateKey, publicKeyJwk);
+
+      const activeKeyRow = await fetchActiveKeyRowForUser(uid, { force: true });
+      if (activeKeyRow && !publicKeysMatch(activeKeyRow.publicKeyJwk, publicKeyJwk)) {
+        throw createBackupError(
+          "dm_e2ee_backup_identity_mismatch",
+          "This Vault Recovery backup does not match the active account identity."
+        );
+      }
+
+      let persistedIdentity = await writeIdentityRecord({
+        userId: uid,
+        keyId: normalizeId(activeKeyRow?.id || ""),
+        keyVersion: Number(activeKeyRow?.keyVersion || backupPayload?.keyVersion || backupPayload?.key_version || backupRow.keyVersion || 1) || 1,
+        keyAlgorithm: KEY_ALGORITHM,
+        publicKeyJwk,
+        privateKey,
+      });
+      const resolvedKeyRow = activeKeyRow || await upsertMyKeyRow(publicKeyJwk);
+      if (!activeKeyRow) {
+        persistedIdentity = await writeIdentityRecord({
+          ...persistedIdentity,
+          keyId: resolvedKeyRow.id,
+          keyVersion: resolvedKeyRow.keyVersion,
+          keyAlgorithm: resolvedKeyRow.keyAlgorithm,
+          publicKeyJwk: resolvedKeyRow.publicKeyJwk,
+        });
+      }
+      logDmE2ee("local_key_persisted", {
+        userId: uid,
+        keyVersion: Number(persistedIdentity?.keyVersion || 0) || 0,
+      });
+      keyBackupCacheByUserId.set(uid, backupRow);
+      logDmE2ee("restore_succeeded", {
+        userId: uid,
+        method: restoreMethod,
+        keyVersion: persistedIdentity.keyVersion,
+      });
+      return persistedIdentity;
+    } finally {
+      plaintextBytes?.fill(0);
+      envelope.salt.fill(0);
+      envelope.iv.fill(0);
+      envelope.ciphertext.fill(0);
       backupPayload = null;
+      privateKeyJwk = null;
     }
-    const privateKeyJwk = normalizePrivateKeyJwk(backupPayload?.privateKeyJwk || backupPayload?.private_key_jwk || null);
-    const publicKeyJwk = normalizePublicKeyJwk(
-      backupPayload?.publicKeyJwk
-      || backupPayload?.public_key_jwk
-      || privateKeyJwk
-      || backupRow.publicKeyJwk
-      || null
-    );
-    let privateKey = null;
-    if (privateKeyJwk) {
-      privateKey = await crypto.subtle.importKey(
-        "jwk",
-        privateKeyJwk,
-        {
-          name: "ECDH",
-          namedCurve: "P-256",
-        },
-        true,
-        ["deriveBits"]
-      );
-    } else {
-      privateKey = await crypto.subtle.importKey(
-        "pkcs8",
-        plaintextBytes,
-        {
-          name: "ECDH",
-          namedCurve: "P-256",
-        },
-        true,
-        ["deriveBits"]
-      );
-    }
-    if (!publicKeyJwk) {
-      throw createBackupError("dm_e2ee_backup_invalid_payload", "The Vault Recovery backup is missing its public key.");
-    }
-    const activeKeyRow = await fetchActiveKeyRowForUser(uid, { force: true });
-    let resolvedKeyRow = activeKeyRow;
-    if (!resolvedKeyRow || !publicKeysMatch(resolvedKeyRow.publicKeyJwk, publicKeyJwk)) {
-      resolvedKeyRow = await upsertMyKeyRow(publicKeyJwk);
-    }
-
-    const restoredIdentity = await writeIdentityRecord({
-      userId: uid,
-      keyId: normalizeId(resolvedKeyRow?.id || ""),
-      keyVersion: Number(resolvedKeyRow?.keyVersion || backupPayload?.keyVersion || backupPayload?.key_version || backupRow.keyVersion || 1) || 1,
-      keyAlgorithm: String(resolvedKeyRow?.keyAlgorithm || backupRow.keyAlgorithm || KEY_ALGORITHM).trim() || KEY_ALGORITHM,
-      publicKeyJwk: resolvedKeyRow?.publicKeyJwk || publicKeyJwk,
-      privateKey,
-    });
-    logDmE2ee("local_key_persisted", {
-      userId: uid,
-      keyVersion: Number(restoredIdentity?.keyVersion || 0) || 0,
-    });
-    const persistedIdentity = await readIdentityRecord(uid);
-    if (!persistedIdentity) {
-      throw createBackupError(
-        "dm_e2ee_backup_local_persist_failed",
-        "The DM private key was restored but could not be persisted locally on this device."
-      );
-    }
-    logDmE2ee("local_key_readable", {
-      userId: uid,
-      keyVersion: Number(persistedIdentity?.keyVersion || 0) || 0,
-    });
-
-    keyBackupCacheByUserId.set(uid, backupRow);
-    logDmE2ee("restore_succeeded", {
-      userId: uid,
-      method: restoreMethod,
-      keyVersion: persistedIdentity.keyVersion,
-    });
-    return persistedIdentity || restoredIdentity;
   } catch (error) {
     logDmE2ee("restore_failed", {
       userId: uid,

@@ -1,0 +1,708 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>ALTARA Vault security tests</title>
+  <script type="importmap">
+    {"imports":{"/public/app/supabaseClient.js":"/tests/fixtures/dm-e2ee-vault-supabase-stub.js"}}
+  </script>
+</head>
+<body>
+<pre id="result" data-status="running">running</pre>
+<script type="module">
+const resultElement = document.getElementById("result");
+const capturedLogs = [];
+for (const method of ["info", "warn", "error"]) {
+  const original = console[method].bind(console);
+  console[method] = (...args) => {
+    capturedLogs.push(args.map((value) => {
+      try { return typeof value === "string" ? value : JSON.stringify(value); }
+      catch (_) { return String(value); }
+    }).join(" "));
+    original(...args);
+  };
+}
+
+const tests = [];
+function test(name, run) { tests.push({ name, run }); }
+function assert(condition, message = "assertion_failed") {
+  if (!condition) throw new Error(message);
+}
+function equal(actual, expected, message = "values_not_equal") {
+  if (actual !== expected) throw new Error(`${message}: ${String(actual)} !== ${String(expected)}`);
+}
+async function rejects(run, expectedCode = "") {
+  try { await run(); }
+  catch (error) {
+    if (expectedCode && String(error?.code || error?.name || "") !== expectedCode) {
+      throw new Error(`unexpected_error_code:${String(error?.code || error?.name || "")}`);
+    }
+    return error;
+  }
+  throw new Error("expected_rejection");
+}
+
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function openDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("altara-dm-e2ee-v1", 2);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains("identityKeys")) db.createObjectStore("identityKeys", { keyPath: "userId" });
+      if (!db.objectStoreNames.contains("identityKeysV2")) db.createObjectStore("identityKeysV2", { keyPath: "userId" });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function idbRequest(storeName, mode, operation) {
+  const db = await openDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, mode);
+      const request = operation(tx.objectStore(storeName));
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      tx.onabort = () => reject(tx.error || new Error("idb_abort"));
+    });
+  } finally {
+    db.close();
+  }
+}
+const idbGet = (store, key) => idbRequest(store, "readonly", (objectStore) => objectStore.get(key));
+const idbPut = (store, value) => idbRequest(store, "readwrite", (objectStore) => objectStore.put(value));
+const idbDelete = (store, key) => idbRequest(store, "readwrite", (objectStore) => objectStore.delete(key));
+
+async function createLegacyFixture(userId, storage = "idb_pkcs8") {
+  const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const publicKeyJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const privateKeyJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  const privateKeyPkcs8 = bytesToBase64Url(new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey)));
+  const record = {
+    userId,
+    keyId: "",
+    keyVersion: 1,
+    keyAlgorithm: "ECDH-P256",
+    publicKeyJwk,
+    ...(storage === "idb_crypto" ? { privateKey: pair.privateKey } : { privateKeyPkcs8 }),
+  };
+  if (storage === "local_pkcs8") {
+    localStorage.setItem(`altara.dm_e2ee.identity.v1.${encodeURIComponent(userId)}`, JSON.stringify(record));
+  } else {
+    await idbPut("identityKeys", record);
+  }
+  return { pair, publicKeyJwk, privateKeyJwk, privateKeyPkcs8 };
+}
+
+async function deriveBits(privateKey, publicKey) {
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: publicKey }, privateKey, 256));
+}
+function bytesEqual(left, right) {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) difference |= left[index] ^ right[index];
+  return difference === 0;
+}
+
+const vault = await import(`/public/app/lib/dmE2ee.js?v=${Date.now()}`);
+const { getVaultTestServer } = await import("/tests/fixtures/dm-e2ee-vault-supabase-stub.js");
+const server = getVaultTestServer();
+server.reset();
+
+const context = {};
+
+test("fresh identity is never generated implicitly", async () => {
+  const userId = "fresh-user";
+  server.setCurrentUser(userId);
+  const identity = await vault.ensureDmE2eeIdentity({ userId });
+  equal(identity.status, "not_initialized");
+  equal(server.getKey(userId), null);
+  equal(await idbGet("identityKeysV2", userId), undefined);
+});
+
+test("credentialed provisioning creates a non-extractable deriveBits-only private key", async () => {
+  const userId = "new-user";
+  server.setCurrentUser(userId);
+  const identity = await vault.setupDmE2eeIdentityForCurrentDevice({
+    userId,
+    backupPassword: "correct horse battery staple",
+    includeRecoveryKey: true,
+  });
+  equal(identity.status, "ready");
+  equal(identity.privateKey.extractable, false);
+  equal(identity.privateKey.type, "private");
+  equal(identity.privateKey.algorithm.name, "ECDH");
+  equal(identity.privateKey.algorithm.namedCurve, "P-256");
+  equal(Array.from(identity.privateKey.usages).join(","), "deriveBits");
+  context.newIdentity = identity;
+  context.newUserId = userId;
+  context.password = "correct horse battery staple";
+  context.recoveryKey = identity.recoveryKey;
+  context.activeKey = server.getKey(userId);
+  context.passwordMethod = server.getMethod(userId, "password");
+  context.recoveryMethod = server.getMethod(userId, "recovery_key");
+});
+
+test("the public identity remains exportable", async () => {
+  const key = await crypto.subtle.importKey(
+    "jwk",
+    context.newIdentity.publicKeyJwk,
+    { name: "ECDH", namedCurve: "P-256" },
+    true,
+    []
+  );
+  const exported = await crypto.subtle.exportKey("jwk", key);
+  equal(exported.x, context.newIdentity.publicKeyJwk.x);
+  equal(exported.y, context.newIdentity.publicKeyJwk.y);
+});
+
+test("private PKCS8 and JWK exports are rejected", async () => {
+  await rejects(() => crypto.subtle.exportKey("pkcs8", context.newIdentity.privateKey));
+  await rejects(() => crypto.subtle.exportKey("jwk", context.newIdentity.privateKey));
+});
+
+test("non-extractable identity still performs required ECDH", async () => {
+  const peer = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
+  const localPublic = await crypto.subtle.importKey(
+    "jwk",
+    context.newIdentity.publicKeyJwk,
+    { name: "ECDH", namedCurve: "P-256" },
+    false,
+    []
+  );
+  const left = await deriveBits(context.newIdentity.privateKey, peer.publicKey);
+  const right = await deriveBits(peer.privateKey, localPublic);
+  assert(bytesEqual(left, right), "ecdh_secret_mismatch");
+  left.fill(0);
+  right.fill(0);
+});
+
+test("ordinary persistence contains only a structured-cloned CryptoKey", async () => {
+  const record = await idbGet("identityKeysV2", context.newUserId);
+  equal(record.storageVersion, 2);
+  equal(record.userId, context.newUserId);
+  assert(record.privateKey instanceof CryptoKey, "missing_crypto_key");
+  equal(record.privateKey.extractable, false);
+  for (const forbidden of ["privateKeyPkcs8", "private_key_pkcs8", "privateKeyJwk", "private_key_jwk", "d"]) {
+    assert(!Object.prototype.hasOwnProperty.call(record, forbidden), `forbidden_field:${forbidden}`);
+  }
+});
+
+test("ordinary persistence never writes private material to localStorage", async () => {
+  equal(localStorage.getItem(`altara.dm_e2ee.identity.v1.${encodeURIComponent(context.newUserId)}`), null);
+});
+
+test("recovery export is encrypted and separately authenticated", async () => {
+  assert(/^ALTARA(?:-[A-Z2-9]{4}){8}$/.test(context.recoveryKey), "invalid_recovery_key_format");
+  assert(context.passwordMethod?.encrypted_private_key, "missing_password_ciphertext");
+  assert(context.recoveryMethod?.encrypted_private_key, "missing_recovery_ciphertext");
+  assert(context.passwordMethod.encrypted_private_key !== context.recoveryMethod.encrypted_private_key, "reused_ciphertext");
+  assert(!JSON.stringify(context.passwordMethod).includes(context.newIdentity.publicKeyJwk.x), "plaintext_public_material_in_backup_row");
+});
+
+test("protected identity recovery credentials can be authenticated and rewrapped", async () => {
+  const previousPasswordCiphertext = context.passwordMethod.encrypted_private_key;
+  const nextPassword = "updated correct horse battery staple";
+  const updated = await vault.rewrapDmE2eeKeyBackup({
+    userId: context.newUserId,
+    currentPassword: context.password,
+    currentMethod: "password",
+    newPassword: nextPassword,
+    includeRecoveryKey: true,
+  });
+  assert(updated?.recoveryKey, "rewrap_recovery_key_missing");
+  const nextPasswordMethod = server.getMethod(context.newUserId, "password");
+  const nextRecoveryMethod = server.getMethod(context.newUserId, "recovery_key");
+  assert(nextPasswordMethod.encrypted_private_key !== previousPasswordCiphertext, "rewrap_ciphertext_unchanged");
+  const oldCredentialError = await rejects(() => vault.restoreDmE2eeKeyBackup({
+    userId: context.newUserId,
+    password: context.password,
+  }));
+  equal(oldCredentialError.code, "dm_e2ee_backup_bad_password");
+  const restored = await vault.restoreDmE2eeKeyBackup({ userId: context.newUserId, password: nextPassword });
+  equal(restored.privateKey.extractable, false);
+  equal(restored.publicKeyJwk.x, context.newIdentity.publicKeyJwk.x);
+  context.password = nextPassword;
+  context.recoveryKey = updated.recoveryKey;
+  context.passwordMethod = nextPasswordMethod;
+  context.recoveryMethod = nextRecoveryMethod;
+});
+
+test("wrong recovery password fails authentication without changing local storage", async () => {
+  const before = await idbGet("identityKeysV2", context.newUserId);
+  const error = await rejects(() => vault.restoreDmE2eeKeyBackup({ userId: context.newUserId, password: "wrong password" }));
+  equal(error.code, "dm_e2ee_backup_bad_password");
+  const after = await idbGet("identityKeysV2", context.newUserId);
+  equal(after.publicKeyJwk.x, before.publicKeyJwk.x);
+});
+
+test("tampered recovery ciphertext fails authentication", async () => {
+  const tampered = structuredClone(context.passwordMethod);
+  tampered.encrypted_private_key = `${tampered.encrypted_private_key.slice(0, -1)}${tampered.encrypted_private_key.endsWith("A") ? "B" : "A"}`;
+  server.setMethod(context.newUserId, "password", tampered);
+  const error = await rejects(() => vault.restoreDmE2eeKeyBackup({ userId: context.newUserId, password: context.password }));
+  equal(error.code, "dm_e2ee_backup_bad_password");
+  server.setMethod(context.newUserId, "password", context.passwordMethod);
+});
+
+test("unsafe PBKDF2 iteration counts fail before derivation", async () => {
+  const invalid = structuredClone(context.passwordMethod);
+  invalid.kdf_iterations = 2000001;
+  server.setMethod(context.newUserId, "password", invalid);
+  const error = await rejects(() => vault.restoreDmE2eeKeyBackup({ userId: context.newUserId, password: context.password }));
+  equal(error.code, "dm_e2ee_backup_invalid_kdf");
+  server.setMethod(context.newUserId, "password", context.passwordMethod);
+});
+
+test("restore rejects an active public identity mismatch without rotation", async () => {
+  const mismatch = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const mismatchPublic = await crypto.subtle.exportKey("jwk", mismatch.publicKey);
+  const mismatchedRow = { ...context.activeKey, public_key_jwk: mismatchPublic };
+  server.setKey(context.newUserId, mismatchedRow);
+  await idbDelete("identityKeysV2", context.newUserId);
+  const error = await rejects(() => vault.restoreDmE2eeKeyBackup({ userId: context.newUserId, password: context.password }));
+  equal(error.code, "dm_e2ee_backup_identity_mismatch");
+  equal(server.getKey(context.newUserId).public_key_jwk.x, mismatchPublic.x);
+  equal(await idbGet("identityKeysV2", context.newUserId), undefined);
+  server.setKey(context.newUserId, context.activeKey);
+});
+
+test("valid recovery restore persists a non-extractable key and no plaintext", async () => {
+  const restored = await vault.restoreDmE2eeKeyBackup({ userId: context.newUserId, password: context.password });
+  equal(restored.privateKey.extractable, false);
+  equal(Array.from(restored.privateKey.usages).join(","), "deriveBits");
+  const record = await idbGet("identityKeysV2", context.newUserId);
+  equal(record.privateKey.extractable, false);
+  assert(!Object.prototype.hasOwnProperty.call(record, "privateKeyPkcs8"), "restore_persisted_pkcs8");
+  equal(localStorage.getItem(`altara.dm_e2ee.identity.v1.${encodeURIComponent(context.newUserId)}`), null);
+  await idbDelete("identityKeysV2", context.newUserId);
+  const recoveryRestored = await vault.restoreDmE2eeKeyBackup({
+    userId: context.newUserId,
+    recoveryKey: context.recoveryKey,
+    method: "recovery_key",
+  });
+  equal(recoveryRestored.privateKey.extractable, false);
+  equal((await idbGet("identityKeysV2", context.newUserId)).privateKey.extractable, false);
+});
+
+test("legacy extractable CryptoKey migrates through explicit encrypted recovery", async () => {
+  const userId = "legacy-crypto-user";
+  const legacy = await createLegacyFixture(userId, "idb_crypto");
+  server.setCurrentUser(userId);
+  const originalExportKey = crypto.subtle.exportKey.bind(crypto.subtle);
+  let legacyPrivateExports = 0;
+  crypto.subtle.exportKey = async (format, key) => {
+    if (format === "jwk" && key?.type === "private" && key?.extractable === true) {
+      legacyPrivateExports += 1;
+    }
+    return originalExportKey(format, key);
+  };
+  try {
+    const preflight = await vault.getDmE2eeIdentityState({ userId, force: true });
+    equal(preflight.status, "migration_requires_recovery");
+    equal(legacyPrivateExports, 0);
+    const migrated = await vault.setupDmE2eeIdentityForCurrentDevice({
+      userId,
+      backupPassword: "legacy crypto password",
+      includeRecoveryKey: false,
+    });
+    equal(migrated.status, "ready");
+    equal(migrated.privateKey.extractable, false);
+    equal(legacyPrivateExports, 1);
+    equal(await idbGet("identityKeys", userId), undefined);
+    context.legacyCryptoPrivateD = legacy.privateKeyJwk.d;
+  } finally {
+    crypto.subtle.exportKey = originalExportKey;
+  }
+});
+
+test("legacy non-extractable IndexedDB CryptoKey migrates automatically without identity rotation", async () => {
+  const userId = "legacy-protected-user";
+  const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
+  const publicKeyJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  await idbPut("identityKeys", {
+    userId,
+    keyId: "stable-protected-key-id",
+    keyVersion: 11,
+    keyAlgorithm: "ECDH-P256",
+    publicKeyJwk,
+    privateKey: pair.privateKey,
+  });
+  server.setKey(userId, {
+    id: "stable-protected-key-id",
+    key_version: 11,
+    key_algorithm: "ECDH-P256",
+    public_key_jwk: publicKeyJwk,
+    revoked_at: null,
+  });
+  server.setCurrentUser(userId);
+  const state = await vault.getDmE2eeIdentityState({ userId, force: true });
+  equal(state.status, "ready");
+  equal(state.keyId, "stable-protected-key-id");
+  equal(state.keyVersion, 11);
+  equal(state.publicKeyJwk.x, publicKeyJwk.x);
+  equal(await idbGet("identityKeys", userId), undefined);
+  equal((await idbGet("identityKeysV2", userId)).privateKey.extractable, false);
+});
+
+test("legacy IndexedDB PKCS8 migrates and preserves its public identity", async () => {
+  const userId = "legacy-pkcs8-user";
+  const legacy = await createLegacyFixture(userId, "idb_pkcs8");
+  const peer = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
+  const oldShared = await deriveBits(legacy.pair.privateKey, peer.publicKey);
+  server.setKey(userId, {
+    id: "stable-legacy-key-id",
+    key_version: 7,
+    key_algorithm: "ECDH-P256",
+    public_key_jwk: legacy.publicKeyJwk,
+    revoked_at: null,
+  });
+  server.setCurrentUser(userId);
+  const migrated = await vault.setupDmE2eeIdentityForCurrentDevice({
+    userId,
+    backupPassword: "legacy pkcs8 password",
+    includeRecoveryKey: false,
+  });
+  equal(migrated.status, "ready");
+  equal(migrated.keyId, "stable-legacy-key-id");
+  equal(migrated.keyVersion, 7);
+  equal(server.getKey(userId).id, "stable-legacy-key-id");
+  context.pkcs8Migration = { userId, legacy, migrated, peer, oldShared };
+});
+
+test("legacy localStorage PKCS8 migrates to IndexedDB-only persistence", async () => {
+  const userId = "legacy-local-user";
+  await createLegacyFixture(userId, "local_pkcs8");
+  server.setCurrentUser(userId);
+  const migrated = await vault.setupDmE2eeIdentityForCurrentDevice({
+    userId,
+    backupPassword: "legacy local password",
+    includeRecoveryKey: false,
+  });
+  equal(migrated.status, "ready");
+  equal(localStorage.getItem(`altara.dm_e2ee.identity.v1.${encodeURIComponent(userId)}`), null);
+  equal((await idbGet("identityKeysV2", userId)).privateKey.extractable, false);
+});
+
+test("failed IndexedDB migration keeps the legacy IndexedDB record", async () => {
+  const userId = "failed-idb-migration";
+  await createLegacyFixture(userId, "idb_pkcs8");
+  server.setCurrentUser(userId);
+  const originalPut = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (...args) {
+    if (this.name === "identityKeysV2") throw new DOMException("synthetic put failure", "UnknownError");
+    return originalPut.apply(this, args);
+  };
+  try {
+    const result = await vault.setupDmE2eeIdentityForCurrentDevice({
+      userId,
+      backupPassword: "failed migration password",
+      includeRecoveryKey: false,
+    });
+    equal(result.status, "error");
+    assert(await idbGet("identityKeys", userId), "legacy_idb_deleted_early");
+    equal(await idbGet("identityKeysV2", userId), undefined);
+  } finally {
+    IDBObjectStore.prototype.put = originalPut;
+  }
+
+});
+
+test("failed localStorage migration does not delete the recoverable legacy record", async () => {
+  const userId = "failed-local-migration";
+  await createLegacyFixture(userId, "local_pkcs8");
+  const storageKey = `altara.dm_e2ee.identity.v1.${encodeURIComponent(userId)}`;
+  const before = localStorage.getItem(storageKey);
+  server.setCurrentUser(userId);
+  const originalPut = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (...args) {
+    if (this.name === "identityKeysV2") throw new DOMException("synthetic put failure", "UnknownError");
+    return originalPut.apply(this, args);
+  };
+  try {
+    const result = await vault.setupDmE2eeIdentityForCurrentDevice({
+      userId,
+      backupPassword: "failed local password",
+      includeRecoveryKey: false,
+    });
+    equal(result.status, "error");
+    equal(localStorage.getItem(storageKey), before);
+  } finally {
+    IDBObjectStore.prototype.put = originalPut;
+  }
+
+  const originalRemoveItem = Storage.prototype.removeItem;
+  Storage.prototype.removeItem = function (key) {
+    if (key === storageKey) throw new DOMException("synthetic cleanup failure", "UnknownError");
+    return originalRemoveItem.call(this, key);
+  };
+  try {
+    const cleanupFailed = await vault.setupDmE2eeIdentityForCurrentDevice({
+      userId,
+      backupPassword: "failed local password",
+      includeRecoveryKey: false,
+    });
+    equal(cleanupFailed.status, "error");
+    assert(await idbGet("identityKeysV2", userId), "hardened_record_missing_after_cleanup_failure");
+    equal(localStorage.getItem(storageKey), before);
+  } finally {
+    Storage.prototype.removeItem = originalRemoveItem;
+  }
+  const resumed = await vault.getDmE2eeIdentityState({ userId, force: true });
+  equal(resumed.status, "ready");
+  equal(localStorage.getItem(storageKey), null);
+});
+
+test("IndexedDB failure never triggers a plaintext localStorage fallback", async () => {
+  const userId = "new-idb-failure";
+  server.setCurrentUser(userId);
+  const originalPut = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (...args) {
+    if (this.name === "identityKeysV2") throw new DOMException("synthetic put failure", "UnknownError");
+    return originalPut.apply(this, args);
+  };
+  try {
+    const result = await vault.setupDmE2eeIdentityForCurrentDevice({
+      userId,
+      backupPassword: "new failure password",
+      includeRecoveryKey: false,
+    });
+    equal(result.status, "error");
+    equal(localStorage.getItem(`altara.dm_e2ee.identity.v1.${encodeURIComponent(userId)}`), null);
+  } finally {
+    IDBObjectStore.prototype.put = originalPut;
+  }
+});
+
+test("secure persistence failure fails closed before public-key publication", async () => {
+  equal(server.getKey("new-idb-failure"), null);
+  equal(await idbGet("identityKeysV2", "new-idb-failure"), undefined);
+});
+
+test("migration preserves the exact public-key fingerprint", async () => {
+  equal(context.pkcs8Migration.migrated.publicKeyJwk.x, context.pkcs8Migration.legacy.publicKeyJwk.x);
+  equal(context.pkcs8Migration.migrated.publicKeyJwk.y, context.pkcs8Migration.legacy.publicKeyJwk.y);
+});
+
+test("migration preserves historical ECDH shared-secret compatibility", async () => {
+  const migratedShared = await deriveBits(context.pkcs8Migration.migrated.privateKey, context.pkcs8Migration.peer.publicKey);
+  assert(bytesEqual(migratedShared, context.pkcs8Migration.oldShared), "historical_shared_secret_changed");
+  migratedShared.fill(0);
+  context.pkcs8Migration.oldShared.fill(0);
+});
+
+test("backup metadata alone cannot authorize destructive legacy migration", async () => {
+  const userId = "legacy-existing-backup";
+  await createLegacyFixture(userId, "idb_pkcs8");
+  server.seedBackupMetadata(userId);
+  server.setCurrentUser(userId);
+  const identity = await vault.ensureDmE2eeIdentity({ userId });
+  equal(identity.status, "migration_requires_recovery");
+  assert(await idbGet("identityKeys", userId), "legacy_record_deleted_without_fresh_recovery");
+  equal(await idbGet("identityKeysV2", userId), undefined);
+});
+
+test("corrupt legacy data fails closed and is not deleted or replaced", async () => {
+  const userId = "corrupt-legacy";
+  const corrupt = { userId, keyAlgorithm: "ECDH-P256", privateKeyPkcs8: "not-valid-***" };
+  await idbPut("identityKeys", corrupt);
+  server.seedBackupMetadata(userId);
+  server.setCurrentUser(userId);
+  const state = await vault.getDmE2eeIdentityState({ userId, force: true });
+  equal(state.status, "error");
+  assert(await idbGet("identityKeys", userId), "corrupt_record_deleted");
+  equal(server.getKey(userId), null);
+});
+
+test("an account cannot load another account's localStorage identity", async () => {
+  const requestedUser = "account-a-cross-load";
+  const otherUser = "account-b-cross-load";
+  const other = await createLegacyFixture(otherUser, "idb_pkcs8");
+  const crossRecord = {
+    userId: otherUser,
+    keyAlgorithm: "ECDH-P256",
+    publicKeyJwk: other.publicKeyJwk,
+    privateKeyPkcs8: other.privateKeyPkcs8,
+  };
+  const storageKey = `altara.dm_e2ee.identity.v1.${encodeURIComponent(requestedUser)}`;
+  localStorage.setItem(storageKey, JSON.stringify(crossRecord));
+  server.seedBackupMetadata(requestedUser);
+  server.setCurrentUser(requestedUser);
+  const state = await vault.getDmE2eeIdentityState({ userId: requestedUser, force: true });
+  equal(state.status, "error");
+  assert(localStorage.getItem(storageKey), "cross_account_record_deleted");
+  equal(server.getKey(requestedUser), null);
+});
+
+test("per-account identities remain isolated while logout semantics preserve each device identity", async () => {
+  for (const userId of ["isolation-a", "isolation-b"]) {
+    server.setCurrentUser(userId);
+    const identity = await vault.setupDmE2eeIdentityForCurrentDevice({
+      userId,
+      backupPassword: `password for ${userId}`,
+      includeRecoveryKey: false,
+    });
+    equal(identity.status, "ready");
+    context[userId] = identity;
+  }
+  server.setCurrentUser("isolation-a");
+  const aAgain = await vault.ensureDmE2eeIdentity({ userId: "isolation-a" });
+  equal(aAgain.publicKeyJwk.x, context["isolation-a"].publicKeyJwk.x);
+  assert(aAgain.publicKeyJwk.x !== context["isolation-b"].publicKeyJwk.x, "cross_account_identity_reuse");
+});
+
+test("existing Vault message encryption and decryption remain compatible", async () => {
+  const sender = context["isolation-a"];
+  const recipient = context["isolation-b"];
+  server.setCurrentUser(sender.userId);
+  const encrypted = await vault.buildEncryptedDmMessagePayload({
+    conversationId: "synthetic-conversation",
+    userId: sender.userId,
+    otherUserId: recipient.userId,
+    content: "synthetic historical message",
+  });
+  server.setCurrentUser(recipient.userId);
+  const [decrypted] = await vault.decryptDmMessageRows({
+    userId: recipient.userId,
+    conversationId: "synthetic-conversation",
+    rows: [{
+      id: "synthetic-message",
+      user_id: sender.userId,
+      ...encrypted,
+    }],
+  });
+  equal(decrypted.content, "synthetic historical message");
+  equal(decrypted.e2eeState, "ready");
+});
+
+test("errors and diagnostics do not contain private-key material", async () => {
+  const serializedLogs = capturedLogs.join("\n");
+  assert(!serializedLogs.includes(context.legacyCryptoPrivateD), "private_jwk_logged");
+  assert(!serializedLogs.includes(context.pkcs8Migration.legacy.privateKeyPkcs8), "pkcs8_logged");
+  assert(!serializedLogs.includes(context.password), "recovery_password_logged");
+  assert(!serializedLogs.includes(context.recoveryKey), "recovery_key_logged");
+});
+
+test("production recovery-first setup UI executes the exact site app integration", async () => {
+  const source = await (await fetch(`/public/app/app.js?v=${Date.now()}`)).text();
+  const start = source.indexOf("async function setupNewDmE2eeKeyFromSettings()");
+  const end = source.indexOf("\nasync function promptRestoreDmE2eeBackupFromDm()", start);
+  assert(start >= 0 && end > start, "site_setup_function_missing");
+  const functionSource = source.slice(start, end);
+  const passwordInput = document.createElement("input");
+  passwordInput.id = "settingsDmE2eeBackupPassword";
+  passwordInput.value = "synthetic migration recovery password";
+  const confirmInput = document.createElement("input");
+  confirmInput.id = "settingsDmE2eeBackupPasswordConfirm";
+  confirmInput.value = passwordInput.value;
+  document.body.append(passwordInput, confirmInput);
+  const calls = [];
+  const dependencyNames = [
+    "isDirectDmE2eeEnabled", "DIRECT_DM_E2EE_KEY_BACKUP_UI_ENABLED", "state",
+    "settingsDmE2eeBackupSetupInFlight", "DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH",
+    "showSecurityDialogMessage", "tf", "t", "showVaultRecoveryResponsibilityNotice",
+    "requestAppConfirm", "renderDmE2eeBackupSettingsUi", "setupDmE2eeIdentityForCurrentDevice",
+    "DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL", "showVaultRecoveryKeyOnce",
+    "clearDmE2eeBackupInputs", "dmE2eeBootstrapPromise", "ensureDmE2eeBootstrapStarted",
+    "refreshDmE2eeBackupSettingsState",
+  ];
+  const dependencyValues = [
+    () => true, true, { user: { id: "synthetic-ui-user" } }, false, 6,
+    async (message) => calls.push(["message", message]),
+    (_key, _values, fallback) => fallback,
+    (_key, fallback) => fallback,
+    async () => true,
+    async () => true,
+    () => calls.push(["render"]),
+    async (options) => {
+      calls.push(["setup", options]);
+      return { status: "ready", recoveryKey: "ALTARA-TEST-TEST-TEST-TEST-TEST-TEST-TEST-TEST" };
+    },
+    "manual",
+    async () => { calls.push(["recovery-key-shown"]); return true; },
+    () => calls.push(["clear"]),
+    null,
+    async () => calls.push(["bootstrap"]),
+    async () => calls.push(["refresh"]),
+  ];
+  try {
+    const setup = Function(...dependencyNames, `${functionSource}; return setupNewDmE2eeKeyFromSettings;`)(...dependencyValues);
+    await setup();
+    const setupCall = calls.find(([kind]) => kind === "setup");
+    assert(setupCall, "migration_setup_not_called");
+    equal(setupCall[1].userId, "synthetic-ui-user");
+    equal(setupCall[1].backupPassword, passwordInput.value);
+    equal(setupCall[1].passwordSource, "manual");
+    equal(setupCall[1].includeRecoveryKey, true);
+    equal(setupCall[1].forceNew, false);
+    assert(calls.some(([kind]) => kind === "recovery-key-shown"), "recovery_key_not_presented");
+    assert(calls.some(([kind]) => kind === "bootstrap"), "authoritative_bootstrap_not_refreshed");
+    assert(calls.some(([kind]) => kind === "refresh"), "settings_state_not_refreshed");
+  } finally {
+    passwordInput.remove();
+    confirmInput.remove();
+  }
+});
+
+test("production migration recovery state renders the credentialed setup action", async () => {
+  const source = await (await fetch(`/public/app/app.js?v=${Date.now()}`)).text();
+  const start = source.indexOf("function renderDmE2eeRecoveryState()");
+  const end = source.indexOf("\nfunction isDmE2eeReadyForInteraction()", start);
+  assert(start >= 0 && end > start, "site_recovery_renderer_missing");
+  const functionSource = source.slice(start, end);
+  const messages = document.createElement("div");
+  messages.id = "dmMessages";
+  document.body.append(messages);
+  const dependencyNames = [
+    "isDirectDmE2eeEnabled", "document", "dmE2eeReadiness", "t", "activeDmId", "state",
+    "dmMessagesCache", "logChatMessagesRenderDiagnostic", "preserveComposerDuring", "esc",
+    "getDmE2eeRecoveryHintText", "setDmJumpLatestVisible",
+  ];
+  const dependencyValues = [
+    () => true,
+    document,
+    { status: "failed", identityStatus: "migration_requires_recovery" },
+    (_key, fallback) => fallback,
+    "synthetic-conversation",
+    { activeDm: { conversationId: "synthetic-conversation" } },
+    [],
+    () => {},
+    (run) => run(),
+    (value) => String(value),
+    () => "Migrate this legacy identity securely.",
+    () => {},
+  ];
+  try {
+    const render = Function(...dependencyNames, `${functionSource}; return renderDmE2eeRecoveryState;`)(...dependencyValues);
+    render();
+    const action = messages.querySelector('[data-dm-e2ee-act="setup"]');
+    assert(action, "migration_setup_action_missing");
+    equal(action.textContent.trim(), "Set up Vault Recovery");
+    assert(!messages.querySelector('[data-dm-e2ee-act="restore"]'), "migration_rendered_restore_only");
+  } finally {
+    messages.remove();
+  }
+});
+
+const failures = [];
+let passed = 0;
+for (const entry of tests) {
+  try {
+    await entry.run();
+    passed += 1;
+  } catch (error) {
+    failures.push({ name: entry.name, message: String(error?.message || error || "unknown") });
+  }
+}
+const summary = { total: tests.length, passed, failed: failures.length, failures };
+resultElement.dataset.status = failures.length ? "fail" : "pass";
+resultElement.textContent = JSON.stringify(summary);
+</script>
+</body>
+</html>

@@ -120,6 +120,7 @@ import {
   getActiveDmE2eePeerKey,
   isEncryptedDmMessageRow,
   normalizeDmE2eeRecoveryKeyInput,
+  rewrapDmE2eeKeyBackup,
   restoreDmE2eeKeyBackup,
   setupDmE2eeIdentityForCurrentDevice,
 } from "./lib/dmE2ee.js";
@@ -28017,12 +28018,6 @@ function getDmE2eeBackupStatusText() {
       "Vault is not set up on this device and no Vault Recovery backup was found for this account."
     );
   }
-  if (identityStatus === "ready" && !info.exportable) {
-    return t(
-      "settings.security.dm_backup.status.legacy",
-      "This device has an older Vault key that cannot be exported for Vault Recovery."
-    );
-  }
   if (identityStatus === "ready" && info.hasBackup) {
     if (info.backupUpdatedAt) {
       return tf(
@@ -28032,6 +28027,18 @@ function getDmE2eeBackupStatusText() {
       );
     }
     return t("settings.security.dm_backup.status.saved_no_date", "Vault Recovery is available for this account.");
+  }
+  if (identityStatus === "ready" && !info.exportable) {
+    return t(
+      "settings.security.dm_backup.status.protected_no_backup",
+      "This device has a protected Vault key, but no recovery backup. Existing messages remain available here; create a new identity only through the confirmed reset flow."
+    );
+  }
+  if (identityStatus === "migration_requires_recovery") {
+    return t(
+      "settings.security.dm_backup.status.migration_requires_recovery",
+      "Set a Vault Recovery Password to securely migrate this device's legacy Vault identity."
+    );
   }
   if (identityStatus === "ready" && info.exportable) {
     return t(
@@ -28123,9 +28130,10 @@ function renderDmE2eeBackupSettingsUi() {
   const info = settingsDmE2eeBackupState || {};
   const identityStatus = String(info.identityStatus || "unknown").trim().toLowerCase();
   const busy = !!(settingsDmE2eeBackupLoading || settingsDmE2eeBackupSaving || settingsDmE2eeBackupRestoring || settingsDmE2eeBackupSetupInFlight);
-  const canSave = identityStatus === "ready" && !!info.exportable;
+  const canSave = identityStatus === "ready" && (!!info.exportable || !!info.hasBackup);
   const canRestore = !!info.hasBackup && identityStatus !== "ready";
-  const canSetupNew = !info.hasBackup && (identityStatus === "missing_local_private" || identityStatus === "not_initialized");
+  const canSetupNew = identityStatus === "migration_requires_recovery"
+    || (!info.hasBackup && identityStatus === "not_initialized");
 
   const sectionTitle = document.getElementById("settingsSectionDmE2eeBackup");
   if (sectionTitle) sectionTitle.textContent = t("settings.security.dm_backup.section", "ALTARA Vault");
@@ -28285,7 +28293,7 @@ function renderDmE2eeBackupSettingsUi() {
   }
 
   const saveWrap = document.getElementById("settingsDmE2eeBackupSaveWrap");
-  if (saveWrap) saveWrap.hidden = !canSave;
+  if (saveWrap) saveWrap.hidden = !(canSave || canSetupNew);
   const restoreWrap = document.getElementById("settingsDmE2eeBackupRestoreWrap");
   if (restoreWrap) restoreWrap.hidden = !canRestore;
   const setupWrap = document.getElementById("settingsDmE2eeBackupSetupWrap");
@@ -28541,6 +28549,42 @@ async function refreshDmE2eeBackupSettingsState({ force = false } = {}) {
   return settingsDmE2eeBackupState;
 }
 
+async function promptCurrentVaultRecoveryCredential() {
+  const useRecoveryKey = await requestAppConfirm(
+    t("settings.security.dm_backup.change_choose_method", "Verify the current Vault Recovery backup before replacing it."),
+    {
+      title: t("settings.security.dm_backup.update_btn", "Change recovery password"),
+      confirmText: t("settings.security.dm_backup.restore_method_recovery_key", "Recovery Key"),
+      cancelText: t("settings.security.dm_backup.restore_method_password", "Password"),
+    }
+  );
+  const method = useRecoveryKey ? DM_E2EE_BACKUP_METHOD_RECOVERY_KEY : DM_E2EE_BACKUP_METHOD_PASSWORD;
+  const credential = await requestAppPrompt(
+    method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY
+      ? t("settings.security.dm_backup.change_prompt_recovery_key", "Enter your current Recovery Key.")
+      : t("settings.security.dm_backup.change_prompt_password", "Enter your current Vault Recovery Password."),
+    {
+      title: t("settings.security.dm_backup.update_btn", "Change recovery password"),
+      label: getDmE2eeBackupRestoreLabel(method),
+      placeholder: getDmE2eeBackupRestorePlaceholder(method),
+      okText: t("dialog.confirm.continue", "Continue"),
+      cancelText: t("dialog.confirm.cancel", "Cancel"),
+      inputType: method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY ? "text" : "password",
+      requireValue: true,
+      maxLength: 4000,
+    }
+  );
+  if (credential === null) return null;
+  const normalizedCredential = method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY
+    ? normalizeDmE2eeRecoveryKeyInput(credential)
+    : String(credential || "");
+  if (!normalizedCredential) {
+    await showSecurityDialogMessage(getDmE2eeBackupRestoreRequiredMessage(method), { danger: true });
+    return null;
+  }
+  return { method, credential: normalizedCredential };
+}
+
 async function saveDmE2eeBackupFromSettings() {
   if (!isDirectDmE2eeEnabled() || !DIRECT_DM_E2EE_KEY_BACKUP_UI_ENABLED) return;
   if (!state.user?.id || settingsDmE2eeBackupSaving) return;
@@ -28566,6 +28610,11 @@ async function saveDmE2eeBackupFromSettings() {
   }
 
   const changingExistingRecovery = !!settingsDmE2eeBackupState?.hasBackup;
+  let currentRecoveryCredential = null;
+  if (changingExistingRecovery && !settingsDmE2eeBackupState?.exportable) {
+    currentRecoveryCredential = await promptCurrentVaultRecoveryCredential();
+    if (!currentRecoveryCredential) return;
+  }
   if (!changingExistingRecovery) {
     const understood = await showVaultRecoveryResponsibilityNotice();
     if (!understood) return;
@@ -28585,12 +28634,22 @@ async function saveDmE2eeBackupFromSettings() {
   settingsDmE2eeBackupSaving = true;
   renderDmE2eeBackupSettingsUi();
   try {
-    const backupResult = await createDmE2eeKeyBackup({
-      userId: state.user.id,
-      password,
-      passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
-      includeRecoveryKey: true,
-    });
+    const backupResult = currentRecoveryCredential
+      ? await rewrapDmE2eeKeyBackup({
+          userId: state.user.id,
+          currentMethod: currentRecoveryCredential.method,
+          currentPassword: currentRecoveryCredential.method === DM_E2EE_BACKUP_METHOD_PASSWORD ? currentRecoveryCredential.credential : "",
+          currentRecoveryKey: currentRecoveryCredential.method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY ? currentRecoveryCredential.credential : "",
+          newPassword: password,
+          passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
+          includeRecoveryKey: true,
+        })
+      : await createDmE2eeKeyBackup({
+          userId: state.user.id,
+          password,
+          passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
+          includeRecoveryKey: true,
+        });
     if (backupResult?.recoveryKey) {
       const savedKey = await showVaultRecoveryKeyOnce(backupResult.recoveryKey, { isUpdate: changingExistingRecovery });
       if (!savedKey) return;
@@ -28668,6 +28727,24 @@ async function restoreDmE2eeBackupFromSettings(options = {}) {
 async function setupNewDmE2eeKeyFromSettings() {
   if (!isDirectDmE2eeEnabled() || !DIRECT_DM_E2EE_KEY_BACKUP_UI_ENABLED) return;
   if (!state.user?.id || settingsDmE2eeBackupSetupInFlight) return;
+  const passwordInput = document.getElementById("settingsDmE2eeBackupPassword");
+  const confirmInput = document.getElementById("settingsDmE2eeBackupPasswordConfirm");
+  const password = passwordInput instanceof HTMLInputElement ? String(passwordInput.value || "") : "";
+  const confirmPassword = confirmInput instanceof HTMLInputElement ? String(confirmInput.value || "") : "";
+  if (password.length < DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH) {
+    await showSecurityDialogMessage(tf(
+      "settings.security.dm_backup.error_password_short",
+      { min: DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH },
+      "Use a Vault Recovery Password with at least {min} characters."
+    ), { danger: true });
+    return;
+  }
+  if (password !== confirmPassword) {
+    await showSecurityDialogMessage(t("settings.security.dm_backup.error_password_match", "Vault Recovery Passwords do not match."), { danger: true });
+    return;
+  }
+  const understood = await showVaultRecoveryResponsibilityNotice();
+  if (!understood) return;
   const ok = await requestAppConfirm(
     t(
       "settings.security.dm_backup.setup_new_confirm",
@@ -28683,11 +28760,25 @@ async function setupNewDmE2eeKeyFromSettings() {
   settingsDmE2eeBackupSetupInFlight = true;
   renderDmE2eeBackupSettingsUi();
   try {
-    await setupDmE2eeIdentityForCurrentDevice({ userId: state.user.id, forceNew: false });
+    const identity = await setupDmE2eeIdentityForCurrentDevice({
+      userId: state.user.id,
+      forceNew: false,
+      backupPassword: password,
+      passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
+      includeRecoveryKey: true,
+    });
+    if (identity?.status !== "ready") {
+      throw identity?.error || new Error("Vault setup requires recovery or an existing identity restore.");
+    }
+    if (identity.recoveryKey) {
+      const savedKey = await showVaultRecoveryKeyOnce(identity.recoveryKey, { isUpdate: false });
+      if (!savedKey) return;
+    }
+    clearDmE2eeBackupInputs({ clearRestore: false });
     dmE2eeBootstrapPromise = null;
     await ensureDmE2eeBootstrapStarted({ force: true });
     await refreshDmE2eeBackupSettingsState({ force: true });
-    await showSecurityDialogMessage(t("settings.security.dm_backup.setup_done", "Vault is set up on this device. You can now set up Vault Recovery."));
+    await showSecurityDialogMessage(t("settings.security.dm_backup.setup_done", "Vault and encrypted recovery are set up on this device."));
   } catch (error) {
     await showSecurityDialogMessage(String(error?.message || error || "Could not set up Vault on this device."), { danger: true });
   } finally {
@@ -47800,6 +47891,8 @@ function formatDmPrivacyRpcError(error, fallback = "Could not update Vault.") {
     crypto_unavailable: getDmE2eeSetupFailureMessage("crypto_unavailable"),
     indexeddb_unavailable: getDmE2eeSetupFailureMessage("indexeddb_unavailable"),
     local_private_key_store_failed: getDmE2eeSetupFailureMessage("local_private_key_store_failed"),
+    local_private_key_corrupt: getDmE2eeSetupFailureMessage("local_private_key_corrupt"),
+    dm_e2ee_recovery_required: getDmE2eeSetupFailureMessage("dm_e2ee_recovery_required"),
     public_key_upload_failed: getDmE2eeSetupFailureMessage("public_key_upload_failed"),
     rpc_error: getDmE2eeSetupFailureMessage("rpc_error"),
     auth_missing: getDmE2eeSetupFailureMessage("auth_missing"),
@@ -48472,11 +48565,7 @@ async function setupDmRequestEncryptionKey(conversationId = "", { retry = false 
     currentUserId: userId,
     retry: retry === true,
   });
-  const setup = await awaitWithTimeout(
-    setupDirectDmEncryptionForCurrentDevice({ conversationId: convId, showError: false, checkPeerKey: false }),
-    15000,
-    "dm request encryption setup"
-  );
+  const setup = await setupDirectDmEncryptionForCurrentDevice({ conversationId: convId, showError: false, checkPeerKey: false });
   const identityDebug = await getDmRequestIdentityStateDebug(userId);
   const hasLocalPrivateKey = setup?.hasLocalPrivateKey === true || identityDebug.hasLocalPrivateKey === true;
   const hasActivePublicKey = setup?.hasActivePublicKey === true || identityDebug.hasActivePublicKey === true;
@@ -91238,6 +91327,8 @@ function normalizeDmE2eeSetupFailureReason(errorOrReason = null, fallback = "unk
     reason === "crypto_unavailable"
     || reason === "indexeddb_unavailable"
     || reason === "local_private_key_store_failed"
+    || reason === "local_private_key_corrupt"
+    || reason === "dm_e2ee_recovery_required"
     || reason === "public_key_upload_failed"
     || reason === "rpc_error"
     || reason === "auth_missing"
@@ -91264,6 +91355,8 @@ function getDmE2eeSetupFailureMessage(reasonOrError = "unknown_error", maybeErro
     crypto_unavailable: "Web Crypto is unavailable in this client.",
     indexeddb_unavailable: "Local key storage is unavailable in this client.",
     local_private_key_store_failed: "The local Vault key could not be stored on this device.",
+    local_private_key_corrupt: "The stored Vault identity is invalid or does not match this account.",
+    dm_e2ee_recovery_required: "Set or enter Vault Recovery credentials before this identity can be secured.",
     public_key_upload_failed: "The public Vault key could not be saved to Supabase.",
     rpc_error: "The Supabase Vault key setup RPC failed.",
     auth_missing: "Sign in before setting up Vault.",
@@ -91373,6 +91466,12 @@ function getDmE2eeRecoveryHintText() {
       "Vault is not set up on this device. Restore with your Vault Recovery Password or Recovery Key to read Vault messages here. You only need to restore on this device if Vault is not set up here or local data was cleared."
     );
   }
+  if (dmE2eeReadiness.identityStatus === "migration_requires_recovery") {
+    return t(
+      "dm.e2ee.migration_requires_recovery",
+      "This device has a legacy Vault identity. Set a Vault Recovery Password to migrate it securely without changing your identity."
+    );
+  }
   const explicitErrorMessage = String(dmE2eeReadiness.error?.message || dmE2eeReadiness.error || "").trim();
   if (explicitErrorMessage) return explicitErrorMessage;
   return t(
@@ -91389,13 +91488,18 @@ function renderDmE2eeRecoveryState() {
     ? t("dm.e2ee.loading_title", "Vault loading")
     : t("dm.e2ee.failed_title", "Vault unavailable");
   logChatMessagesRenderDiagnostic("e2ee-recovery", activeDmId || state.activeDm?.conversationId || "", Array.isArray(dmMessagesCache) ? dmMessagesCache.length : 0);
+  const requiresMigration = dmE2eeReadiness.identityStatus === "migration_requires_recovery";
+  const recoveryAction = requiresMigration ? "setup" : "restore";
+  const recoveryActionLabel = requiresMigration
+    ? t("settings.security.dm_backup.create_btn", "Set up Vault Recovery")
+    : t("settings.security.dm_backup.restore_btn", "Restore Vault messages");
   preserveComposerDuring(() => {
     msgsBox.innerHTML = `
     <div class="hint">
       <strong>${esc(title)}</strong><br>
       ${esc(getDmE2eeRecoveryHintText())}
       <div class="dmPrivacyBanner__actions" style="margin-top:10px;">
-        <button class="btn primary" type="button" data-dm-e2ee-act="restore">${esc(t("settings.security.dm_backup.restore_btn", "Restore Vault messages"))}</button>
+        <button class="btn primary" type="button" data-dm-e2ee-act="${recoveryAction}">${esc(recoveryActionLabel)}</button>
       </div>
     </div>
   `;
@@ -91599,6 +91703,55 @@ function getDirectDmE2eeComposerPlaceholder(blockStatus = getDirectDmE2eeCompose
   return t("dm.privacy.private_input", "Vault message...");
 }
 
+async function promptVaultProvisioningPassword() {
+  const understood = await showVaultRecoveryResponsibilityNotice();
+  if (!understood) return null;
+  const password = await requestAppPrompt(
+    t("dm.e2ee.setup.recovery_password_prompt", "Create a Vault Recovery Password before this device generates its identity."),
+    {
+      title: t("settings.security.dm_backup.setup_btn", "Set up Vault on this device"),
+      label: t("settings.security.dm_backup.password", "Vault Recovery Password"),
+      placeholder: tf(
+        "settings.security.dm_backup.password_placeholder",
+        { min: DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH },
+        "At least {min} characters"
+      ),
+      okText: t("dialog.confirm.ok", "Continue"),
+      cancelText: t("dialog.confirm.cancel", "Cancel"),
+      inputType: "password",
+      requireValue: true,
+      maxLength: 4000,
+    }
+  );
+  if (password === null) return null;
+  if (String(password).length < DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH) {
+    await requestAppAlert(tf(
+      "settings.security.dm_backup.error_password_short",
+      { min: DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH },
+      "Use a Vault Recovery Password with at least {min} characters."
+    ));
+    return null;
+  }
+  const confirmation = await requestAppPrompt(
+    t("dm.e2ee.setup.recovery_password_confirm", "Confirm the Vault Recovery Password."),
+    {
+      title: t("settings.security.dm_backup.setup_btn", "Set up Vault on this device"),
+      label: t("settings.security.dm_backup.password_confirm", "Confirm Vault Recovery Password"),
+      okText: t("dialog.confirm.ok", "Confirm"),
+      cancelText: t("dialog.confirm.cancel", "Cancel"),
+      inputType: "password",
+      requireValue: true,
+      maxLength: 4000,
+    }
+  );
+  if (confirmation === null) return null;
+  if (String(confirmation) !== String(password)) {
+    await requestAppAlert(t("settings.security.dm_backup.error_password_match", "Vault Recovery Passwords do not match."));
+    return null;
+  }
+  return String(password);
+}
+
 async function setupDirectDmEncryptionForCurrentDevice({ conversationId = null, showError = true, checkPeerKey = true } = {}) {
   if (!isDirectDmE2eeEnabled()) return { ok: false, status: "runtime_disabled", reason: "runtime_disabled" };
   if (directDmE2eeDeviceSetupPromise) return directDmE2eeDeviceSetupPromise;
@@ -91632,9 +91785,28 @@ async function setupDirectDmEncryptionForCurrentDevice({ conversationId = null, 
         error.reason = "rpc_error";
         throw error;
       }
+      const preflightIdentityState = await getDmE2eeIdentityState({ userId, force: true });
+      let backupPassword = "";
+      if (
+        preflightIdentityState?.status === "not_initialized"
+        || preflightIdentityState?.status === "migration_requires_recovery"
+      ) {
+        backupPassword = await promptVaultProvisioningPassword();
+        if (!backupPassword) {
+          const error = new Error("Vault setup requires a recovery password.");
+          error.code = "dm_e2ee_recovery_required";
+          error.reason = "dm_e2ee_recovery_required";
+          throw error;
+        }
+      }
       const identity = await awaitWithTimeout(
-        setupDmE2eeIdentityForCurrentDevice({ userId }),
-        12000,
+        setupDmE2eeIdentityForCurrentDevice({
+          userId,
+          backupPassword,
+          passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
+          includeRecoveryKey: true,
+        }),
+        30000,
         "dm e2ee identity setup"
       );
       if (String(identity?.status || "").trim().toLowerCase() !== "ready") {
@@ -91643,6 +91815,12 @@ async function setupDirectDmEncryptionForCurrentDevice({ conversationId = null, 
         error.code = String(error.code || reason);
         error.reason = String(error.reason || reason);
         throw error;
+      }
+      if (identity.recoveryKey) {
+        const savedKey = await showVaultRecoveryKeyOnce(identity.recoveryKey, { isUpdate: false });
+        if (!savedKey) {
+          logDmE2eeUi("recovery_key_not_confirmed_saved", { userId, conversationId: convId });
+        }
       }
 
       const identityState = await getDmE2eeIdentityState({ userId, force: true }).catch((error) => ({
@@ -92005,7 +92183,12 @@ function renderDmPrivacyUi() {
         ].join("");
       }
     } else if (blockStatus === "local_missing") {
-      visibleButtons = ["restore"];
+      const requiresMigration = dmE2eeReadiness.identityStatus === "migration_requires_recovery";
+      const localRecoveryAction = requiresMigration ? "setup" : "restore";
+      const localRecoveryActionLabel = requiresMigration
+        ? t("settings.security.dm_backup.create_btn", "Set up Vault Recovery")
+        : t("settings.security.dm_backup.restore_btn", "Restore Vault messages");
+      visibleButtons = [localRecoveryAction];
       label = t("dm.e2ee.badge.setup_needed", "Vault not set up");
       className = "is-warning";
       title = getDmE2eeRecoveryHintText();
@@ -92016,7 +92199,7 @@ function renderDmPrivacyUi() {
           '<div class="dmPrivacyBanner__text">' + esc(getDmE2eeRecoveryHintText()) + '</div>',
         '</div>',
         '<div class="dmPrivacyBanner__actions">',
-          '<button class="btn primary" type="button" data-dm-e2ee-act="restore">' + esc(t("settings.security.dm_backup.restore_btn", "Restore Vault messages")) + '</button>',
+          '<button class="btn primary" type="button" data-dm-e2ee-act="' + escAttr(localRecoveryAction) + '">' + esc(localRecoveryActionLabel) + '</button>',
         '</div>',
       ].join("");
     } else if (blockStatus === "peer_checking") {
@@ -93011,13 +93194,23 @@ function ensureDmE2eeBootstrapStarted({ force = false } = {}) {
       error: null,
     });
     const identity = await ensureDmE2eeIdentity({ userId: state.user.id });
-    if (identity?.status === "missing_local_private") {
-      console.warn("dm e2ee identity missing local private key on this device");
+    if (
+      identity?.status === "missing_local_private"
+      || identity?.status === "not_initialized"
+      || identity?.status === "migration_requires_recovery"
+    ) {
+      console.warn("dm e2ee identity is not ready on this device");
       setDmE2eeReadiness({
         status: "failed",
         userId: state.user.id,
-        identityStatus: "missing_local_private",
-        error: new Error(getDmE2eeRecoveryHintText()),
+        identityStatus: String(identity.status),
+        error: identity.error || new Error(
+          identity.status === "not_initialized"
+            ? "Set up Vault Recovery before creating this device identity."
+            : (identity.status === "migration_requires_recovery"
+              ? "Set a Vault Recovery Password to securely migrate this device's legacy Vault identity."
+              : getDmE2eeRecoveryHintText())
+        ),
       });
     }
     if (identity?.status === "error") {
