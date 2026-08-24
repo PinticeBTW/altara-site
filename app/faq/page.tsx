@@ -1,18 +1,17 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 
+import { HomeNav } from "../components/home-nav";
+import { Reveal } from "../components/reveal";
 import {
   LINUX_DOWNLOAD_URL,
-  LINUX_HELP_URL,
-  RELEASES_URL,
   SiteFooter,
-  SiteNav,
   TRY_IN_BROWSER_URL,
   WINDOWS_DOWNLOAD_URL,
 } from "../components/site-chrome";
+import { FaqBrowser, type Faq, type FaqCategory } from "./faq-browser";
 
 const description =
-  "Answers about ALTARA pricing, browser access, Windows and Linux x64 downloads, beta status, Discord alternative features, gaming groups, and small communities.";
+  "Answers about ALTARA: pricing and ALTARA+, browser access, Windows and Linux x64 downloads, open beta status, and who it's built for.";
 
 export const metadata: Metadata = {
   title: "FAQ",
@@ -26,47 +25,65 @@ export const metadata: Metadata = {
     description,
     images: [
       {
-        url: "/altara-home-page-clean.png",
-        width: 1592,
-        height: 988,
-        alt: "ALTARA home page showing widgets, friends, calendar, notes, calls, unread DMs, and active friends",
+        url: "/altara-dashboard-hero.png",
+        width: 1917,
+        height: 1020,
+        alt: "The ALTARA dashboard",
       },
     ],
   },
   twitter: {
     title: "ALTARA FAQ",
     description,
-    images: ["/altara-home-page-clean.png"],
+    images: ["/altara-dashboard-hero.png"],
   },
 };
 
-const faqs = [
+const categories: FaqCategory[] = [
+  { key: "general", label: "General" },
+  { key: "downloads", label: "Downloads & platforms" },
+  { key: "plus", label: "ALTARA+" },
+];
+
+const faqs: Faq[] = [
   {
+    id: "free",
+    category: "plus",
     question: "Is ALTARA free?",
     answer:
-      "Yes. ALTARA is free to use, and ALTARA+ is planned as the way to support development without bloating the core app.",
+      "Yes — the core app is free to use, with no feature paywalled. ALTARA+ is a live, optional upgrade: Core is €4.99/mo and Nova is €7.99/mo, both cheaper billed yearly. It funds development without gating the free experience.",
   },
   {
+    id: "discord-alternative",
+    category: "general",
     question: "Is ALTARA a Discord alternative?",
     answer:
       "Yes, but it is not trying to be a giant clone. ALTARA is focused on friends, gaming groups, small communities, voice, DMs, and useful widgets.",
   },
   {
+    id: "browser",
+    category: "downloads",
     question: "Can I use ALTARA in the browser?",
     answer:
       "Yes. You can try ALTARA in the browser, and Windows plus Linux x64 AppImage, DEB, and portable downloads are available now.",
   },
   {
+    id: "platforms",
+    category: "downloads",
     question: "What platforms are supported?",
     answer:
       "Windows is available now. Linux x64 is available as AppImage or DEB, with a manually updated portable tar.gz fallback; macOS is planned, and browser access remains open.",
   },
   {
+    id: "beta",
+    category: "general",
     question: "Is ALTARA still in beta?",
     answer:
       "Yes. ALTARA is in open beta, so the app is usable while still getting fixes, polish, and new community features.",
   },
   {
+    id: "who-for",
+    category: "general",
     question: "Who is ALTARA for?",
     answer:
       "ALTARA is built for friend groups, gaming groups, and small communities that want voice, chat, and simple tools without the noisy feed feeling.",
@@ -88,8 +105,8 @@ const faqJsonLd = {
 
 export default function FAQPage() {
   return (
-    <div>
-      <SiteNav active="faq" />
+    <div className="hp">
+      <HomeNav active="faq" />
 
       <main>
         <script
@@ -99,77 +116,59 @@ export default function FAQPage() {
           }}
         />
 
-        <section className="page-hero faq-hero">
-          <div className="blob blob-1" />
-          <div className="blob blob-2" />
-          <div className="container">
-            <span className="eyebrow">
-              <span className="dot" /> FAQ
-            </span>
-            <h1>
-              Quick answers before
-              <br />
-              you <span className="gradient-text">download.</span>
-            </h1>
-            <p>
-              Plain answers about ALTARA, desktop previews, browser access, and what kind of groups
-              it is being built for.
-            </p>
+        <section className="hp-hero hp-hero--compact">
+          <div className="hp-container">
+            <Reveal className="hp-hero-copy">
+              <h1 className="hp-h1 hp-h1--compact">Questions, answered.</h1>
+              <p className="hp-hero-sub">
+                Plain answers about pricing, platforms, and what ALTARA actually is — search or
+                browse by category below.
+              </p>
+            </Reveal>
           </div>
         </section>
 
-        <section className="faq-page-section">
-          <div className="container">
-            <div className="faq-page-layout">
-              <div className="faq-list">
-                {faqs.map((faq) => (
-                  <details key={faq.question} className="faq-item">
-                    <summary>{faq.question}</summary>
-                    <p>{faq.answer}</p>
-                  </details>
-                ))}
-              </div>
+        <section>
+          <div className="hp-container">
+            <Reveal>
+              <FaqBrowser faqs={faqs} categories={categories} />
+            </Reveal>
+          </div>
+        </section>
 
-              <aside className="faq-aside-card">
-                <span className="eyebrow">
-                  <span className="dot" /> Still curious?
-                </span>
-                <h2>Try ALTARA now.</h2>
-                <p>
-                  Download the Windows beta or Linux x64 preview, open ALTARA in your browser, or
-                  check what changed in the latest release.
-                </p>
-                <div className="faq-aside-actions">
-                  <a
-                    href={WINDOWS_DOWNLOAD_URL}
-                    className="btn btn-primary"
-                  >
-                    Download for Windows
-                  </a>
-                  <a
-                    href={LINUX_DOWNLOAD_URL}
-                    className="btn btn-secondary"
-                    aria-label="Download the recommended ALTARA package for Linux x64"
-                  >
-                    Download Linux x64
-                  </a>
-                  <Link href={TRY_IN_BROWSER_URL} className="btn btn-secondary">
-                    Try in browser
-                  </Link>
-                  <Link href={LINUX_HELP_URL} className="release-inline-link">
-                    Linux setup help
-                  </Link>
-                  <a
-                    href={RELEASES_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="release-inline-link"
-                  >
-                    Read release notes
-                  </a>
-                </div>
-              </aside>
-            </div>
+        <section className="hp-cta">
+          <div className="hp-container">
+            <Reveal className="hp-cta-panel">
+              <h2 className="hp-h2 hp-h2--section">Still need help?</h2>
+              <p className="hp-lead">
+                Can&apos;t find your answer here? Reach the team directly, or just jump in and try
+                ALTARA.
+              </p>
+              <div className="hp-hero-cta">
+                <a href="mailto:support@altaraapp.com" className="hp-btn hp-btn-primary">
+                  Email support
+                </a>
+                <a
+                  href={WINDOWS_DOWNLOAD_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hp-btn hp-btn-secondary"
+                >
+                  Download for Windows
+                </a>
+                <a
+                  href={LINUX_DOWNLOAD_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hp-btn hp-btn-secondary"
+                >
+                  Download for Linux
+                </a>
+              </div>
+              <a href={TRY_IN_BROWSER_URL} className="hp-cta-link">
+                Try in browser
+              </a>
+            </Reveal>
           </div>
         </section>
       </main>

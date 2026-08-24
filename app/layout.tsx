@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Inter, JetBrains_Mono } from "next/font/google";
-import { CustomCursor } from "./components/custom-cursor";
 import { ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER } from "./lib/altara-download-platform";
 import {
   ALTARA_LINUX_BRANDING_ROUTING_MARKER,
@@ -100,7 +99,6 @@ export default function RootLayout({
       className={`${bricolage.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <CustomCursor />
         {children}
       </body>
     </html>

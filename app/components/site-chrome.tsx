@@ -144,7 +144,7 @@ export function SiteNav({ active }: { active?: NavPage }) {
   return (
     <nav className="nav">
       <div className="nav-inner">
-        <Link href="/" className="logo" data-cursor="hover">
+        <Link href="/" className="logo">
           <Brand />
         </Link>
 
@@ -209,14 +209,14 @@ function isExternalLink(href: string) {
 function FooterLinkItem({ link }: { link: FooterLink }) {
   if (isExternalLink(link.href)) {
     return (
-      <a href={link.href} target="_blank" rel="noopener noreferrer" data-cursor="hover">
+      <a href={link.href} target="_blank" rel="noopener noreferrer">
         {link.label}
       </a>
     );
   }
 
   return (
-    <Link href={link.href} data-cursor="hover">
+    <Link href={link.href}>
       {link.label}
     </Link>
   );
@@ -228,7 +228,7 @@ export function SiteFooter() {
       <div className="container">
         <div className="footer-grid">
           <div>
-            <Link href="/" className="logo" data-cursor="hover">
+            <Link href="/" className="logo">
               <Brand />
             </Link>
             <p className="footer-tagline">

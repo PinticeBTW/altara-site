@@ -1,19 +1,22 @@
 import Image from "next/image";
+import Link from "next/link";
 import type { Metadata } from "next";
 
+import { HomeNav } from "../components/home-nav";
+import { Reveal } from "../components/reveal";
 import {
   BrowserDownloadOption,
+  DOWNLOAD_URL,
   LinuxDownloadOption,
   LinuxPreviewNote,
   MacDownloadOption,
   RELEASES_URL,
   SiteFooter,
-  SiteNav,
   WindowsDownloadOption,
 } from "../components/site-chrome";
 
 const description =
-  "Explore ALTARA features: widgets, private DMs, voice calls, browser access, friend groups, small communities, and Windows or Linux x64 downloads.";
+  "What ALTARA can actually do: servers with channels, roles, and permissions, private and group DMs, voice channels with Spatial Audio, a personal dashboard, and real presence.";
 
 export const metadata: Metadata = {
   title: "Features",
@@ -27,311 +30,210 @@ export const metadata: Metadata = {
     description,
     images: [
       {
-        url: "/altara-home-page-clean.png",
-        width: 1592,
-        height: 988,
-        alt: "ALTARA home page showing widgets, friends, calendar, notes, calls, unread DMs, and active friends",
+        url: "/altara-server-channel.png",
+        width: 1719,
+        height: 765,
+        alt: "An ALTARA server with channels, roles, and an active text conversation",
       },
     ],
   },
   twitter: {
     title: "ALTARA Features",
     description,
-    images: ["/altara-home-page-clean.png"],
+    images: ["/altara-server-channel.png"],
   },
 };
 
-const specItems = [
-  { title: "ALTARA+ supported", description: "ALTARA+ helps fund development while the core app stays focused." },
-  { title: "76MB Windows download", description: "Latest Windows installer is about 76MB." },
-  { title: "Browser access", description: "Jump into ALTARA from the web when you need it." },
+const messagingSupport = [
   {
-    title: "Linux x64 preview",
-    description:
-      "AppImage and DEB installers are available, with a portable tar.gz fallback.",
+    title: "Reactions & GIFs",
+    body: "React to a message or drop in a GIF without breaking the flow.",
   },
-  { title: "Voice rooms", description: "Voice calls, rooms, and screen sharing for hanging out." },
-  { title: "Widget dashboard", description: "Calendar, checklist, notepad, calls, status, and unread DMs." },
-  { title: "Small communities", description: "Spaces for gaming groups, friend groups, and communities that should stay human." },
-  { title: "Drag-drop sharing", description: "Share files up to 35MB right from your desktop." },
+  {
+    title: "File sharing",
+    body: "Share images and files up to 25MB for free — ALTARA+ raises the ceiling.",
+  },
+];
+
+const socialSupport = [
+  {
+    title: "Active Now",
+    body: "See who's around and jump into a call or DM in one click.",
+  },
+  {
+    title: "Themes & color",
+    body: "Built-in themes, or set your own background and accent colors.",
+  },
 ];
 
 export default function FeaturesPage() {
   return (
-    <div>
-      <SiteNav active="features" />
+    <div className="hp">
+      <HomeNav active="features" />
 
       <main>
-        <section className="page-hero">
-          <div className="blob blob-1" />
-          <div className="blob blob-2" />
-          <div className="container">
-            <span className="eyebrow">
-              <span className="dot" /> Features
-            </span>
-            <h1>
-              Everything a hangout
-              <br />
-              <span className="gradient-text">should have.</span>
-            </h1>
-            <p>
-              No bloat. Just the things friends, gaming groups, and small communities actually
-              use, made well.
-            </p>
+        <section className="hp-hero hp-hero-plain">
+          <div className="hp-container">
+            <Reveal className="hp-hero-copy">
+              <h1 className="hp-h1">Everything you need to stay connected.</h1>
+              <p className="hp-hero-sub">
+                Servers and DMs, voice and Spatial Audio, a personal dashboard, and the small
+                details that make it feel like yours.
+              </p>
+              <div className="hp-hero-cta">
+                <a
+                  href={DOWNLOAD_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hp-btn hp-btn-primary"
+                >
+                  Download ALTARA
+                </a>
+              </div>
+            </Reveal>
           </div>
         </section>
 
-        <div className="container">
-          <section className="feature">
-            <div className="feature-text">
-              <div className="num">01 - Widgets</div>
-              <h2>
-                Your dashboard, <span className="gradient-text">your widgets.</span>
-              </h2>
-              <p>
-                Keep notes, checklists, calendar reminders, calls, and message status on your own
-                ALTARA home screen.
-              </p>
-              <ul className="feature-list">
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Personal widgets dashboard</strong> for quick tools you use every day.
-                  </span>
-                </li>
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Built-in widgets today</strong> - calendar, checklist, notepad, calls,
-                    online status, and unread DMs.
-                  </span>
-                </li>
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Clean home screen</strong> before you jump into friends, communities,
-                    or calls.
-                  </span>
-                </li>
-              </ul>
+        <section className="hp-stories hp-stories--tight">
+          <div className="hp-container hp-container--wide">
+            <div className="hp-story hp-story--wide-media-xl">
+              <Reveal className="hp-story-media">
+                <div className="hp-shot hp-shot-servermain hp-shot-servermain--lg">
+                  <Image
+                    src="/altara-server-channel.png"
+                    alt="An ALTARA server with the channel sidebar, the active #general text channel with messages, and the member list showing owner, member, and bot roles"
+                    width={1719}
+                    height={765}
+                    sizes="(max-width: 980px) 100vw, 920px"
+                    unoptimized
+                  />
+                </div>
+              </Reveal>
+              <Reveal className="hp-story-text">
+                <h2 className="hp-h2">Servers built around real conversation.</h2>
+                <p>
+                  Text and voice channels, organized with categories. Roles and permissions
+                  decide who can post, moderate, or manage the server — the same structure
+                  you already know, done cleanly.
+                </p>
+              </Reveal>
+            </div>
+          </div>
+
+          <div className="hp-container">
+            <div className="hp-story hp-story--reverse hp-story--wide-media-r hp-story--wide-media-r-lg">
+              <Reveal className="hp-story-media">
+                <div className="hp-shot hp-shot-callmain hp-shot-callmain--lg">
+                  <Image
+                    src="/altara-call-voice.png"
+                    alt="A live ALTARA voice channel call with two participant tiles, the voice channel member list, and the full call control bar including Spatial Audio"
+                    width={1719}
+                    height={764}
+                    sizes="(max-width: 980px) 100vw, 820px"
+                    unoptimized
+                  />
+                </div>
+              </Reveal>
+              <Reveal className="hp-story-text">
+                <h2 className="hp-h2">Calls that feel like a real room.</h2>
+                <p>
+                  Voice channels with participant tiles and Spatial Audio, plus screen
+                  sharing when you need to show something — jump in from the sidebar without
+                  leaving the server.
+                </p>
+              </Reveal>
             </div>
 
-            <div className="feature-visual">
-              <div className="widgets-grid">
-                <div className="w-card">
-                  <div className="w-head">Calendar</div>
-                  <div className="w-calendar-simple">
-                    <span>TUE</span>
-                    <strong>
-                      28 <em>Apr</em>
-                    </strong>
-                    <p>2 overdue</p>
-                  </div>
-                </div>
-
-                <div className="w-card">
-                  <div className="w-head">Checklist</div>
-                  <div className="w-counter">
-                    4/7 <span>tasks done</span>
-                  </div>
-                </div>
-
-                <div className="w-card span">
-                  <div className="w-head">Notepad</div>
-                  <div className="w-music">
-                    <div className="album note" />
-                    <div className="info">
-                      <div className="t">Quick notes</div>
-                      <div className="a">Write reminders, ideas, or plans.</div>
-                    </div>
-                    <div className="play">+</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="feature flip">
-            <div className="feature-text">
-              <div className="num">02 - Personalization</div>
-              <h2>
-                Make ALTARA feel like <span className="gradient-text">your space.</span>
-              </h2>
-              <p>
-                Set up your profile, keep your people close, and jump back into the widgets,
-                chats, and calls you use most.
-              </p>
-              <ul className="feature-list">
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Profile card</strong> with your avatar, display name, and username.
-                  </span>
-                </li>
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Friends and group DMs</strong> kept close in the sidebar.
-                  </span>
-                </li>
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Personal workspace</strong> focused on widgets, calls, and chats.
-                  </span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="feature-visual">
-              <div className="themes">
-                <div className="theme-card t1">
-                  <div className="badge-active">✓</div>
-                  <div className="tname">ALTARA Dark</div>
-                  <div className="swatches">
-                    <div className="sw" style={{ background: "#0a0a0a" }} />
-                    <div className="sw" style={{ background: "#1c1b1a" }} />
-                    <div className="sw" style={{ background: "#e8cdb0" }} />
-                  </div>
-                  <div className="preview">
-                    <div className="pl m" />
-                    <div className="pl s" />
-                    <div className="pl" />
-                  </div>
-                </div>
-
-                <div className="theme-card t2">
-                  <div className="tname">Honey</div>
-                  <div className="swatches">
-                    <div className="sw" style={{ background: "#f59e0b" }} />
-                    <div className="sw" style={{ background: "#dc2626" }} />
-                    <div className="sw" style={{ background: "#0f766e" }} />
-                  </div>
-                  <div className="preview">
-                    <div className="pl m" />
-                    <div className="pl s" />
-                    <div className="pl" />
-                  </div>
-                </div>
-
-                <div className="theme-card t3">
-                  <div className="tname">Forest</div>
-                  <div className="swatches">
-                    <div className="sw" style={{ background: "#34d399" }} />
-                    <div className="sw" style={{ background: "#a3e635" }} />
-                    <div className="sw" style={{ background: "#22d3ee" }} />
-                  </div>
-                  <div className="preview">
-                    <div className="pl m" />
-                    <div className="pl s" />
-                    <div className="pl" />
-                  </div>
-                </div>
-
-                <div className="theme-card t4">
-                  <div className="tname">Graphite</div>
-                  <div className="swatches">
-                    <div className="sw" style={{ background: "#111111" }} />
-                    <div className="sw" style={{ background: "#38322b" }} />
-                    <div className="sw" style={{ background: "#c9aa8c" }} />
-                  </div>
-                  <div className="preview">
-                    <div className="pl m" />
-                    <div className="pl s" />
-                    <div className="pl" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="feature">
-            <div className="feature-text">
-              <div className="num">03 - Real product</div>
-              <h2>
-                Built around the dashboard you <span className="gradient-text">actually use.</span>
-              </h2>
-              <p>
-                ALTARA keeps the important stuff visible: your people, your widgets, your calls,
-                and the small spaces your group keeps coming back to.
-              </p>
-              <ul className="feature-list">
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Friends and communities</strong> stay close without an endless feed.
-                  </span>
-                </li>
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Widgets are part of the app</strong>, not a random extra screen.
-                  </span>
-                </li>
-                <li>
-                  <span className="check">✓</span>
-                  <span>
-                    <strong>Voice and DMs</strong> are quick to reach when the group is active.
-                  </span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="feature-visual feature-visual-live">
-              <div className="feature-screenshot-card">
-                <Image
-                  src="/altara-home-page-clean.png"
-                  alt="ALTARA dashboard showing friends, widgets, calendar, notes, calls, and active friends"
-                  width={1592}
-                  height={988}
-                  sizes="(max-width: 980px) 100vw, 560px"
-                  unoptimized
+            <div className="hp-story">
+              <Reveal className="hp-story-media">
+                <div
+                  className="hp-shot hp-shot-dashboard"
+                  role="img"
+                  aria-label="Detail of the ALTARA dashboard: the Checklist and Study Mode focus timer widgets"
                 />
-              </div>
-            </div>
-          </section>
-        </div>
-
-        <section className="spec-section">
-          <div className="container">
-            <div className="section-head">
-              <h2>
-                And a bunch of <span className="gradient-text">smaller things</span> we cared
-                about.
-              </h2>
-              <p className="lead">The kind of details you only notice when they are missing.</p>
-            </div>
-
-            <div className="spec-grid">
-              {specItems.map((item) => (
-                <article key={item.title} className="spec">
-                  <div className="icon">•</div>
-                  <h4>{item.title}</h4>
-                  <p>{item.description}</p>
-                </article>
-              ))}
+              </Reveal>
+              <Reveal className="hp-story-text">
+                <h2 className="hp-h2">More than chat — a dashboard for your day.</h2>
+                <p>
+                  Checklist, calendar, and notepad widgets on your own home screen, plus a
+                  Study Mode focus timer for when you need to lock in.
+                </p>
+              </Reveal>
             </div>
           </div>
         </section>
 
-        <section id="download" style={{ marginTop: 0 }}>
-          <div className="container">
-            <div className="cta-band">
-              <div className="blob blob-1" />
-              <div className="blob blob-2" />
-              <span className="eyebrow" style={{ marginBottom: "18px" }}>
-                <span className="dot" /> Windows and Linux x64 available
-              </span>
-              <h2>
-                Get the gang together.
-                <br />
-                Download ALTARA for desktop.
-              </h2>
-              <p>
-                Available for Windows and Linux x64. Browser access is open too; macOS is planned
-                next.
+        <section className="hp-editorial">
+          <div className="hp-container">
+            <Reveal className="hp-editorial-split">
+              <div className="hp-editorial-primary">
+                <h2>Private & group DMs</h2>
+                <p>
+                  One-to-one or small group conversations, kept separate from your servers
+                  — for the conversations that don&apos;t belong in a channel.
+                </p>
+              </div>
+              <div className="hp-editorial-support">
+                {messagingSupport.map((point) => (
+                  <div key={point.title} className="hp-editorial-support-item">
+                    <h3>{point.title}</h3>
+                    <p>{point.body}</p>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        <section className="hp-editorial">
+          <div className="hp-container">
+            <Reveal>
+              <h2 className="hp-editorial-statement">Presence that tells the truth.</h2>
+              <p className="hp-editorial-sub">
+                Online, idle, Focus, or Do Not Disturb — set once, and it stays accurate
+                everywhere your friends see you.
               </p>
-              <div className="cta-platforms">
+              <div className="hp-editorial-support hp-editorial-support-row">
+                {socialSupport.map((point) => (
+                  <div key={point.title} className="hp-editorial-support-item">
+                    <h3>{point.title}</h3>
+                    <p>{point.body}</p>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        <section className="hp-plus-mini">
+          <div className="hp-container">
+            <Reveal className="hp-plus-mini-panel">
+              <h2 className="hp-h2 hp-h2--section">ALTARA+ extends the room you have.</h2>
+              <p className="hp-lead">
+                Core and Nova raise your server, upload, and Focus limits, with HD Spatial
+                Audio and automation on Nova. The free app stays fully usable without either
+                one.
+              </p>
+              <p className="hp-plus-mini-tiers">
+                <strong>Core</strong> &euro;4.99/mo &middot; <strong>Nova</strong> &euro;7.99/mo
+              </p>
+              <Link href="/#altara-plus" className="hp-btn hp-btn-secondary">
+                See what&apos;s included
+              </Link>
+            </Reveal>
+          </div>
+        </section>
+
+        <section className="hp-cta">
+          <div className="hp-container">
+            <Reveal className="hp-cta-panel">
+              <h2 className="hp-h2 hp-h2--section">See it for yourself.</h2>
+              <p className="hp-lead">
+                Download ALTARA or try it in your browser — no account needed to look
+                around.
+              </p>
+
+              <div className="hp-cta-platforms">
                 <MacDownloadOption />
                 <WindowsDownloadOption />
                 <LinuxDownloadOption />
@@ -342,11 +244,11 @@ export default function FeaturesPage() {
                 href={RELEASES_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="release-inline-link"
+                className="hp-cta-link"
               >
                 View release notes
               </a>
-            </div>
+            </Reveal>
           </div>
         </section>
       </main>
@@ -355,4 +257,3 @@ export default function FeaturesPage() {
     </div>
   );
 }
-
