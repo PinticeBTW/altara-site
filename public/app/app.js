@@ -4,6 +4,8 @@
   const offlineReconnectMarker = "offline-auth-reconnect-v1";
   const reactionEventsRealtimeMarker = "server-reaction-events-realtime-v1";
   const embedLinksPermissionsMarker = "server-embed-links-permissions-batch6a-v1";
+  const voiceChannelTextPermissionParityMarker = "server-voice-channel-text-permission-parity-batch6b-v1";
+  const channelCategoryPermissionOverridesMarker = "server-channel-category-permission-overrides-batch7a-v1";
   const nowIso = () => {
     try { return new Date().toISOString(); } catch (_) { return ""; }
   };
@@ -12,6 +14,7 @@
   root.__ALTARA_OFFLINE_RECONNECT_MARKER__ = offlineReconnectMarker;
   root.__ALTARA_REACTION_EVENTS_REALTIME_MARKER__ = reactionEventsRealtimeMarker;
   root.__ALTARA_EMBED_LINKS_PERMISSIONS_MARKER__ = embedLinksPermissionsMarker;
+  root.__ALTARA_CHANNEL_CATEGORY_PERMISSION_OVERRIDES_MARKER__ = channelCategoryPermissionOverridesMarker;
   root.__ALTARA_BOOT_TRACE__ = Array.isArray(root.__ALTARA_BOOT_TRACE__) ? root.__ALTARA_BOOT_TRACE__ : [];
   root.__ALTARA_RUNTIME_ERRORS__ = Array.isArray(root.__ALTARA_RUNTIME_ERRORS__) ? root.__ALTARA_RUNTIME_ERRORS__ : [];
   const pushBootTrace = (phase = "event", details = {}) => {
@@ -56,6 +59,7 @@
     offlineReconnectMarker,
     reactionEventsRealtimeMarker,
     embedLinksPermissionsMarker,
+    channelCategoryPermissionOverridesMarker,
     appJsExecuted: true,
     loadedAt: nowIso(),
     href: typeof location !== "undefined" ? location.href : "",
@@ -75,6 +79,12 @@
   try { console.log("[ALTARA BOOT PROOF] app.js executing server-read-message-history-ux-v3", nowIso(), { assetVersion }); } catch (_) {}
 })();
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabaseClient.js";
+import {
+  hydrateTrustedAttachmentRows,
+  persistedTrustedAttachment,
+  persistedTrustedMessageContent,
+  uploadViaTrustedAuthority,
+} from "./lib/trustedUploadClient.js";
 import { $, esc, escapeAttr as escAttr, setDebug, requireAuth, resolveAuthState, getLastAuthResolution, clearConclusiveInvalidAuthStateAndRedirect, getMyProfile, logout, enhancePasswordVisibilityToggles } from "./ui.js";
 import {
   ALTARA_AUTH_STATE,
@@ -134,7 +144,7 @@ import {
   serializeThemeExport as serializeThemeExportEngine,
 } from "./theme/engine.js";
 import { createPresenceSystem } from "./presence.js";
-import { renderPresenceUI } from "./presence-ui.js";
+import { classifyPresenceState, renderPresenceUI } from "./presence-ui.js";
 import { getMyStatus, getStoredMyStatus, setMyStatus } from "./statusstore.js";
 import {
   consumeTrustedYouTubeCallbackMessage,
@@ -973,11 +983,19 @@ function recoverAltaraBootStuckLoading(reason = "boot-watchdog") {
 
   let repaired = false;
   try {
-    if (getActiveServerSidebarContext?.()) {
-      repaired = ensureServerSidebarForCurrentContext?.("boot-watchdog") === true || repaired;
-      void refreshServerConversationUi?.({ reason: "boot-watchdog", refreshChannels: true, refreshMembers: true, refreshMessages: false }).catch((error) => {
-        recordAltaraBootEvent("server_watchdog_refresh_error", { message: error?.message || error || "unknown" });
-      });
+    const serverSidebarCtx = getActiveServerSidebarContext?.() || null;
+    if (serverSidebarCtx) {
+      if (
+        preserveNoAccessibleServerChannelsShell?.(serverSidebarCtx, "boot_watchdog_server_no_access")
+        || preserveServerChannelAuthorityShell?.(serverSidebarCtx, "boot_watchdog_server_visibility")
+      ) {
+        repaired = true;
+      } else {
+        repaired = ensureServerSidebarForCurrentContext?.("boot-watchdog") === true || repaired;
+        void refreshServerConversationUi?.({ reason: "boot-watchdog", refreshChannels: true, refreshMembers: true, refreshMessages: false }).catch((error) => {
+          recordAltaraBootEvent("server_watchdog_refresh_error", { message: error?.message || error || "unknown" });
+        });
+      }
     } else {
       renderGroupsRail?.();
       renderFriends?.({ skipPresenceRefresh: true, skipGroupsRail: true });
@@ -1767,6 +1785,9 @@ let dmRequestBannerUiBound = false;
 const ALTARA_PERF_DEBUG_STORAGE_KEY = "altara.debug.perf";
 const altaraInflightRequests = new Map();
 const altaraScheduledUiRenders = new Map();
+const ALTARA_SERVER_NAV_TRACE_LIMIT = 24;
+const altaraServerNavigationPerfTraces = [];
+let altaraServerNavigationPerfSeq = 0;
 
 function isAltaraPerfDebugEnabled() {
   try {
@@ -1820,6 +1841,39 @@ function markPerfEvent(name, detail = {}) {
   const safe = normalizeAltaraPerfName(name);
   try { performance.mark(`altara:${safe}`); } catch (_) {}
   logAltaraPerfDebug("event", { name: safe, ...(detail || {}) });
+}
+
+function beginServerNavigationPerfTrace(serverId = "", reason = "server-navigation") {
+  if (!isAltaraPerfDebugEnabled()) return "";
+  const id = `server-nav-${++altaraServerNavigationPerfSeq}`;
+  const startedAt = performance.now();
+  altaraServerNavigationPerfTraces.push({
+    id,
+    serverId: normId(serverId || ""),
+    reason: String(reason || "server-navigation"),
+    startedAt,
+    phases: [{ phase: "click_received", at: startedAt, elapsedMs: 0 }],
+  });
+  if (altaraServerNavigationPerfTraces.length > ALTARA_SERVER_NAV_TRACE_LIMIT) {
+    altaraServerNavigationPerfTraces.splice(0, altaraServerNavigationPerfTraces.length - ALTARA_SERVER_NAV_TRACE_LIMIT);
+  }
+  return id;
+}
+
+function recordServerNavigationPerfPhase(traceId = "", phase = "event", detail = {}) {
+  if (!traceId || !isAltaraPerfDebugEnabled()) return null;
+  const trace = altaraServerNavigationPerfTraces.find((entry) => entry.id === traceId) || null;
+  if (!trace) return null;
+  const at = performance.now();
+  const event = {
+    phase: normalizeAltaraPerfName(phase),
+    at,
+    elapsedMs: Number((at - trace.startedAt).toFixed(1)),
+    ...(detail || {}),
+  };
+  trace.phases.push(event);
+  logAltaraPerfDebug("server-navigation", { traceId, ...event });
+  return event;
 }
 
 function dedupeRequest(key, fn) {
@@ -1898,6 +1952,10 @@ if (typeof window !== "undefined") {
     inflightRequestKeys: Array.from(altaraInflightRequests.keys()),
     scheduledUiRenders: Array.from(altaraScheduledUiRenders.keys()),
   });
+  window.__ALTARA_SERVER_NAV_PERF__ = () => altaraServerNavigationPerfTraces.map((trace) => ({
+    ...trace,
+    phases: trace.phases.map((phase) => ({ ...phase })),
+  }));
   if (typeof window.__ALTARA_PERF_TRACE_CLICK__ === "undefined") window.__ALTARA_PERF_TRACE_CLICK__ = false;
 }
 
@@ -1907,12 +1965,13 @@ markPerfStart("app_boot");
 const ALTARA_CONNECTION_RETRY_DELAYS_MS = Object.freeze([1000, 2000, 5000, 10000, 20000, 30000]);
 const ALTARA_CONNECTION_BACKEND_TIMEOUT_MS = 5500;
 const ALTARA_CONNECTION_RUNTIME_GRACE_MS = 1800;
-const ALTARA_CONNECTION_TRANSIENT_GRACE_MS = 1800;
-const ALTARA_CONNECTION_OFFLINE_OVERLAY_GRACE_MS = 7000;
 const ALTARA_CONNECTION_RESTORED_HIDE_DELAY_MS = 1800;
 const ALTARA_CONNECTION_RESTORED_TOAST_COOLDOWN_MS = 30000;
 const ALTARA_CONNECTION_RECOVERY_COOLDOWN_MS = 1200;
 const ALTARA_MESSAGE_SEND_UNLOCK_TIMEOUT_MS = 8000;
+const ALTARA_SERVER_VISIBILITY_REST_TIMEOUT_MS = 8000;
+const ALTARA_SERVER_MESSAGE_REST_TIMEOUT_MS = 12000;
+const ALTARA_REALTIME_SOURCE_RESTART_DELAY_MS = 1200;
 const ALTARA_CONNECTION_ACTION_SELECTORS = [
   "#dmSend",
   "#btnAttach",
@@ -1938,7 +1997,6 @@ const ALTARA_CONNECTION_ACTION_SELECTORS = [
 
 let altaraConnectionRetryTimer = 0;
 let altaraConnectionGraceTimer = 0;
-let altaraConnectionUiTimer = 0;
 let altaraConnectionPingInFlight = null;
 let altaraConnectionRetryInFlight = null;
 let altaraConnectionRestoredTimer = 0;
@@ -1946,10 +2004,27 @@ let altaraConnectionToastHideTimer = 0;
 let altaraConnectionRecoveryInFlight = false;
 let altaraConnectionRecoveryRunner = null;
 let altaraRealtimeResetInFlight = null;
+let altaraRealtimeGlobalResetPending = false;
+let altaraPresenceRealtimeRestartTimer = 0;
+let altaraPresenceRealtimeRestartInFlight = null;
+let altaraPresenceRealtimeRestartAttempt = 0;
+let altaraPresenceRealtimeRestartGeneration = 0;
+let activeConversationRealtimeRestartTimer = 0;
+let activeConversationRealtimeRestartInFlight = null;
+let activeConversationRealtimeRestartGeneration = 0;
+let activeConversationRealtimeRestartAttempt = 0;
+let activeConversationRealtimeSubscribedChannel = null;
+let activeConversationRealtimeCatchupConversationId = "";
+let activeConversationRealtimeCatchupInFlight = null;
+let altaraActiveConversationRealtimeRequired = false;
 let altaraConnectionActionGuardBound = false;
 let altaraConnectionManagerInitialized = false;
 let altaraConnectionBootWaiting = false;
-const altaraRealtimeRequiredSources = new Set(["presence"]);
+// Global connection health follows an actually subscribed core message path,
+// not optional feature channels such as Presence, typing, or role invalidation.
+// The global messages channel and active-conversation channel are alternate
+// delivery paths: either one proves that core Realtime is working.
+const altaraRealtimeCoreSources = new Set(["core-messages", "active-conversation"]);
 const altaraRealtimeSubscribedSources = new Set();
 const altaraConnectionState = {
   networkOnline: typeof navigator === "undefined" ? true : navigator.onLine !== false,
@@ -1980,14 +2055,10 @@ const altaraConnectionState = {
   lastRecoveryStartedAt: 0,
   lastRecoveryFinishedAt: 0,
   lastStateChangeAt: new Date().toISOString(),
-  visibleSince: "",
   lastRestoredToastAt: 0,
-  uiSeverity: "hidden",
-  uiReason: "booting",
 };
 
 function getAltaraConnectionStateSnapshot() {
-  const ui = getAltaraConnectionUiPresentation(altaraConnectionState);
   const browserOnline = !!altaraConnectionState.networkOnline && !altaraConnectionState.simulatedOffline;
   const restReachable = !!altaraConnectionState.supabaseReachable;
   const appInteractive = !!(browserOnline && restReachable);
@@ -2002,20 +2073,19 @@ function getAltaraConnectionStateSnapshot() {
     authState: String(altaraConnectionState.authState || "unknown"),
     realtimeConnected: !!altaraConnectionState.realtimeConnected,
     realtimeState: String(altaraConnectionState.realtimeState || (altaraConnectionState.realtimeConnected ? "healthy" : "recovering")),
-    realtimeRequiredSources: Array.from(altaraRealtimeRequiredSources),
+    realtimeCoreSources: Array.from(altaraRealtimeCoreSources),
+    realtimeRequiredSources: Array.from(altaraRealtimeCoreSources),
     realtimeSubscribedSources: Array.from(altaraRealtimeSubscribedSources),
+    realtimeTransportConnected: readAltaraRealtimeTransportConnected(),
+    activeConversationRealtimeRequired: altaraActiveConversationRealtimeRequired,
+    globalRealtimeResetPending: altaraRealtimeGlobalResetPending,
     supabaseRealtimeConnected: !!altaraConnectionState.realtimeConnected,
-    presenceConnected: altaraConnectionState.realtimeConnected !== false,
+    presenceConnected: isAltaraRealtimeSourceSubscribed("presence"),
     livekitConnected: !!altaraConnectionState.livekitConnected,
     liveKitConnected: !!altaraConnectionState.livekitConnected,
     appInteractive,
     backendFailureCount: Math.max(0, Number(altaraConnectionState.backendFailureCount || 0) || 0),
     realtimeFailureCount: Math.max(0, Number(altaraConnectionState.realtimeFailureCount || 0) || 0),
-    uiSeverity: ui.severity,
-    uiReason: ui.reason,
-    uiDelayRemainingMs: ui.delayRemainingMs,
-    stateAgeMs: ui.stateAgeMs,
-    whyBannerOrOverlayVisible: ui.severity === "hidden" ? "hidden: " + ui.reason : ui.reason,
   };
 }
 function exposeAltaraConnectionState() {
@@ -2070,78 +2140,68 @@ function altaraWithTimeout(promiseLike, timeoutMs = 5000, label = "operation") {
 function getNavigatorOnlineSignal() {
   try { return typeof navigator === "undefined" ? true : navigator.onLine !== false; } catch (_) { return true; }
 }
-function getAltaraConnectionTimestampMs(value = "") {
-  const parsed = Date.parse(String(value || ""));
-  return Number.isFinite(parsed) ? parsed : 0;
+
+function isAltaraRestConnectivityFailure(error = null) {
+  if (isConnectivityError(error, { navigatorOnline: getNavigatorOnlineSignal() })) return true;
+  const status = Number(error?.status ?? error?.statusCode ?? error?.httpStatus ?? 0);
+  return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
 }
 
-function getAltaraConnectionStateAgeMs(state = altaraConnectionState, now = Date.now()) {
-  const startedAt = getAltaraConnectionTimestampMs(state?.lastStateChangeAt || "") || now;
-  return Math.max(0, now - startedAt);
+function recordAltaraAuthenticatedRestSuccess(reason = "authenticated-rest-success") {
+  const nowIso = new Date().toISOString();
+  const realtimeErrorActive = String(altaraConnectionState.lastSafeErrorCode || "").startsWith("realtime_");
+  setAltaraConnectionPatch({
+    networkOnline: true,
+    supabaseReachable: true,
+    restState: "healthy",
+    backendFailureCount: 0,
+    lastSuccessfulPingAt: nowIso,
+    lastOnlineAt: nowIso,
+    lastError: realtimeErrorActive ? altaraConnectionState.lastError : "",
+    lastSafeErrorCode: realtimeErrorActive ? altaraConnectionState.lastSafeErrorCode : "",
+  }, reason);
+  reconcileAltaraRealtimeTransportHealth(`${reason}:transport`);
+  requestActiveConversationRealtimeCatchupIfReady();
+  return true;
 }
 
-function getAltaraConnectionUiPresentation(state = altaraConnectionState) {
-  const now = Date.now();
-  const status = String(state?.status || "booting").trim().toLowerCase();
-  const stateAgeMs = getAltaraConnectionStateAgeMs(state, now);
-  const backendFailureCount = Math.max(0, Number(state?.backendFailureCount || 0) || 0);
-  const realtimeFailureCount = Math.max(0, Number(state?.realtimeFailureCount || 0) || 0);
-  const networkOffline = !!state?.simulatedOffline || state?.networkOnline === false;
-  const backendUnavailable = state?.supabaseReachable === false;
-  const backendHardUnavailable = backendUnavailable && (networkOffline || backendFailureCount >= 2);
-  const realtimeUnavailable = state?.realtimeConnected === false;
-  const livekitOnlyUnavailable = state?.livekitConnected === false && !networkOffline && !backendUnavailable && !realtimeUnavailable;
-  const result = (severity, reason, nextThresholdMs = 0) => ({
-    severity,
-    reason,
-    status,
-    stateAgeMs,
+function recordAltaraAuthenticatedRestFailure(error = null, reason = "authenticated-rest-failure") {
+  if (!isAltaraRestConnectivityFailure(error)) {
+    // A permission or validation response proves PostgREST was reachable even
+    // though the requested operation itself was denied.
+    recordAltaraAuthenticatedRestSuccess(`${reason}:response-received`);
+    return false;
+  }
+  const networkOnline = getNavigatorOnlineSignal() && !altaraConnectionState.simulatedOffline;
+  const nowIso = new Date().toISOString();
+  const backendFailureCount = Math.max(0, Number(altaraConnectionState.backendFailureCount || 0) || 0) + 1;
+  setAltaraConnectionPatch({
+    networkOnline,
+    supabaseReachable: false,
+    restState: networkOnline ? "recovering" : "offline",
     backendFailureCount,
-    realtimeFailureCount,
-    delayRemainingMs: nextThresholdMs ? Math.max(0, nextThresholdMs - stateAgeMs) : 0,
-  });
-
-  if (status === "online" || status === "restored") return result("hidden", status === "restored" ? "restored-hide" : "online");
-  if (livekitOnlyUnavailable) return result("hidden", "livekit-only-call-ui-handles-reconnect");
-
-  if (networkOffline || backendHardUnavailable || status === "offline") {
-    const reason = networkOffline ? "network-offline" : "backend-unreachable";
-    return result("banner", reason);
-  }
-
-  if (backendUnavailable) {
-    const reason = backendFailureCount > 0 ? "backend-suspect" : "backend-checking";
-    return result("hidden", reason, backendFailureCount >= 2 ? ALTARA_CONNECTION_TRANSIENT_GRACE_MS : 0);
-  }
-
-  if (realtimeUnavailable || status === "degraded") {
-    const reason = realtimeFailureCount > 0 ? "realtime-reconnecting" : "degraded";
-    if (stateAgeMs >= ALTARA_CONNECTION_TRANSIENT_GRACE_MS) return result("banner", reason);
-    return result("hidden", reason + "-grace", ALTARA_CONNECTION_TRANSIENT_GRACE_MS);
-  }
-
-  if (status === "reconnecting" || status === "booting") {
-    if (stateAgeMs >= ALTARA_CONNECTION_TRANSIENT_GRACE_MS) return result("banner", status);
-    return result("hidden", status + "-grace", ALTARA_CONNECTION_TRANSIENT_GRACE_MS);
-  }
-
-  return result("hidden", "no-global-connection-ui-needed");
+    lastBackendFailureAt: nowIso,
+    lastOfflineAt: networkOnline ? altaraConnectionState.lastOfflineAt : nowIso,
+    lastError: String(error?.message || error || reason).slice(0, 220),
+    lastSafeErrorCode: getSafeAuthErrorCode(error, "rest_unavailable"),
+  }, reason);
+  scheduleAltaraConnectionRetry(reason);
+  return true;
 }
-
-function getConnectionUiSeverity(state = altaraConnectionState) {
-  return getAltaraConnectionUiPresentation(state).severity;
+function isAltaraAuthRevalidationPending(authState = altaraConnectionState.authState) {
+  return [
+    "revalidating",
+    ALTARA_AUTH_STATE.NETWORK_INDETERMINATE,
+    ALTARA_AUTH_STATE.BACKEND_TEMPORARILY_UNAVAILABLE,
+    ALTARA_AUTH_STATE.UNEXPECTED_BOOT_ERROR,
+  ].includes(String(authState || ""));
 }
 
 function computeAltaraConnectionStatus() {
   if (altaraConnectionState.simulatedOffline || !altaraConnectionState.networkOnline) return "offline";
   if (!altaraConnectionState.supabaseReachable) return altaraConnectionState.booting || altaraConnectionBootWaiting ? "booting" : "reconnecting";
   if (altaraConnectionRecoveryInFlight) return "reconnecting";
-  if (
-    altaraConnectionState.authState === "revalidating"
-    || altaraConnectionState.authState === ALTARA_AUTH_STATE.NETWORK_INDETERMINATE
-    || altaraConnectionState.authState === ALTARA_AUTH_STATE.BACKEND_TEMPORARILY_UNAVAILABLE
-    || altaraConnectionState.authState === ALTARA_AUTH_STATE.UNEXPECTED_BOOT_ERROR
-  ) {
+  if (isAltaraAuthRevalidationPending()) {
     return "reconnecting";
   }
   if (!altaraConnectionState.realtimeConnected) return "degraded";
@@ -2185,63 +2245,37 @@ function setAltaraConnectionPatch(patch = {}, reason = "state") {
   altaraConnectionState.previousStatus = previousStatus;
   altaraConnectionState.status = resolvedStatus;
   altaraConnectionState.lastReason = String(reason || "state");
-  if (["offline", "reconnecting"].includes(resolvedStatus)) {
+  const hardDisconnected = resolvedStatus === "offline"
+    || (
+      resolvedStatus === "reconnecting"
+      && !altaraConnectionState.booting
+      && altaraConnectionState.supabaseReachable === false
+    );
+  if (hardDisconnected) {
     altaraConnectionState.lastHardDisconnectedAt = Date.now();
   }
   if (previousStatus !== resolvedStatus) {
     altaraConnectionState.lastStateChangeAt = new Date().toISOString();
-    altaraConnectionState.visibleSince = "";
   }
   if (altaraConnectionState.status === "online" || altaraConnectionState.status === "restored") {
     altaraConnectionState.booting = false;
     altaraConnectionBootWaiting = false;
   }
   exposeAltaraConnectionState();
-  updateAltaraConnectionUi();
+  syncAltaraConnectionActionGates();
   if (previousStatus !== altaraConnectionState.status) {
     logAltaraConnection(altaraConnectionState.status === "restored" ? "restored" : altaraConnectionState.status, { reason, previousStatus });
     const recoveryOwnsTransition = altaraConnectionRecoveryInFlight === true;
-    if (["offline", "reconnecting"].includes(altaraConnectionState.status) && !recoveryOwnsTransition) {
+    if (altaraConnectionState.status === "offline" && !recoveryOwnsTransition) {
       handleAltaraConnectionBecameDisconnected(reason);
     }
-    if (altaraConnectionState.status === "restored" && !recoveryOwnsTransition) {
-      void handleAltaraConnectionRestored(reason);
-    }
+    // Recovery is started only by the explicit REST/network retry path. A
+    // Realtime status transition or a successful scoped REST read must not
+    // rebuild global subscriptions or renavigate the active server.
   }
 }
-function ensureAltaraConnectionUi() {
-  if (typeof document === "undefined") return { overlay: null, banner: null, toast: null };
-  let overlay = document.getElementById("connectionOverlay");
-  if (!overlay) {
-    overlay = document.createElement("div");
-    overlay.id = "connectionOverlay";
-    overlay.className = "connectionOverlay";
-    overlay.setAttribute("role", "alertdialog");
-    overlay.setAttribute("aria-live", "assertive");
-    overlay.setAttribute("aria-modal", "true");
-    overlay.innerHTML = `
-      <div class="connectionOverlayCard">
-        <div class="connectionOverlayMark" aria-hidden="true">ALTARA</div>
-        <div class="connectionOverlaySpinner" aria-hidden="true"></div>
-        <h2 data-connection-title>Waiting for connection...</h2>
-        <p data-connection-text>ALTARA will continue when your internet is back.</p>
-        <div class="connectionOverlayMeta" data-connection-meta></div>
-        <button class="connectionRetryButton" type="button" data-connection-retry>Retry now</button>
-      </div>`;
-    document.body.appendChild(overlay);
-  }
-  let banner = document.getElementById("connectionStatusBanner");
-  if (!banner) {
-    banner = document.createElement("div");
-    banner.id = "connectionStatusBanner";
-    banner.className = "connectionStatusBanner";
-    banner.setAttribute("role", "status");
-    banner.setAttribute("aria-live", "polite");
-    banner.innerHTML = `
-      <span data-connection-banner-text>Reconnecting...</span>
-      <button class="connectionRetryButton" type="button" data-connection-retry>Retry</button>`;
-    document.body.appendChild(banner);
-  }
+function ensureAltaraConnectionToast() {
+  if (typeof document === "undefined") return null;
   let toast = document.getElementById("connectionToast");
   if (!toast) {
     toast = document.createElement("div");
@@ -2251,104 +2285,11 @@ function ensureAltaraConnectionUi() {
     toast.setAttribute("aria-live", "polite");
     document.body.appendChild(toast);
   }
-  return { overlay, banner, toast };
-}
-
-function setAltaraConnectionRetryButtonsBusy(busy) {
-  if (typeof document === "undefined") return;
-  document.querySelectorAll("[data-connection-retry]").forEach((button) => {
-    if (!(button instanceof HTMLButtonElement)) return;
-    button.disabled = !!busy;
-    button.setAttribute("aria-busy", busy ? "true" : "false");
-  });
-}
-
-function getAltaraConnectionUiCopy(presentation = getAltaraConnectionUiPresentation()) {
-  const severity = String(presentation?.severity || "hidden");
-  const reason = String(presentation?.reason || "");
-  if (severity === "overlay") {
-    return {
-      title: "Waiting for connection",
-      text: "We'll reconnect automatically.",
-    };
-  }
-  if (reason.includes("network")) {
-    return {
-      title: "Connection lost",
-      text: "ALTARA will reconnect automatically when your internet is back.",
-    };
-  }
-  return {
-    title: "Waiting for connection",
-    text: "We are checking ALTARA services and will continue automatically.",
-  };
-}
-
-function scheduleAltaraConnectionUiRefresh(delayMs = 0) {
-  if (altaraConnectionUiTimer) {
-    clearTimeout(altaraConnectionUiTimer);
-    altaraConnectionUiTimer = 0;
-  }
-  const delay = Math.max(0, Math.min(ALTARA_CONNECTION_OFFLINE_OVERLAY_GRACE_MS, Number(delayMs) || 0));
-  if (!delay) return;
-  altaraConnectionUiTimer = setTimeout(() => {
-    altaraConnectionUiTimer = 0;
-    updateAltaraConnectionUi();
-  }, delay + 40);
-}
-
-function updateAltaraConnectionUi() {
-  if (typeof document === "undefined") return;
-  const { overlay, banner } = ensureAltaraConnectionUi();
-  if (!overlay || !banner) return;
-  const status = String(altaraConnectionState.status || "booting").trim().toLowerCase();
-  const presentation = getAltaraConnectionUiPresentation(altaraConnectionState);
-  const severity = String(presentation.severity || "hidden");
-  const showOverlay = severity === "overlay";
-  const showBanner = severity === "banner";
-  const previousSeverity = String(altaraConnectionState.uiSeverity || "hidden");
-  altaraConnectionState.uiSeverity = severity;
-  altaraConnectionState.uiReason = String(presentation.reason || "");
-  if (previousSeverity !== severity) {
-    altaraConnectionState.visibleSince = severity === "hidden" ? "" : new Date().toISOString();
-  } else if (severity !== "hidden" && !altaraConnectionState.visibleSince) {
-    altaraConnectionState.visibleSince = new Date().toISOString();
-  } else if (severity === "hidden" && altaraConnectionState.visibleSince) {
-    altaraConnectionState.visibleSince = "";
-  }
-  scheduleAltaraConnectionUiRefresh(presentation.delayRemainingMs);
-
-  const copy = getAltaraConnectionUiCopy(presentation);
-  const titleEl = overlay.querySelector("[data-connection-title]");
-  const textEl = overlay.querySelector("[data-connection-text]");
-  const metaEl = overlay.querySelector("[data-connection-meta]");
-  if (titleEl) titleEl.textContent = copy.title;
-  if (textEl) textEl.textContent = copy.text;
-  if (metaEl) {
-    const attempt = Math.max(0, Number(altaraConnectionState.reconnectAttempt || 0) || 0);
-    const retryIn = Math.max(0, Math.ceil((Number(altaraConnectionState.nextRetryAt || 0) - Date.now()) / 1000));
-    metaEl.textContent = attempt ? `Attempt ${attempt}${retryIn ? " - retrying in " + retryIn + "s" : ""}` : "Checking connection...";
-  }
-  overlay.classList.toggle("is-visible", showOverlay);
-  overlay.setAttribute("aria-hidden", showOverlay ? "false" : "true");
-  const bannerText = banner.querySelector("[data-connection-banner-text]");
-  if (bannerText) {
-    bannerText.textContent = (altaraConnectionState.networkOnline === false || altaraConnectionState.simulatedOffline)
-      ? "Offline \u2014 reconnecting\u2026"
-      : (altaraConnectionState.realtimeConnected ? "Reconnecting\u2026" : "Reconnecting Realtime\u2026");
-  }
-  banner.classList.toggle("is-visible", showBanner);
-  banner.setAttribute("aria-hidden", showBanner ? "false" : "true");
-  document.body.classList.toggle("connection-is-offline", isAltaraConnectionBlockingNetworkActions());
-  document.body.classList.toggle("connection-is-degraded", showBanner);
-  document.body.setAttribute("data-altara-connection-status", status);
-  document.body.setAttribute("data-altara-connection-ui", severity);
-  syncAltaraConnectionActionGates();
-  exposeAltaraConnectionState();
+  return toast;
 }
 function showAltaraConnectionToast(message = "Waiting for connection...", { durationMs = 2200 } = {}) {
   const text = String(message || "").trim() || "Waiting for connection...";
-  const { toast } = ensureAltaraConnectionUi();
+  const toast = ensureAltaraConnectionToast();
   if (!toast) return;
   if (toast.classList.contains("is-visible") && toast.textContent === text) {
     if (altaraConnectionToastHideTimer) clearTimeout(altaraConnectionToastHideTimer);
@@ -2364,6 +2305,11 @@ function showAltaraConnectionToast(message = "Waiting for connection...", { dura
 function syncAltaraConnectionActionGates() {
   if (typeof document === "undefined") return;
   const block = isAltaraConnectionBlockingNetworkActions();
+  document.body?.classList?.toggle("connection-is-offline", block);
+  document.body?.setAttribute?.("data-altara-connection-status", String(altaraConnectionState.status || "booting"));
+  let reconcileMessageComposer = false;
+  let reconcileChannelManagement = false;
+  let reconcileCallControls = false;
   document.querySelectorAll(ALTARA_CONNECTION_ACTION_SELECTORS).forEach((el) => {
     if (!(el instanceof HTMLButtonElement || el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) return;
     if (block) {
@@ -2373,13 +2319,58 @@ function syncAltaraConnectionActionGates() {
       el.setAttribute("data-connection-disabled", "1");
       if (!el.title) el.title = "Waiting for connection";
     } else if (el.getAttribute("data-connection-disabled") === "1") {
-      if (el.getAttribute("data-connection-was-enabled") === "1") el.disabled = false;
+      const wasEnabledBeforeConnectionBlock = el.getAttribute("data-connection-was-enabled") === "1";
+      const isMessageComposerControl = el.matches("#dmSend,#btnAttach,#dmFileInput");
+      const isChannelManagementControl = el.matches("[data-server-create-channel]");
+      const isCallControl = el.matches([
+        "[data-call-event-join]",
+        "[data-user-list-act='start_call']",
+        "#btnCall",
+        "#btnAnswer",
+        "#btnShareScreen",
+        "#btnShareScreenStage",
+        "#btnShareScreenSmall",
+        "#btnCamera",
+        "#btnCameraStage",
+        "#btnCameraSmall",
+      ].join(","));
       el.removeAttribute("data-connection-was-enabled");
       el.removeAttribute("data-connection-disabled");
-      el.removeAttribute("aria-disabled");
       if (el.title === "Waiting for connection") el.removeAttribute("title");
+      if (isMessageComposerControl) {
+        reconcileMessageComposer = true;
+      } else if (isChannelManagementControl) {
+        reconcileChannelManagement = true;
+      } else if (isCallControl) {
+        reconcileCallControls = true;
+      } else if (wasEnabledBeforeConnectionBlock) {
+        el.disabled = false;
+        el.removeAttribute("aria-disabled");
+      }
     }
   });
+  if (block) return;
+  if (reconcileMessageComposer) {
+    renderActiveServerMessageCapabilitySurfaces("connection-gate-released", { preserveLayout: true });
+    const fileInput = document.getElementById("dmFileInput");
+    const attachButton = document.getElementById("btnAttach");
+    if (fileInput instanceof HTMLInputElement) {
+      const attachmentAllowed = !!(
+        attachButton
+        && attachButton.disabled !== true
+        && attachButton.getAttribute("aria-disabled") !== "true"
+        && !attachButton.classList.contains("is-attachment-permission-denied")
+      );
+      fileInput.disabled = !attachmentAllowed;
+      if (attachmentAllowed) fileInput.removeAttribute("aria-disabled");
+      else fileInput.setAttribute("aria-disabled", "true");
+    }
+  }
+  if (reconcileChannelManagement) {
+    const activeServerId = normId(state.activeDm?.serverId || getActiveServerContext?.()?.serverId || "");
+    if (activeServerId) patchActiveServerChannelManagementCapabilityUi(activeServerId);
+  }
+  if (reconcileCallControls) refreshCallUI();
 }
 
 function guardAltaraNetworkAction(action = "action") {
@@ -2387,7 +2378,7 @@ function guardAltaraNetworkAction(action = "action") {
   const label = String(action || "action").trim() || "action";
   showAltaraConnectionToast(`Waiting for connection. ${label} will work when ALTARA reconnects.`);
   altaraConnectionState.booting = false;
-  updateAltaraConnectionUi();
+  syncAltaraConnectionActionGates();
   return false;
 }
 
@@ -2397,13 +2388,6 @@ function bindAltaraConnectionActionGuardOnce() {
   document.addEventListener("click", (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    const retry = target.closest("[data-connection-retry]");
-    if (retry) {
-      event.preventDefault();
-      event.stopPropagation();
-      void retryAltaraConnectionNow("manual-retry");
-      return;
-    }
     const actionEl = target.closest(ALTARA_CONNECTION_ACTION_SELECTORS);
     if (!actionEl || !isAltaraConnectionBlockingNetworkActions()) return;
     event.preventDefault();
@@ -2421,74 +2405,84 @@ function bindAltaraConnectionActionGuardOnce() {
 
 async function pingAltaraBackendReachability({ reason = "ping", scheduleRetry = true } = {}) {
   if (altaraConnectionPingInFlight) return altaraConnectionPingInFlight;
-  altaraConnectionPingInFlight = (async () => {
+  const probeTask = (async () => {
     if (altaraConnectionState.simulatedOffline || getNavigatorOnlineSignal() === false) {
       throw new Error("network_offline");
     }
-    if (typeof fetch === "function" && SUPABASE_URL) {
-      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), ALTARA_CONNECTION_BACKEND_TIMEOUT_MS) : 0;
-      try {
-        const response = await fetch(String(SUPABASE_URL).replace(/\/+$/, "") + "/auth/v1/health", {
-          method: "GET",
-          cache: "no-store",
-          headers: { apikey: SUPABASE_ANON_KEY || "" },
-          signal: controller?.signal,
-        });
-        if (response && Number(response.status || 0) < 500) return true;
-        throw new Error("backend_unhealthy_" + String(response?.status || "unknown"));
-      } finally {
-        if (timer) clearTimeout(timer);
-      }
+    const sessionResult = await altaraWithTimeout(
+      supabase.auth.getSession(),
+      ALTARA_CONNECTION_BACKEND_TIMEOUT_MS,
+      "auth.getSession.connection-probe"
+    );
+    const session = sessionResult?.data?.session || null;
+    const probeUserId = normId(session?.user?.id || state.user?.id || "");
+    let restProbe = supabase.from("profiles").select("id", { head: true }).limit(1);
+    if (probeUserId) restProbe = restProbe.eq("id", probeUserId);
+    const restResult = await altaraWithTimeout(
+      restProbe,
+      ALTARA_CONNECTION_BACKEND_TIMEOUT_MS,
+      "authenticated PostgREST probe"
+    );
+    if (restResult?.error && isAltaraRestConnectivityFailure(restResult.error)) {
+      throw restResult.error;
     }
-    await altaraWithTimeout(supabase.auth.getSession(), ALTARA_CONNECTION_BACKEND_TIMEOUT_MS, "auth.getSession");
+    logAltaraConnection("authenticated REST probe complete", {
+      reason,
+      hasSession: !!session?.user?.id,
+      responseCode: String(restResult?.error?.code || "ok").slice(0, 80),
+      suppressGlobalToast: true,
+    }, { verbose: true });
     return true;
   })();
-  try {
-    await altaraConnectionPingInFlight;
-    if (altaraConnectionRetryTimer) {
-      clearTimeout(altaraConnectionRetryTimer);
-      altaraConnectionRetryTimer = 0;
+  const pingTask = (async () => {
+    try {
+      await probeTask;
+      if (altaraConnectionRetryTimer) {
+        clearTimeout(altaraConnectionRetryTimer);
+        altaraConnectionRetryTimer = 0;
+      }
+      const nowIso = new Date().toISOString();
+      setAltaraConnectionPatch({
+        networkOnline: true,
+        supabaseReachable: true,
+        restState: "healthy",
+        backendFailureCount: 0,
+        lastSuccessfulPingAt: nowIso,
+        lastOnlineAt: nowIso,
+        reconnectAttempt: 0,
+        retryDelayMs: 0,
+        nextRetryAt: 0,
+        lastError: "",
+      }, reason || "backend-ping-ok");
+      logAltaraConnection("backend ping ok", { reason });
+      if (state.user?.id && altaraRealtimeGlobalResetPending) {
+        void runAltaraConnectionRecovery(reason || "backend-ping-ok");
+      }
+      return true;
+    } catch (error) {
+      const message = String(error?.message || error || "backend_ping_failed").slice(0, 220);
+      const nowIso = new Date().toISOString();
+      const networkOnline = getNavigatorOnlineSignal() && !altaraConnectionState.simulatedOffline;
+      const backendFailureCount = Math.max(0, Number(altaraConnectionState.backendFailureCount || 0) || 0) + 1;
+      const shouldMarkBackendDown = !networkOnline || backendFailureCount >= 2 || altaraConnectionState.supabaseReachable === false;
+      setAltaraConnectionPatch({
+        networkOnline,
+        supabaseReachable: shouldMarkBackendDown ? false : altaraConnectionState.supabaseReachable,
+        restState: "recovering",
+        backendFailureCount,
+        lastBackendFailureAt: nowIso,
+        lastOfflineAt: shouldMarkBackendDown ? nowIso : altaraConnectionState.lastOfflineAt,
+        lastError: message,
+      }, reason || "backend-ping-failed");
+      logAltaraConnection("backend ping failed", { reason, error: message });
+      if (scheduleRetry) scheduleAltaraConnectionRetry(reason || "backend-ping-failed");
+      return false;
+    } finally {
+      if (altaraConnectionPingInFlight === pingTask) altaraConnectionPingInFlight = null;
     }
-    const nowIso = new Date().toISOString();
-    setAltaraConnectionPatch({
-      networkOnline: true,
-      supabaseReachable: true,
-      restState: "healthy",
-      backendFailureCount: 0,
-      lastSuccessfulPingAt: nowIso,
-      lastOnlineAt: nowIso,
-      reconnectAttempt: 0,
-      retryDelayMs: 0,
-      nextRetryAt: 0,
-      lastError: "",
-    }, reason || "backend-ping-ok");
-    logAltaraConnection("backend ping ok", { reason });
-    if (state.user?.id && Math.max(0, Number(altaraConnectionState.lastHardDisconnectedAt || 0) || 0) > 0) {
-      void runAltaraConnectionRecovery(reason || "backend-ping-ok");
-    }
-    return true;
-  } catch (error) {
-    const message = String(error?.message || error || "backend_ping_failed").slice(0, 220);
-    const nowIso = new Date().toISOString();
-    const networkOnline = getNavigatorOnlineSignal() && !altaraConnectionState.simulatedOffline;
-    const backendFailureCount = Math.max(0, Number(altaraConnectionState.backendFailureCount || 0) || 0) + 1;
-    const shouldMarkBackendDown = !networkOnline || backendFailureCount >= 2 || altaraConnectionState.supabaseReachable === false;
-    setAltaraConnectionPatch({
-      networkOnline,
-      supabaseReachable: shouldMarkBackendDown ? false : altaraConnectionState.supabaseReachable,
-      restState: "recovering",
-      backendFailureCount,
-      lastBackendFailureAt: nowIso,
-      lastOfflineAt: shouldMarkBackendDown ? nowIso : altaraConnectionState.lastOfflineAt,
-      lastError: message,
-    }, reason || "backend-ping-failed");
-    logAltaraConnection("backend ping failed", { reason, error: message });
-    if (scheduleRetry) scheduleAltaraConnectionRetry(reason || "backend-ping-failed");
-    return false;
-  } finally {
-    altaraConnectionPingInFlight = null;
-  }
+  })();
+  altaraConnectionPingInFlight = pingTask;
+  return pingTask;
 }
 
 function scheduleAltaraConnectionRetry(reason = "retry") {
@@ -2504,7 +2498,6 @@ function scheduleAltaraConnectionRetry(reason = "retry") {
   altaraConnectionState.retryDelayMs = delay;
   altaraConnectionState.nextRetryAt = Date.now() + delay;
   exposeAltaraConnectionState();
-  updateAltaraConnectionUi();
   logAltaraConnection("retry scheduled", { reason, attempt, delayMs: delay });
   altaraConnectionRetryTimer = setTimeout(() => {
     altaraConnectionRetryTimer = 0;
@@ -2524,25 +2517,28 @@ async function retryAltaraConnectionNow(reason = "manual", { resetAttempt = true
       retryDelayMs: 0,
       nextRetryAt: 0,
     }, reason);
+    const requiresGlobalRealtimeReset = altaraRealtimeGlobalResetPending === true;
+    const requiresAuthRevalidation = isAltaraAuthRevalidationPending();
     const reachable = await pingAltaraBackendReachability({ reason, scheduleRetry: true });
-    if (reachable && state.user?.id && !altaraConnectionState.realtimeConnected) {
+    if (reachable && state.user?.id && (requiresGlobalRealtimeReset || requiresAuthRevalidation)) {
       await runAltaraConnectionRecovery("retry:" + String(reason || "manual"));
+    } else if (reachable && state.user?.id && !altaraConnectionState.realtimeConnected) {
+      scheduleAltaraPresenceRealtimeRestart("retry:" + String(reason || "manual"));
     }
     return reachable;
   })();
   altaraConnectionRetryInFlight = retryTask;
-  setAltaraConnectionRetryButtonsBusy(true);
   try {
     return await retryTask;
   } finally {
     if (altaraConnectionRetryInFlight === retryTask) altaraConnectionRetryInFlight = null;
-    setAltaraConnectionRetryButtonsBusy(false);
   }
 }
 
 function markAltaraConnectionOffline(reason = "offline") {
   if (altaraConnectionGraceTimer) clearTimeout(altaraConnectionGraceTimer);
   altaraConnectionGraceTimer = 0;
+  altaraRealtimeGlobalResetPending = true;
   altaraRealtimeSubscribedSources.clear();
   const nowIso = new Date().toISOString();
   setAltaraConnectionPatch({
@@ -2563,39 +2559,239 @@ function markAltaraConnectionOffline(reason = "offline") {
   scheduleAltaraConnectionRetry(reason);
 }
 
+function areAltaraCriticalRealtimeSourcesSubscribed() {
+  return Array.from(altaraRealtimeCoreSources)
+    .some((source) => altaraRealtimeSubscribedSources.has(source));
+}
+
+function readAltaraRealtimeTransportConnected() {
+  try {
+    if (typeof supabase?.realtime?.isConnected === "function") {
+      return supabase.realtime.isConnected() === true;
+    }
+    const readyState = supabase?.realtime?.conn?.readyState ?? supabase?.realtime?.socket?.readyState;
+    if (readyState === 1 || readyState === "open" || readyState === "OPEN") return true;
+    if (readyState === 0 || readyState === 2 || readyState === 3) return false;
+  } catch (_) {}
+  return null;
+}
+
+function isAltaraCoreRealtimeHealthy() {
+  const transportConnected = readAltaraRealtimeTransportConnected();
+  if (transportConnected !== null) return transportConnected;
+  return areAltaraCriticalRealtimeSourcesSubscribed();
+}
+
+function reconcileAltaraRealtimeTransportHealth(
+  reason = "realtime-transport",
+) {
+  const transportConnected = readAltaraRealtimeTransportConnected();
+  if (transportConnected === null) return areAltaraCriticalRealtimeSourcesSubscribed();
+  if (transportConnected) {
+    if (!state.user?.id) return true;
+    const canClearConnectionError = altaraConnectionState.supabaseReachable === true;
+    const realtimeErrorActive = String(altaraConnectionState.lastSafeErrorCode || "").startsWith("realtime_");
+    if (
+      altaraConnectionState.realtimeConnected !== true
+      || altaraConnectionState.realtimeState !== "healthy"
+      || (canClearConnectionError && realtimeErrorActive)
+    ) {
+      setAltaraConnectionPatch({
+        realtimeConnected: true,
+        realtimeState: "healthy",
+        realtimeFailureCount: 0,
+        lastError: canClearConnectionError && realtimeErrorActive ? "" : altaraConnectionState.lastError,
+        lastSafeErrorCode: canClearConnectionError && realtimeErrorActive ? "" : altaraConnectionState.lastSafeErrorCode,
+      }, `${reason}:connected`);
+    }
+    return true;
+  }
+  return false;
+}
+
+function isAltaraRealtimeSourceSubscribed(source = "") {
+  const sourceKey = String(source || "").trim().toLowerCase();
+  return !!sourceKey && altaraRealtimeSubscribedSources.has(sourceKey);
+}
+
+function getAltaraPresenceRealtimeChannelState() {
+  try {
+    return String(presence?.getDebugSnapshot?.()?.presenceChannelState || "").trim().toUpperCase();
+  } catch (_) {
+    return "";
+  }
+}
+
+function isAltaraPresenceRealtimeActiveOrJoining() {
+  const status = getAltaraPresenceRealtimeChannelState();
+  return status === "JOINING" || status === "SUBSCRIBED";
+}
+
+async function refreshAltaraRealtimeAuthForReconnect(reason = "realtime-reconnect") {
+  if (!state.user?.id || getNavigatorOnlineSignal() === false || altaraConnectionState.simulatedOffline) return false;
+  try {
+    const sessionResult = await altaraWithTimeout(
+      supabase.auth.getSession(),
+      ALTARA_CONNECTION_BACKEND_TIMEOUT_MS,
+      "auth.getSession.realtime-reconnect"
+    );
+    const session = sessionResult?.data?.session || null;
+    if (!session?.user?.id || normId(session.user.id) !== normId(state.user.id)) return false;
+    const token = String(session.access_token || "").trim();
+    if (token && supabase?.realtime && typeof supabase.realtime.setAuth === "function") {
+      await Promise.resolve(supabase.realtime.setAuth(token));
+    }
+    if (
+      supabase?.realtime
+      && typeof supabase.realtime.isConnected === "function"
+      && !supabase.realtime.isConnected()
+      && typeof supabase.realtime.connect === "function"
+    ) {
+      supabase.realtime.connect();
+    }
+    logAltaraConnection("realtime auth refreshed", { reason, suppressGlobalToast: true }, { verbose: true });
+    return true;
+  } catch (error) {
+    logAltaraConnection("realtime auth refresh failed", {
+      reason,
+      error: getSafeAuthErrorCode(error, "realtime_auth_refresh"),
+      suppressGlobalToast: true,
+    });
+    return false;
+  }
+}
+
+function scheduleAltaraPresenceRealtimeRestart(reason = "presence-reconnect") {
+  if (
+    !state.user?.id
+    || altaraPresenceRealtimeRestartTimer
+    || altaraPresenceRealtimeRestartInFlight
+    || isAltaraPresenceRealtimeActiveOrJoining()
+  ) return false;
+  const generation = ++altaraPresenceRealtimeRestartGeneration;
+  const attempt = ++altaraPresenceRealtimeRestartAttempt;
+  const delayMs = getReconnectDelayMs(attempt, {
+    randomValue: 0.5,
+    baseMs: ALTARA_REALTIME_SOURCE_RESTART_DELAY_MS,
+    capMs: ALTARA_CONNECTION_RETRY_DELAYS_MS[ALTARA_CONNECTION_RETRY_DELAYS_MS.length - 1],
+    jitterRatio: 0.2,
+  });
+  altaraPresenceRealtimeRestartTimer = setTimeout(() => {
+    altaraPresenceRealtimeRestartTimer = 0;
+    if (
+      generation !== altaraPresenceRealtimeRestartGeneration
+      || !state.user?.id
+      || getNavigatorOnlineSignal() === false
+      || altaraConnectionState.simulatedOffline
+    ) return;
+    const restart = (async () => {
+      const authReady = await refreshAltaraRealtimeAuthForReconnect(reason);
+      if (
+        !authReady
+        || generation !== altaraPresenceRealtimeRestartGeneration
+        || altaraConnectionRecoveryInFlight
+        || altaraRealtimeResetInFlight
+        || isAltaraPresenceRealtimeActiveOrJoining()
+      ) return false;
+      await stopAltaraPresenceForRecovery(`local:${reason}`);
+      if (
+        generation !== altaraPresenceRealtimeRestartGeneration
+        || altaraConnectionRecoveryInFlight
+        || altaraRealtimeResetInFlight
+        || !state.user?.id
+        || getNavigatorOnlineSignal() === false
+        || altaraConnectionState.simulatedOffline
+      ) return false;
+      await startPresence();
+      return true;
+    })().catch((error) => {
+      logAltaraConnection("presence local reconnect failed", {
+        reason,
+        error: getSafeAuthErrorCode(error, "presence_reconnect"),
+        suppressGlobalToast: true,
+      });
+      return false;
+    });
+    altaraPresenceRealtimeRestartInFlight = restart;
+    void restart.finally(() => {
+      if (altaraPresenceRealtimeRestartInFlight === restart) altaraPresenceRealtimeRestartInFlight = null;
+      if (
+        generation === altaraPresenceRealtimeRestartGeneration
+        && !isAltaraPresenceRealtimeActiveOrJoining()
+        && state.user?.id
+      ) {
+        scheduleAltaraPresenceRealtimeRestart(`${reason}:retry`);
+      }
+    });
+  }, delayMs);
+  return true;
+}
+
 function recordAltaraRealtimeStatus(statusInput = "", { source = "realtime", error = null } = {}) {
   const status = String(statusInput || "").trim().toUpperCase();
   const sourceKey = String(source || "realtime").trim().toLowerCase() || "realtime";
   if (!status) return;
   if (status === "SUBSCRIBED") {
+    if (sourceKey === "active-conversation" && !altaraActiveConversationRealtimeRequired) {
+      altaraRealtimeSubscribedSources.delete(sourceKey);
+      exposeAltaraConnectionState();
+      return;
+    }
     altaraRealtimeSubscribedSources.add(sourceKey);
-    const criticalHealthy = Array.from(altaraRealtimeRequiredSources)
-      .every((requiredSource) => altaraRealtimeSubscribedSources.has(requiredSource));
-    const nowIso = new Date().toISOString();
+    const criticalHealthy = isAltaraCoreRealtimeHealthy();
+    if (sourceKey === "presence" && altaraPresenceRealtimeRestartTimer) {
+      clearTimeout(altaraPresenceRealtimeRestartTimer);
+      altaraPresenceRealtimeRestartTimer = 0;
+    }
+    if (sourceKey === "presence") {
+      altaraPresenceRealtimeRestartAttempt = 0;
+      altaraPresenceRealtimeRestartGeneration += 1;
+    }
+    const coreSource = altaraRealtimeCoreSources.has(sourceKey);
+    if (!coreSource && !criticalHealthy) {
+      logAltaraConnection("feature realtime subscribed", {
+        source,
+        coreHealthy: false,
+        subscribedSources: Array.from(altaraRealtimeSubscribedSources),
+        suppressGlobalToast: true,
+      }, { verbose: true });
+      exposeAltaraConnectionState();
+      return;
+    }
+    const canClearConnectionError = criticalHealthy && altaraConnectionState.supabaseReachable === true;
     setAltaraConnectionPatch({
       realtimeConnected: criticalHealthy,
       realtimeState: criticalHealthy ? "healthy" : "recovering",
-      supabaseReachable: true,
-      restState: "healthy",
-      backendFailureCount: 0,
       realtimeFailureCount: criticalHealthy ? 0 : altaraConnectionState.realtimeFailureCount,
-      lastSuccessfulPingAt: nowIso,
-      lastOnlineAt: nowIso,
-      lastError: criticalHealthy ? "" : altaraConnectionState.lastError,
-      lastSafeErrorCode: criticalHealthy ? "" : altaraConnectionState.lastSafeErrorCode,
+      lastError: canClearConnectionError ? "" : altaraConnectionState.lastError,
+      lastSafeErrorCode: canClearConnectionError ? "" : altaraConnectionState.lastSafeErrorCode,
     }, String(source || "realtime") + ":subscribed");
     logAltaraConnection("realtime subscribed", {
       source,
       criticalHealthy,
-      requiredSources: Array.from(altaraRealtimeRequiredSources),
+      coreSources: Array.from(altaraRealtimeCoreSources),
       subscribedSources: Array.from(altaraRealtimeSubscribedSources),
     }, { verbose: false });
     return;
   }
   if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
     altaraRealtimeSubscribedSources.delete(sourceKey);
-    const critical = altaraRealtimeRequiredSources.has(sourceKey);
-    if (!critical) {
+    const coreSource = altaraRealtimeCoreSources.has(sourceKey);
+    const coreHealthy = isAltaraCoreRealtimeHealthy();
+    if (!coreSource) {
+      if (sourceKey === "presence" && state.user?.id) {
+        scheduleAltaraPresenceRealtimeRestart(`realtime:${status.toLowerCase()}`);
+      }
+      if (coreHealthy && altaraConnectionState.supabaseReachable === true) {
+        const realtimeErrorActive = String(altaraConnectionState.lastSafeErrorCode || "").startsWith("realtime_");
+        setAltaraConnectionPatch({
+          realtimeConnected: true,
+          realtimeState: "healthy",
+          realtimeFailureCount: 0,
+          lastError: realtimeErrorActive ? "" : altaraConnectionState.lastError,
+          lastSafeErrorCode: realtimeErrorActive ? "" : altaraConnectionState.lastSafeErrorCode,
+        }, `${sourceKey}:${status.toLowerCase()}:core-still-healthy`);
+      }
       logAltaraConnection("non-critical realtime lost", {
         source,
         status,
@@ -2603,6 +2799,23 @@ function recordAltaraRealtimeStatus(statusInput = "", { source = "realtime", err
         suppressGlobalToast: true,
       });
       exposeAltaraConnectionState();
+      return;
+    }
+    if (coreHealthy) {
+      const realtimeErrorActive = String(altaraConnectionState.lastSafeErrorCode || "").startsWith("realtime_");
+      setAltaraConnectionPatch({
+        realtimeConnected: true,
+        realtimeState: "healthy",
+        realtimeFailureCount: 0,
+        lastError: realtimeErrorActive && altaraConnectionState.supabaseReachable ? "" : altaraConnectionState.lastError,
+        lastSafeErrorCode: realtimeErrorActive && altaraConnectionState.supabaseReachable ? "" : altaraConnectionState.lastSafeErrorCode,
+      }, `${sourceKey}:${status.toLowerCase()}:alternate-core-healthy`);
+      logAltaraConnection("core realtime path lost; alternate remains healthy", {
+        source,
+        status,
+        subscribedSources: Array.from(altaraRealtimeSubscribedSources),
+        suppressGlobalToast: true,
+      });
       return;
     }
     const nowIso = new Date().toISOString();
@@ -2618,57 +2831,207 @@ function recordAltaraRealtimeStatus(statusInput = "", { source = "realtime", err
     logAltaraConnection("realtime lost", { source, status, error: String(error?.message || error || ""), suppressGlobalToast: true });
     if (!altaraConnectionState.supabaseReachable || getNavigatorOnlineSignal() === false) {
       void pingAltaraBackendReachability({ reason: "realtime:" + status, scheduleRetry: true });
-    } else if (state.user?.id) {
-      void runAltaraConnectionRecovery("realtime:" + status);
     }
+    // realtime-js automatically rejoins CHANNEL_ERROR/TIMED_OUT channels.
+    // Each core channel owns its terminal CLOSED replacement; eager global
+    // recovery here would compete with the socket reconnect.
   }
 }
 
 function setAltaraActiveConversationRealtimeRequirement(required) {
-  if (required) {
-    altaraRealtimeRequiredSources.add("active-conversation");
-    if (!altaraRealtimeSubscribedSources.has("active-conversation")) {
-      setAltaraConnectionPatch({
-        realtimeConnected: false,
-        realtimeState: "recovering",
-      }, "active-conversation:required");
-    }
-  } else {
-    altaraRealtimeRequiredSources.delete("active-conversation");
+  altaraActiveConversationRealtimeRequired = required === true;
+  if (!altaraActiveConversationRealtimeRequired) {
+    activeConversationRealtimeRestartGeneration += 1;
+    activeConversationRealtimeRestartAttempt = 0;
+    activeConversationRealtimeRestartInFlight = null;
+    activeConversationRealtimeSubscribedChannel = null;
+    activeConversationRealtimeCatchupConversationId = "";
+    activeConversationRealtimeCatchupInFlight = null;
     altaraRealtimeSubscribedSources.delete("active-conversation");
-    const criticalHealthy = Array.from(altaraRealtimeRequiredSources)
-      .every((source) => altaraRealtimeSubscribedSources.has(source));
-    if (criticalHealthy) {
-      setAltaraConnectionPatch({
-        realtimeConnected: true,
-        realtimeState: "healthy",
-        realtimeFailureCount: 0,
-        lastSafeErrorCode: "",
-      }, "active-conversation:not-required");
+    if (activeConversationRealtimeRestartTimer) {
+      clearTimeout(activeConversationRealtimeRestartTimer);
+      activeConversationRealtimeRestartTimer = 0;
     }
+    const criticalHealthy = isAltaraCoreRealtimeHealthy();
+    const realtimeErrorActive = String(altaraConnectionState.lastSafeErrorCode || "").startsWith("realtime_");
+    setAltaraConnectionPatch({
+      realtimeConnected: criticalHealthy,
+      realtimeState: criticalHealthy ? "healthy" : "recovering",
+      realtimeFailureCount: criticalHealthy ? 0 : altaraConnectionState.realtimeFailureCount,
+      lastError: criticalHealthy && realtimeErrorActive && altaraConnectionState.supabaseReachable ? "" : altaraConnectionState.lastError,
+      lastSafeErrorCode: criticalHealthy && realtimeErrorActive && altaraConnectionState.supabaseReachable ? "" : altaraConnectionState.lastSafeErrorCode,
+    }, "active-conversation:not-required");
   }
+  exposeAltaraConnectionState();
 }
 
-async function waitForAltaraCriticalRealtime({ timeoutMs = 9000 } = {}) {
-  const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 9000);
-  while (Date.now() < deadline) {
-    if (Array.from(altaraRealtimeRequiredSources).every((source) => altaraRealtimeSubscribedSources.has(source))) {
-      setAltaraConnectionPatch({
-        realtimeConnected: true,
-        realtimeState: "healthy",
-        realtimeFailureCount: 0,
-        lastSafeErrorCode: "",
-      }, "realtime-critical-healthy");
-      return true;
-    }
-    await altaraDelay(100);
+function isAltaraActiveConversationRealtimeSubscribed(conversationId = "") {
+  const convId = normId(conversationId || "");
+  return !!(
+    convId
+    && altaraActiveConversationRealtimeRequired
+    && normId(activeDmId || state.activeDm?.conversationId || "") === convId
+    && dmChannel
+    && activeConversationRealtimeSubscribedChannel === dmChannel
+    && altaraRealtimeSubscribedSources.has("active-conversation")
+  );
+}
+
+function refreshActiveConversationAfterRealtimeRecovery(conversationId = "") {
+  const convId = normId(conversationId || "");
+  if (
+    !convId
+    || convId !== normId(activeDmId || state.activeDm?.conversationId || "")
+    || !isAltaraActiveConversationRealtimeSubscribed(convId)
+    || isAltaraDefinitivelyOffline()
+  ) return Promise.resolve(false);
+  if (activeConversationRealtimeCatchupInFlight?.conversationId === convId) {
+    return activeConversationRealtimeCatchupInFlight.promise;
   }
-  setAltaraConnectionPatch({
-    realtimeConnected: false,
-    realtimeState: "recovering",
-    lastSafeErrorCode: "realtime_recovery_timeout",
-  }, "realtime-critical-timeout");
-  return false;
+  const catchupPromise = (async () => {
+    await fetchMessages(convId, {
+      initialLatest: true,
+      reason: "active-conversation-realtime-catchup",
+      suppressLoading: true,
+    });
+    return altaraConnectionState.supabaseReachable === true && (
+      convId === normId(activeDmId || state.activeDm?.conversationId || "")
+      && isAltaraActiveConversationRealtimeSubscribed(convId)
+    );
+  })().catch((error) => {
+    logAltaraConnection("active conversation realtime catchup failed", {
+      conversationId: convId,
+      error: getSafeAuthErrorCode(error, "active_conversation_catchup"),
+      suppressGlobalToast: true,
+    });
+    return false;
+  }).finally(() => {
+    if (activeConversationRealtimeCatchupInFlight?.promise === catchupPromise) {
+      activeConversationRealtimeCatchupInFlight = null;
+    }
+  });
+  activeConversationRealtimeCatchupInFlight = { conversationId: convId, promise: catchupPromise };
+  return catchupPromise;
+}
+
+function requestActiveConversationRealtimeCatchupIfReady() {
+  const catchupConversationId = normId(activeConversationRealtimeCatchupConversationId || "");
+  if (!catchupConversationId || !isAltaraActiveConversationRealtimeSubscribed(catchupConversationId)) return false;
+  void refreshActiveConversationAfterRealtimeRecovery(catchupConversationId).then((completed) => {
+    if (completed && normId(activeConversationRealtimeCatchupConversationId || "") === catchupConversationId) {
+      activeConversationRealtimeCatchupConversationId = "";
+    }
+  });
+  return true;
+}
+
+function scheduleAltaraActiveConversationRealtimeRestart(
+  conversationId = "",
+  failedChannel = null,
+  subscribeChannel = null,
+  reason = "active-conversation-reconnect"
+) {
+  const convId = normId(conversationId || "");
+  if (
+    !convId
+    || typeof subscribeChannel !== "function"
+    || !altaraActiveConversationRealtimeRequired
+    || activeConversationRealtimeRestartTimer
+    || activeConversationRealtimeRestartInFlight
+  ) return false;
+  const generation = ++activeConversationRealtimeRestartGeneration;
+  const attempt = ++activeConversationRealtimeRestartAttempt;
+  const delayMs = getReconnectDelayMs(attempt, {
+    randomValue: 0.5,
+    baseMs: ALTARA_REALTIME_SOURCE_RESTART_DELAY_MS,
+    capMs: ALTARA_CONNECTION_RETRY_DELAYS_MS[ALTARA_CONNECTION_RETRY_DELAYS_MS.length - 1],
+    jitterRatio: 0.2,
+  });
+  activeConversationRealtimeRestartTimer = setTimeout(() => {
+    activeConversationRealtimeRestartTimer = 0;
+    if (
+      generation !== activeConversationRealtimeRestartGeneration
+      || altaraConnectionRecoveryInFlight
+      || altaraRealtimeResetInFlight
+      || !state.user?.id
+      || !altaraActiveConversationRealtimeRequired
+      || normId(activeDmId || state.activeDm?.conversationId || "") !== convId
+      || dmChannel !== failedChannel
+      || getNavigatorOnlineSignal() === false
+      || altaraConnectionState.simulatedOffline
+    ) return;
+    const restart = (async () => {
+      const authReady = await refreshAltaraRealtimeAuthForReconnect(reason);
+      if (
+        !authReady
+        || generation !== activeConversationRealtimeRestartGeneration
+        || altaraConnectionRecoveryInFlight
+        || altaraRealtimeResetInFlight
+        || !altaraActiveConversationRealtimeRequired
+        || normId(activeDmId || state.activeDm?.conversationId || "") !== convId
+        || dmChannel !== failedChannel
+      ) return false;
+      dmChannel = null;
+      if (failedChannel) {
+        try { await Promise.resolve(supabase.removeChannel(failedChannel)); } catch (_) {}
+      }
+      if (
+        generation !== activeConversationRealtimeRestartGeneration
+        || altaraConnectionRecoveryInFlight
+        || altaraRealtimeResetInFlight
+        || !altaraActiveConversationRealtimeRequired
+        || normId(activeDmId || state.activeDm?.conversationId || "") !== convId
+        || dmChannel
+      ) return false;
+      const replacement = subscribeChannel();
+      if (!replacement) return false;
+      if (
+        generation !== activeConversationRealtimeRestartGeneration
+        || altaraConnectionRecoveryInFlight
+        || altaraRealtimeResetInFlight
+        || !altaraActiveConversationRealtimeRequired
+        || normId(activeDmId || state.activeDm?.conversationId || "") !== convId
+        || dmChannel !== replacement
+      ) {
+        if (dmChannel !== replacement) {
+          try { await Promise.resolve(supabase.removeChannel(replacement)); } catch (_) {}
+        }
+        return false;
+      }
+      return true;
+    })().catch((error) => {
+      logAltaraConnection("active conversation realtime reconnect failed", {
+        reason,
+        conversationId: convId,
+        error: getSafeAuthErrorCode(error, "active_conversation_reconnect"),
+        suppressGlobalToast: true,
+      });
+      return false;
+    });
+    activeConversationRealtimeRestartInFlight = restart;
+    void restart.finally(() => {
+      if (activeConversationRealtimeRestartInFlight === restart) activeConversationRealtimeRestartInFlight = null;
+      if (
+        generation === activeConversationRealtimeRestartGeneration
+        && !altaraConnectionRecoveryInFlight
+        && !altaraRealtimeResetInFlight
+        && state.user?.id
+        && altaraActiveConversationRealtimeRequired
+        && normId(activeDmId || state.activeDm?.conversationId || "") === convId
+        && !dmChannel
+        && getNavigatorOnlineSignal() !== false
+        && !altaraConnectionState.simulatedOffline
+      ) {
+        scheduleAltaraActiveConversationRealtimeRestart(
+          convId,
+          null,
+          subscribeChannel,
+          `${reason}:retry`
+        );
+      }
+    });
+  }, delayMs);
+  return true;
 }
 
 function recordAltaraLiveKitSnapshot(snapshot = null, { source = "livekit" } = {}) {
@@ -2697,12 +3060,20 @@ async function removeAltaraRealtimeChannelForRecovery(channel) {
 }
 
 function clearAltaraRealtimeRestartTimersForRecovery() {
+  altaraPresenceRealtimeRestartGeneration += 1;
+  activeConversationRealtimeRestartGeneration += 1;
+  altaraPresenceRealtimeRestartInFlight = null;
+  activeConversationRealtimeRestartInFlight = null;
+  activeConversationRealtimeSubscribedChannel = null;
   const clearTimer = (timer) => {
     if (timer) {
       try { clearTimeout(timer); } catch (_) {}
     }
   };
   [
+    altaraPresenceRealtimeRestartTimer,
+    activeConversationRealtimeRestartTimer,
+    dmReactionsRestartTimer,
     globalDmMessageRestartTimer,
     typingInboxRestartTimer,
     globalUserBlocksRestartTimer,
@@ -2713,6 +3084,7 @@ function clearAltaraRealtimeRestartTimersForRecovery() {
     globalServerChannelRestartTimer,
     globalBotChannelMessageRestartTimer,
     globalServerRoleTablesRestartTimer,
+    serverRoleInvalidationBroadcastRestartTimer,
     globalProfileRestartTimer,
     globalFriendRequestRestartTimer,
     globalMessageRequestRestartTimer,
@@ -2720,6 +3092,11 @@ function clearAltaraRealtimeRestartTimersForRecovery() {
     globalModerationActionRestartTimer,
     activeServerBotInstallRealtimeRestartTimer,
   ].forEach(clearTimer);
+  altaraPresenceRealtimeRestartTimer = 0;
+  activeConversationRealtimeRestartTimer = 0;
+  dmReactionsRestartTimer = null;
+  altaraPresenceRealtimeRestartAttempt = 0;
+  activeConversationRealtimeRestartAttempt = 0;
   globalDmMessageRestartTimer = null;
   typingInboxRestartTimer = 0;
   globalUserBlocksRestartTimer = null;
@@ -2730,7 +3107,13 @@ function clearAltaraRealtimeRestartTimersForRecovery() {
   globalServerChannelRestartTimer = null;
   globalBotChannelMessageRestartTimer = null;
   globalServerRoleTablesRestartTimer = null;
+  serverRoleInvalidationBroadcastRestartTimer = null;
   globalProfileRestartTimer = null;
+  globalProfileRestartAttempt = 0;
+  globalProfileListenerGeneration += 1;
+  globalProfileListenerStartTask = null;
+  globalProfileChannelUserId = "";
+  globalProfileChannelStatus = "";
   globalFriendRequestRestartTimer = null;
   globalMessageRequestRestartTimer = null;
   globalGroupDmCallRestartTimer = null;
@@ -2743,6 +3126,13 @@ function resetAltaraRealtimeSubscriptionsForRecovery(reason = "connection-recove
   const resetTask = (async () => {
   clearAltaraRealtimeRestartTimersForRecovery();
   altaraRealtimeSubscribedSources.clear();
+  const activeConversationIdBeforeReset = normId(activeDmId || state.activeDm?.conversationId || "");
+  if (dmChannel && activeConversationIdBeforeReset) {
+    activeConversationRealtimeCatchupConversationId = activeConversationIdBeforeReset;
+  }
+  if (serverRoleInvalidationBroadcastChannel) {
+    serverRoleInvalidationBroadcastNeedsCatchup = true;
+  }
   try { unsubscribeTypingContext({ sendStop: false, reason }); } catch (_) {}
   try { unsubscribeTypingSidebarSubscriptions(reason); } catch (_) {}
   try { unsubscribeTypingInboxForCurrentUser({ reason, clearState: false, clearOutbound: true }); } catch (_) {}
@@ -2760,12 +3150,14 @@ function resetAltaraRealtimeSubscriptionsForRecovery(reason = "connection-recove
     typingInboxChannel,
     globalProfileChannel,
     globalDmMembershipChannel,
+    groupDmRevocationBroadcastChannel,
     globalConversationChannel,
     globalDmPrivacyEventChannel,
     activeDmPrivacyChannel,
     globalServerChannelTableChannel,
     globalBotChannelMessageChannel,
     globalServerRoleTablesChannel,
+    serverRoleInvalidationBroadcastChannel,
     globalFriendRequestChannel,
     globalMessageRequestChannel,
     globalUserBlocksChannel,
@@ -2784,20 +3176,39 @@ function resetAltaraRealtimeSubscriptionsForRecovery(reason = "connection-recove
 
   dmChannel = null;
   dmReactionsChannel = null;
+  dmReactionsChannelStatus = "";
   dmReactionEventRefreshQueue.reset();
   globalDmMessageChannel = null;
+  globalDmMessageChannelStatus = "";
+  globalDmMessageNeedsCatchup = false;
   typingRealtimeChannel = null;
   typingInboxChannel = null;
   globalProfileChannel = null;
   globalDmMembershipChannel = null;
+  groupDmRevocationBroadcastChannel = null;
+  groupDmRevocationBroadcastUserId = "";
+  groupDmRevocationBroadcastAuthToken = "";
+  groupDmRevocationBroadcastStatus = "";
+  groupDmRevocationBroadcastGeneration += 1;
+  groupDmUserEventTasksByEventId.clear();
+  groupDmMembershipReconcilePendingKeys.clear();
+  if (groupDmRevocationBroadcastRestartTimer) {
+    clearTimeout(groupDmRevocationBroadcastRestartTimer);
+    groupDmRevocationBroadcastRestartTimer = null;
+  }
   globalConversationChannel = null;
   globalDmPrivacyEventChannel = null;
   activeDmPrivacyChannel = null;
   globalServerChannelTableChannel = null;
   globalBotChannelMessageChannel = null;
   globalServerRoleTablesChannel = null;
+  serverRoleInvalidationBroadcastChannel = null;
+  serverRoleInvalidationBroadcastUserId = "";
+  serverRoleInvalidationBroadcastAuthToken = "";
+  serverRoleInvalidationBroadcastStatus = "";
   globalFriendRequestChannel = null;
   globalMessageRequestChannel = null;
+  globalMessageRequestUserId = "";
   globalUserBlocksChannel = null;
   globalModerationActionChannel = null;
   globalGroupDmCallSessionChannel = null;
@@ -2850,6 +3261,7 @@ function stopAltaraPresenceForRecovery(reason = "connection-recovery") {
 }
 
 function handleAltaraConnectionBecameDisconnected(reason = "connection") {
+  altaraRealtimeGlobalResetPending = true;
   void stopAltaraPresenceForRecovery(reason);
   void resetAltaraRealtimeSubscriptionsForRecovery(reason);
   persistAltaraOfflineNavigationSnapshot({ immediate: true });
@@ -2864,6 +3276,19 @@ async function performAltaraConnectionRecovery(reason = "restored") {
   const hadRealDisconnect = !!(hardDisconnectedAt && nowMs - hardDisconnectedAt <= 5 * 60 * 1000);
   const navigationVersionAtStart = Number(serverChannelUserNavigationVersion || 0);
   const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
+  const activeServerIdAtStart = String(state.activeDm?.kind || "").trim().toLowerCase() === "server"
+    ? normId(state.activeDm?.serverId || "")
+    : "";
+  const activeServerFallbackConversationIdAtStart = activeServerIdAtStart
+    ? normId(
+        activeConversationId
+        || state.activeDm?.previousConversationId
+        || getRememberedServerLastChannel(activeServerIdAtStart)
+        || ""
+      )
+    : "";
+  let serverRecoveryNavigationIntent = null;
+  let recoveryCompleted = false;
   logConnectionRestoreState("started", {
     reason,
     activeConversationId,
@@ -2910,6 +3335,29 @@ async function performAltaraConnectionRecovery(reason = "restored") {
       return false;
     }
     state.user = authResolution.user;
+    invalidateAllServerChannelVisibilityAuthoritySnapshots("connection_reauthenticated");
+    // navigationVersionAtStart was captured before the auth-revalidation awaits above
+    // (which can take several seconds). If the user explicitly navigated away (e.g. to
+    // Home) during that window, serverChannelUserNavigationVersion already moved on --
+    // minting a fresh navigation intent here would trivially validate against itself
+    // and could visibly reopen a server the user already left. Only proceed if the
+    // navigation version is still the one that was current when recovery began.
+    if (
+      activeServerIdAtStart
+      && navigationVersionAtStart === Number(serverChannelUserNavigationVersion || 0)
+      && canPreserveSelectedServerShell(activeServerIdAtStart)
+    ) {
+      serverRecoveryNavigationIntent = beginMainContentNavigationIntent({
+        reason: "connection-restored-server-revalidation",
+        serverId: activeServerIdAtStart,
+        conversationId: activeServerFallbackConversationIdAtStart,
+      });
+      renderServerChannelAuthorityShellState(activeServerIdAtStart, "resolving", {
+        reason: "connection-restored-server-revalidation",
+        fallbackConversationId: activeServerFallbackConversationIdAtStart,
+        navigationIntent: serverRecoveryNavigationIntent,
+      });
+    }
     setAltaraConnectionPatch({
       authState: ALTARA_AUTH_STATE.VALID_SESSION,
       lastSafeErrorCode: "",
@@ -2954,9 +3402,11 @@ async function performAltaraConnectionRecovery(reason = "restored") {
     try { startGlobalDmMessageListener(); } catch (_) {}
     try { startGlobalBotChannelMessageListener(); } catch (_) {}
     try { startGlobalDmMembershipListener(); } catch (_) {}
+    try { startGroupDmRevocationBroadcastListener(); } catch (_) {}
     try { startGlobalConversationListener(); } catch (_) {}
     try { startGlobalServerChannelTableListener(); } catch (_) {}
     try { startGlobalServerRoleTablesListener(); } catch (_) {}
+    try { void startServerRoleInvalidationPrivateBroadcast({ force: true, reason: "connection-restored" }); } catch (_) {}
     try { startServerMembershipEventsRealtime(); } catch (_) {}
     try { startGlobalProfileListener(); } catch (_) {}
     try { void startGlobalFriendRequestListener({ force: true, reason: "connection-restored" }); } catch (_) {}
@@ -2965,8 +3415,34 @@ async function performAltaraConnectionRecovery(reason = "restored") {
     try { startGlobalUserBlocksListener(); } catch (_) {}
     try { startGlobalDmPrivacyEventListener(); } catch (_) {}
     try { subscribeTypingInboxForCurrentUser("connection-restored"); } catch (_) {}
+    try {
+      if (currentServerVoiceV2Session?.serverId && serverVoiceTransportController) {
+        void ensureServerVoiceV2ControlPlaneSubscription(currentServerVoiceV2Session.serverId, {
+          hydrate: true,
+          force: true,
+          reason: "connection-restored",
+        }).catch(() => false);
+      }
+    } catch (_) {}
 
-    if (activeConversationId) {
+    const navigationUnchanged = serverRecoveryNavigationIntent
+      ? isMainContentNavigationIntentCurrent(serverRecoveryNavigationIntent)
+      : navigationVersionAtStart === Number(serverChannelUserNavigationVersion || 0);
+    if (activeServerIdAtStart && serverRecoveryNavigationIntent && navigationUnchanged) {
+      setAltaraActiveConversationRealtimeRequirement(false);
+      await navigateToServerFromKnownEnvelope({
+        serverId: activeServerIdAtStart,
+        fallbackConversationId: activeServerFallbackConversationIdAtStart,
+        serverName: normalizeConversationLabel(getServerRowById(activeServerIdAtStart)?.name || "Server", "Server"),
+        reason: "connection-restored",
+        navigationIntent: serverRecoveryNavigationIntent,
+      }).catch((error) => {
+        logMessageLoadState("reconnect_restore_error", {
+          reason: "connection-restored",
+          message: getSafeAuthErrorCode(error, "conversation_restore"),
+        });
+      });
+    } else if (activeConversationId && navigationUnchanged) {
       setAltaraActiveConversationRealtimeRequirement(true);
       await showDm(activeConversationId, {
         reason: "connection-restored",
@@ -2977,29 +3453,47 @@ async function performAltaraConnectionRecovery(reason = "restored") {
           message: getSafeAuthErrorCode(error, "conversation_restore"),
         });
       });
-    } else {
+    } else if (!activeConversationId) {
       setAltaraActiveConversationRealtimeRequirement(false);
+    } else {
+      logConnectionRestoreState("conversation_restore_skipped_navigation_changed", {
+        reason,
+        activeConversationId,
+        navigationVersionAtStart,
+        currentNavigationVersion: Number(serverChannelUserNavigationVersion || 0),
+      });
     }
     try { void refreshMessageRequestsAndSidebar("connection_restored", { force: true }); } catch (_) {}
-    try { scheduleConversationMessagePrefetch("connection_restored"); } catch (_) {}
     try { void refreshConnectedAccounts({ force: true, silent: true }); } catch (_) {}
     try { renderFriends({ skipPresenceRefresh: true }); } catch (_) {}
     try { renderGroupsRail(); } catch (_) {}
     try { updatePresenceRender(); } catch (_) {}
 
-    const realtimeHealthy = await waitForAltaraCriticalRealtime({ timeoutMs: 9000 });
-    if (!realtimeHealthy) {
-      scheduleAltaraConnectionRetry("realtime-recovery-timeout");
+    if (
+      getNavigatorOnlineSignal() === false
+      || altaraConnectionState.simulatedOffline
+      || altaraConnectionState.networkOnline === false
+    ) {
+      altaraRealtimeGlobalResetPending = true;
+      setAltaraConnectionPatch({
+        networkOnline: false,
+        supabaseReachable: false,
+        restState: "offline",
+        realtimeState: "offline",
+        realtimeConnected: false,
+      }, "connection-recovery-ended-offline");
+      scheduleAltaraConnectionRetry("connection-recovery-ended-offline");
       return false;
     }
+
+    const realtimeHealthy = isAltaraCoreRealtimeHealthy();
     setAltaraConnectionPatch({
-      status: "online",
       networkOnline: true,
       supabaseReachable: true,
       restState: "healthy",
       authState: ALTARA_AUTH_STATE.VALID_SESSION,
-      realtimeState: "healthy",
-      realtimeConnected: true,
+      realtimeState: realtimeHealthy ? "healthy" : "recovering",
+      realtimeConnected: realtimeHealthy,
       reconnectAttempt: 0,
       retryDelayMs: 0,
       nextRetryAt: 0,
@@ -3007,13 +3501,23 @@ async function performAltaraConnectionRecovery(reason = "restored") {
       lastSafeErrorCode: "",
       lastHardDisconnectedAt: 0,
       lastRecoveryFinishedAt: Date.now(),
-    }, "connection-recovery-complete");
+    }, realtimeHealthy ? "connection-recovery-complete" : "connection-recovery-rest-complete");
+    if (isAltaraDefinitivelyOffline()) {
+      altaraRealtimeGlobalResetPending = true;
+      scheduleAltaraConnectionRetry("connection-recovery-finished-offline");
+      return false;
+    }
+    altaraRealtimeGlobalResetPending = false;
+    if (!isAltaraPresenceRealtimeActiveOrJoining()) {
+      scheduleAltaraPresenceRealtimeRestart("connection-recovery-presence");
+    }
     setDmComposerInlineStatus("");
     const lastToastAt = Math.max(0, Number(altaraConnectionState.lastRestoredToastAt || 0) || 0);
     if (hadRealDisconnect && (!lastToastAt || Date.now() - lastToastAt >= ALTARA_CONNECTION_RESTORED_TOAST_COOLDOWN_MS)) {
       altaraConnectionState.lastRestoredToastAt = Date.now();
       showAltaraConnectionToast("Back online.", { durationMs: ALTARA_CONNECTION_RESTORED_HIDE_DELAY_MS });
     }
+    recoveryCompleted = true;
     return true;
   } catch (error) {
     const category = classifyAuthFailure(error, {
@@ -3031,7 +3535,18 @@ async function performAltaraConnectionRecovery(reason = "restored") {
   } finally {
     altaraConnectionRecoveryInFlight = false;
     altaraConnectionState.lastRecoveryFinishedAt = Date.now();
-    syncAltaraConnectionActionGates();
+    if (recoveryCompleted) {
+      setAltaraConnectionPatch({}, "connection-recovery-settled");
+      if (
+        serverRoleInvalidationBroadcastNeedsCatchup
+        && serverRoleInvalidationBroadcastStatus === "SUBSCRIBED"
+        && schedulePrivateRoleBroadcastReconnectCatchup()
+      ) {
+        serverRoleInvalidationBroadcastNeedsCatchup = false;
+      }
+    } else {
+      syncAltaraConnectionActionGates();
+    }
     exposeAltaraBootDebugHelper?.();
   }
 }
@@ -3115,12 +3630,11 @@ function initAltaraConnectionManager() {
       return window.__ALTARA_CONNECTION_DEBUG__();
     };
   }
-  updateAltaraConnectionUi();
+  syncAltaraConnectionActionGates();
 }
 
 const ALTARA_PLUS_PLAN_CORE = "altara_plus_core";
 const ALTARA_PLUS_PLAN_NOVA = "altara_plus_nova";
-const ALTARA_UPLOAD_STORAGE_BUCKET_DEFAULT = "avatars";
 const ALTARA_UPLOAD_CONTEXTS = Object.freeze([
   "dm_attachment",
   "dm_attachment_preview",
@@ -3129,9 +3643,17 @@ const ALTARA_UPLOAD_CONTEXTS = Object.freeze([
   "server_icon",
   "server_banner",
   "group_avatar",
+  "developer_app_icon",
+  "developer_app_banner",
+  "bot_avatar",
+  "bot_banner",
 ]);
 const ALTARA_PLUS_CHECKOUT_FUNCTION_NAME = "create-altara-plus-checkout";
 const ALTARA_PLUS_BILLING_PORTAL_FUNCTION_NAME = "create-billing-portal-session";
+const ALTARA_BILLING_PRODUCTION_WEB_ORIGINS = Object.freeze([
+  "https://altaraapp.com",
+  "https://www.altaraapp.com",
+]);
 const ALTARA_PLUS_CHECKOUT_OPTION_LIST = Object.freeze([
   Object.freeze({
     plan: "core",
@@ -3635,59 +4157,79 @@ function isAltaraStorageUploadLimitError(error = null) {
     || msg.includes("payload too large");
 }
 
-function isSupabaseStorageMissingBucketError(error = null) {
-  const msg = getAltaraStorageUploadErrorText(error);
-  return msg.includes("bucket") && (msg.includes("not found") || msg.includes("does not exist"));
-}
-
-function handleAltaraStorageUploadError(error = null, { uploadContext = "", bucket = "", path = "" } = {}) {
+function handleAltaraStorageUploadError(error = null, { uploadContext = "" } = {}) {
   const context = normalizeAltaraUploadContext(uploadContext);
   if (isAltaraStorageUploadLimitError(error)) {
-    logAltaraUploadDebug("storage rejected upload", { uploadContext: context, bucket, path, reason: getAltaraStorageUploadErrorText(error).slice(0, 220) });
+    logAltaraUploadDebug("storage rejected upload", { uploadContext: context, reason: getAltaraStorageUploadErrorText(error).slice(0, 220) });
     showAltaraPlusFileTooLargeNotice(getCurrentAltaraPlusUploadLimitBytes());
     return true;
   }
-  logAltaraUploadDebug("upload failed", { uploadContext: context, bucket, path, reason: getAltaraStorageUploadErrorText(error).slice(0, 220) });
+  logAltaraUploadDebug("upload failed", { uploadContext: context, reason: getAltaraStorageUploadErrorText(error).slice(0, 220) });
   return false;
 }
 
 async function uploadFileViaAltaraStorage(fileOrBlob, {
-  bucket = ALTARA_UPLOAD_STORAGE_BUCKET_DEFAULT,
   fileName = "",
-  path = "",
   contentType = "",
-  cacheControl = "31536000",
+  cacheControl = "60",
   uploadContext = "",
-  upsert = false,
+  conversationId = "",
+  serverId = "",
+  appId = "",
+  targetId = "",
 } = {}) {
   if (!fileOrBlob || !state.user?.id) throw new Error("upload_invalid");
-  const bucketName = String(bucket || ALTARA_UPLOAD_STORAGE_BUCKET_DEFAULT).trim() || ALTARA_UPLOAD_STORAGE_BUCKET_DEFAULT;
-  const targetPath = String(path || "").trim().replace(/^\/+/, "");
-  if (!targetPath) throw new Error("upload_path_invalid");
   const name = String(fileName || fileOrBlob.name || "file.bin").trim() || "file.bin";
   const mimeType = String(contentType || fileOrBlob.type || "application/octet-stream").trim() || "application/octet-stream";
   throwIfAltaraUploadLimitExceeded(fileOrBlob);
   const context = normalizeAltaraUploadContext(uploadContext);
-  logAltaraUploadDebug("direct upload starting", { uploadContext: context, bucket: bucketName, path: targetPath, fileName: name, fileSize: Number(fileOrBlob.size || 0) || 0, contentType: mimeType });
-  const upload = await supabase.storage.from(bucketName).upload(targetPath, fileOrBlob, {
-    upsert: !!upsert,
+  if (!context) throw new Error("upload_context_invalid");
+  const uploadFile = fileOrBlob instanceof File
+    ? fileOrBlob
+    : new File([fileOrBlob], name, { type: mimeType, lastModified: Date.now() });
+  logAltaraUploadDebug("trusted upload starting", {
+    uploadContext: context,
+    fileSize: Number(uploadFile.size || 0) || 0,
     contentType: mimeType,
-    cacheControl,
   });
-  if (upload.error) {
-    handleAltaraStorageUploadError(upload.error, { uploadContext: context, bucket: bucketName, path: targetPath });
-    throw upload.error;
+  try {
+    const result = await uploadViaTrustedAuthority({
+      supabase,
+      file: uploadFile,
+      uploadContext: context,
+      conversationId,
+      serverId,
+      appId,
+      targetId,
+      cacheControl,
+    });
+    logAltaraUploadDebug("trusted upload completed", { uploadContext: context });
+    return {
+      bucket: result.bucket,
+      path: result.path,
+      publicUrl: result.publicUrl,
+      displayUrl: result.displayUrl,
+      downloadUrl: result.downloadUrl,
+      referenceUrl: result.referenceUrl,
+      uploadId: result.uploadId,
+      visibility: result.visibility,
+      detectedMime: result.detectedMime,
+      contentClass: result.contentClass,
+      actualSize: result.actualSize,
+      upload: result.upload,
+    };
+  } catch (error) {
+    handleAltaraStorageUploadError(error, { uploadContext: context });
+    throw error;
   }
-  const publicUrl = String(supabase.storage.from(bucketName).getPublicUrl(targetPath)?.data?.publicUrl || "").trim();
-  logAltaraUploadDebug("direct upload completed", { uploadContext: context, bucket: bucketName, path: targetPath });
-  return { bucket: bucketName, path: targetPath, publicUrl, upload };
 }
 
 function getAltaraUploadLimitsDebugSnapshot() {
   const status = getCurrentUserAltaraPlusStatus();
   const limits = getAltaraPlusLimits(status);
   return {
-    usesUploadBroker: false,
+    usesUploadBroker: true,
+    directStorageFallback: false,
     usesStorageTriggerEnforcement: true,
     tier: getAltaraPlusTierKey(status),
     limits: {
@@ -4171,6 +4713,29 @@ function getAltaraPlusCheckoutOption(planInput, intervalInput) {
   return ALTARA_PLUS_CHECKOUT_OPTION_LIST.find((item) => item.plan === plan && item.interval === interval) || null;
 }
 
+function getAltaraBillingClientEnvironment() {
+  const bridge = getDesktopBridge();
+  if (bridge?.isDesktopApp === true) {
+    return bridge?.isDev === true ? "development" : "production";
+  }
+  try {
+    const origin = String(window.location?.origin || "").trim().toLowerCase();
+    return ALTARA_BILLING_PRODUCTION_WEB_ORIGINS.includes(origin) ? "production" : "development";
+  } catch (_) {
+    return "development";
+  }
+}
+
+function assertAltaraLiveBillingClientAllowed() {
+  const clientEnvironment = getAltaraBillingClientEnvironment();
+  if (clientEnvironment !== "production") {
+    const error = new Error("altara_plus_billing_disabled_outside_production");
+    error.code = "altara_plus_billing_disabled_outside_production";
+    throw error;
+  }
+  return clientEnvironment;
+}
+
 function resolveAltaraPlusCheckoutReturnStateFromValue(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (raw === "success") return "success";
@@ -4648,6 +5213,7 @@ async function refreshCurrentUserAltaraPlusStatus({ reason = "manual", force = f
 async function createAltaraPlusCheckoutSessionUrl({ plan = "", interval = "" } = {}) {
   const option = getAltaraPlusCheckoutOption(plan, interval);
   if (!option) throw new Error("altara_plus_checkout_option_invalid");
+  const clientEnvironment = assertAltaraLiveBillingClientAllowed();
 
   const edgeFunctionName = ALTARA_PLUS_CHECKOUT_FUNCTION_NAME;
   const functionPath = "/functions/v1/" + edgeFunctionName;
@@ -4666,6 +5232,7 @@ async function createAltaraPlusCheckoutSessionUrl({ plan = "", interval = "" } =
     body: {
       plan: option.plan,
       interval: option.interval,
+      client_environment: clientEnvironment,
     },
   });
   if (error) throw error;
@@ -4677,6 +5244,7 @@ async function createAltaraPlusCheckoutSessionUrl({ plan = "", interval = "" } =
 }
 
 async function createAltaraPlusBillingPortalSessionUrl() {
+  const clientEnvironment = assertAltaraLiveBillingClientAllowed();
   const edgeFunctionName = ALTARA_PLUS_BILLING_PORTAL_FUNCTION_NAME;
   const functionPath = "/functions/v1/" + edgeFunctionName;
   const authReady = await ensureSupabaseFunctionInvokeAuthReady({
@@ -4690,7 +5258,9 @@ async function createAltaraPlusBillingPortalSessionUrl() {
   });
   if (!authReady.ok) throw authReady.error || new Error("altara_plus_portal_auth_missing");
 
-  const { data, error } = await supabase.functions.invoke(edgeFunctionName, { body: {} });
+  const { data, error } = await supabase.functions.invoke(edgeFunctionName, {
+    body: { client_environment: clientEnvironment },
+  });
   if (error) throw error;
   if (!data || typeof data !== "object") throw new Error("altara_plus_portal_response_invalid");
 
@@ -6042,21 +6612,12 @@ async function openDesktopInboxEntryFromElement(itemEl) {
     const serverId = normId(itemEl.getAttribute("data-desktop-inbox-server-id") || "");
     const fallbackConversationId = normId(itemEl.getAttribute("data-desktop-inbox-fallback-conversation-id") || "");
     if (!serverId) return;
-    const conversationId = await resolveServerConversationForEntry(serverId, fallbackConversationId);
-    if (!conversationId) return;
-    const convMeta = getConversationMeta(conversationId) || {};
-    const fallbackMeta = getConversationMeta(fallbackConversationId) || {};
     const serverRow = getServerRowById(serverId) || {};
-    const serverName = normalizeConversationLabel(serverRow?.name || convMeta?.serverName || fallbackMeta?.serverName || "Server", "Server");
-    await openConversationById(conversationId, {
-      ...fallbackMeta,
-      ...convMeta,
-      kind: "server",
-      isGroup: true,
-      displayName: normalizeConversationLabel(convMeta?.displayName || fallbackMeta?.displayName || serverName, serverName),
+    await navigateToServerFromKnownEnvelope({
       serverId,
-      serverName,
-      channelType: normalizeConversationChannelType(convMeta?.channelType || fallbackMeta?.channelType || "text"),
+      fallbackConversationId,
+      serverName: normalizeConversationLabel(serverRow?.name || "Server", "Server"),
+      reason: "desktop-inbox-server",
     });
     closeDesktopInboxPanel();
   }
@@ -8831,22 +9392,41 @@ const SERVER_ROLE_PERMISSION_CATEGORY_ORDER = Object.freeze([
   "App / Integration Permissions",
   "Advanced Permissions",
 ]);
+// server-role-create-invites-permission-v1
+// server-role-manage-server-permission-v1
+// server-role-manage-roles-permission-v1
+// server-role-manage-channels-permission-v1
+// server-role-manage-apps-permission-v1
+// server-role-connect-voice-permission-v1
+// server-role-speak-voice-permission-v1
+// server-role-video-permission-v1
+// server-role-stream-permission-v1
+// server-role-voice-bypass-user-limit-permission-v1
+// server-role-mute-members-permission-v1
+// server-role-deafen-members-permission-v1
 const ALTARA_SERVER_PERMISSION_CATALOG = Object.freeze([
   { key: "view_channels", label: "View Channels", hint: "Allows members to view channels by default, excluding private/restricted channels.", category: "General Server Permissions", risk: "normal", implemented: true, defaultEnabled: true, aliases: ["view_all_channels"] },
-  { key: "manage_channels", label: "Manage Channels", hint: "Create, edit, delete and manage channel permissions.", category: "General Server Permissions", risk: "elevated", implemented: true, defaultEnabled: false },
-  { key: "manage_roles", label: "Manage Roles", hint: "Allows members to create, edit, assign, and delete roles below their highest role.", category: "General Server Permissions", risk: "normal", implemented: true, defaultEnabled: false },
-  { key: "manage_server", label: "Manage Server", hint: "Allows members to edit server settings, name, icon, and other server-wide settings.", category: "General Server Permissions", risk: "normal", implemented: true, defaultEnabled: false },
-  { key: "view_audit_log", label: "View Audit Log", hint: "Allows members to view server moderation and settings history.", category: "General Server Permissions", risk: "normal", implemented: true },
+  { key: "manage_channels", label: "Manage Channels", hint: "Create, edit, move, reorder and delete channels or categories, including permission overrides.", category: "General Server Permissions", risk: "elevated", implemented: true, defaultEnabled: false, aliases: ["manage_voice_channels"] },
+  { key: "manage_roles", label: "Manage Roles", hint: "Create, configure, reorder, assign, and delete eligible roles below the member's highest role.", category: "General Server Permissions", risk: "normal", implemented: true, defaultEnabled: false },
+  { key: "manage_server", label: "Manage Server", hint: "Allows members to edit the server name, icon, banner, and welcome channel.", category: "General Server Permissions", risk: "normal", implemented: true, defaultEnabled: false },
+  // server-role-view-audit-log-permission-v1
+  { key: "view_audit_log", label: "View Audit Log", hint: "Allows members to view server moderation and settings history.", category: "General Server Permissions", risk: "normal", implemented: true, defaultEnabled: false },
   { key: "manage_webhooks", label: "Manage Webhooks", hint: "Allows members to create, edit, and delete webhooks.", category: "General Server Permissions", risk: "dangerous", implemented: false },
-  { key: "create_invite", label: "Create Invites", hint: "Allows members to create server invite links.", category: "General Server Permissions", risk: "normal", implemented: true, defaultEnabled: false },
-  { key: "manage_invites", label: "Manage Invites", hint: "Allows members to list, create, copy, and revoke every invite for this server.", category: "General Server Permissions", risk: "elevated", implemented: true, defaultEnabled: false },
+  { key: "create_invites", label: "Create Invites", hint: "Allows members to create server invite links.", category: "General Server Permissions", risk: "normal", implemented: true, defaultEnabled: false, aliases: ["create_invite"] },
+  // server-role-manage-invites-permission-v1
+  { key: "manage_invites", label: "Manage Invites", hint: "Allows members to list, copy, and revoke existing invite links for this server.", category: "General Server Permissions", risk: "elevated", implemented: true, defaultEnabled: false },
+  // server-role-change-own-nickname-permission-v1
   { key: "change_nickname", label: "Change Own Nickname", hint: "Allows members to change their own server nickname.", category: "General Server Permissions", risk: "normal", implemented: true, defaultEnabled: false },
+  // server-role-manage-nicknames-permission-v1
   { key: "manage_nicknames", label: "Manage Nicknames", hint: "Allows members to change other members' nicknames.", category: "General Server Permissions", risk: "elevated", implemented: true, defaultEnabled: false },
-  { key: "manage_members", label: "Manage Members", hint: "Allows members to open member management tools and manage members below their highest role.", category: "Membership / Moderation Permissions", risk: "elevated", implemented: true, defaultEnabled: false },
+  { key: "manage_members", label: "Manage Members", hint: "Planned. Member actions continue to use their dedicated permissions.", category: "Membership / Moderation Permissions", risk: "elevated", implemented: false, defaultEnabled: false },
+  // server-role-kick-members-permission-v1
   { key: "kick_members", label: "Kick Members", hint: "Allows members to remove other members from the server.", category: "Membership / Moderation Permissions", risk: "dangerous", implemented: true, defaultEnabled: false, aliases: ["server_kick_members"] },
-  { key: "ban_members", label: "Ban Members", hint: "Allows members to permanently ban members from the server.", category: "Membership / Moderation Permissions", risk: "dangerous", implemented: true, aliases: ["server_ban_members"] },
-  { key: "timeout_members", label: "Timeout Members", hint: "Allows members to timeout other members and temporarily restrict their communication.", category: "Membership / Moderation Permissions", risk: "elevated", implemented: true },
-  { key: "moderate_members", label: "Moderate Members", hint: "Allows access to moderation tools for members.", category: "Membership / Moderation Permissions", risk: "elevated", implemented: false },
+  // server-role-ban-members-permission-v1
+  { key: "ban_members", label: "Ban Members", hint: "Allows members to ban and unban eligible members in this server.", category: "Membership / Moderation Permissions", risk: "dangerous", implemented: true, defaultEnabled: false, aliases: ["server_ban_members"] },
+  // server-role-timeout-members-permission-v1
+  { key: "timeout_members", label: "Timeout Members", hint: "Allows members to timeout other members and temporarily restrict their communication.", category: "Membership / Moderation Permissions", risk: "elevated", implemented: true, defaultEnabled: false },
+  { key: "moderate_members", label: "Moderate Members", hint: "Planned. Moderation actions continue to use their dedicated permissions.", category: "Membership / Moderation Permissions", risk: "elevated", implemented: false, defaultEnabled: false },
   { key: "send_messages", label: "Send Messages", hint: "Allows members to send messages in text channels.", category: "Text Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true },
   { key: "create_posts", label: "Create Posts", hint: "Allows members to create posts in forum-style channels if ALTARA supports them.", category: "Text Channel Permissions", risk: "normal", implemented: false },
   { key: "send_messages_in_threads", label: "Send Messages in Threads", hint: "Allows members to send messages in threads/posts.", category: "Text Channel Permissions", risk: "normal", implemented: false },
@@ -8863,28 +9443,32 @@ const ALTARA_SERVER_PERMISSION_CATALOG = Object.freeze([
   { key: "read_message_history", label: "Read Message History", hint: "Allows members to read existing messages in server channels they can access.", category: "Text Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true },
   { key: "send_tts_messages", label: "Send Text-to-Speech Messages", hint: "Allows members to send text-to-speech messages if ALTARA supports this.", category: "Text Channel Permissions", risk: "normal", implemented: false },
   { key: "create_polls", label: "Create Polls", hint: "Allows members to create polls.", category: "Text Channel Permissions", risk: "normal", implemented: false },
-  { key: "connect", label: "Connect", hint: "Allows members to join and remain in server voice channels.", category: "Voice Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true },
-  { key: "speak", label: "Speak", hint: "Allows members to publish microphone audio in server voice channels.", category: "Voice Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true },
+  { key: "connect", label: "Connect", hint: "Allows members to join and remain in server voice channels.", category: "Voice Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true, aliases: ["connect_voice"] },
+  { key: "speak", label: "Speak", hint: "Allows members to publish microphone audio in server voice channels.", category: "Voice Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true, aliases: ["speak_voice"] },
   { key: "video", label: "Video", hint: "Allows members to publish camera video in server voice channels.", category: "Voice Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true },
   { key: "stream", label: "Share Screen", hint: "Allows members to publish screen share video and audio in server voice channels.", category: "Voice Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true },
+  { key: "voice_bypass_user_limit", label: "Bypass User Limit", hint: "Allows an otherwise eligible member to join a full server voice channel.", category: "Voice Channel Permissions", risk: "elevated", implemented: true, defaultEnabled: false },
   { key: "use_voice_activity", label: "Use Voice Activity", hint: "Allows members to speak using voice activity instead of push-to-talk.", category: "Voice Channel Permissions", risk: "normal", implemented: false },
   { key: "priority_speaker", label: "Priority Speaker", hint: "Allows members to be heard more clearly by lowering others' volume when active.", category: "Voice Channel Permissions", risk: "elevated", implemented: false },
   { key: "mute_members", label: "Mute Members", hint: "Allows members to mute other members in voice channels.", category: "Voice Channel Permissions", risk: "elevated", implemented: true, aliases: ["voice_mute_microphone"] },
   { key: "deafen_members", label: "Deafen Members", hint: "Allows members to deafen other members in voice channels.", category: "Voice Channel Permissions", risk: "elevated", implemented: true, aliases: ["voice_deafen_members"] },
-  { key: "move_members", label: "Move Members", hint: "Allows members to move others between voice channels.", category: "Voice Channel Permissions", risk: "elevated", implemented: true, aliases: ["voice_disconnect_members"] },
-  { key: "set_voice_channel_status", label: "Set Voice Channel Status", hint: "Allows members to create or edit voice channel statuses if ALTARA supports this.", category: "Voice Channel Permissions", risk: "normal", implemented: false },
-  { key: "use_soundboard", label: "Use Soundboard", hint: "Allows members to use the server soundboard if ALTARA supports this.", category: "Voice Channel Permissions", risk: "normal", implemented: false },
-  { key: "use_external_sounds", label: "Use External Sounds", hint: "Allows members to use sounds from other servers if ALTARA supports this.", category: "Voice Channel Permissions", risk: "normal", implemented: false },
+  // server-role-move-members-permission-v1: voice_disconnect_members is a
+  // persisted Move compatibility alias, not a separate Disconnect authority.
+  { key: "move_members", label: "Move Members", hint: "Allows members to move eligible members between server voice channels.", category: "Voice Channel Permissions", risk: "elevated", implemented: true, aliases: ["voice_disconnect_members"] },
+  // server-role-set-voice-channel-status-permission-v1: ALTARA has no human
+  // voice-channel status feature. BOT voice status is separate BOT authority.
+  { key: "set_voice_channel_status", label: "Set Voice Channel Status", hint: "Planned. Human-managed voice channel statuses are not supported; BOT voice status remains separate.", category: "Voice Channel Permissions", risk: "normal", implemented: false },
+  { key: "use_soundboard", label: "Use Soundboard", hint: "Planned. Human server Soundboard playback is not supported.", category: "Voice Channel Permissions", risk: "normal", implemented: false, defaultEnabled: false },
+  { key: "use_external_sounds", label: "Use External Sounds", hint: "Planned. Human playback of sounds from other servers is not supported.", category: "Voice Channel Permissions", risk: "normal", implemented: false, defaultEnabled: false },
+  // server-role-use-application-commands-permission-v1
   { key: "use_application_commands", label: "Use Application Commands", hint: "Allows members to use commands from apps and bots.", category: "App / Integration Permissions", risk: "normal", implemented: true, defaultEnabled: false },
-  { key: "use_activities", label: "Use Activities", hint: "Allows members to start or use Activities if ALTARA supports them.", category: "App / Integration Permissions", risk: "normal", implemented: false },
-  { key: "use_external_apps", label: "Use External Apps", hint: "Allows approved apps connected to the user to interact in the server.", category: "App / Integration Permissions", risk: "elevated", implemented: false },
-  { key: "manage_apps", label: "Manage Apps", hint: "Allows members to install, configure, and remove approved apps in the server.", category: "App / Integration Permissions", risk: "dangerous", implemented: true, defaultEnabled: false },
-  { key: "administrator", label: "Administrator", hint: "Grants every permission and bypasses channel-specific restrictions. This is dangerous.", category: "Advanced Permissions", risk: "dangerous", implemented: false },
+  { key: "use_activities", label: "Use Activities", hint: "Planned. Human server Activities are not supported.", category: "App / Integration Permissions", risk: "normal", implemented: false, defaultEnabled: false },
+  { key: "use_external_apps", label: "Use External Apps", hint: "Planned. Human use of external server apps is not supported.", category: "App / Integration Permissions", risk: "elevated", implemented: false, defaultEnabled: false },
+  { key: "manage_apps", label: "Manage Apps", hint: "Allows members to install, configure, enable, disable, and remove approved apps in the server.", category: "App / Integration Permissions", risk: "dangerous", implemented: true, defaultEnabled: false },
+  { key: "administrator", label: "Administrator", hint: "Planned. Administrator authority is not supported.", category: "Advanced Permissions", risk: "dangerous", implemented: false, defaultEnabled: false },
 ]);
 const SERVER_ROLE_PERMISSION_META = ALTARA_SERVER_PERMISSION_CATALOG;
-const SERVER_ROLE_LEGACY_PERMISSION_META = Object.freeze([
-  { key: "voice_bypass_user_limit", label: "Bypass Voice User Limit", hint: "Legacy enforced flag for manual voice channel limits.", category: "Voice Channel Permissions", risk: "elevated", implemented: false, visible: false },
-]);
+const SERVER_ROLE_LEGACY_PERMISSION_META = Object.freeze([]);
 const SERVER_ROLE_PERMISSION_DEFINITIONS = Object.freeze([...SERVER_ROLE_PERMISSION_META, ...SERVER_ROLE_LEGACY_PERMISSION_META]);
 const SERVER_ROLE_VISIBLE_PERMISSION_META = Object.freeze(SERVER_ROLE_PERMISSION_META.filter((item) => item.visible !== false));
 const SERVER_ROLE_PERMISSION_KEYS = Object.freeze(Array.from(new Set(SERVER_ROLE_PERMISSION_DEFINITIONS.flatMap((item) => [item.key, ...(Array.isArray(item.aliases) ? item.aliases : [])]))));
@@ -10138,10 +10722,17 @@ function resolveMyPresenceStatus(profileLike = null) {
   return normalizeManualPresenceStatus(getMyStatus());
 }
 
+const PRESENCE_USER_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizePresenceUserId(value = "") {
+  const raw = String(value || "").trim();
+  return PRESENCE_USER_UUID_RE.test(raw) ? raw.toLowerCase() : raw;
+}
+
 function getPresenceEntryForUser(userId = "") {
-  const uid = normId(userId || "");
+  const uid = normalizePresenceUserId(userId);
   if (!uid) return null;
-  return (presenceList || []).find((x) => normId(x?.id || x?.user_id || "") === uid) || null;
+  return (presenceList || []).find((x) => normalizePresenceUserId(x?.id || x?.user_id || x?.userId || "") === uid) || null;
 }
 
 function resolveManualPresenceStatusForUser(userId = "", options = {}) {
@@ -10181,12 +10772,7 @@ function resolveManualPresenceStatusForUser(userId = "", options = {}) {
 }
 
 function presenceEntryHasLiveSession(entry = null) {
-  if (!entry || typeof entry !== "object") return false;
-  if (Number(entry.live_session_count || entry.liveSessionCount || 0) > 0) return true;
-  if (Array.isArray(entry.live_sessions) && entry.live_sessions.length > 0) return true;
-  if (Array.isArray(entry.liveSessions) && entry.liveSessions.length > 0) return true;
-  if (entry.has_live_session === true || entry.hasLiveSession === true || entry.is_live === true || entry.isLive === true) return true;
-  return false;
+  return classifyPresenceState(entry).isPresenceLive;
 }
 
 function getPresenceStatusLabel(status = "offline", { self = false } = {}) {
@@ -10208,7 +10794,10 @@ function resolveEffectivePresence(userId = "", options = {}) {
     : (isSelf ? true : presenceEntryHasLiveSession(entry));
   const explicitManualStatus = readPresenceStatusValue(options?.manualStatus);
   const entryManualStatus = readPresenceStatusValue(entry?.manual_status)
-    || readPresenceStatusValue(entry?.manualStatus);
+    || readPresenceStatusValue(entry?.manualStatus)
+    || readPresenceStatusValue(entry?.effective_status)
+    || readPresenceStatusValue(entry?.effectiveStatus)
+    || readPresenceStatusValue(entry?.status);
   const selfManualStatus = isSelf ? readPresenceStatusValue(resolveMyPresenceStatus(state.me)) : "";
   const cachedManualStatus = (!hasLiveSession && !isSelf)
     ? resolveManualPresenceStatusForUser(uid, { presenceEntry: entry })
@@ -10221,19 +10810,20 @@ function resolveEffectivePresence(userId = "", options = {}) {
     || "online"
   );
 
-  let effectiveStatus = "offline";
-  if (!hasLiveSession) {
-    effectiveStatus = "offline";
-  } else if (manualStatus === "invisible") {
-    effectiveStatus = isSelf ? "invisible" : "offline";
-  } else if (manualStatus === "idle" || manualStatus === "focus" || manualStatus === "dnd" || manualStatus === "online") {
-    effectiveStatus = manualStatus;
-  } else {
-    effectiveStatus = "online";
-  }
-
-  const isVisibleOnline = effectiveStatus === "online" || effectiveStatus === "idle" || effectiveStatus === "focus" || effectiveStatus === "dnd";
-  const visibleToOthers = !!hasLiveSession && manualStatus !== "invisible" && isVisibleOnline;
+  const classification = classifyPresenceState({
+    ...(entry && typeof entry === "object" ? entry : {}),
+    manual_status: manualStatus,
+    has_live_session: hasLiveSession,
+    live_session_count: hasLiveSession
+      ? Math.max(1, Number(entry?.live_session_count || entry?.liveSessionCount || 0) || 0)
+      : 0,
+    live_sessions: hasLiveSession ? (entry?.live_sessions || entry?.liveSessions || [{}]) : [],
+  });
+  const effectiveStatus = isSelf && manualStatus === "invisible"
+    ? "invisible"
+    : classification.visibleStatus;
+  const isVisibleOnline = classification.countsAsOnlineNow;
+  const visibleToOthers = classification.countsAsOnlineNow;
   const activity = isVisibleOnline
     ? (isSelf ? getCurrentPublicPresenceActivity() : sanitizePresenceActivity(entry?.activity || entry?.spotify_activity || entry?.spotifyActivity))
     : null;
@@ -10248,6 +10838,9 @@ function resolveEffectivePresence(userId = "", options = {}) {
     effectiveStatus,
     visibleToOthers,
     isVisibleOnline,
+    isPresenceLive: classification.isPresenceLive,
+    visibleStatus: classification.visibleStatus,
+    countsAsOnlineNow: classification.countsAsOnlineNow,
     dotClass: effectiveStatus,
     dotLabel,
     label: dotLabel,
@@ -10291,10 +10884,10 @@ let profileBannerUrlSupported = false;
 let profileStatusSupported = false;
 let profilePronounsSupported = null;
 let profileCreatedAtSupported = null;
-let profileThemeSettingsSupported = null;
+let profileThemeSettingsSupported = false;
 let profileBioSupported = null;
 const PROFILE_BASE_SELECT_COLUMNS = Object.freeze(["id", "username", "display_name", "avatar_url"]);
-const PROFILE_OPTIONAL_SELECT_COLUMNS = Object.freeze(["bio", "pronouns", "created_at", "status", "theme_settings", "name_color", "call_tile_color", "banner_url"]);
+const PROFILE_OPTIONAL_SELECT_COLUMNS = Object.freeze(["bio", "pronouns", "created_at", "status", "name_color", "call_tile_color", "banner_url"]);
 const profileUnavailableColumns = new Set();
 const profileFetchDebugEvents = [];
 const profileFetchErrorEvents = [];
@@ -10306,6 +10899,26 @@ const PROFILE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f
 const profileCache = new Map();
 const profileFetchedAtById = new Map();
 const profileFetchInFlightByKey = new Map();
+const profileSafeFetchVersionById = new Map();
+const publicProfileRealtimeInterestIds = new Set();
+const publicProfileRealtimeInterestRefreshedAtById = new Map();
+const publicProfileInvalidationPendingEpochById = new Map();
+const publicProfileInvalidationAppliedEpochById = new Map();
+const publicProfileInvalidationRefreshTasksById = new Map();
+const publicProfileInvalidationRetryTimersById = new Map();
+const publicProfileInvalidationRetryAttemptById = new Map();
+const PUBLIC_PROFILE_REALTIME_INTEREST_BATCH_SIZE = 100;
+const PUBLIC_PROFILE_REALTIME_INTEREST_MAX_IDS = 1000;
+const PUBLIC_PROFILE_REALTIME_INTEREST_REFRESH_MS = 20 * 60 * 1000;
+const PUBLIC_PROFILE_REALTIME_INTEREST_RETRY_MS = 5000;
+let publicProfileRealtimeInterestScopeUserId = "";
+let publicProfileRealtimeInterestRpcSupported = null;
+let publicProfileRealtimeInterestFlushTask = null;
+let publicProfileSubscriptionReconcileTask = null;
+let publicProfileRealtimeInterestFlushTimer = null;
+let publicProfileRealtimeInterestLeaseTimer = null;
+const publicProfileRealtimeInterestQueue = new Set();
+const publicProfileRealtimeInterestInFlightIds = new Set();
 const PROFILE_CACHE_TTL_MS = 3 * 60 * 1000;
 const USER_CARD_WIDGETS_CACHE_TTL_MS = 3 * 60 * 1000;
 const USER_CARD_PUBLIC_CONNECTIONS_CACHE_TTL_MS = 90 * 1000;
@@ -10393,7 +11006,7 @@ function getRenderedMeBannerUrl() {
   return resolveProfileBannerUrl(src, null, "");
 }
 
-function cacheProfileRow(row) {
+function cacheProfileRow(row, { authoritativePublicProjection = false } = {}) {
   if (!row || !row.id) return;
   const id = String(row.id || "").trim();
   if (!id) return;
@@ -10423,18 +11036,35 @@ function cacheProfileRow(row) {
     next.created_at = String(next.created_at || "").trim() || null;
   }
   if (typeof next.avatar_url !== "undefined") {
-    next.avatar_url = resolveProfileAvatarUrl(next.avatar_url, prevAvatarUrl) || null;
+    next.avatar_url = resolveProfileAvatarUrl(
+      next.avatar_url,
+      authoritativePublicProjection ? "" : prevAvatarUrl
+    ) || null;
   }
   if (typeof next.banner_url !== "undefined") {
-    next.banner_url = resolveProfileBannerUrl(next.banner_url, next.theme_settings, prevBannerUrl);
+    next.banner_url = resolveProfileBannerUrl(
+      next.banner_url,
+      authoritativePublicProjection ? null : next.theme_settings,
+      authoritativePublicProjection ? "" : prevBannerUrl
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(row, "avatar_crop")) {
+    next.avatar_crop = normalizeMediaCropSnapshot(row.avatar_crop, "avatar");
+  }
+  if (Object.prototype.hasOwnProperty.call(row, "banner_crop")) {
+    next.banner_crop = normalizeMediaCropSnapshot(row.banner_crop, "banner");
   }
   if (typeof next.theme_settings !== "undefined" && next.theme_settings !== null) {
     next.theme_settings = normalizeThemeSettings(next.theme_settings);
   } else if ((next.theme_settings === null || typeof next.theme_settings === "undefined") && prevThemeSettings) {
     next.theme_settings = prevThemeSettings;
   }
-  const resolvedBannerUrl = resolveProfileBannerUrl(next.banner_url, next.theme_settings, prevBannerUrl);
-  if (resolvedBannerUrl) next.banner_url = resolvedBannerUrl;
+  if (authoritativePublicProjection && Object.prototype.hasOwnProperty.call(row, "banner_url")) {
+    next.banner_url = normalizeBannerUrl(row.banner_url);
+  } else {
+    const resolvedBannerUrl = resolveProfileBannerUrl(next.banner_url, next.theme_settings, prevBannerUrl);
+    if (resolvedBannerUrl) next.banner_url = resolvedBannerUrl;
+  }
   if (typeof next.status !== "undefined") {
     next.status = normalizePresenceStatus(next.status);
   } else {
@@ -10452,8 +11082,8 @@ function cacheProfileRow(row) {
   } catch (_) {}
 }
 
-function cacheProfileRows(rows = []) {
-  (rows || []).forEach(cacheProfileRow);
+function cacheProfileRows(rows = [], options = {}) {
+  (rows || []).forEach((row) => cacheProfileRow(row, options));
 }
 
 function mergeDefinedObjectFields(base = {}, patch = null) {
@@ -10741,6 +11371,194 @@ if (typeof window !== "undefined") {
   window.__ALTARA_DEBUG_PROFILE_CACHE_STATE__ = getProfileDebugState;
 }
 
+function tracePublicProfileInvalidation(event, details = {}) {
+  if (!isProfilesLocalDebugEnabled()) return;
+  try {
+    console.info("[PROFILE-INVALIDATION]", String(event || "event"), details);
+  } catch (_) {}
+}
+
+function resetPublicProfileRealtimeInterestState(nextUserId = "") {
+  publicProfileRealtimeInterestScopeUserId = normId(nextUserId || "");
+  publicProfileRealtimeInterestRpcSupported = null;
+  publicProfileRealtimeInterestQueue.clear();
+  publicProfileRealtimeInterestInFlightIds.clear();
+  publicProfileRealtimeInterestIds.clear();
+  publicProfileRealtimeInterestRefreshedAtById.clear();
+  publicProfileInvalidationPendingEpochById.clear();
+  publicProfileInvalidationAppliedEpochById.clear();
+  publicProfileInvalidationRefreshTasksById.clear();
+  publicProfileInvalidationRetryAttemptById.clear();
+  for (const timer of publicProfileInvalidationRetryTimersById.values()) clearTimeout(timer);
+  publicProfileInvalidationRetryTimersById.clear();
+  if (publicProfileRealtimeInterestFlushTimer) clearTimeout(publicProfileRealtimeInterestFlushTimer);
+  if (publicProfileRealtimeInterestLeaseTimer) clearTimeout(publicProfileRealtimeInterestLeaseTimer);
+  publicProfileRealtimeInterestFlushTimer = null;
+  publicProfileRealtimeInterestLeaseTimer = null;
+  publicProfileRealtimeInterestFlushTask = null;
+  publicProfileSubscriptionReconcileTask = null;
+}
+
+function ensurePublicProfileRealtimeInterestScope() {
+  const userId = normId(state.user?.id || "");
+  if (!userId) return "";
+  if (publicProfileRealtimeInterestScopeUserId !== userId) {
+    resetPublicProfileRealtimeInterestState(userId);
+  }
+  return userId;
+}
+
+function isPublicProfileRealtimeInterestRpcMissing(error) {
+  const code = String(error?.code || "").trim().toUpperCase();
+  const message = String(error?.message || error || "").trim().toLowerCase();
+  return code === "PGRST202"
+    || (message.includes("register_my_public_profile_realtime_interests_v1")
+      && (message.includes("schema cache") || message.includes("could not find")));
+}
+
+function schedulePublicProfileRealtimeInterestLeaseRefresh(userId) {
+  if (publicProfileRealtimeInterestLeaseTimer) clearTimeout(publicProfileRealtimeInterestLeaseTimer);
+  publicProfileRealtimeInterestLeaseTimer = setTimeout(() => {
+    publicProfileRealtimeInterestLeaseTimer = null;
+    if (ensurePublicProfileRealtimeInterestScope() !== userId) return;
+    queuePublicProfileRealtimeInterests(Array.from(publicProfileRealtimeInterestIds), { force: true });
+  }, PUBLIC_PROFILE_REALTIME_INTEREST_REFRESH_MS);
+}
+
+async function flushPublicProfileRealtimeInterests() {
+  if (publicProfileRealtimeInterestFlushTask) return publicProfileRealtimeInterestFlushTask;
+  const userId = ensurePublicProfileRealtimeInterestScope();
+  if (!userId || publicProfileRealtimeInterestRpcSupported === false || !publicProfileRealtimeInterestQueue.size) {
+    return false;
+  }
+
+  const batch = Array.from(publicProfileRealtimeInterestQueue)
+    .slice(0, PUBLIC_PROFILE_REALTIME_INTEREST_BATCH_SIZE);
+  batch.forEach((id) => {
+    publicProfileRealtimeInterestQueue.delete(id);
+    publicProfileRealtimeInterestInFlightIds.add(id);
+  });
+
+  const run = (async () => {
+    let result = null;
+    try {
+      result = await awaitWithTimeout(
+        supabase.rpc("register_my_public_profile_realtime_interests_v1", {
+          p_profile_ids: batch,
+        }),
+        PROFILES_FETCH_TIMEOUT_MS,
+        "profile realtime interest registration",
+      );
+    } catch (error) {
+      result = { data: null, error };
+    }
+
+    if (ensurePublicProfileRealtimeInterestScope() !== userId) return false;
+    if (result?.error) {
+      tracePublicProfileInvalidation("INTEREST_REGISTER", {
+        currentUserId: userId,
+        targetProfileIds: batch,
+        ok: false,
+        errorCode: String(result.error?.code || "registration_failed"),
+      });
+      batch.forEach((id) => publicProfileRealtimeInterestInFlightIds.delete(id));
+      if (isPublicProfileRealtimeInterestRpcMissing(result.error)) {
+        publicProfileRealtimeInterestRpcSupported = false;
+        publicProfileRealtimeInterestQueue.clear();
+        return false;
+      }
+      batch.forEach((id) => publicProfileRealtimeInterestQueue.add(id));
+      if (!publicProfileRealtimeInterestFlushTimer) {
+        publicProfileRealtimeInterestFlushTimer = setTimeout(() => {
+          publicProfileRealtimeInterestFlushTimer = null;
+          void flushPublicProfileRealtimeInterests();
+        }, PUBLIC_PROFILE_REALTIME_INTEREST_RETRY_MS);
+      }
+      return false;
+    }
+
+    publicProfileRealtimeInterestRpcSupported = true;
+    tracePublicProfileInvalidation("INTEREST_REGISTER", {
+      currentUserId: userId,
+      targetProfileIds: batch,
+      ok: true,
+      registeredCount: Number(result?.data || 0),
+    });
+    const refreshedAt = Date.now();
+    batch.forEach((id) => {
+      publicProfileRealtimeInterestInFlightIds.delete(id);
+      publicProfileRealtimeInterestRefreshedAtById.set(id, refreshedAt);
+    });
+    schedulePublicProfileRealtimeInterestLeaseRefresh(userId);
+    return true;
+  })();
+
+  publicProfileRealtimeInterestFlushTask = run;
+  try {
+    return await run;
+  } finally {
+    if (publicProfileRealtimeInterestFlushTask === run) publicProfileRealtimeInterestFlushTask = null;
+    if (publicProfileRealtimeInterestQueue.size && !publicProfileRealtimeInterestFlushTimer) {
+      publicProfileRealtimeInterestFlushTimer = setTimeout(() => {
+        publicProfileRealtimeInterestFlushTimer = null;
+        void flushPublicProfileRealtimeInterests();
+      }, 0);
+    }
+  }
+}
+
+function queuePublicProfileRealtimeInterests(profileIds, { force = false } = {}) {
+  const userId = ensurePublicProfileRealtimeInterestScope();
+  if (!userId || publicProfileRealtimeInterestRpcSupported === false) return 0;
+  const normalized = normalizeProfileIds(profileIds, { caller: "profileRealtimeInterests" }).ids;
+  if (!normalized.length) return 0;
+
+  const refreshBefore = Date.now() - PUBLIC_PROFILE_REALTIME_INTEREST_REFRESH_MS;
+  let queued = 0;
+  for (const profileId of normalized) {
+    if (!publicProfileRealtimeInterestIds.has(profileId)) {
+      if (publicProfileRealtimeInterestIds.size >= PUBLIC_PROFILE_REALTIME_INTEREST_MAX_IDS) break;
+      publicProfileRealtimeInterestIds.add(profileId);
+    }
+    const refreshedAt = Number(publicProfileRealtimeInterestRefreshedAtById.get(profileId) || 0);
+    if (publicProfileRealtimeInterestInFlightIds.has(profileId)) continue;
+    if (!force && refreshedAt > refreshBefore) continue;
+    publicProfileRealtimeInterestQueue.add(profileId);
+    queued += 1;
+  }
+
+  if (queued && !publicProfileRealtimeInterestFlushTask && !publicProfileRealtimeInterestFlushTimer) {
+    publicProfileRealtimeInterestFlushTimer = setTimeout(() => {
+      publicProfileRealtimeInterestFlushTimer = null;
+      void flushPublicProfileRealtimeInterests();
+    }, 50);
+  }
+  return queued;
+}
+
+async function fetchPublicProfileProjectionBatches(profileIds, label = "profiles fetch") {
+  const ids = Array.isArray(profileIds) ? profileIds : [];
+  const rows = [];
+  for (let offset = 0; offset < ids.length; offset += PUBLIC_PROFILE_REALTIME_INTEREST_BATCH_SIZE) {
+    const batch = ids.slice(offset, offset + PUBLIC_PROFILE_REALTIME_INTEREST_BATCH_SIZE);
+    let result = null;
+    try {
+      result = await awaitWithTimeout(
+        supabase.rpc("get_public_profiles_by_ids_v1", {
+          p_profile_ids: batch,
+        }),
+        PROFILES_FETCH_TIMEOUT_MS,
+        `${label} batch`,
+      );
+    } catch (error) {
+      result = { data: [], error };
+    }
+    if (result?.error) return { data: rows, error: result.error };
+    if (Array.isArray(result?.data)) rows.push(...result.data);
+  }
+  return { data: rows, error: null };
+}
+
 async function fetchProfilesByIds(userIds, { includeBio = false, force = false, maxAgeMs = 0 } = {}) {
   const normalizedProfileIds = normalizeProfileIds(userIds, { caller: "fetchProfilesByIds" });
   const wanted = normalizedProfileIds.ids;
@@ -10756,6 +11574,14 @@ async function fetchProfilesByIds(userIds, { includeBio = false, force = false, 
       });
     }
     return [];
+  }
+
+  // The same central known-ID path that hydrates a safe public projection also
+  // establishes its bounded private invalidation interest. Registration never
+  // reads a profile or returns profile-existence information.
+  const queuedInterestCount = queuePublicProfileRealtimeInterests(wanted);
+  if (queuedInterestCount > 0 || publicProfileRealtimeInterestFlushTask) {
+    await flushPublicProfileRealtimeInterests().catch(() => false);
   }
 
   const cacheMaxAgeMs = Math.max(0, Number(maxAgeMs || 0) || 0);
@@ -10835,19 +11661,7 @@ async function fetchProfilesByIds(userIds, { includeBio = false, force = false, 
   let profileSelectState = buildFetchProfilesSelect();
   let selectCols = profileSelectState.select;
 
-  let firstFetchResult = null;
-  try {
-    firstFetchResult = await awaitWithTimeout(
-      supabase
-        .from("profiles")
-        .select(selectCols)
-        .in("id", missing),
-      PROFILES_FETCH_TIMEOUT_MS,
-      "profiles fetch"
-    );
-  } catch (e) {
-    firstFetchResult = { data: [], error: { message: e?.message || String(e || "profiles fetch failed") } };
-  }
+  const firstFetchResult = await fetchPublicProfileProjectionBatches(missing, "profiles fetch");
   let { data, error } = firstFetchResult || { data: [], error: { message: "profiles fetch failed" } };
   recordProfileFetchEvent({
     caller: "fetchProfilesByIds",
@@ -10910,19 +11724,7 @@ async function fetchProfilesByIds(userIds, { includeBio = false, force = false, 
     if (changed) {
       profileSelectState = buildFetchProfilesSelect();
       selectCols = profileSelectState.select;
-      let retryResult = null;
-      try {
-        retryResult = await awaitWithTimeout(
-          supabase
-            .from("profiles")
-            .select(selectCols)
-            .in("id", missing),
-          PROFILES_FETCH_TIMEOUT_MS,
-          "profiles fetch retry"
-        );
-      } catch (e) {
-        retryResult = { data: [], error: { message: e?.message || String(e || "profiles fetch retry failed") } };
-      }
+      const retryResult = await fetchPublicProfileProjectionBatches(missing, "profiles fetch retry");
       ({ data, error } = retryResult || { data: [], error: { message: "profiles fetch retry failed" } });
       recordProfileFetchEvent({
         caller: "fetchProfilesByIds.retry",
@@ -11022,7 +11824,7 @@ async function fetchProfilesByIds(userIds, { includeBio = false, force = false, 
     row.banner_url = directBanner || themeBanner || "";
   });
 
-  cacheProfileRows(data || []);
+  cacheProfileRows(data || [], { authoritativePublicProjection: true });
   const fetchedAt = Date.now();
   recordProfileFetchEvent({
     caller: "fetchProfilesByIds.success",
@@ -11038,7 +11840,10 @@ async function fetchProfilesByIds(userIds, { includeBio = false, force = false, 
   });
   (data || []).forEach((row) => {
     const id = normId(row?.id || "");
-    if (id) profileFetchedAtById.set(id, fetchedAt);
+    if (id) {
+      profileFetchedAtById.set(id, fetchedAt);
+      profileSafeFetchVersionById.set(id, Number(profileSafeFetchVersionById.get(id) || 0) + 1);
+    }
   });
   return wanted.map((id) => getCachedProfile(id)).filter(Boolean);
   } finally {
@@ -11126,11 +11931,9 @@ async function fetchProfileByUsername(usernameInput, { includeBio = true, force 
   const runQuery = async () => {
     try {
       return await awaitWithTimeout(
-        supabase
-          .from("profiles")
-          .select(selectCols)
-          .ilike("username", uname)
-          .limit(1),
+        supabase.rpc("get_public_profile_by_username_v1", {
+          p_username: uname,
+        }),
         PROFILES_FETCH_TIMEOUT_MS,
         "profile username lookup"
       );
@@ -11216,7 +12019,7 @@ async function fetchProfileByUsername(usernameInput, { includeBio = true, force 
   }
   row.banner_url = directBanner || themeBanner || "";
 
-  cacheProfileRow(row);
+  cacheProfileRow(row, { authoritativePublicProjection: true });
   return getCachedProfile(row.id) || row;
 }
 
@@ -11250,6 +12053,8 @@ async function hydrateFriendRowsWithProfiles(rows = []) {
       name_color: normalizeNameColor(p.name_color || f.name_color),
       call_tile_color: normalizeCallTileColor(p.call_tile_color || f.call_tile_color),
       banner_url: normalizeBannerUrl(p.banner_url || f.banner_url),
+      avatar_crop: p.avatar_crop ?? f.avatar_crop ?? null,
+      banner_crop: p.banner_crop ?? f.banner_crop ?? null,
       status: readPresenceStatusValue(p.status) || readPresenceStatusValue(p.theme_settings?.presence_status) || readPresenceStatusValue(f.status) || null,
       theme_settings: p.theme_settings || f.theme_settings || null,
     };
@@ -11897,10 +12702,16 @@ function resolveUserBannerCrop(userId = "", fallbackProfile = null) {
   if (uid && meId && uid === meId) {
     return getThemeMediaCrop(state.me?.theme_settings || {}, "banner");
   }
+  if (fallbackProfile && Object.prototype.hasOwnProperty.call(fallbackProfile, "banner_crop")) {
+    return normalizeMediaCropSnapshot(fallbackProfile.banner_crop, "banner");
+  }
   if (fallbackProfile?.theme_settings) {
     return getThemeMediaCrop(fallbackProfile.theme_settings, "banner");
   }
   const cached = uid ? getCachedProfile(uid) || null : null;
+  if (cached && Object.prototype.hasOwnProperty.call(cached, "banner_crop")) {
+    return normalizeMediaCropSnapshot(cached.banner_crop, "banner");
+  }
   return getThemeMediaCrop(cached?.theme_settings || {}, "banner");
 }
 
@@ -19330,6 +20141,52 @@ function isServerConversationUiOpen() {
   return isServerConversationKind(meta?.kind) || !!normId(meta?.serverId || "");
 }
 
+function isNoAccessibleServerChannelsState(serverId = "") {
+  const sid = normId(serverId || "");
+  const activeSid = normId(state.activeDm?.serverId || "");
+  return !!(
+    state.activeDm?.noAccessibleServerChannels === true
+    && String(state.activeDm?.kind || "").trim().toLowerCase() === "server"
+    && activeSid
+    && (!sid || activeSid === sid)
+    && !normId(activeDmId || state.activeDm?.conversationId || "")
+  );
+}
+
+function isServerChannelVisibilityResolvingState(serverId = "") {
+  const sid = normId(serverId || "");
+  const activeSid = normId(state.activeDm?.serverId || "");
+  return !!(
+    state.activeDm?.serverVisibilityResolving === true
+    && String(state.activeDm?.kind || "").trim().toLowerCase() === "server"
+    && activeSid
+    && (!sid || activeSid === sid)
+    && !normId(activeDmId || state.activeDm?.conversationId || "")
+  );
+}
+
+function isServerChannelVisibilityErrorState(serverId = "") {
+  const sid = normId(serverId || "");
+  const activeSid = normId(state.activeDm?.serverId || "");
+  return !!(
+    state.activeDm?.serverVisibilityError === true
+    && String(state.activeDm?.kind || "").trim().toLowerCase() === "server"
+    && activeSid
+    && (!sid || activeSid === sid)
+    && !normId(activeDmId || state.activeDm?.conversationId || "")
+  );
+}
+
+function isServerChannelAuthorityShellState(serverId = "") {
+  return isServerChannelVisibilityResolvingState(serverId)
+    || isServerChannelVisibilityErrorState(serverId);
+}
+
+function isServerWithoutSelectedChannelState(serverId = "") {
+  return isNoAccessibleServerChannelsState(serverId)
+    || isServerChannelAuthorityShellState(serverId);
+}
+
 function isServerVoiceConversationUiContext(conversationId) {
   const convId = normId(conversationId || "");
   if (!convId) return false;
@@ -19640,7 +20497,6 @@ const GIF_PACK = [
 ];
 
 const CHAT_UPLOAD_MAX_BYTES = 35 * 1024 * 1024 * 1024; // DM + server text channels
-const DM_UPLOAD_BUCKET_CANDIDATES = Object.freeze(["chat_files", "dm_files", "avatars"]);
 const DM_ATTACHMENTS_PER_MESSAGE_MAX = 10;
 const DM_ATTACHMENT_UPLOAD_CONCURRENCY = 3;
 const DM_ATTACHMENT_UPLOAD_MODE_COMPRESSED = "compressed";
@@ -20180,6 +21036,12 @@ function sanitizeAttachmentPayload(raw) {
   const width = Number.isFinite(widthNum) && widthNum > 0 ? Math.round(widthNum) : null;
   const height = Number.isFinite(heightNum) && heightNum > 0 ? Math.round(heightNum) : null;
   const isAnimated = !!(raw?.isAnimated ?? raw?.is_animated);
+  const uploadId = normId(raw?.uploadId || raw?.upload_id || "");
+  const referenceUrl = String(raw?.referenceUrl || raw?.reference_url || "").trim();
+  const previewUploadId = normId(raw?.previewUploadId || raw?.preview_upload_id || "");
+  const previewReferenceUrl = String(raw?.previewReferenceUrl || raw?.preview_reference_url || "").trim();
+  const storageBucket = String(raw?.storageBucket || raw?.storage_bucket || "").trim();
+  const storagePath = String(raw?.storagePath || raw?.storage_path || "").trim();
 
   const out = {
     type: "attachment",
@@ -20201,6 +21063,12 @@ function sanitizeAttachmentPayload(raw) {
   if (width !== null) out.width = width;
   if (height !== null) out.height = height;
   if (isAnimated) out.isAnimated = true;
+  if (uploadId) out.uploadId = uploadId;
+  if (referenceUrl) out.referenceUrl = referenceUrl;
+  if (previewUploadId) out.previewUploadId = previewUploadId;
+  if (previewReferenceUrl) out.previewReferenceUrl = previewReferenceUrl;
+  if (storageBucket) out.storageBucket = storageBucket.slice(0, 96);
+  if (storagePath) out.storagePath = storagePath.slice(0, 700);
 
   return out;
 }
@@ -20334,16 +21202,6 @@ function safeParseMessageContent(content) {
         }
       }
       if (obj && obj.type === "attachments") {
-        const attachments = sanitizeAttachmentCollectionPayload(obj);
-        if (attachments) {
-          const items = Array.isArray(attachments.items) ? attachments.items : [];
-          if (items.length === 1 && !items[0]?.spoiler && isGifLikeAttachment(items[0])) {
-            return { type: "gif", url: items[0].url, attachment: items[0] };
-          }
-          return attachments;
-        }
-      }
-      if (obj && (Array.isArray(obj.items) || Array.isArray(obj.attachments))) {
         const attachments = sanitizeAttachmentCollectionPayload(obj);
         if (attachments) {
           const items = Array.isArray(attachments.items) ? attachments.items : [];
@@ -22514,10 +23372,16 @@ function resolveUserAvatarCrop(userId = "", fallbackProfile = null) {
   if (uid && meId && uid === meId) {
     return getThemeMediaCrop(state.me?.theme_settings || {}, "avatar");
   }
+  if (fallbackProfile && Object.prototype.hasOwnProperty.call(fallbackProfile, "avatar_crop")) {
+    return normalizeMediaCropSnapshot(fallbackProfile.avatar_crop, "avatar");
+  }
   if (fallbackProfile?.theme_settings) {
     return getThemeMediaCrop(fallbackProfile.theme_settings, "avatar");
   }
   const cached = uid ? getCachedProfile(uid) || null : null;
+  if (cached && Object.prototype.hasOwnProperty.call(cached, "avatar_crop")) {
+    return normalizeMediaCropSnapshot(cached.avatar_crop, "avatar");
+  }
   return getThemeMediaCrop(cached?.theme_settings || {}, "avatar");
 }
 
@@ -22872,7 +23736,7 @@ const ALTARA_BOT_PERMISSION_REGISTRY = Object.freeze([
   { key: "bot:manage_own_commands", label: "Manage Own Commands", description: "Allows the bot to sync its own command registry.", category: "Core Bot Permissions", risk: "normal", implemented: true, defaultEnabled: true, discordBit: "" },
   { key: "bot:read_own_messages", label: "Read Own Bot Messages", description: "Legacy supported permission for bot-authored message reads.", category: "Core Bot Permissions", risk: "normal", implemented: true, defaultEnabled: false, hidden: true, discordBit: "" },
   { key: "bot:embed_links", label: "Embed Links", description: "Allows the bot to show ALTARA link previews in its messages.", category: "Messaging", risk: "normal", implemented: true },
-  { key: "bot:attach_files", label: "Attach Files", description: "Allows the bot to send safe HTTPS attachment cards.", category: "Messaging", risk: "elevated", implemented: true },
+  { key: "bot:attach_files", label: "Attach Files", description: "Reserved for a future brokered bot-upload authority.", category: "Messaging", risk: "elevated", implemented: false },
   { key: "bot:add_reactions", label: "Add Reactions", description: "Allows the bot to add reactions to bot-channel messages.", category: "Messaging", risk: "normal", implemented: true },
   { key: "bot:read_message_history", label: "Read Message History", description: "Allows the bot to read a capped, sanitized history from public server text channels.", category: "Messaging", risk: "normal", implemented: true },
   { key: "bot:manage_messages", label: "Manage Bot Messages", description: "Allows the bot to edit or delete its own bot-channel messages.", category: "Moderation", risk: "elevated", implemented: true },
@@ -23870,7 +24734,7 @@ async function refreshBotAuthorizeInstallStateForServer(serverId = "", { render 
   if (!Array.isArray(bots) || !bots.length) {
     try {
       const rows = await settingsDeveloperRpc("bots_list_server_bots", { p_server_id: sid });
-      bots = (Array.isArray(rows) ? rows : []).map((row) => ({
+      bots = (Array.isArray(rows) ? rows : []).filter((row) => String(row?.status || "active").trim().toLowerCase() === "active").map((row) => ({
         botId: normId(row?.bot_id || ""),
         userId: normId(row?.bot_id || ""),
         appId: normId(row?.app_id || row?.application_id || ""),
@@ -24339,6 +25203,12 @@ function getFriendlyBotServerModerationErrorMessage(error, fallback = "Could not
   }
   if (lower.includes("bot_banned_from_server") || lower.includes("banned")) {
     return "This bot is banned from this server. Unban it before reinstalling.";
+  }
+  if (lower.includes("bot_install_not_found") || lower.includes("bot_not_installed")) {
+    return "This app installation no longer exists in this server.";
+  }
+  if (lower.includes("bot_not_available") || lower.includes("app_unavailable")) {
+    return "This approved app is no longer available.";
   }
   return raw || fallback;
 }
@@ -26319,8 +27189,8 @@ async function handleServerSettingsBotReviewPermissions(botId = "") {
   botPermissionAuthorizeOpenInFlightKey = inFlightKey;
   botPermissionAuthorizeOpenInFlightAt = now;
   try {
-    const cachedBot = (serverBotInstallListByServerId.get(sid) || []).find((row) => normId(row?.botId || row?.userId || row?.bot_id || "") === bid) || null;
-    const freshBots = await fetchServerBotsForSidebar(sid, { force: true }).catch(() => serverBotInstallListByServerId.get(sid) || []);
+    const cachedBot = (serverBotManagementInstallListByServerId.get(sid) || serverBotInstallListByServerId.get(sid) || []).find((row) => normId(row?.botId || row?.userId || row?.bot_id || "") === bid) || null;
+    const freshBots = await fetchServerBotsForSidebar(sid, { force: true, includeDisabled: true }).catch(() => serverBotManagementInstallListByServerId.get(sid) || serverBotInstallListByServerId.get(sid) || []);
     const freshBot = (Array.isArray(freshBots) ? freshBots : []).find((row) => normId(row?.botId || row?.userId || row?.bot_id || "") === bid) || cachedBot;
     const url = freshBot ? getServerSettingsBotAuthorizeUrl(freshBot) : "";
     if (!url) {
@@ -26399,18 +27269,22 @@ function buildServerSettingsBotsPanelHtml(serverId = "", bots = [], bannedBots =
   const installedRows = (Array.isArray(bots) ? bots : []).map((bot) => {
     const perms = normalizeBotPermissionList(bot.permissions || []);
     const update = getServerSettingsBotPermissionUpdate(bot);
-    const presenceLabel = getBotPresenceMetaLabel(bot);
+    const isActive = String(bot.installStatus || bot.status || "active").trim().toLowerCase() === "active";
+    const presenceLabel = isActive ? getBotPresenceMetaLabel(bot) : "Disabled";
     const changedCount = update.added.length + update.removed.length;
     const updateHtml = update.hasSavedDefaults && update.changed
       ? `<small class="botInstallWarning">Permission update available${changedCount ? ` (${changedCount} change${changedCount === 1 ? "" : "s"})` : ""}</small>`
       : "";
     const installedAt = bot.createdAt || bot.created_at || "";
+    const configureAction = isActive
+      ? `<button class="btn ghost" type="button" data-server-bot-review-permissions="${escAttr(bot.botId || "")}">${update.hasSavedDefaults && update.changed ? "Review update" : "Configure"}</button>`
+      : "";
     const actions = canManageApps
-      ? `<div class="serverSettingsBotRow__actions"><button class="btn ghost" type="button" data-server-bot-review-permissions="${escAttr(bot.botId || "")}">${update.hasSavedDefaults && update.changed ? "Review update" : "Configure"}</button><button class="btn ghost danger" type="button" data-server-bot-remove="${escAttr(bot.botId || "")}">Remove</button><button class="btn ghost danger" type="button" data-server-bot-ban="${escAttr(bot.botId || "")}">Ban</button></div>`
+      ? `<div class="serverSettingsBotRow__actions">${configureAction}<button class="btn ghost" type="button" data-server-bot-toggle="${escAttr(bot.botId || "")}" data-server-bot-enable="${isActive ? "false" : "true"}">${isActive ? "Disable" : "Enable"}</button><button class="btn ghost danger" type="button" data-server-bot-remove="${escAttr(bot.botId || "")}">Remove</button><button class="btn ghost danger" type="button" data-server-bot-ban="${escAttr(bot.botId || "")}">Ban</button></div>`
       : "";
     return `<article class="serverSettingsBotRow" data-server-app-install-id="${escAttr(bot.installId || "")}">
       ${buildBotAvatarHtml(bot.avatarUrl || "", bot.displayName || "Bot", "botRouteAvatar botRouteAvatar--small")}
-      <div class="serverSettingsBotRow__body"><b>${esc(bot.displayName || "Bot")} <span class="serverMemberRow__botBadge">BOT</span></b><small>${esc(presenceLabel || "Offline")} - Installed</small><small>${esc(bot.botDescription || "Installed application")}</small><small>${bot.managedRoleName ? `Managed role: ${esc(bot.managedRoleName)}` : "Managed role: pending reconciliation"}</small><div class="serverSettingsBotPerms" aria-label="Current application permissions">${buildServerSettingsBotPermissionSpans(perms)}</div><small>${installedAt ? `Installed ${esc(formatDeveloperDate(installedAt))}` : "Installation date unavailable"}</small>${updateHtml}</div>
+      <div class="serverSettingsBotRow__body"><b>${esc(bot.displayName || "Bot")} <span class="serverMemberRow__botBadge">BOT</span></b><small>${esc(presenceLabel || "Offline")} - Installed</small><small>${esc(bot.botDescription || "Installed application")}</small><small>${bot.managedRoleName ? `Managed role: ${esc(bot.managedRoleName)}` : "Managed role: pending reconciliation"}</small><div class="serverSettingsBotPerms" aria-label="Current application permissions">${buildServerSettingsBotPermissionSpans(perms)}</div><small>${installedAt ? `Installed ${esc(formatDeveloperDate(installedAt))}` : "Installation date unavailable"}</small>${isActive ? updateHtml : ""}</div>
       ${actions}
     </article>`;
   }).join("");
@@ -26435,7 +27309,10 @@ function renderServerSettingsBotsPanel({ force = false } = {}) {
   if (!root || !sid || !getServerCapabilityMeta(sid).isMember) return;
   const renderVersion = String((Number(root.dataset.renderVersion || 0) + 1));
   root.dataset.renderVersion = renderVersion;
-  const priorBots = serverBotInstallListByServerId.get(sid) || [];
+  const canManageAppsAtRender = isCurrentServerPermissionSnapshotResolved(sid) && currentUserCanManageApps(sid);
+  const priorBots = canManageAppsAtRender
+    ? (serverBotManagementInstallListByServerId.get(sid) || serverBotInstallListByServerId.get(sid) || [])
+    : (serverBotInstallListByServerId.get(sid) || []);
   const priorBans = serverAppBanSnapshotByServerId.get(sid) || [];
   if (priorBots.length || priorBans.length) {
     root.innerHTML = buildServerSettingsBotsPanelHtml(sid, priorBots, priorBans);
@@ -26449,18 +27326,43 @@ function renderServerSettingsBotsPanel({ force = false } = {}) {
       }
       const canManageApps = currentUserCanManageApps(sid);
       const [bots, bannedBots] = await Promise.all([
-        fetchServerBotsForSidebar(sid, { force }),
+        fetchServerBotsForSidebar(sid, { force, includeDisabled: canManageApps }),
         canManageApps ? fetchServerBotBansForSettings(sid) : Promise.resolve([]),
       ]);
       if (normId(serverSettingsServerId || "") !== sid || root.dataset.renderVersion !== renderVersion) return;
       root.innerHTML = buildServerSettingsBotsPanelHtml(sid, bots, bannedBots);
     } catch (error) {
       if (normId(serverSettingsServerId || "") !== sid || root.dataset.renderVersion !== renderVersion) return;
-      const preservedBots = serverBotInstallListByServerId.get(sid) || priorBots;
+      const preservedBots = currentUserCanManageApps(sid)
+        ? (serverBotManagementInstallListByServerId.get(sid) || serverBotInstallListByServerId.get(sid) || priorBots)
+        : (serverBotInstallListByServerId.get(sid) || priorBots);
       const preservedBans = serverAppBanSnapshotByServerId.get(sid) || priorBans;
       root.innerHTML = buildServerSettingsBotsPanelHtml(sid, preservedBots, preservedBans, { transientError: error });
     }
   })();
+}
+
+async function handleServerSettingsBotToggle(botId = "", enabled = false) {
+  const sid = normId(serverSettingsServerId || "");
+  const bid = normId(botId || "");
+  const shouldEnable = enabled === true;
+  if (!sid || !bid || !await ensureCurrentUserCanManageAppsUi(sid)) return;
+
+  return runServerAppMutationOnce(`toggle:${sid}:${bid}:${shouldEnable}`, async () => {
+    try {
+      await settingsDeveloperRpc("bots_set_server_install_enabled_v1", {
+        p_server_id: sid,
+        p_bot_id: bid,
+        p_enabled: shouldEnable,
+      });
+      await refreshBotInstallUiAfterChange(sid);
+    } catch (error) {
+      await requestAppAlert(
+        `Could not ${shouldEnable ? "enable" : "disable"} bot: ${getFriendlyBotServerModerationErrorMessage(error)}`,
+        { title: "Bots & Integrations", okText: "OK" }
+      );
+    }
+  });
 }
 
 async function handleServerSettingsBotRemove(botId = "") {
@@ -30663,6 +31565,7 @@ async function enforceModerationAccessGate(stateInput = null) {
   } finally {
     try {
       clearConversationMessageMemoryCache({ userSwitch: true });
+      cancelAllServerRoleAuthorityRefreshes("moderation_logout");
       await logout();
     } catch (_) {
       try { window.location.replace("./login.html"); } catch (_) {}
@@ -32007,6 +32910,7 @@ async function logoutFromSettings() {
     if (label) label.textContent = t("settings.logout.pending", "Signing out...");
     syncDesktopTaskbarUnreadCount(0, { force: true });
     clearConversationMessageMemoryCache({ userSwitch: true });
+    cancelAllServerRoleAuthorityRefreshes("settings_logout");
     await logout();
   } catch (err) {
     console.warn("settings logout failed", err);
@@ -37600,6 +38504,11 @@ function cloneMainNavRoute(route) {
     if (!conversationId) return null;
     return { mode: "dm", conversationId };
   }
+  if (route.mode === "server") {
+    const serverId = normId(route.serverId || "");
+    if (!serverId) return null;
+    return { mode: "server", serverId };
+  }
   const allowed = new Set(["widgets", "friends", "pending", "add"]);
   const tab = allowed.has(String(route.tab || "").trim()) ? String(route.tab).trim() : "widgets";
   return { mode: "tab", tab };
@@ -37610,7 +38519,9 @@ function getMainNavRouteKey(route) {
   if (!r) return "";
   return r.mode === "dm"
     ? `dm:${r.conversationId}`
-    : `tab:${r.tab}`;
+    : r.mode === "server"
+      ? `server:${r.serverId}`
+      : `tab:${r.tab}`;
 }
 
 function getCurrentMainNavigationRoute() {
@@ -37618,6 +38529,9 @@ function getCurrentMainNavigationRoute() {
   const dmVisible = !!dmMain && dmMain.style.display !== "none";
   const conversationId = normId(activeDmId || state.activeDm?.conversationId || "");
   if (dmVisible && conversationId) return { mode: "dm", conversationId };
+  if (dmVisible && isServerWithoutSelectedChannelState()) {
+    return { mode: "server", serverId: normId(state.activeDm?.serverId || "") };
+  }
   const tab = document.querySelector("[data-tab].active")?.getAttribute("data-tab") || "widgets";
   return cloneMainNavRoute({ mode: "tab", tab });
 }
@@ -37672,13 +38586,30 @@ function isEditableTargetForMainNav(target) {
 async function applyMainNavigationRoute(route) {
   const targetRoute = cloneMainNavRoute(route);
   if (!targetRoute) return false;
+  const navigationIntent = beginMainContentNavigationIntent({
+    reason: `navigation-history-${targetRoute.mode || targetRoute.tab || "home"}`,
+    serverId: normId(targetRoute.serverId || ""),
+    conversationId: normId(targetRoute.conversationId || ""),
+  });
   mainNavHistoryApplying = true;
   try {
     if (targetRoute.mode === "dm") {
+      if (!isMainContentNavigationIntentCurrent(navigationIntent)) return false;
       await showDm(targetRoute.conversationId, { autoAnswerIfPending: true });
       return true;
     }
-    if (normId(activeDmId || state.activeDm?.conversationId || "")) {
+    if (targetRoute.mode === "server") {
+      const serverRow = getServerRowById(targetRoute.serverId) || null;
+      if (!serverRow || !canPreserveSelectedServerShell(targetRoute.serverId)) return false;
+      return await navigateToServerFromKnownEnvelope({
+        serverId: targetRoute.serverId,
+        fallbackConversationId: serverRow?.defaultConversationId || "",
+        serverName: normalizeConversationLabel(serverRow?.name || "Server", "Server"),
+        reason: "navigation-history-server",
+        navigationIntent,
+      });
+    }
+    if (normId(activeDmId || state.activeDm?.conversationId || "") || isServerConversationUiOpen()) {
       leaveActiveDmView({ captureHistory: false });
     }
     activateMainTab(targetRoute.tab || "widgets", { ensureFriendsMode: true });
@@ -37763,7 +38694,8 @@ function triggerMainNavigationCommand(kindInput, options = {}) {
 }
 
 function navigateToHomeView({ captureHistory = true } = {}) {
-  if (normId(activeDmId || state.activeDm?.conversationId || "")) {
+  beginMainContentNavigationIntent({ reason: "home-navigation" });
+  if (normId(activeDmId || state.activeDm?.conversationId || "") || isServerConversationUiOpen()) {
     leaveActiveDmView({ captureHistory: !!captureHistory });
   }
   activateMainTab("widgets", { ensureFriendsMode: true });
@@ -37864,6 +38796,7 @@ function setupTabs() {
   document.querySelectorAll("[data-tab]").forEach(p => {
     p.addEventListener("click", () => {
       const t = p.getAttribute("data-tab");
+      beginMainContentNavigationIntent({ reason: `home-tab-${String(t || "widgets")}` });
       activateMainTab(t, { ensureFriendsMode: true });
     });
   });
@@ -38015,7 +38948,7 @@ function dockStageIntoDm(yes, { barInSidebar = false } = {}) {
   removeStaleCallDockPanels({ reason: "dockStageIntoDm:end" });
 }
 
-function setMidMode(mode) {
+function setMidMode(mode, options = {}) {
   const dmMain = document.getElementById("dmMain");
   if (!dmMain) return;
   const midPanel = dmMain.closest(".panel.mid");
@@ -38082,11 +39015,15 @@ function setMidMode(mode) {
     });
   }
 
-  void refreshServerConversationUi({ reason: "sidebar-members", refreshChannels: false, refreshMembers: true }).catch(() => {});
-  refreshCallUI();
-  renderGroupsRail();
-  syncDmActiveListHighlight();
-  renderWidgets();
+  if (options?.skipServerConversationRefresh !== true) {
+    void refreshServerConversationUi({ reason: "sidebar-members", refreshChannels: false, refreshMembers: true }).catch(() => {});
+  }
+  if (options?.skipBroadUiRefresh !== true) {
+    refreshCallUI();
+    renderGroupsRail();
+    syncDmActiveListHighlight();
+    renderWidgets();
+  }
 }
 
 /* ========================= FRIENDS / REQUESTS ========================= */
@@ -38624,6 +39561,7 @@ const serverVoiceOccupancyHydrationStateByServerId = new Map();
 const serverVoiceOccupancyRealtimeVersionByServerId = new Map();
 const serverVoiceOccupancyRefreshTimerByServerId = new Map();
 const serverVoiceOccupancyResubscribeTimerByServerId = new Map();
+const serverVoiceOccupancyResubscribeAttemptsByServerId = new Map();
 const serverVoiceOccupancyChannelByServerId = new Map();
 let serverVoiceOccupancyStaleResponsesIgnored = 0;
 let lastServerVoiceOccupancyVisibilityTransition = null;
@@ -39611,6 +40549,36 @@ function scheduleServerVoiceOccupancyHydration(serverId = "", reason = "schedule
   return true;
 }
 
+function getServerVoiceSnapshotReadErrorMeta(error = null) {
+  const code = String(error?.code || error?.status || error?.statusCode || "").trim().toUpperCase();
+  const message = [error?.message, error?.details, error?.hint, error?.name]
+    .map((value) => String(value || ""))
+    .join(" ")
+    .trim()
+    .toLowerCase();
+  return { code, message };
+}
+
+function isServerVoiceSnapshotAuthorizationError(error = null) {
+  const { code, message } = getServerVoiceSnapshotReadErrorMeta(error);
+  return ["401", "403", "42501", "PGRST301", "PGRST302"].includes(code)
+    || /permission denied|row-level security|not authenticated|invalid jwt|jwt expired|rls policy/.test(message);
+}
+
+function isServerVoiceHeartbeatCompatibilityError(error = null) {
+  const { code, message } = getServerVoiceSnapshotReadErrorMeta(error);
+  return code === "42703" && /heartbeat_at/.test(message);
+}
+
+function isTransientServerVoiceSnapshotReadError(error = null) {
+  if (!error || isServerVoiceSnapshotAuthorizationError(error)) return false;
+  const { code, message } = getServerVoiceSnapshotReadErrorMeta(error);
+  const numeric = Number(code);
+  return ["408", "409", "425", "429", "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "NETWORK_ERROR"].includes(code)
+    || (Number.isFinite(numeric) && numeric >= 500 && numeric <= 599)
+    || /network|failed to fetch|timeout|timed out|temporarily unavailable|connection (?:closed|lost|reset)/.test(message);
+}
+
 async function loadServerVoiceV2ControlPlaneSnapshot(serverId = "", reason = "manual") {
   const sid = normId(serverId || currentServerVoiceV2Session?.serverId || state.activeServerId || state.currentServerId || "");
   if (!sid || !isServerVoiceV2Enabled()) return false;
@@ -39629,12 +40597,13 @@ async function loadServerVoiceV2ControlPlaneSnapshot(serverId = "", reason = "ma
   const request = (async () => {
     void callServerVoiceV2CleanupRpc(sid, `snapshot:${reason}`).catch(() => false);
     const freshSinceIso = new Date(Date.now() - SERVER_VOICE_V2_STALE_MEMBER_MS).toISOString();
+    recordServerRolePermissionSaveTiming("voice_snapshot_request", { serverId: sid, reason });
     let { data, error } = await supabase
       .from("server_voice_members_v2")
       .select("*")
       .eq("server_id", sid)
       .gte("heartbeat_at", freshSinceIso);
-    if (error) {
+    if (error && isServerVoiceHeartbeatCompatibilityError(error)) {
       console.warn("[voice-v2-control] fresh snapshot load failed; falling back to local stale filter", {
         serverId: sid,
         reason,
@@ -39661,6 +40630,21 @@ async function loadServerVoiceV2ControlPlaneSnapshot(serverId = "", reason = "ma
         console.warn("[voice-v2-control] snapshot load failed", { serverId: sid, reason, ...lastError });
         return false;
       }
+    } else if (error) {
+      const lastError = {
+        code: String(error?.code || error?.status || ""),
+        message: String(error?.message || error || "unknown"),
+        terminal: isServerVoiceSnapshotAuthorizationError(error),
+      };
+      serverVoiceOccupancyHydrationStateByServerId.set(sid, {
+        ...getServerVoiceOccupancyHydrationState(sid),
+        status: previousState.loaded ? "ready" : "error",
+        loaded: previousState.loaded,
+        lastTriggerReason: String(reason || "manual"),
+        lastError,
+      });
+      console.warn("[voice-v2-control] snapshot load failed", { serverId: sid, reason, ...lastError });
+      return false;
     }
 
     if (Number(serverVoiceOccupancyRealtimeVersionByServerId.get(sid) || 0) !== requestRealtimeVersion) {
@@ -39803,7 +40787,7 @@ async function ensureServerVoiceV2ControlPlaneSubscription(serverId = "", option
     serverVoiceOccupancyResubscribeTimerByServerId.delete(sid);
   }
   const channelName = `server_voice_v2:${sid}`;
-  const controlChannel = supabase.channel(channelName, { config: { broadcast: { self: true } } })
+  const controlChannel = supabase.channel(channelName, { config: { private: true, broadcast: { self: true } } })
     .on("broadcast", { event: "server_voice_v2_channel_changed" }, (event) => {
       serverVoiceOccupancyRealtimeVersionByServerId.set(
         sid,
@@ -39851,10 +40835,21 @@ async function ensureServerVoiceV2ControlPlaneSubscription(serverId = "", option
         } : currentState.lastError,
       });
       if (status === "SUBSCRIBED") {
-        void loadServerVoiceV2ControlPlaneSnapshot(sid, `realtime_subscribed:${reason}`).catch(() => false);
+        serverVoiceOccupancyResubscribeAttemptsByServerId.delete(sid);
+        const hydration = getServerVoiceOccupancyHydrationState(sid);
+        const recentlyHydrated = Number(hydration?.lastAuthoritativeFetchAt || 0) > 0
+          && Date.now() - Number(hydration.lastAuthoritativeFetchAt) < 1000;
+        if (!recentlyHydrated && !serverVoiceOccupancyRefreshInFlightByServerId.has(sid)) {
+          void loadServerVoiceV2ControlPlaneSnapshot(sid, `realtime_subscribed:${reason}`).catch(() => false);
+        }
         return;
       }
-      if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(String(status || ""))) return;
+      const terminalStatus = String(status || "");
+      if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(terminalStatus)) return;
+      if (terminalStatus !== "CLOSED") return;
+      const ownsControlChannel = serverVoiceOccupancyChannelByServerId.get(sid) === controlChannel
+        || serverVoiceV2ControlPlaneChannel === controlChannel;
+      if (!ownsControlChannel) return;
       if (serverVoiceOccupancyChannelByServerId.get(sid) === controlChannel) {
         serverVoiceOccupancyChannelByServerId.delete(sid);
       }
@@ -39862,8 +40857,11 @@ async function ensureServerVoiceV2ControlPlaneSubscription(serverId = "", option
         serverVoiceV2ControlPlaneChannel = null;
         serverVoiceV2ControlPlaneServerId = "";
       }
-      try { supabase.removeChannel(controlChannel); } catch (_) {}
+      if (isServerVoiceSnapshotAuthorizationError(error)) return;
       if (serverVoiceOccupancyResubscribeTimerByServerId.has(sid)) return;
+      const attempts = Number(serverVoiceOccupancyResubscribeAttemptsByServerId.get(sid) || 0);
+      if (attempts >= 3) return;
+      serverVoiceOccupancyResubscribeAttemptsByServerId.set(sid, attempts + 1);
       const timer = setTimeout(() => {
         serverVoiceOccupancyResubscribeTimerByServerId.delete(sid);
         if (normId(getActiveServerContext?.()?.serverId || getActiveServerIdForSidebar?.() || "") !== sid) return;
@@ -40102,6 +41100,9 @@ async function upsertCurrentUserServerVoiceV2ControlPlane({
   const cid = normId(channelId || "");
   const uid = normId(state.user?.id || "");
   if (!sid || !cid || !uid || !isServerVoiceV2Enabled()) return false;
+  const previousCachedRow = serverVoiceV2MembersByUser.has(uid)
+    ? { ...serverVoiceV2MembersByUser.get(uid) }
+    : null;
   if (getCurrentUserServerTimeout(sid)) {
     if (isServerTimeoutDebugEnabled()) {
       console.info("[server-timeouts] voice control-plane upsert blocked locally", { serverId: sid, channelId: cid, reason });
@@ -40120,14 +41121,25 @@ async function upsertCurrentUserServerVoiceV2ControlPlane({
     assignmentUpdatedAt,
   });
   upsertServerVoiceV2MemberRow(row, `optimistic_${reason}`);
-  await broadcastServerVoiceV2ControlPlaneRow(row).catch(() => false);
   const { error } = await supabase
     .from("server_voice_members_v2")
     .upsert(row, { onConflict: "server_id,user_id" });
   if (error) {
+    if (previousCachedRow) {
+      upsertServerVoiceV2MemberRow(previousCachedRow, `rollback_${reason}`);
+    } else {
+      deleteServerVoiceV2MemberRow({ server_id: sid, user_id: uid }, `rollback_${reason}`);
+    }
     console.warn("[voice-v2-control] own row upsert failed", { reason, serverId: sid, channelId: cid, message: error?.message || String(error || "unknown") });
-    return false;
+    if (isServerVoiceChannelFullError(error)) {
+      throw createServerVoiceChannelFullError(error);
+    }
+    throw Object.assign(new Error(String(error?.message || "server_voice_presence_write_failed")), {
+      code: String(error?.code || "server_voice_presence_write_failed"),
+      cause: error,
+    });
   }
+  await broadcastServerVoiceV2ControlPlaneRow(row).catch(() => false);
   console.info("[voice-v2-control] own row upserted", { reason, row });
   return true;
 }
@@ -41462,6 +42474,7 @@ async function loadGroupAndServerCollections({ force = false, hydrateGroupMetada
   );
 
   if (!cacheFresh) {
+    const previousGroups = Array.isArray(state.groupDms) ? state.groupDms.slice() : [];
     const [groupsRes, serversRes] = await Promise.all([
       rpcWithTimeout("list_my_group_dms"),
       rpcWithTimeout("list_my_servers"),
@@ -41524,7 +42537,12 @@ async function loadGroupAndServerCollections({ force = false, hydrateGroupMetada
       console.warn("list_my_servers failed", serversError);
     }
 
-    if (groupsLoaded) state.groupDms = nextGroups;
+    if (groupsLoaded) {
+      state.groupDms = nextGroups;
+      await reconcileRevokedGroupDmCollections(previousGroups, nextGroups, {
+        reason: "list_my_group_dms_authoritative_refresh",
+      });
+    }
     if (serversLoaded) {
       state.servers = nextServers;
       const validServerIds = new Set(nextServers.map((s) => normId(s?.serverId || "")).filter(Boolean));
@@ -41532,6 +42550,7 @@ async function loadGroupAndServerCollections({ force = false, hydrateGroupMetada
         if (!validServerIds.has(sid)) {
           serverChannelListByServerId.delete(sid);
           serverChannelBackendVisibleIdsByServerId.delete(sid);
+          serverChannelVisibilityAuthoritySnapshotByServerId.delete(sid);
           serverChannelRawLoadDebugByServerId.delete(sid);
         }
       }
@@ -41590,10 +42609,240 @@ function buildServerRailIncomingOrbHtml({
     : `<span class="groupOrbFolderIncomingFallback">${esc(initial)}</span>`;
 }
 
-async function openConversationById(conversationId, fallbackMeta = {}) {
+function beginMainContentNavigationIntent({ reason = "main-navigation", serverId = "", conversationId = "" } = {}) {
+  dmOpenIntentSeq += 1;
+  dmShowRequestSeq += 1;
+  const navigationVersion = markServerChannelUserNavigation({
+    reason,
+    serverId,
+    conversationId,
+  });
+  return {
+    openIntentSeq: dmOpenIntentSeq,
+    navigationVersion,
+  };
+}
+
+function isMainContentNavigationIntentCurrent(intent = null) {
+  if (!intent || typeof intent !== "object") return false;
+  return Number(intent.openIntentSeq || 0) === Number(dmOpenIntentSeq || 0)
+    && Number(intent.navigationVersion || 0) === Number(serverChannelUserNavigationVersion || 0);
+}
+
+function hasCurrentServerChannelVisibilityAuthority(serverId = "") {
+  const sid = normId(serverId || "");
+  const userId = normId(state.user?.id || "");
+  const snapshot = sid ? (serverChannelVisibilityAuthoritySnapshotByServerId.get(sid) || null) : null;
+  const currentEpoch = Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0);
+  return !!(
+    sid
+    && userId
+    && !serverChannelVisibilityAuthorityResolvingByServerId.has(sid)
+    && serverChannelBackendVisibleIdsByServerId.get(sid) instanceof Set
+    && normId(snapshot?.userId || "") === userId
+    && Number(snapshot?.epoch || 0) === currentEpoch
+    && snapshot?.pending !== true
+  );
+}
+
+function invalidateAllServerChannelVisibilityAuthoritySnapshots(reason = "authority_context_changed") {
+  const serverIds = new Set([
+    ...serverChannelBackendVisibleIdsByServerId.keys(),
+    ...serverChannelVisibilityAuthoritySnapshotByServerId.keys(),
+    ...serverChannelVisibilityAuthorityResolvingByServerId.values(),
+    ...serverChannelVisibilityNavigationRecoveryByServerId.keys(),
+    ...serverChannelVisibilityAuthorityWaitersByServerId.keys(),
+  ]);
+  serverIds.forEach((serverId) => {
+    cancelServerRoleAuthorityRefreshForServer(serverId, reason);
+  });
+  return serverIds.size;
+}
+
+function isServerConversationAuthorizedByCurrentVisibilitySnapshot(serverId = "", conversationId = "", channelId = "") {
+  const sid = normId(serverId || "");
+  const convId = normId(conversationId || "");
+  const requestedChannelId = normId(channelId || "");
+  if (!sid || !convId || !hasCurrentServerChannelVisibilityAuthority(sid)) return false;
+  const channel = (serverChannelListByServerId.get(sid) || []).find((row) => (
+    normId(row?.conversationId || row?.conversation_id || "") === convId
+    && (!requestedChannelId || normId(row?.id || row?.channelId || row?.channel_id || "") === requestedChannelId)
+  )) || null;
+  const resolvedChannelId = normId(channel?.id || channel?.channelId || channel?.channel_id || "");
+  return !!(
+    channel
+    && resolvedChannelId
+    && serverChannelBackendVisibleIdsByServerId.get(sid)?.has(resolvedChannelId)
+  );
+}
+
+function buildServerEntryConversationMeta(serverId = "", conversationId = "", fallbackConversationId = "", serverNameInput = "") {
+  const sid = normId(serverId || "");
+  const convId = normId(conversationId || "");
+  const fallbackConvId = normId(fallbackConversationId || "");
+  const convMeta = getConversationMeta(convId) || {};
+  const fallbackMeta = getConversationMeta(fallbackConvId) || {};
+  const serverRow = getServerRowById(sid) || {};
+  const serverName = normalizeConversationLabel(
+    serverNameInput || convMeta?.serverName || fallbackMeta?.serverName || serverRow?.name || "Server",
+    "Server"
+  );
+  return {
+    ...fallbackMeta,
+    ...convMeta,
+    kind: "server",
+    isGroup: true,
+    displayName: normalizeConversationLabel(convMeta?.displayName || fallbackMeta?.displayName || serverName, serverName),
+    serverId: sid || normId(convMeta?.serverId || fallbackMeta?.serverId || ""),
+    serverName: convMeta?.serverName || fallbackMeta?.serverName || serverName,
+    avatarUrl: String(serverRow?.iconUrl || convMeta?.avatarUrl || fallbackMeta?.avatarUrl || "").trim(),
+    channelType: normalizeConversationChannelType(convMeta?.channelType || fallbackMeta?.channelType || "text"),
+  };
+}
+
+async function navigateToServerFromKnownEnvelope({
+  serverId = "",
+  fallbackConversationId = "",
+  serverName = "",
+  reason = "server-rail-click",
+  navigationIntent: suppliedNavigationIntent = null,
+} = {}) {
+  const sid = normId(serverId || "");
+  const fallbackConvId = normId(fallbackConversationId || "");
+  if (!sid || !canPreserveSelectedServerShell(sid)) return false;
+  const traceId = beginServerNavigationPerfTrace(sid, reason);
+  if (suppliedNavigationIntent && !isMainContentNavigationIntentCurrent(suppliedNavigationIntent)) return false;
+  const navigationIntent = suppliedNavigationIntent || beginMainContentNavigationIntent({
+      reason,
+      serverId: sid,
+      conversationId: fallbackConvId,
+    });
+  recordServerNavigationPerfPhase(traceId, "navigation_intent_acquired", {
+    openIntentSeq: navigationIntent.openIntentSeq,
+    navigationVersion: navigationIntent.navigationVersion,
+  });
+  if (isServerDeletedLocally(sid)) {
+    applyServerDeletionLocally(sid, { source: "rail_open_guard" });
+    recordServerNavigationPerfPhase(traceId, "server_unavailable");
+    return false;
+  }
+
+  const visibilityWasWarm = hasCurrentServerChannelVisibilityAuthority(sid);
+  const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
+  const activeServerId = normId(state.activeDm?.serverId || "");
+  const activeChannelId = normId(state.activeDm?.channelId || state.activeDm?.channel_id || "");
+  if (
+    visibilityWasWarm
+    && activeServerId === sid
+    && isServerConversationUiOpen()
+    && !isServerChannelAuthorityShellState(sid)
+    && (
+      (activeConversationId && isServerConversationAuthorizedByCurrentVisibilitySnapshot(sid, activeConversationId, activeChannelId))
+      || (!activeConversationId && isNoAccessibleServerChannelsState(sid) && hasAuthoritativeZeroVisibleServerChannels(sid))
+    )
+  ) {
+    renderGroupsRail();
+    recordServerNavigationPerfPhase(traceId, "already_selected_server_preserved", { conversationId: activeConversationId });
+    return true;
+  }
+  recordServerNavigationPerfPhase(traceId, "visibility_read_started", { warm: visibilityWasWarm });
+  const visibilityPromise = ensureServerChannelVisibilityAuthorityReadyForNavigation(sid, reason);
+  const shellCommitted = renderServerChannelAuthorityShellState(sid, "resolving", {
+    reason,
+    fallbackConversationId: fallbackConvId,
+    serverName,
+    navigationIntent,
+    traceId,
+  });
+  if (!shellCommitted || !isMainContentNavigationIntentCurrent(navigationIntent)) return false;
+
+  const visibilityAuthority = await visibilityPromise;
+  recordServerNavigationPerfPhase(traceId, "visibility_read_completed", {
+    ok: visibilityAuthority?.ok === true,
+    warm: visibilityWasWarm,
+  });
+  if (!isMainContentNavigationIntentCurrent(navigationIntent)) {
+    recordServerNavigationPerfPhase(traceId, "stale_visibility_result_ignored");
+    return false;
+  }
+  if (visibilityAuthority?.ok !== true || !hasCurrentServerChannelVisibilityAuthority(sid)) {
+    const visibilityError = visibilityAuthority?.error || new Error("Server channel visibility is unresolved.");
+    serverChannelLoadErrorByServerId.set(sid, visibilityError);
+    renderServerChannelAuthorityShellState(sid, "error", {
+      reason: `${reason}:visibility-error`,
+      fallbackConversationId: fallbackConvId,
+      serverName,
+      navigationIntent,
+      traceId,
+      error: visibilityError,
+    });
+    recordServerNavigationPerfPhase(traceId, "visibility_error_rendered");
+    return false;
+  }
+
+  const convId = await resolveServerConversationForEntry(sid, fallbackConvId);
+  recordServerNavigationPerfPhase(traceId, "channel_selection_resolved", {
+    conversationId: convId || "",
+    cachedChannelCount: (serverChannelListByServerId.get(sid) || []).length,
+    visibleChannelCount: getVisibleServerChannelsForCurrentUser(
+      sid,
+      serverChannelListByServerId.get(sid) || []
+    ).length,
+    backendVisibleCount: serverChannelBackendVisibleIdsByServerId.get(sid)?.size || 0,
+    authorityResolving: serverChannelVisibilityAuthorityResolvingByServerId.has(sid),
+  });
+  if (!isMainContentNavigationIntentCurrent(navigationIntent)) {
+    recordServerNavigationPerfPhase(traceId, "stale_channel_selection_ignored");
+    return false;
+  }
+  if (!convId) {
+    if (hasAuthoritativeZeroVisibleServerChannels(sid) && canPreserveSelectedServerShell(sid)) {
+      renderNoAccessibleServerChannelsState(sid, "server_rail_no_access", {
+        preserveNavigationIntent: true,
+        previousConversationId: fallbackConvId,
+      });
+      recordServerNavigationPerfPhase(traceId, "no_visible_channels_rendered");
+      return true;
+    }
+    renderServerChannelAuthorityShellState(sid, "error", {
+      reason: `${reason}:selection-unresolved`,
+      fallbackConversationId: fallbackConvId,
+      serverName,
+      navigationIntent,
+      traceId,
+    });
+    return false;
+  }
+
+  const meta = buildServerEntryConversationMeta(sid, convId, fallbackConvId, serverName);
+  recordServerNavigationPerfPhase(traceId, "channel_selection_completed", { conversationId: convId });
+  const opened = await openConversationById(convId, meta, {
+    ...navigationIntent,
+    reason,
+    authoritativeServerEntry: true,
+    serverNavigationTraceId: traceId,
+  });
+  recordServerNavigationPerfPhase(traceId, opened ? "navigation_completed" : "navigation_failed");
+  return opened === true;
+}
+
+async function openConversationById(conversationId, fallbackMeta = {}, options = {}) {
   const convId = normId(conversationId);
   if (!convId) return false;
-  const openIntentSeq = ++dmOpenIntentSeq;
+  if (isGroupDmConversationRevoked(convId)) return false;
+  const suppliedOpenIntentSeq = Number(options?.openIntentSeq || 0);
+  const suppliedNavigationVersion = Number(options?.navigationVersion || 0);
+  const navigationIntent = suppliedOpenIntentSeq > 0 && suppliedNavigationVersion > 0
+    ? { openIntentSeq: suppliedOpenIntentSeq, navigationVersion: suppliedNavigationVersion }
+    : beginMainContentNavigationIntent({
+      reason: String(options?.reason || "open-conversation"),
+      serverId: normId(fallbackMeta?.serverId || fallbackMeta?.server_id || ""),
+      conversationId: convId,
+    });
+  const openIntentSeq = navigationIntent.openIntentSeq;
+  const isOpenIntentStale = () => !isMainContentNavigationIntentCurrent(navigationIntent);
+  const serverNavigationTraceId = String(options?.serverNavigationTraceId || "");
+  if (isOpenIntentStale()) return false;
   markPerfStart("dm_row_click_to_shell", { source: "openConversationById" });
   markPerfStart("dm-open-click-to-shell", { source: "openConversationById" });
   markPerfStart("dm_open_total", { source: "openConversationById", conversationId: convId });
@@ -41605,10 +42854,12 @@ async function openConversationById(conversationId, fallbackMeta = {}) {
   const preflightIsGroup = !!preflightMeta?.isGroup || preflightKind === "group" || preflightKind === "server";
   if (!preflightIsGroup) {
     await syncDmLocksFromCloud(state.user?.id || "", { force: false, migrateLegacyLocal: true }).catch(() => {});
+    if (isOpenIntentStale()) return false;
     const blockedByLock = shouldBlockDmAccess(state.user?.id || "", convId);
     if (blockedByLock) {
       const unlocked = await unlockLockedDmWithPrompt(state.user?.id || "", convId);
       if (!unlocked) return false;
+      if (isOpenIntentStale()) return false;
     }
   }
 
@@ -41616,6 +42867,20 @@ async function openConversationById(conversationId, fallbackMeta = {}) {
   const merged = { ...fromCache, ...(fallbackMeta || {}) };
   const isGroup = !!merged?.isGroup || merged?.kind === "group" || merged?.kind === "server";
   const isServer = String(merged?.kind || "").trim().toLowerCase() === "server";
+  if (isGroup && !isServer) {
+    if (isGroupDmConversationRevoked(convId)) return false;
+    if (!isAltaraDefinitivelyOffline()) {
+      const hasCurrentMembership = await canCurrentUserAccessMessageConversation(convId, { force: true });
+      if (isOpenIntentStale()) return false;
+      if (!hasCurrentMembership) {
+        await purgeRevokedGroupDmClientState(convId, {
+          reason: "known_group_id_access_denied",
+          navigate: true,
+        });
+        return false;
+      }
+    }
+  }
   if (isServer) {
     const suppressedSid = normId(merged?.serverId || merged?.server_id || findServerChannelContextByConversationId(convId)?.serverId || "");
     if (shouldSkipRemovedServerRender(suppressedSid, "openConversationById")) return false;
@@ -41630,6 +42895,17 @@ async function openConversationById(conversationId, fallbackMeta = {}) {
     displayFallback
   );
   const channelType = normalizeConversationChannelType(merged?.channelType || merged?.channel_type || "");
+  const serverCtxForOpen = isServer ? findServerChannelContextByConversationId(convId) : null;
+  const serverIdForOpen = isServer
+    ? normId(merged?.serverId || merged?.server_id || serverCtxForOpen?.serverId || "")
+    : "";
+  const serverChannelIdForOpen = isServer
+    ? normId(serverCtxForOpen?.channel?.id || merged?.channelId || merged?.channel_id || "")
+    : "";
+  if (serverIdForOpen) {
+    await ensureSelfServerConversationMembership(serverIdForOpen, { force: false }).catch(() => {});
+    if (isOpenIntentStale()) return false;
+  }
   const previousActiveDmForOpen = (state.activeDm && typeof state.activeDm === "object") ? state.activeDm : {};
   const keepPreviousDmStateForOpen = normId(previousActiveDmForOpen?.conversationId || "") === convId;
   const openingPrivacyMetaForOpen = (!isGroup && !keepPreviousDmStateForOpen && isDirectDmE2eeEnabled())
@@ -41657,6 +42933,12 @@ async function openConversationById(conversationId, fallbackMeta = {}) {
     channelId: normId(merged?.channelId || merged?.channel_id || ""),
     channelType,
   };
+  if (isServer) {
+    recordServerNavigationPerfPhase(serverNavigationTraceId, "selected_channel_committed", {
+      conversationId: convId,
+      serverId: serverIdForOpen,
+    });
+  }
 
   if (!isGroup && isDirectDmE2eeEnabled()) {
     activeDmId = convId;
@@ -41665,9 +42947,8 @@ async function openConversationById(conversationId, fallbackMeta = {}) {
   }
 
   if (isServer) {
-    const serverCtx = findServerChannelContextByConversationId(convId);
-    const sid = normId(state.activeDm?.serverId || merged?.serverId || serverCtx?.serverId || "");
-    const serverChannelId = normId(serverCtx?.channel?.id || merged?.channelId || merged?.channel_id || state.activeDm?.channelId || "");
+    const sid = normId(serverIdForOpen || state.activeDm?.serverId || "");
+    const serverChannelId = normId(serverChannelIdForOpen || state.activeDm?.channelId || "");
     if (sid) {
       state.activeDm.serverId = sid;
       if (serverChannelId) state.activeDm.channelId = serverChannelId;
@@ -41678,18 +42959,25 @@ async function openConversationById(conversationId, fallbackMeta = {}) {
         channel_id: serverChannelId,
       });
       rememberServerLastChannel(sid, convId, { persist: true });
-      await ensureSelfServerConversationMembership(sid, { force: false }).catch(() => {});
     }
   }
-  if (openIntentSeq !== dmOpenIntentSeq) return false;
-  primeDmOpeningShell(convId, state.activeDm || merged || {}, { reason: "open_conversation", pending: false });
+  if (isOpenIntentStale() || openIntentSeq !== dmOpenIntentSeq) return false;
+  primeDmOpeningShell(convId, state.activeDm || merged || {}, {
+    reason: "open_conversation",
+    pending: false,
+    skipBroadServerRefresh: isServer,
+  });
+  if (isServer) recordServerNavigationPerfPhase(serverNavigationTraceId, "authorized_channel_shell_rendered", { conversationId: convId });
 
-  const opened = await showDm(convId, { autoAnswerIfPending: true });
+  const opened = await showDm(convId, {
+    autoAnswerIfPending: true,
+    reason: String(options?.reason || "open-conversation"),
+    shellPrimed: true,
+    authoritativeServerEntry: options?.authoritativeServerEntry === true,
+    serverNavigationTraceId,
+  });
   if (!opened) return false;
   void refreshActiveMessageComposerPermission({ reason: "conversation-opened" });
-  if (isServer && channelType === "voice") {
-    void requestServerVoicePresenceSnapshot(convId, { force: true });
-  }
   const nowServerActive = String(state.activeDm?.kind || "").trim().toLowerCase() === "server";
   if (wasServerActive || nowServerActive) {
     queueLightweightDmListRenderFromState();
@@ -41918,7 +43206,9 @@ function renderGroupsRail() {
     ? String(state.activeDm?.username || "").trim().toLowerCase()
     : "";
   const activeMainTab = String(document.querySelector("[data-tab].active")?.getAttribute("data-tab") || "widgets").trim().toLowerCase();
-  const isHomeOrbActive = !normId(activeDmId || state.activeDm?.conversationId || "") && activeMainTab === "widgets";
+  const isHomeOrbActive = !serverUiOpen
+    && !normId(activeDmId || state.activeDm?.conversationId || "")
+    && activeMainTab === "widgets";
   const orderedServerEntries = getOrderedServerRailEntries(state.servers || []);
   const unreadDmRows = Array.from(dmUnreadByUserId.entries())
     .map(([uidRaw, unreadRaw]) => ({
@@ -42072,6 +43362,10 @@ function renderGroupsRail() {
   rail.querySelectorAll("[data-open-rail-dm-user-id]").forEach((btn) => {
     const openFromDmOrb = async () => {
       const uid = normId(btn.getAttribute("data-open-rail-dm-user-id") || "");
+      const navigationIntent = beginMainContentNavigationIntent({
+        reason: "dm-rail-click",
+        conversationId: getKnownDmConversationIdForUser(uid),
+      });
       let username = String(btn.getAttribute("data-open-rail-dm-username") || "").trim();
       let displayName = String(btn.getAttribute("data-open-rail-dm-display") || "").trim();
       let avatarUrl = String(btn.getAttribute("data-open-rail-dm-avatar") || "").trim();
@@ -42095,6 +43389,7 @@ function renderGroupsRail() {
           if (!avatarUrl) avatarUrl = String(row?.avatar_url || "").trim();
         } catch (_) {}
       }
+      if (!isMainContentNavigationIntentCurrent(navigationIntent)) return;
 
       if (!username) {
         if (isAltaraDefinitivelyOffline()) {
@@ -42106,7 +43401,7 @@ function renderGroupsRail() {
         }
         return;
       }
-      await startDmWith(username, displayName || username, avatarUrl, uid || "");
+      await startDmWith(username, displayName || username, avatarUrl, uid || "", navigationIntent);
     };
 
     btn.addEventListener("click", async () => { await openFromDmOrb(); });
@@ -42138,26 +43433,12 @@ function renderGroupsRail() {
     const openFromOrb = async () => {
       const fallbackConvId = normId(btn.getAttribute("data-open-group-conversation"));
       const serverId = normId(btn.getAttribute("data-open-group-server-id"));
-      if (serverId && isServerDeletedLocally(serverId)) {
-        applyServerDeletionLocally(serverId, { source: "rail_open_guard" });
-        return;
-      }
-      const convId = await resolveServerConversationForEntry(serverId, fallbackConvId);
-      if (!convId) return;
-      const convMeta = getConversationMeta(convId) || {};
-      const fallbackMeta = getConversationMeta(fallbackConvId) || {};
-      const serverName = normalizeConversationLabel(btn.getAttribute("title") || convMeta?.serverName || fallbackMeta?.serverName || "Server", "Server");
-      const meta = {
-        ...fallbackMeta,
-        ...convMeta,
-        kind: "server",
-        isGroup: true,
-        displayName: normalizeConversationLabel(convMeta?.displayName || fallbackMeta?.displayName || serverName, serverName),
-        serverId: serverId || normId(convMeta?.serverId || fallbackMeta?.serverId || ""),
-        serverName: convMeta?.serverName || fallbackMeta?.serverName || serverName,
-        channelType: normalizeConversationChannelType(convMeta?.channelType || fallbackMeta?.channelType || "text"),
-      };
-      await openConversationById(convId, meta);
+      await navigateToServerFromKnownEnvelope({
+        serverId,
+        fallbackConversationId: fallbackConvId,
+        serverName: normalizeConversationLabel(btn.getAttribute("title") || "Server", "Server"),
+        reason: "server-rail-click",
+      });
     };
 
     btn.addEventListener("click", async () => { await openFromOrb(); });
@@ -43092,6 +44373,9 @@ function applyIncomingServerChannelUnread(context = {}, { row = null, sourceTabl
   let channelId = normId(context.channelId || context.channel_id || "");
   if (!channelId && conversationId) channelId = getActiveChannelIdForConversation(conversationId, serverId);
   if (!serverId || !channelId || isSystemEvent) return { unreadApplied: false, soundPlayed: false, skippedReason: !serverId || !channelId ? "missing_server_channel" : "system_event" };
+  if (!canCurrentUserViewServerChannelSync(serverId, channelId)) {
+    return { unreadApplied: false, soundPlayed: false, skippedReason: "channel_not_visible" };
+  }
   const cleanup = cleanupServerConversationDmState({ conversationId, senderUserId: context.senderUserId || context.sender_user_id || "", reason: "incoming-server-unread" });
   rememberServerUnreadChannelMeta({ serverId, channelId, conversationId });
   const activeMatch = isServerChannelActivelyViewed({ serverId, channelId, conversationId });
@@ -43486,8 +44770,8 @@ function buildServerPanelMenuItem(action, label, {
 function buildServerPanelMenuHtml({ sid = "", serverName = "Server", iconUrl = "", variant = "server" } = {}) {
   const caps = getServerCapabilityMeta(sid);
   const capabilityState = getCurrentServerCapabilityUiState(sid);
-  const canOpenSettings = !!(capabilityState.isOwner || capabilityState.canManageServer || capabilityState.canManageRoles);
   const canManageChannelStructure = currentUserCanManageChannels(sid);
+  const canOpenSettings = !!(capabilityState.isOwner || capabilityState.canManageServer || capabilityState.canManageRoles || canManageChannelStructure);
   const hideMuted = isServerHideMutedChannelsEnabled(sid);
   const serverMuted = isServerMuted(sid);
   const notificationModeLabel = getServerNotificationModeLabel(getServerNotificationMode(sid));
@@ -43566,7 +44850,9 @@ async function runServerPanelMenuAction(action = "", { sid = "", serverName = "S
       return;
     }
     const capabilityState = getCurrentServerCapabilityUiState(sid);
-    const panel = capabilityState.canManageRoles && !capabilityState.canManageServer ? "roles" : "profile";
+    const panel = capabilityState.canManageRoles && !capabilityState.canManageServer
+      ? "roles"
+      : (currentUserCanManageChannels(sid) && !capabilityState.canManageServer ? "channels" : "profile");
     await openServerSettingsModal({ serverId: sid, name: serverName, iconUrl, panel });
     return;
   }
@@ -43689,7 +44975,7 @@ function buildServerChannelItemMenuHtml(target = null) {
   const itemType = String(target?.itemType || "channel").trim().toLowerCase();
   const isChannel = itemType !== "category";
   const sid = normId(target?.serverId || "");
-  const canManage = currentUserCanManageChannels(sid) || currentUserCanManageServer(sid) || currentUserCanManageRoles(sid);
+  const canManage = currentUserCanManageChannels(sid);
   const label = isChannel ? "Channel Settings" : "Category Settings";
   const editLabel = isChannel ? "Edit Channel" : "Edit Category";
   const idLabel = isChannel ? "Copy Channel ID" : "Copy Category ID";
@@ -43894,6 +45180,23 @@ function getOrCreateChannelSettingsModalElement() {
       renderChannelSettingsModal();
       return;
     }
+    const addMember = target.closest("[data-channel-permissions-add-member]");
+    if (addMember) {
+      const select = modal.querySelector("[data-channel-permissions-member-select]");
+      const memberId = normId(select?.value || "");
+      if (!memberId || !activeChannelSettingsModalState) return;
+      activeChannelSettingsModalState.extraTargets = activeChannelSettingsModalState.extraTargets || [];
+      if (!activeChannelSettingsModalState.extraTargets.some((entry) => entry.targetType === "member" && entry.targetId === memberId)) {
+        activeChannelSettingsModalState.extraTargets.push({ targetType: "member", targetId: memberId });
+      }
+      renderChannelSettingsModal();
+      return;
+    }
+    const syncCategory = target.closest("[data-channel-permissions-sync-category]");
+    if (syncCategory) {
+      await syncChannelSettingsPermissionsWithCategoryFromModal();
+      return;
+    }
     const saveTarget = target.closest("[data-channel-permissions-save-target]");
     if (saveTarget) {
       await saveChannelPermissionTargetFromModal(saveTarget);
@@ -44028,7 +45331,11 @@ function renderChannelPermissionTriStateGroup(group) {
 function buildChannelPermissionTargetEditorHtml(target = {}) {
   const row = getChannelPermissionOverwriteForTarget(activeChannelSettingsModalState?.channelId || "", target.targetType, target.targetId);
   const label = getChannelPermissionTargetLabel(activeChannelSettingsModalState?.serverId || "", target.targetType, target.targetId);
-  const disabled = activeChannelSettingsSaving || !currentUserCanManageChannels(activeChannelSettingsModalState?.serverId || "");
+  const disabled = activeChannelSettingsSaving || !canCurrentUserTargetChannelPermissionOverride(
+    activeChannelSettingsModalState?.serverId || "",
+    target.targetType,
+    target.targetId
+  );
   return `
     <section class="channelPermissionTarget" data-channel-permission-target-type="${escAttr(target.targetType)}" data-channel-permission-target-id="${escAttr(target.targetId)}">
       <div class="channelPermissionTarget__head">
@@ -44060,30 +45367,52 @@ function buildChannelSettingsPermissionsHtml() {
   const stateRow = activeChannelSettingsModalState || {};
   const sid = normId(stateRow.serverId || "");
   const cid = normId(stateRow.channelId || "");
-  if (channelPermissionOverwritesSqlAvailable === false) {
+  const canManage = currentUserCanManageChannels(sid);
+  if (batch7aPermissionOverridesSqlAvailable === false) {
     return `
       <div class="channelSettingsNotice is-warning">
-        <strong>Channel permissions are not enabled yet.</strong>
-        <span>Apply the manual SQL patch to edit channel permission overwrites.</span>
+        <strong>Category and channel overrides are not enabled yet.</strong>
+        <span>Apply and verify Batch 7A before editing permission overrides.</span>
       </div>
     `;
   }
   const roleOptions = getServerRolesForSettingsDisplay(sid)
-    .filter((role) => normId(role?.id || "") && !isDefaultServerRole(role))
+    .filter((role) => canCurrentUserTargetRoleForChannelPermissions(sid, role))
     .map((role) => `<option value="${escAttr(role.id)}">${esc(role.name || "Role")}</option>`)
     .join("");
+  const currentUserId = normId(state.user?.id || "");
+  const ownerId = getCanonicalServerOwnerUserIdSync(sid);
+  const memberOptions = (serverMemberListByServerId.get(sid) || [])
+    .map((member) => ({
+      id: normId(member?.userId || member?.user_id || member?.id || ""),
+      label: member?.displayName || member?.display_name || member?.username || "Member",
+    }))
+    .filter((member) => member.id && member.id !== currentUserId && member.id !== ownerId && canCurrentUserTargetMemberForChannelPermissions(sid, member.id))
+    .map((member) => `<option value="${escAttr(member.id)}">${esc(member.label)}</option>`)
+    .join("");
   const targets = getChannelPermissionEditorTargets(sid, cid);
+  const channel = getChannelSettingsChannelRow();
+  const hasCategory = !!normId(channel?.categoryId || "");
+  const isSynced = channel?.permissionsSynced !== false;
   return `
     <div class="channelSettingsSectionIntro">
-      <h3>Permission Overwrites</h3>
-      <p>Deny wins over allow for the same target. Voice permissions are stored now and enforced in a later phase.</p>
+      <h3>Permission Overrides</h3>
+      <p>Server defaults apply first, then category and custom channel values. Members override roles; role deny wins over role allow.</p>
+    </div>
+    <div class="channelSettingsNotice ${isSynced ? "" : "is-warning"}">
+      <strong>${isSynced ? "Synced with category" : "Custom channel permissions"}</strong>
+      <span>${hasCategory ? (isSynced ? "Category changes apply immediately." : "Channel values are applied after its category.") : "This channel has no category; local values apply after server defaults."}</span>
+      ${hasCategory && !isSynced ? `<button class="btn ghost" type="button" data-channel-permissions-sync-category ${activeChannelSettingsSaving || !canManage ? "disabled" : ""}>Sync with category</button>` : ""}
     </div>
     <div class="channelPermissionToolbar">
-      <select class="input" data-channel-permissions-role-select ${roleOptions ? "" : "disabled"}>
+      <select class="input" data-channel-permissions-role-select ${canManage && roleOptions ? "" : "disabled"}>
         ${roleOptions || `<option value="">No roles available</option>`}
       </select>
-      <button class="btn ghost" type="button" data-channel-permissions-add-role ${roleOptions ? "" : "disabled"}>Add Role</button>
-      <button class="btn ghost" type="button" disabled title="Member-specific overwrites are structured in SQL and coming next.">Add Member</button>
+      <button class="btn ghost" type="button" data-channel-permissions-add-role ${canManage && roleOptions ? "" : "disabled"}>Add Role</button>
+      <select class="input" data-channel-permissions-member-select ${canManage && memberOptions ? "" : "disabled"}>
+        ${memberOptions || `<option value="">No editable members</option>`}
+      </select>
+      <button class="btn ghost" type="button" data-channel-permissions-add-member ${canManage && memberOptions ? "" : "disabled"}>Add Member</button>
     </div>
     <div class="channelPermissionTargetList">
       ${targets.map(buildChannelPermissionTargetEditorHtml).join("")}
@@ -44094,6 +45423,7 @@ function buildChannelSettingsPermissionsHtml() {
 function buildChannelSettingsOverviewHtml() {
   const row = getChannelSettingsChannelRow();
   const sid = normId(activeChannelSettingsModalState?.serverId || "");
+  const controlsDisabled = activeChannelSettingsSaving || !currentUserCanManageChannels(sid);
   const categoryId = normId(row?.categoryId || activeChannelSettingsModalState?.categoryId || "");
   const categories = serverChannelCategoryListByServerId.get(sid) || [];
   const options = [`<option value="">No Category</option>`].concat(categories.map((cat) => {
@@ -44104,14 +45434,14 @@ function buildChannelSettingsOverviewHtml() {
     <div class="channelSettingsOverview">
       <label class="field">
         <span class="label">Channel name</span>
-        <input class="input" type="text" data-channel-settings-name value="${escAttr(row?.name || activeChannelSettingsModalState?.label || "general")}" maxlength="72" />
+        <input class="input" type="text" data-channel-settings-name value="${escAttr(row?.name || activeChannelSettingsModalState?.label || "general")}" maxlength="60" ${controlsDisabled ? "disabled" : ""}/>
       </label>
       <label class="field">
         <span class="label">Category</span>
-        <select class="input" data-channel-settings-category>${options}</select>
+        <select class="input" data-channel-settings-category ${controlsDisabled ? "disabled" : ""}>${options}</select>
       </label>
       <div class="channelSettingsButtonRow">
-        <button class="btn primary" type="button" data-channel-settings-save-overview ${activeChannelSettingsSaving ? "disabled" : ""}>Save Changes</button>
+        <button class="btn primary" type="button" data-channel-settings-save-overview ${controlsDisabled ? "disabled" : ""}>Save Changes</button>
       </div>
     </div>
   `;
@@ -44207,26 +45537,26 @@ async function saveChannelPermissionTargetFromModal(button) {
   const targetType = String(targetSection?.getAttribute("data-channel-permission-target-type") || "").trim().toLowerCase();
   const targetId = normId(targetSection?.getAttribute("data-channel-permission-target-id") || "");
   if (!sid || !cid || !targetType || !targetId || activeChannelSettingsSaving) return;
-  const allow = {};
-  const deny = {};
-  targetSection.querySelectorAll("[data-channel-permission-key]").forEach((group) => {
-    const key = normalizeChannelPermissionKey(group.getAttribute("data-channel-permission-key") || "");
-    const value = String(group.getAttribute("data-channel-permission-value") || "neutral");
-    if (!key) return;
-    if (value === "allow") allow[key] = true;
-    if (value === "deny") deny[key] = true;
-  });
+  if (!canCurrentUserTargetChannelPermissionOverride(sid, targetType, targetId)) {
+    setChannelSettingsFeedback("You cannot edit this permission target.", { error: true });
+    return;
+  }
+  const permissions = buildBatch7aPermissionValuesFromElement(targetSection);
   activeChannelSettingsSaving = true;
   setChannelSettingsFeedback("Saving overwrite...", { error: false });
   renderChannelSettingsModal();
-  const empty = !Object.keys(allow).length && !Object.keys(deny).length;
-  const result = empty
-    ? await deleteChannelPermissionOverwrite({ serverId: sid, channelId: cid, targetType, targetId })
-    : await setChannelPermissionOverwrite({ serverId: sid, channelId: cid, targetType, targetId, allow, deny });
+  const result = await setServerPermissionOverrideBatch7a({
+    serverId: sid,
+    scopeType: "channel",
+    scopeId: cid,
+    targetType,
+    targetId,
+    permissions,
+  });
   activeChannelSettingsSaving = false;
   if (!result?.ok) {
-    const missing = result?.missingSql || isMissingChannelPermissionsSqlError(result?.error);
-    setChannelSettingsFeedback(missing ? "Apply the SQL patch to enable channel permissions." : `Could not save overwrite: ${result?.error?.message || result?.error || "Unknown error"}`, { error: true });
+    const missing = result?.missingSql || isMissingBatch7aPermissionsSqlError(result?.error);
+    setChannelSettingsFeedback(missing ? "Apply and verify Batch 7A to enable overrides." : `Could not save override: ${result?.error?.message || result?.error || "Unknown error"}`, { error: true });
     renderChannelSettingsModal();
     return;
   }
@@ -44256,11 +45586,39 @@ async function saveChannelPermissionTargetFromModal(button) {
   renderChannelSettingsModal();
 }
 
+async function syncChannelSettingsPermissionsWithCategoryFromModal() {
+  const sid = normId(activeChannelSettingsModalState?.serverId || "");
+  const cid = normId(activeChannelSettingsModalState?.channelId || "");
+  if (!sid || !cid || activeChannelSettingsSaving) return false;
+  if (!currentUserCanManageChannels(sid)) {
+    setChannelSettingsFeedback("Requires Manage Channels.", { error: true });
+    return false;
+  }
+  activeChannelSettingsSaving = true;
+  setChannelSettingsFeedback("Syncing with category...", { error: false });
+  renderChannelSettingsModal();
+  const result = await syncServerChannelPermissionsWithCategoryBatch7a(sid, cid);
+  activeChannelSettingsSaving = false;
+  if (!result?.ok) {
+    setChannelSettingsFeedback(result?.missingSql ? "Apply and verify Batch 7A first." : `Could not sync: ${result?.error?.message || result?.error || "Unknown error"}`, { error: true });
+    renderChannelSettingsModal();
+    return false;
+  }
+  await emitServerPermissionsChangedBroadcast(sid, { reason: "channel_permissions_synced", channelId: cid }).catch(() => {});
+  scheduleActivePermissionsRefresh("channel_permissions_synced", { serverId: sid, new: { server_id: sid, channel_id: cid } });
+  setChannelSettingsFeedback("Synced with category.", { error: false });
+  renderChannelSettingsModal();
+  return true;
+}
+
 async function openChannelSettingsModal(target = null) {
   const sid = normId(target?.serverId || "");
   const channelId = normId(target?.channelId || "");
   if (!sid || !channelId) return false;
-  await ensureServerRolePermissionCache(sid, { force: false }).catch(() => null);
+  await Promise.all([
+    ensureServerRolePermissionCache(sid, { force: false }).catch(() => null),
+    fetchServerMembersForSidebar(sid, { force: false }).catch(() => []),
+  ]);
   if (!currentUserCanManageChannels(sid)) {
     await requestAppAlert("Requires Manage Channels.", { title: "Channel Settings" }).catch(() => {});
     return false;
@@ -44282,7 +45640,7 @@ async function openChannelSettingsModal(target = null) {
   activeChannelSettingsFeedback = "";
   activeChannelSettingsFeedbackIsError = false;
   await loadChannelPermissionOverwrites(sid, channelId, { force: false }).catch(() => null);
-  void loadServerSettingsMembersBestEffort(sid, { force: false }).catch(() => {});
+  await loadServerSettingsMembersBestEffort(sid, { force: false }).catch(() => []);
   const modal = getOrCreateChannelSettingsModalElement();
   renderChannelSettingsModal();
   modal.classList.remove("hidden");
@@ -44543,13 +45901,14 @@ function updateServerChannelCreateSavingUi() {
   const modal = document.getElementById("serverChannelCreateModal");
   if (!modal) return;
   const saving = !!serverChannelCreateSaving;
+  const canManage = currentUserCanManageChannels(serverChannelCreateServerId);
   modal.classList.toggle("is-saving", saving);
   const confirm = document.getElementById("btnServerChannelCreateConfirm");
   const isEdit = serverChannelCreateMode === "edit";
   const type = getServerChannelCreateSelectedType();
   const isCategory = type === "category";
   if (confirm) {
-    confirm.disabled = saving || serverChannelCreatePrivateLoading;
+    confirm.disabled = saving || serverChannelCreatePrivateLoading || !canManage;
     confirm.innerHTML = saving
       ? `<span class="serverChannelCreateSaveSpinner" aria-hidden="true"></span><span>${isEdit ? "Saving..." : "Creating..."}</span>`
       : esc(isEdit ? "Save Changes" : (isCategory ? "Create Category" : "Create Channel"));
@@ -44563,11 +45922,73 @@ function updateServerChannelCreateSavingUi() {
       control.disabled = true;
       return;
     }
-    control.disabled = saving || (
+    control.disabled = saving || !canManage || (
       control.id === "serverChannelCreatePrivate"
       && (serverChannelCreatePrivateLoading || !serverChannelCreatePrivateAccessSqlAvailable())
     );
   });
+}
+
+function revalidateOpenManageChannelsControls(serverId = "", { showDeniedMessage = false } = {}) {
+  const sid = normId(serverId || "");
+  if (!sid) return false;
+  const allowed = currentUserCanManageChannels(sid);
+
+  const channelSettingsModal = document.getElementById("channelSettingsModal");
+  const channelSettingsOpen = !!(
+    channelSettingsModal
+    && !channelSettingsModal.classList.contains("hidden")
+    && normId(activeChannelSettingsModalState?.serverId || "") === sid
+  );
+  if (channelSettingsOpen && !allowed) {
+    channelSettingsModal.querySelectorAll([
+      "[data-channel-settings-name]",
+      "[data-channel-settings-category]",
+      "[data-channel-settings-save-overview]",
+      "[data-channel-permissions-sync-category]",
+      "[data-channel-permissions-role-select]",
+      "[data-channel-permissions-add-role]",
+      "[data-channel-permissions-member-select]",
+      "[data-channel-permissions-add-member]",
+      "[data-channel-permissions-save-target]",
+      "[data-channel-permission-state]",
+    ].join(",")).forEach((control) => { control.disabled = true; });
+    if (showDeniedMessage) setChannelSettingsFeedback("Requires Manage Channels.", { error: true });
+  }
+
+  const createModal = document.getElementById("serverChannelCreateModal");
+  const createModalOpen = !!(
+    createModal
+    && !createModal.classList.contains("hidden")
+    && normId(serverChannelCreateServerId || "") === sid
+  );
+  if (createModalOpen) {
+    if (!allowed && showDeniedMessage) {
+      setServerChannelCreateStatus("You do not have permission to manage this channel.", { error: true });
+    }
+    updateServerChannelCreateSavingUi();
+  }
+
+  const settingsModal = document.getElementById("serverSettingsModal");
+  const settingsChannelsRoot = document.getElementById("serverSettingsChannelsRoot");
+  const settingsChannelsOpen = !!(
+    settingsModal
+    && !settingsModal.classList.contains("hidden")
+    && normId(serverSettingsServerId || "") === sid
+    && getServerSettingsActivePanelName() === "channels"
+    && settingsChannelsRoot
+  );
+  if (settingsChannelsOpen && !allowed) {
+    serverSettingsChannelsDragState = null;
+    settingsChannelsRoot.querySelectorAll("button, input, select, textarea").forEach((control) => {
+      control.disabled = true;
+    });
+    settingsChannelsRoot.querySelectorAll("[draggable='true']").forEach((control) => {
+      control.setAttribute("draggable", "false");
+    });
+    if (showDeniedMessage) setServerSettingsChannelsFeedback("Requires Manage Channels.", "error");
+  }
+  return allowed;
 }
 
 // Shared by the full list render and the checkbox-change delegate below, so clicking a
@@ -44865,57 +46286,12 @@ async function loadServerChannelCreatePrivateAccessState(serverId, channelId) {
   renderServerChannelCreatePrivateAccessUi();
 }
 
-async function setServerChannelPrivacyRpc({ serverId = "", channelId = "", isPrivate = false } = {}) {
-  const sid = normId(serverId || "");
-  const cid = normId(channelId || "");
-  if (!sid || !cid) return { ok: false, error: { message: "invalid_channel_context" } };
-  const res = await supabase.rpc("set_server_channel_privacy_v1", {
-    p_server_id: sid,
-    p_channel_id: cid,
-    p_is_private: !!isPrivate,
-  });
-  if (res?.error) {
-    const missing = isMissingRpcError(res.error);
-    if (missing) serverChannelPrivacyRpcSqlAvailable = false;
-    return { ok: false, error: res.error, missingSql: missing };
-  }
-  serverChannelPrivacyRpcSqlAvailable = true;
-  return { ok: true, row: res.data || null, isPrivate: !!isPrivate };
-}
-
-// Merges a single view_channels tri-state ("allow" | "deny" | "clear") into whatever
-// overwrite row already exists for this target, WITHOUT touching any other permission
-// key on that row (the sibling channelSettingsModal tri-state editor can set other keys
-// like send_messages on the very same everyone/role rows -- clobbering the whole
-// allow/deny map here would silently undo that unrelated work).
-async function applyChannelViewOverwriteForTarget({ serverId, channelId, targetType, targetId, viewChannelsState }) {
-  const existing = getChannelPermissionOverwriteForTarget(channelId, targetType, targetId);
-  const allow = { ...(existing?.allow || {}) };
-  const deny = { ...(existing?.deny || {}) };
-  delete allow.view_channels;
-  delete deny.view_channels;
-  if (viewChannelsState === "allow") allow.view_channels = true;
-  else if (viewChannelsState === "deny") deny.view_channels = true;
-  const isEmpty = !Object.keys(allow).length && !Object.keys(deny).length;
-  if (isEmpty) {
-    if (!existing) return { ok: true, skipped: true };
-    return deleteChannelPermissionOverwrite({ serverId, channelId, targetType, targetId });
-  }
-  return setChannelPermissionOverwrite({ serverId, channelId, targetType, targetId, allow, deny });
-}
-
 function cloneChannelPermissionRows(rows = []) {
   return (Array.isArray(rows) ? rows : []).map((row) => ({
     ...row,
     allow: { ...(row?.allow || {}) },
     deny: { ...(row?.deny || {}) },
   }));
-}
-
-function getChannelPrivacyViewState(row = null) {
-  if (row?.allow?.view_channels === true) return "allow";
-  if (row?.deny?.view_channels === true) return "deny";
-  return "clear";
 }
 
 async function readPersistedServerChannelPrivacy(serverId = "", channelId = "") {
@@ -44955,41 +46331,6 @@ async function resolveCanonicalServerOwnerUserId(serverId = "", { force = false 
   const ownerUserId = normId(res?.data?.owner_user_id || "");
   if (ownerUserId) serverOwnerUserIdByServerId.set(sid, ownerUserId);
   return ownerUserId || getCanonicalServerOwnerUserIdSync(sid);
-}
-
-async function rollbackServerChannelPrivateAccess({
-  serverId = "",
-  channelId = "",
-  previousIsPrivate = false,
-  previousRows = [],
-  touchedTargets = [],
-} = {}) {
-  const sid = normId(serverId || "");
-  const cid = normId(channelId || "");
-  const targets = Array.isArray(touchedTargets) ? touchedTargets : [];
-  const errors = [];
-  for (const target of targets) {
-    const type = String(target?.targetType || "").trim().toLowerCase();
-    const tid = normId(target?.targetId || "");
-    if (!type || !tid) continue;
-    const previous = previousRows.find((row) => row.targetType === type && row.targetId === tid) || null;
-    const restored = await applyChannelViewOverwriteForTarget({
-      serverId: sid,
-      channelId: cid,
-      targetType: type,
-      targetId: tid,
-      viewChannelsState: getChannelPrivacyViewState(previous),
-    });
-    if (!restored?.ok) errors.push({ targetType: type, targetId: tid, error: restored?.error || null });
-  }
-  const privacy = await setServerChannelPrivacyRpc({
-    serverId: sid,
-    channelId: cid,
-    isPrivate: !!previousIsPrivate,
-  });
-  if (!privacy?.ok) errors.push({ targetType: "channel", targetId: cid, error: privacy?.error || null });
-  await loadChannelPermissionOverwrites(sid, cid, { force: true }).catch(() => null);
-  return { ok: errors.length === 0, errors };
 }
 
 async function verifyPrivateAccessBeforeSuccess({
@@ -45092,209 +46433,6 @@ async function verifyPrivateAccessBeforeSuccess({
       persistedPrivacy: null,
     }),
     persistedRowsPerAttempt,
-  };
-}
-
-// Persists BOTH halves of "Private Channel / Who Can Access" through the real,
-// already-existing backing systems (server_channels.is_private via the new
-// set_server_channel_privacy_v1 RPC, and view_channels overwrites via the Phase 3B
-// server_channel_permission_overwrites RPCs) -- no new parallel access system.
-async function saveServerChannelCreatePrivateAccessLegacy(serverId, channelId, selectionSnapshot = null) {
-  const sid = normId(serverId || "");
-  const requestedChannelId = normId(channelId || "");
-  if (!sid || !requestedChannelId) return { ok: true, skipped: true };
-  if (!serverChannelCreatePrivateAccessSqlAvailable()) return { ok: true, skipped: true, missingSql: true };
-
-  const snapshot = selectionSnapshot || getServerChannelCreatePrivateAccessSnapshot(sid);
-  const cid = normId(snapshot?.channelId || requestedChannelId);
-  if (!cid) return { ok: false, error: { message: "channel_not_found" } };
-  const wantsPrivate = snapshot?.isPrivate === true;
-  const ownerUserId = normId(
-    await resolveCanonicalServerOwnerUserId(sid, { force: true })
-    || snapshot?.ownerUserId
-    || getServerChannelPrivateAccessOwnerUserId(sid)
-  );
-  if (!ownerUserId) return { ok: false, error: { message: "server_owner_not_verified" } };
-  const desiredRoleIds = new Set((snapshot?.roleIds || []).map(normId).filter(Boolean));
-  const desiredUserIds = new Set((snapshot?.userIds || []).map(normId).filter((uid) => !!uid && uid !== ownerUserId));
-
-  let serverMembers = serverMemberListByServerId.get(sid) || [];
-  let validMemberIds = new Set(serverMembers.map(getServerChannelPrivateAccessMemberUserId).filter(Boolean));
-  const missingDesiredUserIds = Array.from(desiredUserIds).filter((uid) => !validMemberIds.has(uid));
-  if (missingDesiredUserIds.length) {
-    serverMembers = await fetchServerMembersForSidebar(sid, { force: true }).catch(() => serverMembers);
-    validMemberIds = new Set((serverMembers || []).map(getServerChannelPrivateAccessMemberUserId).filter(Boolean));
-  }
-  const invalidDesiredUserId = Array.from(desiredUserIds).find((uid) => !validMemberIds.has(uid));
-  if (invalidDesiredUserId) {
-    return { ok: false, error: { message: "member_target_not_found", targetId: invalidDesiredUserId } };
-  }
-
-  const previousRows = cloneChannelPermissionRows(snapshot?.beforeRows || []);
-  const previousPrivacy = { ok: true, row: { isPrivate: !!snapshot?.previousIsPrivate } };
-  setChannelPermissionOverwritesForChannel(cid, previousRows);
-  const existingRows = cloneChannelPermissionRows(previousRows);
-  const roleIdsToTouch = new Set([
-    ...existingRows.filter((row) => row.targetType === "role" && (row.allow?.view_channels === true || row.deny?.view_channels === true)).map((row) => row.targetId),
-    ...(wantsPrivate ? desiredRoleIds : []),
-  ]);
-  const userIdsToTouch = new Set([
-    ...existingRows.filter((row) => row.targetType === "member" && (row.allow?.view_channels === true || row.deny?.view_channels === true)).map((row) => row.targetId),
-    ...(wantsPrivate ? desiredUserIds : []),
-  ]);
-  const touchedTargets = [
-    { targetType: "everyone", targetId: sid },
-    ...Array.from(roleIdsToTouch).map((targetId) => ({ targetType: "role", targetId })),
-    ...Array.from(userIdsToTouch).map((targetId) => ({ targetType: "member", targetId })),
-  ];
-  const rollback = async (failure) => {
-    const rollbackResult = await rollbackServerChannelPrivateAccess({
-      serverId: sid,
-      channelId: cid,
-      previousIsPrivate: previousPrivacy.row.isPrivate,
-      previousRows,
-      touchedTargets,
-    });
-    lastPrivateChannelAccessSaveDebug = {
-      serverId: sid,
-      channelId: cid,
-      saving: true,
-      saveNonce: Number(snapshot?.saveNonce || 0),
-      queuedOrIgnoredClicks: serverChannelCreateIgnoredSaveClicks,
-      requestedPrivate: wantsPrivate,
-      snapshotRoleIds: Array.from(desiredRoleIds),
-      snapshotMemberIds: Array.from(desiredUserIds),
-      beforeRows: previousRows,
-      failedRows: cloneChannelPermissionRows(getChannelPermissionOverwrites(cid)),
-      persistedRowsPerAttempt: failure?.verification?.persistedRowsPerAttempt || [],
-      verificationAttempts: failure?.verification?.verificationAttempts || 0,
-      verificationSource: failure?.verification?.verificationSource || "rpc_failure",
-      failure,
-      rollback: rollbackResult,
-      rollbackPerformed: true,
-      durationMs: Math.max(0, Date.now() - Number(snapshot?.capturedAt || Date.now())),
-      lastError: failure?.error || failure || null,
-      at: new Date().toISOString(),
-    };
-    return {
-      ok: false,
-      error: failure?.error || failure || { message: "channel_access_verification_failed" },
-      isPrivate: previousPrivacy.row.isPrivate,
-      channelId: cid,
-      rolledBack: rollbackResult.ok,
-      rollbackErrors: rollbackResult.errors,
-    };
-  };
-  const applyTargetBatch = async (targets = [], viewChannelsState = "clear") => {
-    const results = await Promise.all(targets.map((target) => applyChannelViewOverwriteForTarget({
-      serverId: sid,
-      channelId: cid,
-      targetType: target.targetType,
-      targetId: target.targetId,
-      viewChannelsState,
-    })));
-    return results.find((result) => !result?.ok) || { ok: true };
-  };
-
-  if (!wantsPrivate) {
-    const publicPrivacy = await setServerChannelPrivacyRpc({ serverId: sid, channelId: cid, isPrivate: false });
-    if (!publicPrivacy?.ok) return rollback(publicPrivacy);
-  } else {
-    const everyoneRes = await applyChannelViewOverwriteForTarget({
-      serverId: sid,
-      channelId: cid,
-      targetType: "everyone",
-      targetId: sid,
-      viewChannelsState: "deny",
-    });
-    if (!everyoneRes?.ok) return rollback(everyoneRes);
-  }
-
-  const selectedRoleResult = await applyTargetBatch(
-    Array.from(wantsPrivate ? desiredRoleIds : []).map((targetId) => ({ targetType: "role", targetId })),
-    "allow"
-  );
-  if (!selectedRoleResult?.ok) return rollback(selectedRoleResult);
-
-  const selectedMemberResult = await applyTargetBatch(
-    Array.from(wantsPrivate ? desiredUserIds : []).map((targetId) => ({ targetType: "member", targetId })),
-    "allow"
-  );
-  if (!selectedMemberResult?.ok) return rollback(selectedMemberResult);
-
-  const obsoleteTargets = [
-    ...Array.from(roleIdsToTouch)
-      .filter((targetId) => !wantsPrivate || !desiredRoleIds.has(targetId))
-      .map((targetId) => ({ targetType: "role", targetId })),
-    ...Array.from(userIdsToTouch)
-      .filter((targetId) => !wantsPrivate || !desiredUserIds.has(targetId))
-      .map((targetId) => ({ targetType: "member", targetId })),
-  ];
-  const obsoleteResult = await applyTargetBatch(obsoleteTargets, "clear");
-  if (!obsoleteResult?.ok) return rollback(obsoleteResult);
-  if (!wantsPrivate) {
-    const everyoneClear = await applyChannelViewOverwriteForTarget({
-      serverId: sid,
-      channelId: cid,
-      targetType: "everyone",
-      targetId: sid,
-      viewChannelsState: "clear",
-    });
-    if (!everyoneClear?.ok) return rollback(everyoneClear);
-  } else {
-    // is_private is written last so an incomplete allow-list cannot hide the channel.
-    const privacyRes = await setServerChannelPrivacyRpc({ serverId: sid, channelId: cid, isPrivate: true });
-    if (!privacyRes?.ok) return rollback(privacyRes);
-  }
-
-  const verification = await verifyPrivateAccessBeforeSuccess({
-    serverId: sid,
-    channelId: cid,
-    isPrivate: wantsPrivate,
-    selectedRoleIds: wantsPrivate ? Array.from(desiredRoleIds) : [],
-    selectedUserIds: wantsPrivate ? Array.from(desiredUserIds) : [],
-    ownerUserId,
-  });
-  if (!verification.ok) {
-    return rollback({
-      error: {
-        message: "channel_access_verification_failed",
-        failures: verification.failures,
-      },
-      verification,
-    });
-  }
-  const verifiedRows = verification.rows;
-  lastPrivateChannelAccessSaveDebug = {
-    serverId: sid,
-    channelId: cid,
-    saving: true,
-    saveNonce: Number(snapshot?.saveNonce || 0),
-    queuedOrIgnoredClicks: serverChannelCreateIgnoredSaveClicks,
-    requestedPrivate: wantsPrivate,
-    snapshotRoleIds: Array.from(desiredRoleIds),
-    snapshotMemberIds: Array.from(desiredUserIds),
-    beforeRows: previousRows,
-    afterRows: cloneChannelPermissionRows(verifiedRows),
-    persistedRowsPerAttempt: verification.persistedRowsPerAttempt || [],
-    verificationAttempts: verification.verificationAttempts || 0,
-    verificationSource: verification.verificationSource || "",
-    verification,
-    rollback: null,
-    rollbackPerformed: false,
-    durationMs: Math.max(0, Date.now() - Number(snapshot?.capturedAt || Date.now())),
-    lastError: null,
-    at: new Date().toISOString(),
-  };
-
-  return {
-    ok: true,
-    isPrivate: wantsPrivate,
-    channelId: cid,
-    selectedRoleIds: Array.from(desiredRoleIds),
-    selectedUserIds: Array.from(desiredUserIds),
-    rows: verifiedRows,
-    verification,
   };
 }
 
@@ -45532,67 +46670,6 @@ async function saveServerChannelCreatePrivateAccess(serverId, channelId, selecti
   };
 }
 
-async function emergencyUnlockServerChannelForOwner(serverId = "", channelId = "") {
-  const sid = normId(serverId || "");
-  const requestedId = normId(channelId || "");
-  const currentUserId = normId(state.user?.id || "");
-  const canonicalOwnerUserId = await resolveCanonicalServerOwnerUserId(sid, { force: true });
-  if (!sid || !requestedId || !currentUserId || currentUserId !== canonicalOwnerUserId) {
-    return { ok: false, error: { message: "owner_only_recovery" }, canonicalOwnerUserId, currentUserId };
-  }
-  const channel = await resolveServerChannelForServer(sid, {
-    channelId: requestedId,
-    conversationId: requestedId,
-  }).catch(() => null);
-  const cid = normId(channel?.id || "");
-  if (!cid) return { ok: false, error: { message: "channel_not_found" } };
-  const before = await loadChannelPermissionOverwrites(sid, cid, { force: true });
-  if (!before?.ok) return before;
-  const privacyTargets = cloneChannelPermissionRows(before.rows || [])
-    .filter((row) => (
-      ["everyone", "role", "member"].includes(row.targetType)
-      && (row.allow?.view_channels === true || row.deny?.view_channels === true)
-    ))
-    .map((row) => ({ targetType: row.targetType, targetId: row.targetId }));
-  for (const target of privacyTargets) {
-    const cleared = await applyChannelViewOverwriteForTarget({
-      serverId: sid,
-      channelId: cid,
-      targetType: target.targetType,
-      targetId: target.targetId,
-      viewChannelsState: "clear",
-    });
-    if (!cleared?.ok) return cleared;
-  }
-  const privacy = await setServerChannelPrivacyRpc({ serverId: sid, channelId: cid, isPrivate: false });
-  if (!privacy?.ok) return privacy;
-  await loadChannelPermissionOverwrites(sid, cid, { force: true }).catch(() => null);
-  await fetchServerChannelsForSidebar(sid, { force: true }).catch(() => []);
-  if (normId(serverSettingsServerId || "") === sid) renderServerSettingsAccessPanel({ force: true });
-  await emitServerPermissionsChangedBroadcast(sid, {
-    reason: "owner_emergency_channel_unlock",
-    channelId: cid,
-  }).catch(() => {});
-  await emitServerChannelsChangedBroadcast(sid, {
-    reason: "owner_emergency_channel_unlock",
-    channelId: cid,
-  }).catch(() => {});
-  await refreshServerConversationUi({
-    force: true,
-    reason: "owner-emergency-channel-unlock",
-    refreshChannels: true,
-    refreshMembers: false,
-  }).catch(() => {});
-  return {
-    ok: true,
-    serverId: sid,
-    channelRowId: cid,
-    conversationId: normId(channel?.conversationId || ""),
-    canonicalOwnerUserId,
-    clearedTargets: privacyTargets,
-  };
-}
-
 function bindServerChannelCreateModalOnce() {
   if (serverChannelCreateModalBound) return;
   const modal = document.getElementById("serverChannelCreateModal");
@@ -45680,7 +46757,10 @@ async function openServerChannelCreateModal(serverCtx = null, options = {}) {
   serverChannelCreateServerId = normId(serverCtx?.serverId || "");
   serverChannelCreateServerName = String(serverCtx?.name || "").trim();
   serverChannelCreateServerIcon = String(serverCtx?.iconUrl || "").trim();
-  await ensureServerRolePermissionCache(serverChannelCreateServerId, { force: false }).catch(() => null);
+  await Promise.all([
+    ensureServerRolePermissionCache(serverChannelCreateServerId, { force: false }).catch(() => null),
+    fetchServerMembersForSidebar(serverChannelCreateServerId, { force: false }).catch(() => []),
+  ]);
   if (!currentUserCanManageChannels(serverChannelCreateServerId)) {
     await requestAppAlert("You don't have permission to manage channels.", { title: "Server Channels" }).catch(() => {});
     return false;
@@ -45921,9 +47001,20 @@ async function runServerChannelCreateModalSave({ nonce = 0, privateAccessSnapsho
         })
         : await createServerChannelCategoryRpc({ serverId: sid, name });
     } else {
-      res = isEdit
-        ? await updateServerChannelRpc({ serverId: sid, channelId: mutation.canonicalChannelId, name, categoryId })
-        : await createServerChannelRpc({ serverId: sid, name, channelType: type, categoryId });
+      if (isEdit) {
+        res = await updateServerChannelRpc({ serverId: sid, channelId: mutation.canonicalChannelId, name, categoryId });
+      } else if (mutation.privateAccessSnapshot?.isPrivate === true) {
+        res = await createPrivateServerChannelRpc({
+          serverId: sid,
+          name,
+          channelType: type,
+          categoryId,
+          roleIds: mutation.privateAccessSnapshot.roleIds,
+          userIds: mutation.privateAccessSnapshot.userIds,
+        });
+      } else {
+        res = await createServerChannelRpc({ serverId: sid, name, channelType: type, categoryId });
+      }
     }
     mutation.baseUpdateResponse = getSafeServerChannelMutationResponse(res);
     if (res?.error) {
@@ -45937,10 +47028,26 @@ async function runServerChannelCreateModalSave({ nonce = 0, privateAccessSnapsho
     serverChannelManagementSqlAvailable = true;
     const rawSavedRow = res?.data?.row || res?.data || null;
     const savedRow = Array.isArray(rawSavedRow) ? (rawSavedRow[0] || null) : rawSavedRow;
-    mutation.baseRow = savedRow;
+    mutation.baseRow = savedRow?.channel_id && !savedRow?.id
+      ? {
+        ...savedRow,
+        id: savedRow.channel_id,
+        position: savedRow.channel_position,
+      }
+      : savedRow;
     mutation.baseCompleted = true;
     mutation.canonicalChannelId = normId(savedRow?.id || savedRow?.channel_id || serverChannelCreateEditChannelId || "");
     mutation.conversationId = normId(savedRow?.conversation_id || savedRow?.conversationId || serverChannelCreateEditConversationId || "");
+    if (!isEdit && mutation.privateAccessSnapshot?.isPrivate === true) {
+      mutation.privateAccessResult = {
+        ok: true,
+        isPrivate: true,
+        roleIds: mutation.privateAccessSnapshot.roleIds,
+        userIds: mutation.privateAccessSnapshot.userIds,
+        atomicCreate: true,
+      };
+      mutation.privacyCompleted = true;
+    }
     if (!isCategory && !mutation.canonicalChannelId && mutation.conversationId) {
       const resolvedCreatedChannel = await resolveServerChannelForServer(sid, {
         conversationId: mutation.conversationId,
@@ -46220,7 +47327,6 @@ function installAltaraDebugChannelAccessHelpers() {
   window.altaraDebugChannelAccess.inspectSqlAvailability = function inspectSqlAvailability() {
     const result = {
       channelPermissionOverwritesSqlAvailable,
-      serverChannelPrivacyRpcSqlAvailable,
       serverChannelPrivateAccessAtomicRpcAvailable,
       combinedAvailable: serverChannelCreatePrivateAccessSqlAvailable(),
     };
@@ -46637,16 +47743,6 @@ function installAltaraDebugChannelAccessHelpers() {
       ownerUserId: options?.ownerUserId || "",
     });
     console.info("[channel-access] pre-success-verification", result);
-    return result;
-  };
-
-  window.altaraDebugChannelAccess.emergencyUnlockChannel = async function emergencyUnlockChannel(serverId = "", channelId = "") {
-    const identity = getChannelAccessDebugIdentity(serverId, channelId);
-    const result = await emergencyUnlockServerChannelForOwner(
-      identity.serverId,
-      identity.channelRowId || identity.requestedChannelId
-    );
-    console.info("[channel-access] emergency-unlock", result);
     return result;
   };
 
@@ -47114,9 +48210,12 @@ function renderServerInviteModalState({ busy = false, statusText = "" } = {}) {
   const meta = document.getElementById("serverInviteMeta");
   const confirmBtn = document.getElementById("btnServerInviteConfirm");
   const summary = document.getElementById("serverInviteSettingsSummary");
+  const canCreate = !serverInviteServerId || currentUserCanCreateInvites(serverInviteServerId);
   if (input) input.value = serverInviteLinkUrl || "";
-  if (meta) meta.textContent = statusText || (serverInviteLinkUrl ? "Invite link ready." : "Generate a new link to invite people to this server.");
-  if (confirmBtn) confirmBtn.disabled = !!busy;
+  if (meta) meta.textContent = statusText || (!canCreate
+    ? "You do not have permission to create invites."
+    : (serverInviteLinkUrl ? "Invite link ready." : "Generate a new link to invite people to this server."));
+  if (confirmBtn) confirmBtn.disabled = !!busy || !canCreate;
   if (summary) summary.textContent = formatServerInviteSettingsSummary(serverInviteExpiresHours, serverInviteMaxUses);
   renderServerInviteFriendsList();
 }
@@ -47250,14 +48349,14 @@ async function uploadServerIconFile(file, { serverId = "" } = {}) {
   });
   const ext = (String(uploadFile.name || file.name || "").split(".").pop() || "png").toLowerCase();
   const { ext: safeExt, mime } = resolveAvatarMimeAndExt(ext, uploadFile.type || file.type || "");
-  const serverTag = normId(serverId) || "draft";
-  const path = `${state.user.id}/server_${serverTag}_${Date.now()}.${safeExt}`;
+  const serverTag = normId(serverId);
+  if (!serverTag) throw new Error("Server invalido para o upload do icon.");
   const upload = await uploadFileViaAltaraStorage(uploadFile, {
     fileName: uploadFile.name || file.name || ("server_icon." + safeExt),
-    path,
     contentType: mime,
-    cacheControl: "31536000",
+    cacheControl: "60",
     uploadContext: "server_icon",
+    serverId: serverTag,
   });
   const publicUrl = String(upload?.publicUrl || "").trim();
   if (!publicUrl) throw new Error("Nao consegui gerar URL publica para o icon do server.");
@@ -47281,14 +48380,14 @@ async function uploadServerBannerFile(file, { serverId = "" } = {}) {
   const uploadFile = file;
   const ext = (String(uploadFile.name || file.name || "").split(".").pop() || "png").toLowerCase();
   const { ext: safeExt, mime } = resolveAvatarMimeAndExt(ext, uploadFile.type || file.type || "");
-  const serverTag = normId(serverId) || "draft";
-  const path = `${state.user.id}/server-banners/${serverTag}_${Date.now()}.${safeExt}`;
+  const serverTag = normId(serverId);
+  if (!serverTag) throw new Error("Server invalido para o upload do banner.");
   const upload = await uploadFileViaAltaraStorage(uploadFile, {
     fileName: uploadFile.name || file.name || ("server_banner." + safeExt),
-    path,
     contentType: mime,
-    cacheControl: "31536000",
+    cacheControl: "60",
     uploadContext: "server_banner",
+    serverId: serverTag,
   });
   const publicUrl = String(upload?.publicUrl || "").trim();
   if (!publicUrl) throw new Error("Nao consegui gerar URL publica para o banner do server.");
@@ -47404,116 +48503,6 @@ async function readServerWelcomeChannelFromRpc(serverId = "") {
     console.warn("get_server_welcome_channel rpc failed", lastErr);
   }
   return null;
-}
-
-async function saveServerWelcomeChannelViaRpc(serverId = "", conversationId = "") {
-  const sid = normId(serverId || "");
-  if (!sid) return { ok: false, error: { message: "server_id invalido" }, needsPatch: false };
-  const nextId = normId(conversationId || "");
-  const payloadValue = nextId || null;
-  const payloads = [
-    { p_server_id: sid, p_welcome_channel_id: payloadValue },
-    { server_id: sid, welcome_channel_id: payloadValue },
-    { p_server_id: sid, p_conversation_id: payloadValue },
-    { server_id: sid, conversation_id: payloadValue },
-  ];
-  let lastErr = null;
-  for (const payload of payloads) {
-    const res = await supabase.rpc("set_server_welcome_channel", payload);
-    if (!res?.error) {
-      const row = Array.isArray(res?.data) ? (res.data[0] || null) : (res?.data || null);
-      const savedId = normId(row?.welcome_channel_id || row?.welcome_conversation_id || nextId);
-      return { ok: true, error: null, column: "rpc:set_server_welcome_channel", value: savedId };
-    }
-    if (!isMissingRpcError(res?.error)) {
-      lastErr = res?.error || null;
-      break;
-    }
-    lastErr = res?.error || null;
-  }
-  if (lastErr && isMissingRpcError(lastErr)) {
-    return { ok: false, error: lastErr, needsPatch: true };
-  }
-  return { ok: false, error: lastErr || { message: "rpc falhou" }, needsPatch: false };
-}
-
-async function saveServerWelcomeChannelToTable(serverId = "", conversationId = "") {
-  const sid = normId(serverId || "");
-  if (!sid) return { ok: false, error: { message: "server_id invalido" }, needsPatch: false };
-  const nextId = normId(conversationId || "");
-  const payloadValue = nextId || null;
-
-  const primary = await supabase
-    .from("servers")
-    .update({ welcome_channel_id: payloadValue })
-    .eq("id", sid)
-    .select("id")
-    .maybeSingle();
-  if (!primary?.error) {
-    const verify = await readServerWelcomeChannelFromTable(sid);
-    const savedId = normId(verify?.welcomeConversationId || "");
-    if (savedId === nextId) {
-      return { ok: true, error: null, column: "welcome_channel_id", value: nextId };
-    }
-    const rpcFallback = await saveServerWelcomeChannelViaRpc(sid, nextId);
-    if (rpcFallback?.ok) return rpcFallback;
-    return {
-      ok: false,
-      error: {
-        message: rpcFallback?.needsPatch
-          ? "Falhou ao confirmar o canal de bem-vindo. Verifica permissoes do server (RLS/update)."
-          : "Falhou ao confirmar o canal de bem-vindo. Verifica permissoes/RLS do server."
-      },
-      needsPatch: false,
-    };
-  }
-
-  if (isMissingColumnError(primary.error, "welcome_channel_id")) {
-    const legacy = await supabase
-      .from("servers")
-      .update({ welcome_conversation_id: payloadValue })
-      .eq("id", sid)
-      .select("id")
-      .maybeSingle();
-    if (!legacy?.error) {
-      const verify = await readServerWelcomeChannelFromTable(sid);
-      const savedId = normId(verify?.welcomeConversationId || "");
-      if (savedId === nextId) {
-        return { ok: true, error: null, column: "welcome_conversation_id", value: nextId };
-      }
-      const rpcFallback = await saveServerWelcomeChannelViaRpc(sid, nextId);
-      if (rpcFallback?.ok) return rpcFallback;
-      return {
-        ok: false,
-        error: {
-          message: rpcFallback?.needsPatch
-            ? "Falhou ao confirmar o canal de bem-vindo. Verifica permissoes do server (RLS/update)."
-            : "Falhou ao confirmar o canal de bem-vindo. Verifica permissoes/RLS do server."
-        },
-        needsPatch: false,
-      };
-    }
-    if (isMissingColumnError(legacy.error, "welcome_conversation_id")) {
-      const rpcFallback = await saveServerWelcomeChannelViaRpc(sid, nextId);
-      if (rpcFallback?.ok) return rpcFallback;
-      return { ok: false, error: legacy.error, needsPatch: true };
-    }
-    const rpcFallback = await saveServerWelcomeChannelViaRpc(sid, nextId);
-    if (rpcFallback?.ok) return rpcFallback;
-    return {
-      ok: false,
-      error: legacy.error,
-      needsPatch: !!rpcFallback?.needsPatch,
-    };
-  }
-
-  const rpcFallback = await saveServerWelcomeChannelViaRpc(sid, nextId);
-  if (rpcFallback?.ok) return rpcFallback;
-  return {
-    ok: false,
-    error: primary.error,
-    needsPatch: !!rpcFallback?.needsPatch,
-  };
 }
 
 async function resolveServerWelcomeChannelConversationId(serverId = "", {
@@ -47660,55 +48649,6 @@ function clearServerSettingsIconDraft() {
   serverSettingsIconFile = null;
   const input = document.getElementById("serverSettingsIconFile");
   if (input) input.value = "";
-}
-
-async function inviteServerMembersRpc(serverId, memberIds = []) {
-  const sid = normId(serverId);
-  const ids = normalizeUuidArray(memberIds);
-  if (!sid || !ids.length) return { data: null, error: { message: "server_id ou member_ids invalido" } };
-
-  const payloads = [
-    { p_server_id: sid, p_member_ids: ids },
-    { server_id: sid, member_ids: ids },
-  ];
-  let lastMissingErr = null;
-  let lastRpcErr = null;
-  for (const payload of payloads) {
-    const res = await supabase.rpc("invite_server_members", payload);
-    if (!res?.error) return res;
-    if (!isMissingRpcError(res.error)) return res;
-    lastMissingErr = res.error;
-  }
-  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
-}
-
-async function inviteServerMemberDirectFallback(serverId, userId) {
-  const sid = normId(serverId);
-  const uid = normId(userId);
-  if (!sid || !uid) return { ok: false, error: { message: "server_id/user_id invalido" } };
-
-  const rpcRes = await inviteServerMembersRpc(sid, [uid]);
-  if (!rpcRes?.error) return { ok: true, via: "rpc", data: rpcRes.data };
-  if (!isMissingRpcError(rpcRes.error)) return { ok: false, error: rpcRes.error };
-
-  // Fallback without RPC: insert member directly.
-  const insertPayload = { server_id: sid, user_id: uid, role: "member" };
-  let directRes = await supabase
-    .from("server_members")
-    .upsert(insertPayload, { onConflict: "server_id,user_id", ignoreDuplicates: true });
-
-  if (directRes?.error) {
-    const roleErr = String(directRes.error?.message || "").toLowerCase();
-    const roleMissing = roleErr.includes("role") && roleErr.includes("column");
-    if (roleMissing) {
-      directRes = await supabase
-        .from("server_members")
-        .upsert({ server_id: sid, user_id: uid }, { onConflict: "server_id,user_id", ignoreDuplicates: true });
-    }
-  }
-  if (directRes?.error) return { ok: false, error: directRes.error };
-
-  return { ok: true, via: "direct" };
 }
 
 async function ensureSelfServerConversationMembership(serverId, { force = false } = {}) {
@@ -49275,63 +50215,75 @@ async function sendSystemEventMessageToConversation(conversationId, {
   text = "",
   actorName = "",
 } = {}) {
-  const convId = normId(conversationId);
-  if (!convId || !state.user?.id) {
-    return { ok: false, error: { message: "conversation_id invalido" }, messageId: "" };
-  }
-
-  const payload = {
-    type: "system_event",
-    event: String(event || "notice").trim().toLowerCase() || "notice",
-    actor: String(actorName || getCurrentUserSystemDisplayName()).trim() || "Alguem",
-    text: String(text || "").trim() || buildServerMembershipSystemText(event, actorName),
+  void conversationId;
+  void event;
+  void text;
+  void actorName;
+  return {
+    ok: false,
+    skipped: true,
+    error: { code: "trusted_system_event_source_required", message: "trusted_system_event_source_required" },
+    messageId: "",
   };
+}
 
-  let insertPayload = null;
-  try {
-    insertPayload = await buildConversationMessageInsertPayload({
-      conversationId: convId,
-      content: JSON.stringify(payload),
-    });
-  } catch (error) {
-    return { ok: false, error, messageId: "" };
+async function sendTrustedServerMembershipEventMessage(membershipEventId = "") {
+  const eventId = normId(membershipEventId || "");
+  if (!eventId || !state.user?.id) {
+    return { ok: false, error: { message: "membership_event_id invalido" }, messageId: "", conversationId: "" };
   }
 
-  const { data, error } = await supabase
-    .from("messages")
-    .insert(insertPayload)
-    .select("id")
-    .maybeSingle();
-
-  if (error) return { ok: false, error, messageId: "" };
-  return { ok: true, messageId: normId(data?.id || "") };
+  const { data, error } = await supabase.rpc("altara_create_server_membership_event_message_v1", {
+    p_membership_event_id: eventId,
+  });
+  if (error) return { ok: false, error, messageId: "", conversationId: "" };
+  const result = Array.isArray(data) ? (data[0] || {}) : (data || {});
+  return {
+    ok: !!normId(result?.message_id || result?.messageId || ""),
+    messageId: normId(result?.message_id || result?.messageId || ""),
+    conversationId: normId(result?.conversation_id || result?.conversationId || ""),
+    alreadyExists: result?.already_exists === true || result?.alreadyExists === true,
+  };
 }
 
 async function announceServerMembershipEvent(serverId, {
   event = "member_joined",
   actorName = "",
   fallbackConversationId = "",
+  notBeforeMs = 0,
 } = {}) {
   const sid = normId(serverId || "");
   if (!sid) return { ok: false, reason: "invalid_server", messageId: "", conversationId: "" };
-
-  const conversationId = await resolveServerWelcomeChannelConversationId(sid, {
-    fallbackConversationId: normId(fallbackConversationId || getServerRowById(sid)?.defaultConversationId || ""),
-    forceLookup: true,
-  }).catch(() => "");
-
-  const convId = normId(conversationId || "");
-  if (!convId) return { ok: false, reason: "missing_channel", messageId: "", conversationId: "" };
-
-  const sendRes = await sendSystemEventMessageToConversation(convId, {
-    event,
-    actorName,
-    text: buildServerMembershipSystemText(event, actorName),
-  });
-  if (!sendRes?.ok) {
-    return { ok: false, reason: "insert_failed", error: sendRes?.error || null, messageId: "", conversationId: convId };
+  void actorName;
+  void fallbackConversationId;
+  const eventType = String(event || "member_joined").trim().toLowerCase() === "member_left"
+    ? "member_removed"
+    : "member_joined";
+  const floorMs = Math.max(0, Number(notBeforeMs || 0) - 5000);
+  let query = supabase
+    .from("server_membership_events")
+    .select("id, created_at")
+    .eq("server_id", sid)
+    .eq("user_id", state.user?.id || "")
+    .eq("event_type", eventType)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (floorMs > 0) query = query.gte("created_at", new Date(floorMs).toISOString());
+  const lookup = await query.maybeSingle();
+  if (lookup.error || !lookup.data?.id) {
+    return { ok: false, reason: "missing_authoritative_membership_event", error: lookup.error || null, messageId: "", conversationId: "" };
   }
-  return { ok: true, messageId: normId(sendRes.messageId || ""), conversationId: convId };
+
+  const sendRes = await sendTrustedServerMembershipEventMessage(lookup.data.id);
+  if (!sendRes?.ok) {
+    return { ok: false, reason: "trusted_insert_failed", error: sendRes?.error || null, messageId: "", conversationId: "" };
+  }
+  return {
+    ok: true,
+    messageId: normId(sendRes.messageId || ""),
+    conversationId: normId(sendRes.conversationId || ""),
+    alreadyExists: sendRes.alreadyExists === true,
+  };
 }
 
 async function ensureServerInviteLinkReady({ silent = false, forceRefresh = false } = {}) {
@@ -49340,7 +50292,7 @@ async function ensureServerInviteLinkReady({ silent = false, forceRefresh = fals
     return { ok: false, error: { message: "server_id invalido" } };
   }
   if (!currentUserCanCreateInvites(sid)) {
-    const error = { code: "42501", message: "missing_create_invite" };
+    const error = { code: "42501", message: "missing_create_invites" };
     renderServerInviteModalState({ busy: false, statusText: "You do not have permission to create invites." });
     return { ok: false, error };
   }
@@ -49380,6 +50332,10 @@ async function ensureServerInviteLinkReady({ silent = false, forceRefresh = fals
         busy: false,
         statusText: "Invite creation is not available yet.",
       });
+      return { ok: false, error };
+    }
+    if (isCreateInvitePermissionDeniedError(error)) {
+      renderServerInviteModalState({ busy: false, statusText: "You do not have permission to create invites." });
       return { ok: false, error };
     }
     renderServerInviteModalState({ busy: false, statusText: "Could not generate invite link." });
@@ -49679,6 +50635,15 @@ async function createServerInviteLinkRpc(serverId, { expiresHours = SERVER_INVIT
     responseShape: Array.isArray(result?.data) ? "table_rows" : typeof result?.data,
   };
   return result;
+}
+
+function isCreateInvitePermissionDeniedError(error = null) {
+  const code = String(error?.code || "").trim();
+  const text = [error?.message, error?.details, error?.hint]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  return code === "42501" && /\b(?:missing_create_invites|not_server_member|global_banned|server_banned)\b/.test(text);
 }
 
 function getInviteErrorDatabaseFunctionName(error = null) {
@@ -50322,6 +51287,7 @@ async function joinServerFromInviteCode(code, { openConversation = true, showFee
   const inviteCode = normalizeServerInviteCode(code);
   if (!inviteCode) return { ok: false, error: { message: "Invalid invite code." } };
 
+  const membershipEventNotBeforeMs = Date.now();
   const { data, error } = await joinServerByInviteCodeRpc(inviteCode);
   if (error) {
     const banned = isServerInviteBannedError(error);
@@ -50361,6 +51327,10 @@ async function joinServerFromInviteCode(code, { openConversation = true, showFee
       source: "invite_join",
       at: new Date().toISOString(),
     });
+    void announceServerMembershipEvent(sid, {
+      event: "member_joined",
+      notBeforeMs: membershipEventNotBeforeMs,
+    }).catch(() => ({ ok: false }));
     void emitServerInvitesChangedBroadcast(sid, { reason: "invite_used" });
   }
   if (openConversation && sid) {
@@ -50390,29 +51360,6 @@ async function joinServerFromInviteCode(code, { openConversation = true, showFee
   return { ok: true, data, serverId: sid || normId(serverRow?.serverId || "") };
 }
 
-async function updateServerProfileRpc(serverId, { name = "", iconUrl = "", bannerUrl = "", bannerTouched = false } = {}) {
-  const sid = normId(serverId);
-  if (!sid) return { data: null, error: { message: "server_id invalido" } };
-  const normalizedName = normalizeConversationLabel(String(name || "").trim(), "Server");
-  const normalizedIcon = sanitizeServerIconUrl(iconUrl || "");
-  const normalizedBanner = normalizeBannerUrl(bannerUrl || "");
-
-  const payloads = bannerTouched
-    ? [{ p_server_id: sid, p_name: normalizedName, p_icon_url: normalizedIcon || null, p_banner_url: normalizedBanner || null }]
-    : [
-        { p_server_id: sid, p_name: normalizedName, p_icon_url: normalizedIcon || null },
-        { server_id: sid, name: normalizedName, icon_url: normalizedIcon || null },
-      ];
-  let lastMissingErr = null;
-  for (const payload of payloads) {
-    const res = await supabase.rpc("update_server_profile", payload);
-    if (!res?.error) return { ...res, method: "rpc:update_server_profile", savedWelcomeChannel: false };
-    if (!isMissingRpcError(res.error)) return { ...res, method: "rpc:update_server_profile", savedWelcomeChannel: false };
-    lastMissingErr = res.error;
-  }
-  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" }, method: "rpc:update_server_profile", savedWelcomeChannel: false };
-}
-
 function getServerSettingsActiveChannelSummaries(serverId = "") {
   const sid = normId(serverId || getServerSettingsActiveServerId());
   return (serverChannelListByServerId.get(sid) || []).map((channel) => ({
@@ -50424,7 +51371,7 @@ function getServerSettingsActiveChannelSummaries(serverId = "") {
   }));
 }
 
-async function updateServerProfileWithWelcomeRpc(serverId, { name = "", iconUrl = "", welcomeChannelId = "", bannerUrl = "", bannerTouched = false } = {}) {
+async function updateServerProfileWithWelcomeRpc(serverId, { name = "", iconUrl = "", welcomeChannelId = "", bannerUrl = "" } = {}) {
   const sid = normId(serverId);
   if (!sid) return { data: null, error: { message: "server_id invalido" }, method: "rpc:update_server_profile_v2", savedWelcomeChannel: false };
   const normalizedName = normalizeConversationLabel(String(name || "").trim(), "Server");
@@ -50446,38 +51393,19 @@ async function updateServerProfileWithWelcomeRpc(serverId, { name = "", iconUrl 
     selectedWelcomeChannelOption,
     activeServerChannels: getServerSettingsActiveChannelSummaries(sid),
   });
-  const payloads = bannerTouched
-    ? [{ p_server_id: sid, p_name: normalizedName, p_icon_url: normalizedIcon || null, p_welcome_channel_id: normalizedWelcomeChannelId, p_banner_url: normalizedBanner || null }]
-    : [
-        { p_server_id: sid, p_name: normalizedName, p_icon_url: normalizedIcon || null, p_welcome_channel_id: normalizedWelcomeChannelId },
-        { server_id: sid, name: normalizedName, icon_url: normalizedIcon || null, welcome_channel_id: normalizedWelcomeChannelId },
-      ];
-  let lastMissingErr = null;
-  for (const payload of payloads) {
-    const res = await supabase.rpc("update_server_profile_v2", payload);
-    if (!res?.error) return { ...res, method: "rpc:update_server_profile_v2", savedWelcomeChannel: true };
-    if (!isMissingRpcError(res.error)) return { ...res, method: "rpc:update_server_profile_v2", savedWelcomeChannel: false };
-    lastMissingErr = res.error;
-  }
-
-  const fallback = await updateServerProfileRpc(sid, { name: normalizedName, iconUrl: normalizedIcon, bannerUrl: normalizedBanner, bannerTouched });
-  return {
-    ...fallback,
-    missingV2Error: lastMissingErr || null,
-    savedWelcomeChannel: false,
+  const payload = {
+    p_server_id: sid,
+    p_name: normalizedName,
+    p_icon_url: normalizedIcon || null,
+    p_welcome_channel_id: normalizedWelcomeChannelId,
+    p_banner_url: normalizedBanner || null,
   };
-}
-
-function isServerProfilePermissionError(error) {
-  const code = String(error?.code || error?.status || "").trim().toUpperCase();
-  const message = String(error?.message || error || "").toLowerCase();
-  return code === "403"
-    || code === "42501"
-    || message.includes("sem permiss")
-    || message.includes("permission denied")
-    || message.includes("not authorized")
-    || message.includes("unauthorized")
-    || message.includes("forbidden");
+  const res = await supabase.rpc("update_server_profile_v2", payload);
+  return {
+    ...res,
+    method: "rpc:update_server_profile_v2",
+    savedWelcomeChannel: !res?.error,
+  };
 }
 
 function getServerSettingsActiveServerId() {
@@ -50508,67 +51436,6 @@ async function debugReadServerProfileRow(serverId) {
     .eq("id", sid)
     .maybeSingle();
   return { data, error };
-}
-
-async function updateServerProfileDirectForManageServer(serverId, { name = "", iconUrl = "", bannerUrl = "", bannerTouched = false } = {}, { capabilityState = null, rpcError = null } = {}) {
-  const sid = normId(serverId);
-  if (!sid) return { data: null, error: { message: "server_id invalido" }, method: "direct" };
-  const payload = {
-    name: normalizeConversationLabel(String(name || "").trim(), "Server"),
-    icon_url: sanitizeServerIconUrl(iconUrl || "") || null,
-  };
-  if (bannerTouched) payload.banner_url = normalizeBannerUrl(bannerUrl || "") || null;
-
-  console.info("[server-settings] direct server profile update payload", {
-    serverId: sid,
-    userId: normId(state.user?.id || ""),
-    updatePayload: payload,
-    capabilityState,
-  });
-
-  // SECURITY TODO: enforce manage_server role permission checks server-side via validated RPC/RLS before production.
-  const { data, error } = await supabase
-    .from("servers")
-    .update(payload)
-    .eq("id", sid)
-    .select(bannerTouched ? "id, name, icon_url, banner_url" : "id, name, icon_url")
-    .maybeSingle();
-
-  if (error) {
-    console.error("[server-settings] direct server profile update failed", {
-      serverId: sid,
-      userId: normId(state.user?.id || ""),
-      canManageServer: capabilityState?.canManageServer,
-      capabilityState,
-      rpcError,
-      payload,
-      message: error?.message,
-      details: error?.details,
-      hint: error?.hint,
-      code: error?.code,
-      error,
-    });
-    return { data: null, error, method: "direct" };
-  }
-
-  if (!data) {
-    const readback = await debugReadServerProfileRow(sid).catch((readError) => ({ data: null, error: readError }));
-    const noRowsError = {
-      message: readback?.data ? "server_profile_update_blocked_by_rls" : "server_profile_row_not_visible_or_missing",
-    };
-    console.error("[server-settings] direct server profile update affected no rows", {
-      serverId: sid,
-      userId: normId(state.user?.id || ""),
-      canManageServer: capabilityState?.canManageServer,
-      capabilityState,
-      rpcError,
-      payload,
-      readback,
-    });
-    return { data: null, error: noRowsError, method: "direct", readback };
-  }
-
-  return { data, error: null, method: "direct" };
 }
 
 async function requestDeleteServerRpc(serverId, confirmationName = "") {
@@ -50638,43 +51505,21 @@ async function deleteServerChannelRpc(serverId, channelId) {
   const sid = normId(serverId);
   const cid = normId(channelId);
   if (!sid || !cid) return { data: null, error: { message: "server_id ou channel_id invalido" } };
-  const payloads = [
-    { p_server_id: sid, p_channel_id: cid },
-    { server_id: sid, channel_id: cid },
-  ];
-  const rpcNames = ["delete_server_channel_v2", "delete_server_channel_safe", "delete_server_channel"];
-  let lastMissingErr = null;
-  for (const rpcName of rpcNames) {
-    for (const payload of payloads) {
-      const res = await supabase.rpc(rpcName, payload);
-      if (!res?.error) return res;
-      if (!isMissingRpcError(res.error)) return res;
-      lastMissingErr = res.error;
-    }
-  }
-  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
+  return supabase.rpc("delete_server_channel_v2", {
+    p_server_id: sid,
+    p_channel_id: cid,
+  });
 }
 
 async function deleteServerChannelCategoryRpc(serverId, categoryId) {
   const sid = normId(serverId);
   const cid = normId(categoryId);
   if (!sid || !cid) return { data: null, error: { message: "server_id ou category_id invalido" } };
-  const payloads = [
-    { p_server_id: sid, p_category_id: cid, p_move_channels_to_null: true },
-    { p_server_id: sid, p_category_id: cid },
-    { server_id: sid, category_id: cid },
-  ];
-  const rpcNames = ["delete_server_channel_category_v2", "delete_server_channel_category_safe", "delete_server_channel_category"];
-  let lastMissingErr = null;
-  for (const rpcName of rpcNames) {
-    for (const payload of payloads) {
-      const res = await supabase.rpc(rpcName, payload);
-      if (!res?.error) return res;
-      if (!isMissingRpcError(res.error)) return res;
-      lastMissingErr = res.error;
-    }
-  }
-  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
+  return supabase.rpc("delete_server_channel_category_v2", {
+    p_server_id: sid,
+    p_category_id: cid,
+    p_move_channels_to_null: true,
+  });
 }
 
 async function createServerChannelRpc({ serverId = "", name = "", channelType = "text", categoryId = "" } = {}) {
@@ -50683,21 +51528,35 @@ async function createServerChannelRpc({ serverId = "", name = "", channelType = 
   const type = normalizeConversationChannelType(channelType || "text") === "voice" ? "voice" : "text";
   const catId = normId(categoryId || "");
   if (!sid || !safeName) return { data: null, error: { message: "server_id ou nome invalido" } };
-  const payloads = [
-    { p_server_id: sid, p_name: safeName, p_channel_type: type, p_category_id: catId || null },
-    { server_id: sid, name: safeName, channel_type: type, category_id: catId || null },
-  ];
-  const rpcNames = ["create_server_channel_v2", "create_server_channel_safe", "create_server_channel"];
-  let lastMissingErr = null;
-  for (const rpcName of rpcNames) {
-    for (const payload of payloads) {
-      const res = await supabase.rpc(rpcName, payload);
-      if (!res?.error) return res;
-      if (!isMissingRpcError(res.error)) return res;
-      lastMissingErr = res.error;
-    }
-  }
-  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
+  return supabase.rpc("create_server_channel_v2", {
+    p_server_id: sid,
+    p_name: safeName,
+    p_channel_type: type,
+    p_category_id: catId || null,
+  });
+}
+
+async function createPrivateServerChannelRpc({
+  serverId = "",
+  name = "",
+  channelType = "text",
+  categoryId = "",
+  roleIds = [],
+  userIds = [],
+} = {}) {
+  const sid = normId(serverId);
+  const safeName = String(name || "").trim();
+  const type = normalizeConversationChannelType(channelType || "text") === "voice" ? "voice" : "text";
+  const catId = normId(categoryId || "");
+  if (!sid || !safeName) return { data: null, error: { message: "server_id ou nome invalido" } };
+  return supabase.rpc("create_private_server_channel", {
+    p_server_id: sid,
+    p_name: safeName,
+    p_channel_type: type,
+    p_category_id: catId || null,
+    p_role_ids: Array.from(new Set((roleIds || []).map(normId).filter(Boolean))),
+    p_user_ids: Array.from(new Set((userIds || []).map(normId).filter(Boolean))),
+  });
 }
 
 async function updateServerChannelRpc({ serverId = "", channelId = "", name = "", categoryId = "" } = {}) {
@@ -50706,21 +51565,12 @@ async function updateServerChannelRpc({ serverId = "", channelId = "", name = ""
   const safeName = String(name || "").trim();
   const catId = normId(categoryId || "");
   if (!sid || !cid) return { data: null, error: { message: "server_id ou channel_id invalido" } };
-  const payloads = [
-    { p_server_id: sid, p_channel_id: cid, p_name: safeName || null, p_category_id: catId || null },
-    { server_id: sid, channel_id: cid, name: safeName || null, category_id: catId || null },
-  ];
-  const rpcNames = ["update_server_channel_v2", "update_server_channel_safe", "update_server_channel"];
-  let lastMissingErr = null;
-  for (const rpcName of rpcNames) {
-    for (const payload of payloads) {
-      const res = await supabase.rpc(rpcName, payload);
-      if (!res?.error) return res;
-      if (!isMissingRpcError(res.error)) return res;
-      lastMissingErr = res.error;
-    }
-  }
-  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
+  return supabase.rpc("update_server_channel_v2", {
+    p_server_id: sid,
+    p_channel_id: cid,
+    p_name: safeName || null,
+    p_category_id: catId || null,
+  });
 }
 
 function unwrapServerChannelRpcData(data = null) {
@@ -50757,21 +51607,10 @@ async function createServerChannelCategoryRpc({ serverId = "", name = "" } = {})
   const sid = normId(serverId);
   const safeName = String(name || "").trim();
   if (!sid || !safeName) return { data: null, error: { message: "server_id ou nome invalido" } };
-  const payloads = [
-    { p_server_id: sid, p_name: safeName },
-    { server_id: sid, name: safeName },
-  ];
-  const rpcNames = ["create_server_channel_category_v2", "create_server_channel_category_safe", "create_server_channel_category"];
-  let lastMissingErr = null;
-  for (const rpcName of rpcNames) {
-    for (const payload of payloads) {
-      const res = await supabase.rpc(rpcName, payload);
-      if (!res?.error) return res;
-      if (!isMissingRpcError(res.error)) return res;
-      lastMissingErr = res.error;
-    }
-  }
-  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
+  return supabase.rpc("create_server_channel_category_v2", {
+    p_server_id: sid,
+    p_name: safeName,
+  });
 }
 
 async function updateServerChannelCategoryRpc({ serverId = "", categoryId = "", name = "" } = {}) {
@@ -50779,21 +51618,11 @@ async function updateServerChannelCategoryRpc({ serverId = "", categoryId = "", 
   const cid = normId(categoryId);
   const safeName = String(name || "").trim();
   if (!sid || !cid || !safeName) return { data: null, error: { message: "server_id, category_id ou nome invalido" } };
-  const payloads = [
-    { p_server_id: sid, p_category_id: cid, p_name: safeName },
-    { server_id: sid, category_id: cid, name: safeName },
-  ];
-  const rpcNames = ["update_server_channel_category_v2", "update_server_channel_category_safe", "update_server_channel_category"];
-  let lastMissingErr = null;
-  for (const rpcName of rpcNames) {
-    for (const payload of payloads) {
-      const res = await supabase.rpc(rpcName, payload);
-      if (!res?.error) return res;
-      if (!isMissingRpcError(res.error)) return res;
-      lastMissingErr = res.error;
-    }
-  }
-  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
+  return supabase.rpc("update_server_channel_category_v2", {
+    p_server_id: sid,
+    p_category_id: cid,
+    p_name: safeName,
+  });
 }
 
 async function reorderServerChannelRpc({
@@ -50809,33 +51638,13 @@ async function reorderServerChannelRpc({
   const beforeId = normId(beforeChannelId || "");
   const afterId = normId(afterChannelId || "");
   if (!sid || !cid) return { data: null, error: { message: "server_id ou channel_id invalido" } };
-  const payloads = [
-    {
-      p_server_id: sid,
-      p_channel_id: cid,
-      p_target_category_id: catId || null,
-      p_before_channel_id: beforeId || null,
-      p_after_channel_id: afterId || null,
-    },
-    {
-      server_id: sid,
-      channel_id: cid,
-      target_category_id: catId || null,
-      before_channel_id: beforeId || null,
-      after_channel_id: afterId || null,
-    },
-  ];
-  const rpcNames = ["reorder_server_channel_v2", "reorder_server_channel_safe", "reorder_server_channel"];
-  let lastMissingErr = null;
-  for (const rpcName of rpcNames) {
-    for (const payload of payloads) {
-      const res = await supabase.rpc(rpcName, payload);
-      if (!res?.error) return res;
-      if (!isMissingRpcError(res.error)) return res;
-      lastMissingErr = res.error;
-    }
-  }
-  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
+  return supabase.rpc("reorder_server_channel_v2", {
+    p_server_id: sid,
+    p_channel_id: cid,
+    p_target_category_id: catId || null,
+    p_before_channel_id: beforeId || null,
+    p_after_channel_id: afterId || null,
+  });
 }
 
 async function reorderServerChannelCategoryRpc({
@@ -50849,31 +51658,12 @@ async function reorderServerChannelCategoryRpc({
   const beforeId = normId(beforeCategoryId || "");
   const afterId = normId(afterCategoryId || "");
   if (!sid || !cid) return { data: null, error: { message: "server_id ou category_id invalido" } };
-  const payloads = [
-    {
-      p_server_id: sid,
-      p_category_id: cid,
-      p_before_category_id: beforeId || null,
-      p_after_category_id: afterId || null,
-    },
-    {
-      server_id: sid,
-      category_id: cid,
-      before_category_id: beforeId || null,
-      after_category_id: afterId || null,
-    },
-  ];
-  const rpcNames = ["reorder_server_channel_category_v2", "reorder_server_channel_category_safe", "reorder_server_channel_category"];
-  let lastMissingErr = null;
-  for (const rpcName of rpcNames) {
-    for (const payload of payloads) {
-      const res = await supabase.rpc(rpcName, payload);
-      if (!res?.error) return res;
-      if (!isMissingRpcError(res.error)) return res;
-      lastMissingErr = res.error;
-    }
-  }
-  return { data: null, error: lastMissingErr || { message: "rpc nao encontrada" } };
+  return supabase.rpc("reorder_server_channel_category_v2", {
+    p_server_id: sid,
+    p_category_id: cid,
+    p_before_category_id: beforeId || null,
+    p_after_category_id: afterId || null,
+  });
 }
 
 function isMissingTableError(error, tableName = "") {
@@ -51069,9 +51859,24 @@ function getServerVoiceMemberModerationContext({
   const actorFlags = actorIsOwner
     ? normalizeServerRolePermissions(SERVER_ROLE_PERMISSION_PRESETS.safe || {})
     : getEffectiveServerPermissionsForCurrentUser(sid);
-  const canDisconnect = !!meId && !!(actorIsOwner || actorFlags.move_members || actorFlags.voice_disconnect_members);
-  const canMuteMic = !!meId && !!(actorIsOwner || actorFlags.mute_members || actorFlags.voice_mute_microphone);
-  const canDeafen = !!meId && !!(actorIsOwner || actorFlags.deafen_members || actorFlags.voice_deafen_members);
+  const hasMoveMembersPermission = !!meId && !!(actorIsOwner || actorFlags.move_members || actorFlags.voice_disconnect_members);
+  const hasMuteMembersPermission = !!meId && !!(actorIsOwner || actorFlags.mute_members || actorFlags.voice_mute_microphone);
+  const targetBotId = normId(getBotIdFromVoiceParticipantIdentity(uid) || uid);
+  const targetIsActiveBot = !!(
+    isBotVoiceParticipantIdentity(uid)
+    || getServerVoiceBotSessionMeta(convId, uid)
+    || isActiveServerBotTargetForRoleManagement(sid, targetBotId)
+  );
+  const moveTargetEligible = !isSelf && !targetIsActiveBot && ability?.canTouchTarget === true;
+  const canMoveMembers = hasMoveMembersPermission && moveTargetEligible;
+  // Kept only as an internal compatibility property for existing rendering;
+  // it means Move eligibility and does not expose a Disconnect action.
+  const canDisconnect = canMoveMembers;
+  const muteTargetEligible = !isSelf && !targetIsActiveBot && ability?.canTouchTarget === true;
+  const canMuteMic = hasMuteMembersPermission && muteTargetEligible;
+  const hasDeafenMembersPermission = !!meId && !!(actorIsOwner || actorFlags.deafen_members || actorFlags.voice_deafen_members);
+  const deafenTargetEligible = !isSelf && !targetIsActiveBot && ability?.canTouchTarget === true;
+  const canDeafen = hasDeafenMembersPermission && deafenTargetEligible;
   const canKick = !!meId && !!(actorIsOwner || actorFlags.kick_members || actorFlags.server_kick_members);
   const canBan = !!meId && !!(actorIsOwner || actorFlags.ban_members || actorFlags.server_ban_members);
   const canTouchTarget = !!meId && (isSelf || canDisconnect || canMuteMic || canDeafen || canKick || canBan);
@@ -51088,7 +51893,15 @@ function getServerVoiceMemberModerationContext({
     canTouchTarget,
     canModerate: !!canModerate,
     canDisconnect,
+    canMoveMembers,
+    hasMoveMembersPermission,
+    moveTargetEligible,
     canMuteMic,
+    hasMuteMembersPermission,
+    muteTargetEligible,
+    hasDeafenMembersPermission,
+    deafenTargetEligible,
+    targetIsActiveBot,
     canDeafen,
     canKick,
     canBan,
@@ -51472,7 +52285,23 @@ function getServerVoiceActionErrorMessage(payload = null, fallback = "Could not 
     return "Could not confirm voice move.";
   }
   if (code === "missing_move_members") return "You need Move Members to move other members.";
+  if (code === "cannot_move_self") return "You can't move yourself with moderator controls.";
+  if (code === "target_is_server_owner") return "You can't move the server owner.";
+  if (code === "target_role_equal_or_higher") return "You can't move members with an equal or higher role.";
+  if (code === "stale_source_voice_presence" || code === "source_voice_channel_mismatch") return "That member is no longer in the selected source voice channel.";
+  if (code === "server_voice_channel_full") return "That voice channel is full.";
+  if (code === "target_missing_connect" || code === "missing_connect") return "That member cannot connect to the destination voice channel.";
+  if (code === "target_private_voice_channel_access_denied" || code === "private_voice_channel_access_denied") return "That member cannot access the destination voice channel.";
+  if (code === "destination_moderation_state_conflict") return "That member's voice moderation state changed. Try again.";
   if (code === "missing_mute_members") return "You need Mute Members to mute other members.";
+  if (code === "cannot_mute_self") return "You can't server-mute yourself.";
+  if (code === "target_is_server_owner") return "You can't server-mute the server owner.";
+  if (code === "target_role_equal_or_higher") return "You can't server-mute members with an equal or higher role.";
+  if (code === "active_bot_requires_bot_authority") return "Active bots use their dedicated voice-management controls.";
+  if (code === "target_not_current_voice_participant") return "That member is no longer in this voice channel.";
+  if (code === "target_voice_presence_not_visible") return "You can't manage participants in that voice channel.";
+  if (code === "voice_channel_not_visible") return "You can't manage participants in that voice channel.";
+  if (code === "actor_global_banned" || code === "actor_server_banned" || code === "actor_timed_out") return "You can't use voice moderation right now.";
   if (code === "missing_deafen_members") return "You need Deafen Members to deafen other members.";
   if (code === "target_role_too_high_for_actor") return "You can't moderate members with an equal or higher role.";
   if (code === "target_role_too_high") return "The bot role must be above the target member's highest role.";
@@ -51506,7 +52335,9 @@ async function performServerVoiceModerationAction({
   const requesterUserId = normId(state.user?.id || "");
   if (!canonicalAction || !sid || !targetId || !requesterUserId) throw new Error("voice_moderation_invalid_context");
 
-  const edgeFunctionName = "altara-bot-voice-actions";
+  const edgeFunctionName = canonicalAction === "move_member"
+    ? "server-voice-v2-move"
+    : "altara-bot-voice-actions";
   const functionPath = `/functions/v1/${edgeFunctionName}`;
 
   console.info("[voice-moderation] action start", {
@@ -51591,16 +52422,45 @@ async function performServerVoiceModerationAction({
   return payload;
 }
 
-function getServerVoiceChannelsForMenu(serverId = "") {
+function getServerVoiceChannelsForMenu(serverId = "", targetUserId = "") {
   const sid = normId(serverId || "");
+  const targetId = normId(targetUserId || "");
+  const members = sid ? (serverMemberListByServerId.get(sid) || []) : [];
   return (sid ? (serverChannelListByServerId.get(sid) || []) : [])
     .filter((channel) => normalizeConversationChannelType(channel?.channelType || "") === "voice")
-    .map((channel) => ({
-      id: normId(channel?.id || channel?.channelId || ""),
-      conversationId: normId(channel?.conversationId || ""),
-      name: String(channel?.name || channel?.label || "Voice").trim() || "Voice",
-    }))
-    .filter((channel) => channel.id);
+    .map((channel) => {
+      const id = normId(channel?.id || channel?.channelId || "");
+      const conversationId = normId(channel?.conversationId || "");
+      const access = targetId && id
+        ? resolveEffectiveChannelPermissionsForUser({
+            serverId: sid,
+            channelId: id,
+            userId: targetId,
+            reason: "move-members-destination-picker",
+          })
+        : null;
+      const targetCanView = !targetId || access?.isOwner || access?.permissions?.view_channels === true;
+      const targetCanConnect = !targetId || access?.isOwner || access?.permissions?.connect === true || access?.permissions?.connect_voice === true;
+      const targetCanBypassLimit = !!(access?.isOwner || access?.permissions?.voice_bypass_user_limit === true);
+      const userLimit = clampServerVoiceUserLimit(channel?.userLimit ?? channel?.user_limit ?? 0, 0);
+      const occupantCount = conversationId
+        ? getServerVoiceChannelActiveMembers(conversationId, members, {
+            triggerReason: "move_members_destination_capacity",
+            callerFunction: "getServerVoiceChannelsForMenu",
+          }).filter((member) => normId(member?.userId || "") !== targetId).length
+        : 0;
+      const full = userLimit > 0 && occupantCount >= userLimit && !targetCanBypassLimit;
+      return {
+        id,
+        conversationId,
+        name: String(channel?.name || channel?.label || "Voice").trim() || "Voice",
+        targetCanView,
+        targetCanConnect,
+        full,
+        deniedHint: !targetCanConnect ? "Target lacks Connect" : (full ? "Channel full" : ""),
+      };
+    })
+    .filter((channel) => channel.id && channel.targetCanView);
 }
 
 function ensureServerVoiceMemberMenuElement() {
@@ -51637,10 +52497,31 @@ function insertVoiceMemberMentionIntoComposer(label = "") {
 function buildVoiceMemberContextMenuHtml(context = {}) {
   const label = String(context?.targetDisplayName || "Member").trim() || "Member";
   const isSelf = context?.isSelf === true;
-  const channels = getServerVoiceChannelsForMenu(context?.serverId || "");
+  const channels = getServerVoiceChannelsForMenu(context?.serverId || "", context?.targetUserId || "");
   const currentChannelId = normId(findServerChannelContextByConversationId(context?.conversationId || "")?.channel?.id || "");
   const pendingMute = context?.pendingMute === true;
   const pendingDeafen = context?.pendingDeafen === true;
+  const muteDeniedHint = context?.isSelf
+    ? "You can't server-mute yourself"
+    : (context?.targetIsActiveBot
+      ? "Active bots use dedicated voice controls"
+    : (!context?.hasMuteMembersPermission
+      ? "Requires Mute Members"
+      : (!context?.muteTargetEligible ? "Owner or equal/higher role is protected" : "")));
+  const deafenDeniedHint = context?.isSelf
+    ? "You can't server-deafen yourself"
+    : (context?.targetIsActiveBot
+      ? "Active bots use dedicated voice controls"
+    : (!context?.hasDeafenMembersPermission
+      ? "Requires Deafen Members"
+      : (!context?.deafenTargetEligible ? "Owner or equal/higher role is protected" : "")));
+  const moveDeniedHint = context?.isSelf
+    ? "You can't move yourself with moderator controls"
+    : (context?.targetIsActiveBot
+      ? "Active bots use dedicated voice controls"
+      : (!context?.hasMoveMembersPermission
+        ? "Requires Move Members"
+        : (!context?.moveTargetEligible ? "Owner or equal/higher role is protected" : "")));
   const actionToEdgeAction = (action) => action === "mute" ? "mute_member"
     : action === "unmute" ? "unmute_member"
       : action === "deafen" ? "deafen_member"
@@ -51657,8 +52538,8 @@ function buildVoiceMemberContextMenuHtml(context = {}) {
   };
   const moveRows = channels.length
     ? channels.map((channel) => item("move_to", channel.name, {
-        disabled: channel.id === currentChannelId,
-        hint: channel.id === currentChannelId ? "Already there" : (!context?.canDisconnect ? "Requires Move Members" : ""),
+        disabled: channel.id === currentChannelId || !context?.canMoveMembers || !channel.targetCanConnect || channel.full,
+        hint: channel.id === currentChannelId ? "Already there" : (channel.deniedHint || moveDeniedHint),
         right: channel.id === currentChannelId ? '<span class="serverVoiceMemberMenu__state is-on">HERE</span>' : "",
       }).replace('data-voice-member-menu-act="move_to"', `data-voice-member-menu-act="move_to" data-voice-member-target-channel-id="${escAttr(channel.id)}" data-voice-member-target-channel-name="${escAttr(channel.name)}"`))
     : ['<div class="msgMenu__meta">No voice channels.</div>'];
@@ -51669,16 +52550,16 @@ function buildVoiceMemberContextMenuHtml(context = {}) {
     ${item("mention", "Mention")}
     <div class="msgMenu__divider"></div>
     ${item(context?.serverMuted ? "unmute" : "mute", context?.serverMuted ? "Server Unmute" : "Server Mute", {
-      disabled: false,
+      disabled: !context?.canMuteMic,
       pending: pendingMute,
-      hint: pendingMute ? "Working" : (!context?.canMuteMic ? "Requires Mute Members" : ""),
+      hint: pendingMute ? "Working" : muteDeniedHint,
       danger: !context?.serverMuted,
       right: `<span class="serverVoiceMemberMenu__state ${pendingMute ? "is-pending" : (context?.serverMuted ? "is-on" : "is-off")}">${pendingMute ? "..." : (context?.serverMuted ? "ON" : "OFF")}</span>`,
     })}
     ${item(context?.serverDeafened ? "undeafen" : "deafen", context?.serverDeafened ? "Server Undeafen" : "Server Deafen", {
-      disabled: false,
+      disabled: !context?.canDeafen,
       pending: pendingDeafen,
-      hint: pendingDeafen ? "Working" : (!context?.canDeafen ? "Requires Deafen Members" : ""),
+      hint: pendingDeafen ? "Working" : deafenDeniedHint,
       danger: !context?.serverDeafened,
       right: `<span class="serverVoiceMemberMenu__state ${pendingDeafen ? "is-pending" : (context?.serverDeafened ? "is-on" : "is-off")}">${pendingDeafen ? "..." : (context?.serverDeafened ? "ON" : "OFF")}</span>`,
     })}
@@ -51706,7 +52587,7 @@ function bindServerVoiceMemberMenuOnce(menu) {
     event.preventDefault();
     event.stopPropagation();
     const action = String(button.getAttribute("data-voice-member-menu-act") || "").trim();
-    const context = serverVoiceMemberMenuTarget || null;
+    let context = serverVoiceMemberMenuTarget || null;
     if (!context) return;
     try {
       if (action === "profile") {
@@ -51738,6 +52619,69 @@ function bindServerVoiceMemberMenuOnce(menu) {
               : action === "move_to" ? "move_member"
                 : "");
       if (!edgeAction) return;
+      if (edgeAction === "move_member") {
+        const freshContext = getServerVoiceMemberModerationContext({
+          userId: context.targetUserId,
+          conversationId: context.conversationId,
+          serverId: context.serverId,
+          displayName: context.targetDisplayName,
+        });
+        if (!freshContext?.canMoveMembers) {
+          menu.innerHTML = buildVoiceMemberContextMenuHtml(freshContext || context);
+          throw new Error(freshContext?.isSelf
+            ? "You can't move yourself with moderator controls."
+            : (freshContext?.targetIsActiveBot
+              ? "Active bots use their dedicated voice-management controls."
+              : (!freshContext?.hasMoveMembersPermission
+                ? "You need Move Members to move other members."
+                : "You can't move the server owner or an equal/higher-ranked member.")));
+        }
+        freshContext.anchorEl = context.anchorEl || null;
+        context = freshContext;
+        serverVoiceMemberMenuTarget = freshContext;
+      }
+      if (edgeAction === "mute_member" || edgeAction === "unmute_member") {
+        const freshContext = getServerVoiceMemberModerationContext({
+          userId: context.targetUserId,
+          conversationId: context.conversationId,
+          serverId: context.serverId,
+          displayName: context.targetDisplayName,
+        });
+        if (!freshContext?.canMuteMic) {
+          menu.innerHTML = buildVoiceMemberContextMenuHtml(freshContext || context);
+          throw new Error(freshContext?.isSelf
+            ? "You can't server-mute yourself."
+            : (freshContext?.targetIsActiveBot
+              ? "Active bots use their dedicated voice-management controls."
+            : (!freshContext?.hasMuteMembersPermission
+              ? "You need Mute Members to mute other members."
+              : "You can't server-mute the server owner or an equal/higher-ranked member.")));
+        }
+        freshContext.anchorEl = context.anchorEl || null;
+        context = freshContext;
+        serverVoiceMemberMenuTarget = freshContext;
+      }
+      if (edgeAction === "deafen_member" || edgeAction === "undeafen_member") {
+        const freshContext = getServerVoiceMemberModerationContext({
+          userId: context.targetUserId,
+          conversationId: context.conversationId,
+          serverId: context.serverId,
+          displayName: context.targetDisplayName,
+        });
+        if (!freshContext?.canDeafen) {
+          menu.innerHTML = buildVoiceMemberContextMenuHtml(freshContext || context);
+          throw new Error(freshContext?.isSelf
+            ? "You can't server-deafen yourself."
+            : (freshContext?.targetIsActiveBot
+              ? "Active bots use their dedicated voice-management controls."
+            : (!freshContext?.hasDeafenMembersPermission
+              ? "You need Deafen Members to deafen other members."
+              : "You can't server-deafen the server owner or an equal/higher-ranked member.")));
+        }
+        freshContext.anchorEl = context.anchorEl || null;
+        context = freshContext;
+        serverVoiceMemberMenuTarget = freshContext;
+      }
       console.info("[voice-moderation] context menu action clicked", {
         action: edgeAction,
         targetUserId: context.targetUserId,
@@ -51937,6 +52881,16 @@ function handleVoiceMemberNativeDragStart(event) {
   const conversationId = normId(memberEl.getAttribute("data-server-voice-conversation-id") || memberEl.getAttribute("data-voice-channel-conversation-id") || "");
   const serverId = normId(resolveServerVoiceServerIdByConversation(conversationId));
   const memberName = String(memberEl.dataset.voiceMemberName || memberEl.getAttribute("data-server-voice-member-label") || memberEl.getAttribute("aria-label") || memberEl.textContent || "Member").trim();
+  const moveContext = getServerVoiceMemberModerationContext({
+    userId: targetUserId,
+    conversationId,
+    serverId,
+    displayName: memberName,
+  });
+  if (!moveContext?.canMoveMembers) {
+    event.preventDefault?.();
+    return;
+  }
 
   console.info("[voice-drag] native start resolved source", {
     targetUserId,
@@ -52293,21 +53247,6 @@ async function moveVoiceMemberToChannelFromNativeDrag({
   try {
     const requestedAt = Date.now();
     const effectiveMoveId = String(moveId || `move:${requestedAt}:${targetUserId}:${sourceChannelId}`).trim();
-    if (isServerVoiceV2Enabled() && isVoiceV2RpcFastPathEnabled()) {
-      await moveServerVoiceMemberV2FastPath({
-        serverId,
-        targetUserId,
-        sourceChannelId,
-        targetChannelId,
-        targetChannelName,
-        conversationId,
-        memberName,
-        moveId: effectiveMoveId,
-        requestedAt,
-      });
-      notifyServerVoiceModerationUi("Move sent.");
-      return;
-    }
     if (isServerVoiceV2Enabled()) {
       const existingRow = getServerVoiceV2Member(targetUserId);
       const sid = serverId || existingRow?.serverId || currentServerVoiceV2Session?.serverId || "";
@@ -52334,50 +53273,18 @@ async function moveVoiceMemberToChannelFromNativeDrag({
         targetChannelId,
         elapsedMs: Date.now() - requestedAt,
       });
-      if (isVoiceV2DedicatedMoveEnabled()) {
-        try {
-          await moveServerVoiceMemberV2DedicatedEdge({
-            serverId: sid,
-            targetUserId,
-            sourceChannelId,
-            targetChannelId,
-            targetChannelName,
-            conversationId,
-            moveId: effectiveMoveId,
-            requestedAt,
-          });
-          notifyServerVoiceModerationUi("Move sent.");
-          return;
-        } catch (dedicatedError) {
-          if (!dedicatedError?.isMissingDedicatedVoiceMoveFunction) throw dedicatedError;
-          console.warn("[voice-v2-move] dedicated edge missing; falling back to legacy edge", {
-            moveId: effectiveMoveId,
-            serverId: sid,
-            targetUserId,
-            targetChannelId,
-            message: dedicatedError?.message || String(dedicatedError || "unknown"),
-          });
-          recordVoiceV2MoveTiming("legacy_edge_fallback_start", {
-            moveId: effectiveMoveId,
-            assignmentNonce: effectiveMoveId,
-            movePath: "legacy_edge_fallback",
-            serverId: sid,
-            targetUserId,
-            targetChannelId,
-            reason: "dedicated_edge_missing",
-          });
-        }
-      } else {
-        recordVoiceV2MoveTiming("legacy_edge_fallback_start", {
-          moveId: effectiveMoveId,
-          assignmentNonce: effectiveMoveId,
-          movePath: "legacy_edge_fallback",
-          serverId: sid,
-          targetUserId,
-          targetChannelId,
-          reason: "dedicated_edge_disabled",
-        });
-      }
+      await moveServerVoiceMemberV2DedicatedEdge({
+        serverId: sid,
+        targetUserId,
+        sourceChannelId,
+        targetChannelId,
+        targetChannelName,
+        conversationId,
+        moveId: effectiveMoveId,
+        requestedAt,
+      });
+      notifyServerVoiceModerationUi("Move sent.");
+      return;
     }
     recordVoiceV2MoveTiming("edge_request_start", {
       moveId: effectiveMoveId,
@@ -52465,6 +53372,17 @@ async function handleVoiceMemberNativeDrop(event) {
   if (!payload?.targetUserId || !payload?.sourceChannelId) {
     console.warn("[voice-drag] drop missing payload", { payload });
     cleanupVoiceMemberNativeDrag();
+    return;
+  }
+  const freshMoveContext = getServerVoiceMemberModerationContext({
+    userId: payload.targetUserId,
+    conversationId: payload.conversationId,
+    serverId: payload.serverId,
+    displayName: payload.memberName,
+  });
+  if (!freshMoveContext?.canMoveMembers) {
+    cleanupVoiceMemberNativeDrag();
+    notifyServerVoiceModerationUi("You can no longer move that member.", { error: true });
     return;
   }
   if (targetChannelId === normId(payload.sourceChannelId)) {
@@ -52571,6 +53489,7 @@ function beginServerVoiceMemberPointerDrag(event) {
     serverId,
     displayName: row.getAttribute("data-server-voice-member-label") || "",
   });
+  if (!context?.canMoveMembers) return;
   console.info("[voice-drag] candidate", {
     targetUserId,
     sourceChannelId,
@@ -52650,6 +53569,16 @@ async function endServerVoiceMemberPointerDrag(event) {
       targetUserId: drag.targetUserId,
       sourceChannelId: drag.sourceChannelId,
     });
+    return;
+  }
+  const freshMoveContext = getServerVoiceMemberModerationContext({
+    userId: drag.targetUserId,
+    conversationId: drag.conversationId,
+    serverId: drag.serverId,
+    displayName: drag.targetDisplayName,
+  });
+  if (!freshMoveContext?.canMoveMembers) {
+    notifyServerVoiceModerationUi("You can no longer move that member.", { error: true });
     return;
   }
   event.preventDefault?.();
@@ -52969,62 +53898,15 @@ async function canServerVoiceModeratorAffectTarget(conversationId, actorUserId, 
   if (!actionName) return true;
   const flags = ability.permissions || normalizeServerRolePermissions({});
   if (actionName === "disconnect") {
-    return !!(flags.move_members || flags.voice_disconnect_members || flags.kick_members || flags.server_kick_members || flags.ban_members || flags.server_ban_members);
+    // Move Members is movement-only. Disconnect signals remain consequences
+    // of their existing Kick/Ban authorities or the dedicated BOT route.
+    return !!(flags.kick_members || flags.server_kick_members || flags.ban_members || flags.server_ban_members);
   }
   if (actionName === "set_mic_muted") return !!(flags.mute_members || flags.voice_mute_microphone);
   if (actionName === "set_deafened") return !!(flags.deafen_members || flags.voice_deafen_members);
   if (actionName === "kick") return !!(flags.kick_members || flags.server_kick_members);
   if (actionName === "ban") return !!(flags.ban_members || flags.server_ban_members);
   return false;
-}
-
-async function kickServerMemberFromServer(serverId, userId) {
-  const sid = normId(serverId);
-  const uid = normId(userId);
-  if (!sid || !uid) return { ok: false, error: { message: "server_id/user_id invalido" } };
-
-  const rpcPayloads = [
-    { p_server_id: sid, p_user_id: uid },
-    { server_id: sid, user_id: uid },
-  ];
-  const rpcNames = ["kick_server_member", "remove_server_member"];
-  let lastMissingErr = null;
-  for (const rpcName of rpcNames) {
-    for (const payload of rpcPayloads) {
-      const res = await supabase.rpc(rpcName, payload);
-      if (!res?.error) return { ok: true, via: rpcName, error: null };
-      if (!isMissingRpcError(res.error)) return { ok: false, error: res.error };
-      lastMissingErr = res.error;
-    }
-  }
-
-  const { error: deleteErr } = await supabase
-    .from("server_members")
-    .delete()
-    .eq("server_id", sid)
-    .eq("user_id", uid);
-  if (deleteErr) {
-    if (!lastMissingErr || !isMissingTableError(deleteErr, "server_members")) {
-      return { ok: false, error: deleteErr };
-    }
-    return { ok: false, error: lastMissingErr };
-  }
-
-  try {
-    const channels = await fetchServerChannelsForSidebar(sid, { force: false });
-    const conversationIds = normalizeUuidArray((channels || []).map((ch) => normId(ch?.conversationId || "")));
-    if (conversationIds.length) {
-      await supabase
-        .from("conversation_members")
-        .delete()
-        .eq("user_id", uid)
-        .in("conversation_id", conversationIds);
-    }
-  } catch (e) {
-    console.warn("server member kick conversation cleanup failed", e);
-  }
-
-  return { ok: true, via: "direct", error: null };
 }
 
 function getServerMemberManagementContext(serverId = "", targetUserId = "") {
@@ -53061,38 +53943,70 @@ function getServerMemberManagementContext(serverId = "", targetUserId = "") {
     targetBelowActor,
     permissions: perms,
     canOpenMembers: currentUserCanManageMembers(sid),
-    canManageRoles: !!(actorIsOwner || perms.manage_roles === true || perms.manage_server === true),
+    canManageRoles: !!(actorIsOwner || perms.manage_roles === true),
     canKick: !!(actorIsOwner || perms.kick_members === true || perms.server_kick_members === true),
     canBan: !!(actorIsOwner || perms.ban_members === true || perms.server_ban_members === true),
-    canTimeout: !!(actorIsOwner || perms.timeout_members === true || perms.moderate_members === true || perms.manage_server === true),
-    canChangeOwnNickname: !!(actorIsOwner || perms.change_nickname === true || perms.manage_nicknames === true),
+    canTimeout: !!(actorIsOwner || perms.timeout_members === true),
+    canChangeOwnNickname: !!(actorIsOwner || perms.change_nickname === true),
     canManageNicknames: !!(actorIsOwner || perms.manage_nicknames === true),
     roles,
     members,
   };
 }
 
+function isActiveServerBotTargetForRoleManagement(serverId = "", targetUserId = "") {
+  const sid = normId(serverId || "");
+  const uid = normId(targetUserId || "");
+  if (!sid || !uid) return false;
+  return (serverBotInstallListByServerId.get(sid) || []).some((row) => (
+    normId(row?.botId || row?.bot_id || row?.userId || row?.user_id || "") === uid
+    && String(row?.status || "active").trim().toLowerCase() === "active"
+  ));
+}
+
 function canCurrentUserManageMemberRoles(serverId = "", targetUserId = "") {
   const ctx = getServerMemberManagementContext(serverId, targetUserId);
   if (!ctx.serverId || !ctx.targetUserId || ctx.isSelf || ctx.targetIsOwner) return false;
+  if (isActiveServerBotTargetForRoleManagement(ctx.serverId, ctx.targetUserId)) return false;
   return !!(ctx.canManageRoles && (ctx.actorIsOwner || ctx.targetBelowActor));
 }
 
 function canCurrentUserKickServerMember(serverId = "", targetUserId = "") {
   const ctx = getServerMemberManagementContext(serverId, targetUserId);
   if (!ctx.serverId || !ctx.targetUserId || ctx.isSelf || ctx.targetIsOwner) return false;
+  const activeBotInstall = (serverBotInstallListByServerId.get(ctx.serverId) || []).some((row) => (
+    normId(row?.botId || row?.bot_id || row?.userId || row?.user_id || "") === ctx.targetUserId
+    && String(row?.status || "active").trim().toLowerCase() === "active"
+  ));
+  if (activeBotInstall) return false;
   return !!(ctx.canKick && (ctx.actorIsOwner || ctx.targetBelowActor));
 }
 
 function canCurrentUserBanServerMember(serverId = "", targetUserId = "") {
   const ctx = getServerMemberManagementContext(serverId, targetUserId);
   if (!ctx.serverId || !ctx.targetUserId || ctx.isSelf || ctx.targetIsOwner) return false;
+  const targetMember = getCachedServerMemberForUser(ctx.serverId, ctx.targetUserId, { serverMembers: ctx.members }) || {};
+  const targetRole = String(targetMember?.role || "").trim().toLowerCase();
+  if (targetMember?.isBot === true || targetMember?.is_bot === true || targetRole === "bot" || targetMember?.botId || targetMember?.bot_id) return false;
+  const activeBotInstall = (serverBotInstallListByServerId.get(ctx.serverId) || []).some((row) => (
+    normId(row?.botId || row?.bot_id || row?.userId || row?.user_id || "") === ctx.targetUserId
+    && String(row?.status || "active").trim().toLowerCase() === "active"
+  ));
+  if (activeBotInstall) return false;
   return !!(ctx.canBan && (ctx.actorIsOwner || ctx.targetBelowActor));
 }
 
 function canCurrentUserTimeoutServerMember(serverId = "", targetUserId = "") {
   const ctx = getServerMemberManagementContext(serverId, targetUserId);
   if (!ctx.serverId || !ctx.targetUserId || ctx.isSelf || ctx.targetIsOwner) return false;
+  const targetMember = getCachedServerMemberForUser(ctx.serverId, ctx.targetUserId, { serverMembers: ctx.members }) || {};
+  const targetRole = String(targetMember?.role || "").trim().toLowerCase();
+  if (targetMember?.isBot === true || targetMember?.is_bot === true || targetRole === "bot" || targetMember?.botId || targetMember?.bot_id) return false;
+  const activeBotInstall = (serverBotInstallListByServerId.get(ctx.serverId) || []).some((row) => (
+    normId(row?.botId || row?.bot_id || row?.userId || row?.user_id || "") === ctx.targetUserId
+    && String(row?.status || "active").trim().toLowerCase() === "active"
+  ));
+  if (activeBotInstall) return false;
   return !!(ctx.canTimeout && (ctx.actorIsOwner || ctx.targetBelowActor));
 }
 
@@ -53193,7 +54107,9 @@ async function setServerMemberRolesForServer(serverId, {
   if (!canCurrentUserManageMemberRoles(sid, uid)) {
     return { data: null, error: { message: "You don't have permission to manage this member's roles." } };
   }
-  const blockedRole = ids.find((rid) => !canCurrentUserAssignServerRoleToMember(sid, uid, rid));
+  const existingRoleIds = new Set(getServerMemberRoleIds(sid, uid));
+  const addedRoleIds = ids.filter((rid) => !existingRoleIds.has(rid));
+  const blockedRole = addedRoleIds.find((rid) => !canCurrentUserAssignServerRoleToMember(sid, uid, rid));
   if (blockedRole) {
     return { data: null, error: { message: "You can only assign roles below your highest role." } };
   }
@@ -53237,6 +54153,7 @@ let userMembershipBroadcastChannel = null;
 let userMembershipBroadcastChannelName = "";
 let serverMembershipEventsChannel = null;
 let serverMembershipEventsChannelState = "idle";
+let serverMembershipEventsRestartTimer = 0;
 const pendingMembershipJoinsByServerId = new Map();
 const removedServerRenderTombstones = new Map();
 const suppressedRemovedServerRenderUntilByServerId = new Map();
@@ -53407,10 +54324,17 @@ function removeServerMemberFromLocalCaches(serverId = "", userId = "") {
 function clearServerMembershipLocalCaches(serverId = "") {
   const sid = normId(serverId || "");
   if (!sid) return;
+  cancelServerRoleAuthorityRefreshForServer(sid, "membership_removed");
+  const serverVoiceConversationIdsToClear = new Set(
+    (serverChannelListByServerId.get(sid) || [])
+      .map((row) => normId(row?.conversationId || row?.conversation_id || ""))
+      .filter(Boolean)
+  );
   forgetServerLastChannel(sid, { persist: true });
   state.servers = (Array.isArray(state.servers) ? state.servers : []).filter((row) => normId(row?.serverId || "") !== sid);
   serverChannelListByServerId.delete(sid);
   serverChannelBackendVisibleIdsByServerId.delete(sid);
+  serverChannelVisibilityAuthoritySnapshotByServerId.delete(sid);
   serverChannelRawLoadDebugByServerId.delete(sid);
   serverChannelCategoryListByServerId.delete(sid);
   serverChannelCategoryCollapsedByServerId.delete(sid);
@@ -53446,8 +54370,18 @@ function clearServerMembershipLocalCaches(serverId = "") {
   serverMutedByServerId.delete(sid);
   serverNotificationModeByServerId.delete(sid);
   for (const [convId, meta] of Array.from(dmConversationMetaById.entries())) {
-    if (normId(meta?.serverId || meta?.server_id || "") === sid) dmConversationMetaById.delete(convId);
+    if (normId(meta?.serverId || meta?.server_id || "") === sid) {
+      serverVoiceConversationIdsToClear.add(normId(convId || ""));
+      dmConversationMetaById.delete(convId);
+    }
   }
+  serverVoiceConversationIdsToClear.forEach((conversationId) => {
+    if (!conversationId) return;
+    clearServerVoiceModerationStateRetry(conversationId);
+    serverVoiceModerationStateByConversation.delete(conversationId);
+    serverVoiceModerationStateLoadedAtByConversation.delete(conversationId);
+    serverVoiceModerationFetchInFlightByConversation.delete(conversationId);
+  });
   for (const [key, row] of Array.from(serverVoiceV2MembersByUser.entries())) {
     if (normId(row?.serverId || row?.server_id || "") === sid) serverVoiceV2MembersByUser.delete(key);
   }
@@ -53460,6 +54394,7 @@ function clearServerMembershipLocalCaches(serverId = "") {
   const occupancyResubscribeTimer = serverVoiceOccupancyResubscribeTimerByServerId.get(sid);
   if (occupancyResubscribeTimer) clearTimeout(occupancyResubscribeTimer);
   serverVoiceOccupancyResubscribeTimerByServerId.delete(sid);
+  serverVoiceOccupancyResubscribeAttemptsByServerId.delete(sid);
   const occupancyChannel = serverVoiceOccupancyChannelByServerId.get(sid);
   if (occupancyChannel) {
     try { supabase.removeChannel(occupancyChannel); } catch (_) {}
@@ -54008,7 +54943,7 @@ async function broadcastServerMemberRemoved(serverId = "", payload = {}) {
   const channelName = getServerMemberBroadcastChannelName(sid);
   if (!sid || !channelName) return false;
   try {
-    const channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
+    const channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 900);
       channel.subscribe((status) => {
@@ -54044,7 +54979,7 @@ async function broadcastServerMemberJoined(serverId = "", payload = {}) {
   const channelName = getServerMemberBroadcastChannelName(sid);
   if (!sid || !channelName) return false;
   try {
-    const channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
+    const channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 900);
       channel.subscribe((status) => {
@@ -54164,7 +55099,7 @@ async function broadcastServerProfileUpdate(serverId = "", payload = {}) {
   const channelName = getServerProfileBroadcastChannelName(update?.serverId || "");
   if (!update?.serverId || !channelName) return false;
   try {
-    const channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
+    const channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 900);
       channel.subscribe((status) => {
@@ -54197,7 +55132,7 @@ async function broadcastUserMembershipRemoved(targetUserId = "", payload = {}) {
   const channelName = getUserMembershipBroadcastChannelName(uid);
   if (!uid || !channelName) return false;
   try {
-    const channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
+    const channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, 900);
       channel.subscribe((status) => {
@@ -54271,7 +55206,7 @@ function syncServerMemberRemovalBroadcastSubscriptions() {
   wanted.forEach((sid) => {
     if (serverMemberRemovalBroadcastChannels.has(sid)) return;
     const channelName = getServerMemberBroadcastChannelName(sid);
-    const channel = supabase.channel(channelName, { config: { broadcast: { self: false } } })
+    const channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } })
       .on("broadcast", { event: "server_member_joined" }, (event) => {
         const payload = event?.payload || {};
         lastMemberJoinedBroadcastReceivedAt = Date.now();
@@ -54342,7 +55277,7 @@ function syncServerProfileBroadcastSubscriptions() {
     if (serverProfileBroadcastChannels.has(sid)) return;
     const channelName = getServerProfileBroadcastChannelName(sid);
     if (!channelName) return;
-    const channel = supabase.channel(channelName, { config: { broadcast: { self: false } } })
+    const channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } })
       .on("broadcast", { event: "server_profile_updated" }, (event) => {
         const payload = event?.payload || {};
         lastServerProfileBroadcastReceivedAt = Date.now();
@@ -54379,7 +55314,7 @@ function syncUserMembershipBroadcastSubscription() {
     try { supabase.removeChannel(userMembershipBroadcastChannel); } catch (_) {}
   }
   userMembershipBroadcastChannelName = channelName;
-  userMembershipBroadcastChannel = supabase.channel(channelName, { config: { broadcast: { self: false } } })
+  userMembershipBroadcastChannel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } })
     .on("broadcast", { event: "server_member_removed" }, (event) => {
       const payload = event?.payload || {};
       const sid = normId(payload.serverId || payload.server_id || "");
@@ -54396,6 +55331,10 @@ function syncUserMembershipBroadcastSubscription() {
 }
 
 function stopServerMembershipEventsRealtime() {
+  if (serverMembershipEventsRestartTimer) {
+    clearTimeout(serverMembershipEventsRestartTimer);
+    serverMembershipEventsRestartTimer = 0;
+  }
   if (serverMembershipEventsChannel) {
     try { supabase.removeChannel(serverMembershipEventsChannel); } catch (_) {}
   }
@@ -54410,8 +55349,9 @@ function startServerMembershipEventsRealtime() {
   }
   if (serverMembershipEventsChannel) return serverMembershipEventsChannel;
   serverMembershipEventsChannelState = "starting";
-  serverMembershipEventsChannel = supabase
-    .channel("server-membership-events:" + state.user.id)
+  let channel = null;
+  channel = supabase
+    .channel("server-membership-events:" + state.user.id, { config: { private: true } })
     .on("postgres_changes", {
       event: "INSERT",
       schema: "public",
@@ -54456,14 +55396,24 @@ function startServerMembershipEventsRealtime() {
           source: "membership_events_insert",
         });
       }
-    })
-    .subscribe((status) => {
-      serverMembershipEventsChannelState = String(status || "");
-      if (status === "SUBSCRIBED") return;
-      if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(String(status || ""))) return;
-      console.warn("[server-members] membership events realtime issue", { status });
     });
-  return serverMembershipEventsChannel;
+  serverMembershipEventsChannel = channel;
+  channel.subscribe((status) => {
+    if (serverMembershipEventsChannel !== channel) return;
+    serverMembershipEventsChannelState = String(status || "");
+    if (status === "SUBSCRIBED") return;
+    if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(String(status || ""))) return;
+    console.warn("[server-members] membership events realtime issue", { status });
+    if (status !== "CLOSED" || serverMembershipEventsRestartTimer || !state.user?.id) return;
+    serverMembershipEventsChannel = null;
+    try { supabase.removeChannel(channel); } catch (_) {}
+    serverMembershipEventsRestartTimer = setTimeout(() => {
+      serverMembershipEventsRestartTimer = 0;
+      if (!state.user?.id || serverMembershipEventsChannel) return;
+      startServerMembershipEventsRealtime();
+    }, 1200);
+  });
+  return channel;
 }
 
 async function verifyCurrentUserServerMembership(serverId = "", { source = "membership_check" } = {}) {
@@ -54513,6 +55463,30 @@ function bindServerMembershipRemovalFallbacks() {
 }
 bindServerMembershipRemovalFallbacks.bound = false;
 bindServerMembershipRemovalFallbacks();
+
+function getServerBanSafeError(error = null, action = "ban") {
+  const code = String(error?.code || "").trim().toLowerCase();
+  const message = String(error?.message || error || "").trim().toLowerCase();
+  const haystack = `${code} ${message}`;
+  const isUnban = String(action || "ban").trim().toLowerCase() === "unban";
+  const isList = String(action || "ban").trim().toLowerCase() === "list";
+  if (haystack.includes("not_authenticated")) return "Sign in again before managing server bans.";
+  if (haystack.includes("server_not_found")) return "This server is no longer available.";
+  if (haystack.includes("not_server_member")) return "You are no longer a member of this server.";
+  if (haystack.includes("global_banned") || haystack.includes("server_banned")) return "Your account cannot manage bans in this server.";
+  if (haystack.includes("missing_ban_members") || haystack.includes("permission")) return "You don't have the Ban Members permission.";
+  if (haystack.includes("cannot_ban_self")) return "You cannot ban yourself.";
+  if (haystack.includes("cannot_ban_owner")) return "The server owner cannot be banned.";
+  if (haystack.includes("active_bot_use_uninstall_flow")) return "Active bots must be removed through the existing uninstall flow.";
+  if (haystack.includes("role_hierarchy_blocked")) return "You can only ban members whose highest role is below yours.";
+  if (haystack.includes("role_hierarchy_unresolved")) return "ALTARA could not safely resolve the role hierarchy.";
+  if (haystack.includes("target_not_server_member")) return "This user is no longer a member of this server.";
+  if (haystack.includes("ban_not_found")) return "This server ban no longer exists.";
+  if (haystack.includes("ban_write_failed") || haystack.includes("ban_membership_delete_failed")) return "ALTARA could not complete the ban safely.";
+  if (haystack.includes("unban_delete_failed")) return "ALTARA could not remove the server ban safely.";
+  if (isList) return "Could not load server bans. Please try again.";
+  return isUnban ? "Could not unban this user. Please try again." : "Could not ban this member. Please try again.";
+}
 
 async function banServerMemberFromServer(serverId, userId, { reason = "" } = {}) {
   const sid = normId(serverId);
@@ -55123,6 +56097,73 @@ function doImplementedRolePermissionsMatch(expected = {}, persisted = {}, role =
   return getImplementedServerPermissionKeys().every((key) => Boolean(expectedNormalized[key]) === Boolean(persistedNormalized[key]));
 }
 
+// manual-qa-fix-1: opt-in role-save timing. The trace is retained in memory
+// for window.altaraDebugRoles and logged only with altara.debug.perf enabled.
+function recordServerRolePermissionSaveTiming(phase = "event", details = {}) {
+  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+  const trace = serverSettingsLastRolePermissionSaveTrace;
+  if (!trace) return null;
+  if (Date.now() - Number(trace.startedAtEpochMs || 0) > 15000) return null;
+  const entry = {
+    phase: String(phase || "event"),
+    atMs: Math.max(0, now - trace.startedAt),
+    ...(details || {}),
+  };
+  trace.events.push(entry);
+  if (entry.phase === "rpc_start") trace.requestCounts.rolePermissionRpc += 1;
+  if (entry.phase === "reconcile_start") trace.requestCounts.reconciliationBursts += 1;
+  if (entry.phase === "role_authority_snapshot") trace.requestCounts.roleAuthoritySnapshots += 1;
+  if (entry.phase === "ui_patch_frame") trace.requestCounts.uiPatchFrames += 1;
+  if (entry.phase === "channel_panel_render") trace.requestCounts.channelPanelRenders += 1;
+  if (entry.phase === "member_panel_render") trace.requestCounts.memberPanelRenders += 1;
+  if (entry.phase === "message_history_reload") trace.requestCounts.messageHistoryReloads += 1;
+  if (entry.phase === "voice_reconciliation") trace.requestCounts.voiceReconciliations += 1;
+  if (entry.phase === "voice_snapshot_request") trace.requestCounts.voiceSnapshots += 1;
+  if (entry.phase === "moderation_snapshot_request") trace.requestCounts.voiceModerationSnapshots += 1;
+  trace.lastPhase = entry.phase;
+  trace.updatedAt = Date.now();
+  logAltaraPerfDebug("server-role-permission-save", {
+    serverId: trace.serverId,
+    roleCount: trace.roleCount,
+    ...entry,
+    requestCounts: { ...trace.requestCounts },
+  });
+  return entry;
+}
+
+function beginServerRolePermissionSaveTiming(serverId = "", roleCount = 0) {
+  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+  serverSettingsLastRolePermissionSaveTrace = {
+    serverId: normId(serverId || ""),
+    roleCount: Math.max(0, Number(roleCount || 0)),
+    startedAt: now,
+    startedAtEpochMs: Date.now(),
+    updatedAt: Date.now(),
+    lastPhase: "save_click",
+    requestCounts: {
+      rolePermissionRpc: 0,
+      blockingReadbacks: 0,
+      reconciliationBursts: 0,
+      roleAuthoritySnapshots: 0,
+      uiPatchFrames: 0,
+      channelPanelRenders: 0,
+      memberPanelRenders: 0,
+      messageHistoryReloads: 0,
+      voiceReconciliations: 0,
+      voiceSnapshots: 0,
+      voiceModerationSnapshots: 0,
+    },
+    events: [{ phase: "save_click", atMs: 0 }],
+  };
+  logAltaraPerfDebug("server-role-permission-save", {
+    serverId: serverSettingsLastRolePermissionSaveTrace.serverId,
+    roleCount: serverSettingsLastRolePermissionSaveTrace.roleCount,
+    phase: "save_click",
+    atMs: 0,
+  });
+  return serverSettingsLastRolePermissionSaveTrace;
+}
+
 // Batch 0A: canonical, RPC-only role-permission persistence. Authenticated
 // browser code must never write public.server_roles.permissions directly --
 // the raw-table-write fallback this used to fall through to (guarded only by
@@ -55130,9 +56171,9 @@ function doImplementedRolePermissionsMatch(expected = {}, persisted = {}, role =
 // guard) has been removed now that set_server_role_permissions enforces
 // canonical permission + hierarchy + self-escalation checks server-side and
 // its sanitizer whitelists every currently-implemented permission key,
-// including for the @everyone/default role. If the RPC fails or a save
-// can't be verified by readback, this returns an error -- it no longer falls
-// back to an insecure direct write.
+// including for the @everyone/default role. The RPC's returned row is the
+// authoritative commit acknowledgement; any later readback is background
+// reconciliation and never an insecure direct-write fallback.
 async function persistServerRolePermissionsViaRpc(sid, rid, normalizedPermissions, role, method = "rpc") {
   const rpcPayloads = [
     { p_server_id: sid, p_role_id: rid, p_permissions: normalizedPermissions },
@@ -55140,19 +56181,29 @@ async function persistServerRolePermissionsViaRpc(sid, rid, normalizedPermission
   ];
   let rpcError = null;
   for (const payload of rpcPayloads) {
+    const rpcStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+    recordServerRolePermissionSaveTiming("rpc_start", { serverId: sid, roleId: rid, method });
     const res = await supabase.rpc("set_server_role_permissions", payload);
     if (!res?.error) {
-      try {
-        const afterRpc = await readServerRolePermissionsRow(sid, rid);
-        if (afterRpc && doImplementedRolePermissionsMatch(normalizedPermissions, afterRpc.permissions || {}, { ...role, permissions: afterRpc.permissions || {} })) {
-          rememberConfirmedRolePermissions(rid, afterRpc.permissions || normalizedPermissions, { ...role, permissions: afterRpc.permissions || normalizedPermissions });
-          console.info("[server-settings] saved role permissions", { serverId: sid, roleId: rid, roleName: role?.name || "", method });
-          return { ok: true, method, row: afterRpc, error: null };
-        }
-        return { row: null, error: { message: "role_permissions_rpc_verify_failed" } };
-      } catch (error) {
-        return { row: null, error };
+      const returnedRow = Array.isArray(res?.data) ? (res.data[0] || null) : (res?.data || null);
+      const returnedPermissions = returnedRow?.permissions || null;
+      if (!returnedRow || !doImplementedRolePermissionsMatch(
+        normalizedPermissions,
+        returnedPermissions || {},
+        { ...role, ...(returnedRow || {}), permissions: returnedPermissions || {} }
+      )) {
+        return { row: null, error: { message: "role_permissions_rpc_result_mismatch" } };
       }
+      rememberConfirmedRolePermissions(rid, returnedPermissions, { ...role, ...returnedRow, permissions: returnedPermissions });
+      const rpcFinishedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+      recordServerRolePermissionSaveTiming("rpc_ack", {
+        serverId: sid,
+        roleId: rid,
+        method,
+        durationMs: Math.max(0, rpcFinishedAt - rpcStartedAt),
+      });
+      console.info("[server-settings] saved role permissions", { serverId: sid, roleId: rid, roleName: role?.name || "", method });
+      return { ok: true, method, row: returnedRow, error: null };
     }
     if (!isMissingRpcError(res.error)) {
       return { row: null, error: res.error };
@@ -55549,6 +56600,7 @@ function rememberServerSettingsRoleOrderBaseline(serverId = "", roles = []) {
   serverSettingsRolesError = "";
   serverSettingsPendingRoleOrderUpdates = [];
   serverSettingsPendingRolePermissionUpdates = new Map();
+  serverSettingsOriginalRolePermissionsByRoleId.clear();
   serverSettingsRolePermissionsDirty = false;
   serverSettingsRolePointerDrag = null;
   serverSettingsRoleDropTargetId = "";
@@ -55564,6 +56616,7 @@ function restoreServerSettingsRoleOrderIfDirty() {
   serverSettingsRolePermissionsDirty = false;
   serverSettingsPendingRoleOrderUpdates = [];
   serverSettingsPendingRolePermissionUpdates = new Map();
+  serverSettingsOriginalRolePermissionsByRoleId.clear();
   serverSettingsRolePointerDrag = null;
   serverSettingsRoleDropTargetId = "";
   serverSettingsRoleDropPosition = "";
@@ -55819,30 +56872,33 @@ async function resolveCurrentUserServerPermissions({ serverId = "", reason = "se
   return result;
 }
 
-// Voice participation stays server-role scoped until a channel assignment and
-// its LiveKit source grants can be changed atomically.
-const CHANNEL_PERMISSION_KEYS = Object.freeze([
+const BATCH7A_CHANNEL_PERMISSION_KEYS = Object.freeze([
   "view_channels",
   "send_messages",
+  "read_message_history",
+]);
+// Preserve existing channel-row keys used by private access and voice
+// participation while Batch 7A exposes only its three authoritative controls.
+const CHANNEL_PERMISSION_STORAGE_KEYS = Object.freeze([
+  ...BATCH7A_CHANNEL_PERMISSION_KEYS,
   "use_voice_activity",
   "manage_channels",
 ]);
 const CHANNEL_PERMISSION_META = Object.freeze([
   { key: "view_channels", label: "View Channel", hint: "See this channel in the sidebar and open it." },
-  { key: "send_messages", label: "Send Messages", hint: "Send messages in text channels." },
-  { key: "use_voice_activity", label: "Use Voice Activity", hint: "Use voice activity instead of push-to-talk. Enforced in a later phase." },
-  { key: "manage_channels", label: "Manage Channel", hint: "Edit channel settings and permission overwrites." },
+  { key: "send_messages", label: "Send Messages", hint: "Send human messages in text or voice-channel timelines." },
+  { key: "read_message_history", label: "Read Message History", hint: "Read messages from before the current durable access boundary." },
 ]);
 
 function normalizeChannelPermissionKey(key = "") {
   const raw = normalizeServerPermissionKey(key || "");
-  return CHANNEL_PERMISSION_KEYS.includes(raw) ? raw : "";
+  return CHANNEL_PERMISSION_STORAGE_KEYS.includes(raw) ? raw : "";
 }
 
 function normalizeChannelPermissionMap(raw = {}) {
   const source = raw && typeof raw === "object" ? raw : {};
   const out = {};
-  CHANNEL_PERMISSION_KEYS.forEach((key) => {
+  CHANNEL_PERMISSION_STORAGE_KEYS.forEach((key) => {
     const direct = source[key];
     if (direct === true) out[key] = true;
   });
@@ -55889,7 +56945,9 @@ function setChannelPermissionOverwritesForChannel(channelId = "", rows = []) {
 
 function getChannelPermissionOverwrites(channelId = "") {
   const cid = normId(channelId || "");
-  return cid ? (channelPermissionOverwritesByChannel.get(cid) || []) : [];
+  const rows = cid ? (channelPermissionOverwritesByChannel.get(cid) || []) : [];
+  const sid = normId(rows[0]?.serverId || "");
+  return sid && !currentUserCanManageChannels(sid) ? [] : rows;
 }
 
 function hasChannelPermissionOverwritesLoaded(channelId = "") {
@@ -55900,10 +56958,308 @@ function isChannelPermissionsSqlAvailable() {
   return channelPermissionOverwritesSqlAvailable !== false;
 }
 
+function normalizeBatch7aScopePermissionOverwrite(row = null, scopeType = "", scopeId = "") {
+  if (!row || typeof row !== "object") return null;
+  const normalizedScopeType = String(row.scopeType || row.scope_type || scopeType || "").trim().toLowerCase();
+  const normalizedScopeId = normId(row.scopeId || row.scope_id || scopeId || "");
+  const serverId = normId(row.serverId || row.server_id || "");
+  const targetType = String(row.targetType || row.target_type || "").trim().toLowerCase();
+  const targetId = normId(row.targetId || row.target_id || "");
+  if (!serverId || !normalizedScopeId || !targetId || !["category", "channel"].includes(normalizedScopeType)
+    || !["everyone", "role", "member"].includes(targetType)) return null;
+  return {
+    id: normId(row.id || "") || `${normalizedScopeType}:${normalizedScopeId}:${targetType}:${targetId}`,
+    serverId,
+    scopeType: normalizedScopeType,
+    scopeId: normalizedScopeId,
+    categoryId: normalizedScopeType === "category" ? normalizedScopeId : "",
+    channelId: normalizedScopeType === "channel" ? normalizedScopeId : "",
+    targetType,
+    targetId,
+    allow: normalizeChannelPermissionMap(row.allow || row.allowed || {}),
+    deny: normalizeChannelPermissionMap(row.deny || row.denied || {}),
+    updatedAt: String(row.updatedAt || row.updated_at || row.createdAt || row.created_at || ""),
+  };
+}
+
+function setCategoryPermissionOverwritesForCategory(categoryId = "", rows = []) {
+  const categoryIdNormalized = normId(categoryId || "");
+  if (!categoryIdNormalized) return [];
+  const normalized = (Array.isArray(rows) ? rows : [])
+    .map((row) => normalizeBatch7aScopePermissionOverwrite(row, "category", categoryIdNormalized))
+    .filter((row) => row && row.categoryId === categoryIdNormalized);
+  normalized.sort((a, b) => String(a.targetType).localeCompare(String(b.targetType)) || String(a.targetId).localeCompare(String(b.targetId)));
+  categoryPermissionOverwritesByCategory.set(categoryIdNormalized, normalized);
+  categoryPermissionOverwritesLoadedAtByCategory.set(categoryIdNormalized, Date.now());
+  return normalized;
+}
+
+function getCategoryPermissionOverwrites(categoryId = "") {
+  const rows = categoryPermissionOverwritesByCategory.get(normId(categoryId || "")) || [];
+  const sid = normId(rows[0]?.serverId || "");
+  return sid && !currentUserCanManageChannels(sid) ? [] : rows;
+}
+
+function hasCategoryPermissionOverwritesLoaded(categoryId = "") {
+  return categoryPermissionOverwritesLoadedAtByCategory.has(normId(categoryId || ""));
+}
+
+function isMissingBatch7aPermissionsSqlError(error = null) {
+  return isMissingRpcError(error)
+    || isMissingTableError(error, "server_category_permission_overwrites")
+    || isMissingColumnError(error, "permission_overrides_synced");
+}
+
+function normalizeMyEffectiveServerChannelPermission(row = null, serverId = "", userId = "") {
+  if (!row || typeof row !== "object") return null;
+  const channelId = normId(row.channelId || row.channel_id || "");
+  const sid = normId(serverId || "");
+  const uid = normId(userId || "");
+  if (!sid || !uid || !channelId) return null;
+  return {
+    serverId: sid,
+    userId: uid,
+    channelId,
+    canViewChannels: row.canViewChannels === true || row.can_view_channels === true,
+    canSendMessages: row.canSendMessages === true || row.can_send_messages === true,
+    canReadMessageHistory: row.canReadMessageHistory === true || row.can_read_message_history === true,
+  };
+}
+
+function getMyEffectiveServerChannelPermission(serverId = "", channelId = "") {
+  const sid = normId(serverId || "");
+  const cid = normId(channelId || "");
+  const uid = normId(state.user?.id || "");
+  const row = cid ? myEffectiveServerChannelPermissionsByChannel.get(cid) : null;
+  return row && row.serverId === sid && row.userId === uid ? row : null;
+}
+
+function clearMyEffectiveServerChannelPermissions(serverId = "") {
+  const sid = normId(serverId || "");
+  Array.from(myEffectiveServerChannelPermissionsByChannel.entries()).forEach(([channelId, row]) => {
+    if (!sid || row?.serverId === sid) myEffectiveServerChannelPermissionsByChannel.delete(channelId);
+  });
+  if (sid) myEffectiveServerChannelPermissionsLoadedAtByServerId.delete(sid);
+  else myEffectiveServerChannelPermissionsLoadedAtByServerId.clear();
+}
+
+async function loadMyEffectiveServerChannelPermissionsBatch(serverId = "", { force = false } = {}) {
+  const sid = normId(serverId || "");
+  const uid = normId(state.user?.id || "");
+  if (!sid || !uid) return { ok: false, rows: [], error: { message: "missing_self_permission_context" } };
+  const loaded = myEffectiveServerChannelPermissionsLoadedAtByServerId.get(sid);
+  if (!force && loaded?.userId === uid) {
+    return {
+      ok: true,
+      cached: true,
+      rows: Array.from(myEffectiveServerChannelPermissionsByChannel.values())
+        .filter((row) => row.serverId === sid && row.userId === uid),
+    };
+  }
+  const key = `${sid}:${uid}`;
+  if (myEffectiveServerChannelPermissionsInFlightByServerId.has(key)) {
+    return myEffectiveServerChannelPermissionsInFlightByServerId.get(key);
+  }
+  const request = (async () => {
+    const res = await supabase.rpc("get_my_effective_server_channel_permissions_batch_v1", {
+      p_server_id: sid,
+    });
+    if (res?.error) {
+      if (isMissingRpcError(res.error)) myEffectiveServerChannelPermissionsSqlAvailable = false;
+      return { ok: false, rows: [], error: res.error, missingSql: isMissingRpcError(res.error) };
+    }
+    if (normId(state.user?.id || "") !== uid) {
+      return { ok: false, rows: [], stale: true, error: { message: "stale_self_permission_response" } };
+    }
+    myEffectiveServerChannelPermissionsSqlAvailable = true;
+    clearMyEffectiveServerChannelPermissions(sid);
+    const rows = (Array.isArray(res.data) ? res.data : [])
+      .map((row) => normalizeMyEffectiveServerChannelPermission(row, sid, uid))
+      .filter((row) => row?.canViewChannels === true);
+    rows.forEach((row) => myEffectiveServerChannelPermissionsByChannel.set(row.channelId, row));
+    myEffectiveServerChannelPermissionsLoadedAtByServerId.set(sid, { userId: uid, loadedAt: Date.now() });
+    return { ok: true, rows, error: null };
+  })().finally(() => {
+    myEffectiveServerChannelPermissionsInFlightByServerId.delete(key);
+  });
+  myEffectiveServerChannelPermissionsInFlightByServerId.set(key, request);
+  return request;
+}
+
+async function loadServerPermissionOverridesBatch7a(serverId = "", scopeType = "", scopeId = "", { force = false } = {}) {
+  const sid = normId(serverId || "");
+  const type = String(scopeType || "").trim().toLowerCase();
+  const scopeIdNormalized = normId(scopeId || "");
+  if (!sid || !scopeIdNormalized || !["category", "channel"].includes(type)) {
+    return { ok: false, rows: [], error: { message: "missing_permission_scope" } };
+  }
+  if (!currentUserCanManageChannels(sid)) {
+    return { ok: false, rows: [], managerOnly: true, error: { message: "missing_manage_channels" } };
+  }
+  if (!force) {
+    if (type === "category" && hasCategoryPermissionOverwritesLoaded(scopeIdNormalized)) {
+      return { ok: true, rows: getCategoryPermissionOverwrites(scopeIdNormalized), cached: true };
+    }
+    if (type === "channel" && hasChannelPermissionOverwritesLoaded(scopeIdNormalized)) {
+      return { ok: true, rows: getChannelPermissionOverwrites(scopeIdNormalized), cached: true };
+    }
+  }
+  if (batch7aPermissionOverridesSqlAvailable === false && !force) {
+    return { ok: false, rows: [], missingSql: true };
+  }
+  const res = await supabase.rpc("list_server_permission_overrides_batch7a", {
+    p_server_id: sid,
+    p_scope_type: type,
+    p_scope_id: scopeIdNormalized,
+  });
+  if (res?.error) {
+    if (isMissingBatch7aPermissionsSqlError(res.error)) batch7aPermissionOverridesSqlAvailable = false;
+    return { ok: false, rows: [], error: res.error, missingSql: isMissingBatch7aPermissionsSqlError(res.error) };
+  }
+  batch7aPermissionOverridesSqlAvailable = true;
+  channelPermissionOverwritesSqlAvailable = true;
+  const rawRows = Array.isArray(res.data) ? res.data : [];
+  if (type === "category") {
+    return { ok: true, rows: setCategoryPermissionOverwritesForCategory(scopeIdNormalized, rawRows), error: null };
+  }
+  const normalizedRows = rawRows.map((row) => ({ ...row, channel_id: scopeIdNormalized }));
+  return { ok: true, rows: setChannelPermissionOverwritesForChannel(scopeIdNormalized, normalizedRows), error: null };
+}
+
+async function loadAllBatch7aPermissionOverridesForServer(serverId = "", { force = false } = {}) {
+  const sid = normId(serverId || "");
+  if (!sid) return { ok: false, rows: [], error: { message: "missing_server_id" } };
+  if (!currentUserCanManageChannels(sid)) {
+    return { ok: false, rows: [], managerOnly: true, error: { message: "missing_manage_channels" } };
+  }
+  const categories = serverChannelCategoryListByServerId.get(sid) || [];
+  const channels = serverChannelListByServerId.get(sid) || [];
+  const fullyLoaded = categories.every((row) => hasCategoryPermissionOverwritesLoaded(row?.id || ""))
+    && channels.every((row) => hasChannelPermissionOverwritesLoaded(row?.id || ""));
+  if (!force && fullyLoaded) {
+    return { ok: true, cached: true, rows: [
+      ...categories.flatMap((row) => getCategoryPermissionOverwrites(row?.id || "")),
+      ...channels.flatMap((row) => getChannelPermissionOverwrites(row?.id || "")),
+    ] };
+  }
+  const res = await supabase.rpc("list_server_permission_overrides_batch7a", {
+    p_server_id: sid,
+    p_scope_type: "all",
+    p_scope_id: null,
+  });
+  if (res?.error) {
+    if (isMissingBatch7aPermissionsSqlError(res.error)) batch7aPermissionOverridesSqlAvailable = false;
+    return { ok: false, rows: [], error: res.error, missingSql: isMissingBatch7aPermissionsSqlError(res.error) };
+  }
+  batch7aPermissionOverridesSqlAvailable = true;
+  channelPermissionOverwritesSqlAvailable = true;
+  const rows = (Array.isArray(res.data) ? res.data : []).map((row) => normalizeBatch7aScopePermissionOverwrite(row)).filter(Boolean);
+  categories.forEach((category) => {
+    const categoryId = normId(category?.id || "");
+    setCategoryPermissionOverwritesForCategory(categoryId, rows.filter((row) => row.scopeType === "category" && row.scopeId === categoryId));
+  });
+  channels.forEach((channel) => {
+    const channelId = normId(channel?.id || "");
+    const channelRows = rows.filter((row) => row.scopeType === "channel" && row.scopeId === channelId)
+      .map((row) => ({ ...row, channel_id: channelId }));
+    setChannelPermissionOverwritesForChannel(channelId, channelRows);
+  });
+  return {
+    ok: true,
+    missingSql: false,
+    rows,
+  };
+}
+
+function buildBatch7aPermissionValuesFromElement(root = null) {
+  const permissions = {};
+  BATCH7A_CHANNEL_PERMISSION_KEYS.forEach((key) => { permissions[key] = "inherit"; });
+  root?.querySelectorAll?.("[data-channel-permission-key]").forEach((group) => {
+    const key = normalizeChannelPermissionKey(group.getAttribute("data-channel-permission-key") || "");
+    const value = String(group.getAttribute("data-channel-permission-value") || "neutral");
+    if (!BATCH7A_CHANNEL_PERMISSION_KEYS.includes(key)) return;
+    permissions[key] = value === "allow" ? "allow" : (value === "deny" ? "deny" : "inherit");
+  });
+  return permissions;
+}
+
+async function setServerPermissionOverrideBatch7a({
+  serverId = "", scopeType = "", scopeId = "", targetType = "", targetId = "", permissions = {},
+} = {}) {
+  const sid = normId(serverId || "");
+  const type = String(scopeType || "").trim().toLowerCase();
+  const scopeIdNormalized = normId(scopeId || "");
+  const targetTypeNormalized = String(targetType || "").trim().toLowerCase();
+  const targetIdNormalized = normId(targetId || "");
+  if (!sid || !scopeIdNormalized || !targetIdNormalized || !["category", "channel"].includes(type)
+    || !["everyone", "role", "member"].includes(targetTypeNormalized)) {
+    return { ok: false, error: { message: "invalid_permission_target" } };
+  }
+  const values = {};
+  BATCH7A_CHANNEL_PERMISSION_KEYS.forEach((key) => {
+    const value = String(permissions?.[key] || "inherit").trim().toLowerCase();
+    values[key] = ["allow", "deny"].includes(value) ? value : "inherit";
+  });
+  const res = await supabase.rpc("set_server_permission_override_batch7a", {
+    p_server_id: sid,
+    p_scope_type: type,
+    p_scope_id: scopeIdNormalized,
+    p_target_type: targetTypeNormalized,
+    p_target_id: targetIdNormalized,
+    p_permissions: values,
+  });
+  if (res?.error) {
+    if (isMissingBatch7aPermissionsSqlError(res.error)) batch7aPermissionOverridesSqlAvailable = false;
+    return { ok: false, error: res.error, missingSql: isMissingBatch7aPermissionsSqlError(res.error) };
+  }
+  batch7aPermissionOverridesSqlAvailable = true;
+  await loadServerPermissionOverridesBatch7a(sid, type, scopeIdNormalized, { force: true });
+  if (type === "channel") {
+    const channels = serverChannelListByServerId.get(sid) || [];
+    const index = channels.findIndex((row) => normId(row?.id || "") === scopeIdNormalized);
+    if (index >= 0) {
+      channels[index] = { ...channels[index], permissionsSynced: false };
+      serverChannelListByServerId.set(sid, channels.slice());
+    }
+  }
+  return { ok: true, data: res.data, error: null };
+}
+
+async function syncServerChannelPermissionsWithCategoryBatch7a(serverId = "", channelId = "") {
+  const sid = normId(serverId || "");
+  const cid = normId(channelId || "");
+  if (!sid || !cid) return { ok: false, error: { message: "invalid_channel_context" } };
+  const res = await supabase.rpc("sync_server_channel_permissions_with_category_batch7a", {
+    p_server_id: sid,
+    p_channel_id: cid,
+  });
+  if (res?.error) {
+    if (isMissingBatch7aPermissionsSqlError(res.error)) batch7aPermissionOverridesSqlAvailable = false;
+    return { ok: false, error: res.error, missingSql: isMissingBatch7aPermissionsSqlError(res.error) };
+  }
+  batch7aPermissionOverridesSqlAvailable = true;
+  await loadServerPermissionOverridesBatch7a(sid, "channel", cid, { force: true });
+  const channels = serverChannelListByServerId.get(sid) || [];
+  const index = channels.findIndex((row) => normId(row?.id || "") === cid);
+  if (index >= 0) {
+    channels[index] = { ...channels[index], permissionsSynced: true };
+    serverChannelListByServerId.set(sid, channels.slice());
+  }
+  return { ok: true, data: res.data, error: null };
+}
+
 async function loadChannelPermissionOverwrites(serverId = "", channelId = "", { force = false } = {}) {
   const sid = normId(serverId || "");
   const cid = normId(channelId || "");
   if (!sid || !cid) return { ok: false, rows: [], error: { message: "missing_channel_context" } };
+  if (!currentUserCanManageChannels(sid)) {
+    return { ok: false, rows: [], managerOnly: true, error: { message: "missing_manage_channels" } };
+  }
+  if (batch7aPermissionOverridesSqlAvailable !== false) {
+    const batch7aResult = await loadServerPermissionOverridesBatch7a(sid, "channel", cid, { force });
+    if (batch7aResult?.ok) return batch7aResult;
+    if (!batch7aResult?.missingSql) return batch7aResult;
+  }
   if (!force && hasChannelPermissionOverwritesLoaded(cid)) {
     return { ok: true, rows: getChannelPermissionOverwrites(cid), cached: true };
   }
@@ -55930,6 +57286,13 @@ async function loadChannelPermissionOverwrites(serverId = "", channelId = "", { 
 
 async function loadAllVisibleChannelPermissionOverwritesForServer(serverId = "", { force = false } = {}) {
   const sid = normId(serverId || "");
+  if (!sid) return { ok: false, rows: [], error: { message: "missing_server_id" } };
+  const selfPermissions = await loadMyEffectiveServerChannelPermissionsBatch(sid, { force });
+  if (!currentUserCanManageChannels(sid)) return selfPermissions;
+  if (sid && batch7aPermissionOverridesSqlAvailable !== false) {
+    const batch7aResult = await loadAllBatch7aPermissionOverridesForServer(sid, { force });
+    if (batch7aResult?.ok || !batch7aResult?.missingSql) return { ...batch7aResult, selfPermissions };
+  }
   if (!sid || channelPermissionOverwritesSqlAvailable === false && !force) return { ok: false, missingSql: channelPermissionOverwritesSqlAvailable === false };
   const channels = serverChannelListByServerId.get(sid) || [];
   const ids = channels.map((ch) => normId(ch?.id || "")).filter(Boolean);
@@ -55943,73 +57306,6 @@ async function loadAllVisibleChannelPermissionOverwritesForServer(serverId = "",
   };
 }
 
-async function setChannelPermissionOverwrite({
-  serverId = "",
-  channelId = "",
-  targetType = "",
-  targetId = "",
-  allow = {},
-  deny = {},
-} = {}) {
-  const sid = normId(serverId || "");
-  const cid = normId(channelId || "");
-  const tid = normId(targetId || "");
-  const type = String(targetType || "").trim().toLowerCase();
-  if (!sid || !cid || !tid || !["everyone", "role", "member"].includes(type)) {
-    return { ok: false, error: { message: "invalid_channel_permission_target" } };
-  }
-  const res = await supabase.rpc("set_channel_permission_overwrite", {
-    p_server_id: sid,
-    p_channel_id: cid,
-    p_target_type: type,
-    p_target_id: tid,
-    p_allow: normalizeChannelPermissionMap(allow),
-    p_deny: normalizeChannelPermissionMap(deny),
-  });
-  if (res?.error) {
-    if (isMissingChannelPermissionsSqlError(res.error)) channelPermissionOverwritesSqlAvailable = false;
-    return { ok: false, error: res.error, missingSql: isMissingChannelPermissionsSqlError(res.error) };
-  }
-  channelPermissionOverwritesSqlAvailable = true;
-  const row = normalizeChannelPermissionOverwrite(res.data);
-  if (row) {
-    const nextRows = getChannelPermissionOverwrites(cid)
-      .filter((item) => !(item.targetType === row.targetType && item.targetId === row.targetId));
-    nextRows.push(row);
-    setChannelPermissionOverwritesForChannel(cid, nextRows);
-  }
-  return { ok: true, row, error: null };
-}
-
-async function deleteChannelPermissionOverwrite({
-  serverId = "",
-  channelId = "",
-  targetType = "",
-  targetId = "",
-} = {}) {
-  const sid = normId(serverId || "");
-  const cid = normId(channelId || "");
-  const tid = normId(targetId || "");
-  const type = String(targetType || "").trim().toLowerCase();
-  if (!sid || !cid || !tid || !["everyone", "role", "member"].includes(type)) {
-    return { ok: false, error: { message: "invalid_channel_permission_target" } };
-  }
-  const res = await supabase.rpc("delete_channel_permission_overwrite", {
-    p_server_id: sid,
-    p_channel_id: cid,
-    p_target_type: type,
-    p_target_id: tid,
-  });
-  if (res?.error) {
-    if (isMissingChannelPermissionsSqlError(res.error)) channelPermissionOverwritesSqlAvailable = false;
-    return { ok: false, error: res.error, missingSql: isMissingChannelPermissionsSqlError(res.error) };
-  }
-  const nextRows = getChannelPermissionOverwrites(cid)
-    .filter((item) => !(item.targetType === type && item.targetId === tid));
-  setChannelPermissionOverwritesForChannel(cid, nextRows);
-  return { ok: true, error: null };
-}
-
 function applyChannelPermissionMap(permissions = {}, overwrite = null, traceList = []) {
   if (!overwrite) return permissions;
   const deny = normalizeChannelPermissionMap(overwrite.deny || {});
@@ -56017,6 +57313,29 @@ function applyChannelPermissionMap(permissions = {}, overwrite = null, traceList
   Object.keys(deny).forEach((key) => { permissions[key] = false; });
   Object.keys(allow).forEach((key) => { permissions[key] = true; });
   if (traceList) traceList.push({ targetType: overwrite.targetType, targetId: overwrite.targetId, deny, allow });
+  return permissions;
+}
+
+function applyPermissionOverrideScopeForUser({
+  permissions = {}, rows = [], serverId = "", userId = "", scopeType = "channel", traceList = [],
+} = {}) {
+  const sid = normId(serverId || "");
+  const uid = normId(userId || "");
+  const everyone = rows.find((row) => row.targetType === "everyone" && row.targetId === sid) || null;
+  applyChannelPermissionMap(permissions, everyone, traceList);
+  const roleIds = new Set(getCachedServerMemberRoleIdsForUser(sid, uid));
+  const roleRows = rows.filter((row) => row.targetType === "role" && roleIds.has(row.targetId));
+  if (roleRows.length) {
+    const aggregate = { targetType: `${scopeType}:roles`, targetId: Array.from(roleIds).join(","), allow: {}, deny: {} };
+    roleRows.forEach((row) => {
+      Object.assign(aggregate.deny, normalizeChannelPermissionMap(row.deny || {}));
+      Object.assign(aggregate.allow, normalizeChannelPermissionMap(row.allow || {}));
+    });
+    Object.keys(aggregate.deny).forEach((key) => { delete aggregate.allow[key]; });
+    applyChannelPermissionMap(permissions, aggregate, traceList);
+  }
+  const member = rows.find((row) => row.targetType === "member" && row.targetId === uid) || null;
+  applyChannelPermissionMap(permissions, member, traceList);
   return permissions;
 }
 
@@ -56039,7 +57358,7 @@ function resolveEffectiveChannelPermissionsForUser({
     reason,
   });
   const permissions = { ...(base.permissions || {}) };
-  CHANNEL_PERMISSION_KEYS.forEach((key) => {
+  CHANNEL_PERMISSION_STORAGE_KEYS.forEach((key) => {
     if (!Object.prototype.hasOwnProperty.call(permissions, key)) permissions[key] = false;
   });
   const trace = {
@@ -56049,6 +57368,8 @@ function resolveEffectiveChannelPermissionsForUser({
     userId: uid,
     basePermissions: { ...(base.permissions || {}) },
     overwritesApplied: [],
+    categoryOverwritesApplied: [],
+    channelOverwritesApplied: [],
     finalPermissions: permissions,
     channelPermissionsAvailable: channelPermissionOverwritesSqlAvailable !== false,
     loaded: hasChannelPermissionOverwritesLoaded(cid),
@@ -56059,27 +57380,38 @@ function resolveEffectiveChannelPermissionsForUser({
     return { ok: false, permissions, trace, error: "missing_context" };
   }
   if (base.isOwner) {
-    CHANNEL_PERMISSION_KEYS.forEach((key) => { permissions[key] = true; });
+    CHANNEL_PERMISSION_STORAGE_KEYS.forEach((key) => { permissions[key] = true; });
     trace.owner_bypass = true;
     trace.finalPermissions = { ...permissions };
     return { ok: base.ok, permissions, trace, isOwner: true };
   }
-  const rows = getChannelPermissionOverwrites(cid);
-  const everyone = rows.find((row) => row.targetType === "everyone" && row.targetId === sid) || null;
-  applyChannelPermissionMap(permissions, everyone, trace.overwritesApplied);
-  const roleIds = new Set(getCachedServerMemberRoleIdsForUser(sid, uid));
-  const roleRows = rows.filter((row) => row.targetType === "role" && roleIds.has(row.targetId));
-  if (roleRows.length) {
-    const aggregate = { targetType: "role", targetId: Array.from(roleIds).join(","), allow: {}, deny: {} };
-    roleRows.forEach((row) => {
-      Object.assign(aggregate.deny, normalizeChannelPermissionMap(row.deny || {}));
-      Object.assign(aggregate.allow, normalizeChannelPermissionMap(row.allow || {}));
+  const channel = (serverChannelListByServerId.get(sid) || []).find((row) => normId(row?.id || "") === cid) || null;
+  const categoryId = normId(channel?.categoryId || "");
+  const permissionsSynced = channel?.permissionsSynced !== false;
+  trace.categoryId = categoryId;
+  trace.permissionsSynced = permissionsSynced;
+  trace.categoryLoaded = !categoryId || hasCategoryPermissionOverwritesLoaded(categoryId);
+  if (categoryId) {
+    applyPermissionOverrideScopeForUser({
+      permissions,
+      rows: getCategoryPermissionOverwrites(categoryId),
+      serverId: sid,
+      userId: uid,
+      scopeType: "category",
+      traceList: trace.categoryOverwritesApplied,
     });
-    Object.keys(aggregate.deny).forEach((key) => { delete aggregate.allow[key]; });
-    applyChannelPermissionMap(permissions, aggregate, trace.overwritesApplied);
   }
-  const member = rows.find((row) => row.targetType === "member" && row.targetId === uid) || null;
-  applyChannelPermissionMap(permissions, member, trace.overwritesApplied);
+  if (!permissionsSynced) {
+    applyPermissionOverrideScopeForUser({
+      permissions,
+      rows: getChannelPermissionOverwrites(cid),
+      serverId: sid,
+      userId: uid,
+      scopeType: "channel",
+      traceList: trace.channelOverwritesApplied,
+    });
+  }
+  trace.overwritesApplied = [...trace.categoryOverwritesApplied, ...trace.channelOverwritesApplied];
   trace.finalPermissions = { ...permissions };
   return { ok: base.ok !== false, permissions, trace, isOwner: false, channelPermissionsAvailable: trace.channelPermissionsAvailable };
 }
@@ -56087,13 +57419,29 @@ function resolveEffectiveChannelPermissionsForUser({
 function canCurrentUserViewServerChannelSync(serverId = "", channelId = "") {
   const sid = normId(serverId || "");
   const cid = normId(channelId || "");
-  if (!sid || !cid) return true;
+  if (!sid || !cid || !normId(state.user?.id || "")) return false;
+  if (serverChannelVisibilityAuthorityResolvingByServerId.has(sid)) return false;
+  const backendVisibleIds = serverChannelBackendVisibleIdsByServerId.get(sid);
+  if (backendVisibleIds instanceof Set) return backendVisibleIds.has(cid);
+  const selfPermission = getMyEffectiveServerChannelPermission(sid, cid);
+  if (selfPermission) return selfPermission.canViewChannels === true;
+  if (
+    !serverRolePermissionCacheFetchedAtByServerId.has(sid)
+    || !serverRoleListByServerId.has(sid)
+    || !serverRoleMemberMapByServerId.has(sid)
+    || !serverMemberListByServerId.has(sid)
+  ) return false;
   const currentUserId = normId(state.user?.id || "");
+  const currentMember = getCachedServerMemberForUser(sid, currentUserId);
+  if (!currentMember || normId(currentMember?.userId || currentMember?.user_id || "") !== currentUserId) return false;
   const canonicalOwnerUserId = getCanonicalServerOwnerUserIdSync(sid);
   if (currentUserId && canonicalOwnerUserId && currentUserId === canonicalOwnerUserId) return true;
-  if (serverChannelBackendVisibleIdsByServerId.get(sid)?.has(cid)) return true;
-  if (channelPermissionOverwritesSqlAvailable === false) return currentUserCanViewChannels(sid);
-  if (!hasChannelPermissionOverwritesLoaded(cid)) return currentUserCanViewChannels(sid);
+  const channel = (serverChannelListByServerId.get(sid) || []).find((row) => normId(row?.id || "") === cid) || null;
+  if (!channel) return false;
+  const categoryId = normId(channel?.categoryId || channel?.category_id || "");
+  if (channelPermissionOverwritesSqlAvailable === false) return false;
+  if (!hasChannelPermissionOverwritesLoaded(cid)) return false;
+  if (categoryId && !hasCategoryPermissionOverwritesLoaded(categoryId)) return false;
   const result = resolveEffectiveChannelPermissionsForUser({
     serverId: sid,
     channelId: cid,
@@ -56105,10 +57453,30 @@ function canCurrentUserViewServerChannelSync(serverId = "", channelId = "") {
 
 function canCurrentUserViewServerChannel(channelId = "") {
   const cid = normId(channelId || "");
-  if (!cid) return true;
+  if (!cid) return false;
   const activeCtx = getServerPermissionContextForConversation(activeDmId) || {};
   const sid = normId(activeCtx.serverId || getActiveServerIdForSidebar?.() || state.activeDm?.serverId || "");
   return canCurrentUserViewServerChannelSync(sid, cid);
+}
+
+function getCurrentServerChannelVisibilityContextForConversation(conversationId = "") {
+  const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
+  if (!convId) return null;
+  const context = getServerMessageHistoryContext(convId);
+  if (!context) return null;
+  return {
+    serverId: normId(context.serverId || ""),
+    channelId: normId(context.channelId || ""),
+    conversationId: convId,
+    unresolved: context.unresolved === true || !context.serverId || !context.channelId,
+  };
+}
+
+function canCurrentUserRenderServerChannelConversation(conversationId = "") {
+  const context = getCurrentServerChannelVisibilityContextForConversation(conversationId);
+  if (!context) return true;
+  if (context.unresolved) return false;
+  return canCurrentUserViewServerChannelSync(context.serverId, context.channelId);
 }
 
 function getVisibleServerChannelsForCurrentUser(serverId = "", channels = []) {
@@ -56116,7 +57484,7 @@ function getVisibleServerChannelsForCurrentUser(serverId = "", channels = []) {
   if (!sid || !Array.isArray(channels)) return [];
   return channels.filter((channel) => {
     const cid = normId(channel?.id || channel?.channelId || channel?.channel_id || "");
-    if (!cid) return true;
+    if (!cid) return false;
     return canCurrentUserViewServerChannelSync(sid, cid);
   });
 }
@@ -56136,25 +57504,500 @@ function getFirstVisibleServerChannel(serverId = "") {
     || null;
 }
 
-function renderNoAccessibleServerChannelsState(serverId = "", reason = "channel_permissions_changed") {
+function canPreserveSelectedServerShell(serverId = "") {
   const sid = normId(serverId || "");
+  return !!(
+    sid
+    && !isServerDeletedLocally(sid)
+    && !isRemovedServerRenderSuppressed(sid)
+    && getServerRowById(sid)
+  );
+}
+
+function hasAuthoritativeZeroVisibleServerChannels(serverId = "") {
+  const sid = normId(serverId || "");
+  const visibleIds = serverChannelBackendVisibleIdsByServerId.get(sid);
+  return !!(
+    sid
+    && !serverChannelVisibilityAuthorityResolvingByServerId.has(sid)
+    && visibleIds instanceof Set
+    && visibleIds.size === 0
+  );
+}
+
+function getPreferredVisibleServerChannel(serverId = "", preferredConversationId = "") {
+  const sid = normId(serverId || "");
+  if (!sid || !hasCurrentServerChannelVisibilityAuthority(sid)) return null;
+  const visible = getVisibleServerChannelsForCurrentUser(sid, serverChannelListByServerId.get(sid) || []);
+  const preferredId = normId(preferredConversationId || "");
+  if (preferredId) {
+    const preferred = visible.find((channel) => normId(channel?.conversationId || "") === preferredId) || null;
+    if (preferred) return preferred;
+  }
+  const rememberedId = getRememberedServerLastChannel(sid);
+  if (rememberedId) {
+    const remembered = visible.find((channel) => normId(channel?.conversationId || "") === rememberedId) || null;
+    if (remembered) return remembered;
+  }
+  return visible.find((channel) => normalizeConversationChannelType(channel?.channelType || "text") === "text")
+    || visible[0]
+    || null;
+}
+
+async function purgeInaccessibleServerChannelConversationState(conversationId = "", {
+  serverId = "",
+  channelId = "",
+  reason = "channel_visibility_revoked",
+  renderDenied = false,
+} = {}) {
+  const convId = normId(conversationId || "");
+  if (!convId) return { ok: false, reason: "missing_conversation" };
+  const context = getCurrentServerChannelVisibilityContextForConversation(convId) || {};
+  const sid = normId(serverId || context.serverId || "");
+  const cid = normId(channelId || context.channelId || "");
+  const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
+  const isActive = activeConversationId === convId;
+  const memoryEntry = getConversationMessageMemoryCache(convId);
+  const rows = [
+    ...(Array.isArray(memoryEntry?.messages) ? memoryEntry.messages : []),
+    ...(isActive && Array.isArray(dmMessagesCache) ? dmMessagesCache : []),
+  ];
+  const pendingEventIds = new Set();
+
+  rows.forEach((row) => {
+    if (isOptimisticDmMessage(row)) releaseOptimisticMessageResources(row);
+    const pendingEventId = getBotPendingEventIdFromMessage(row);
+    const responseEventId = getBotResponseEventId(row);
+    if (pendingEventId) pendingEventIds.add(pendingEventId);
+    if (responseEventId) pendingEventIds.add(responseEventId);
+    const botMessageId = getBotChannelMessageRawId(row);
+    if (botMessageId) localBotCommandResponseIds.delete(botMessageId);
+  });
+  botLiveInteractionStateByEventId.forEach((entry, eventId) => {
+    if (
+      normId(entry?.conversationId || "") === convId
+      || (sid && cid && normId(entry?.serverId || "") === sid && normId(entry?.channelId || "") === cid)
+    ) {
+      pendingEventIds.add(normId(eventId || ""));
+      botLiveInteractionStateByEventId.delete(eventId);
+    }
+  });
+  pendingEventIds.forEach((eventId) => {
+    if (!eventId) return;
+    clearBotConnectionPendingTimeout(eventId);
+    removeBotConnectionPendingMessage(eventId, { render: false, reason });
+    botConnectionPendingMessageIdsByEventId.delete(eventId);
+  });
+
+  invalidateServerMessageHistoryConversation(convId, reason, {
+    clearCaches: true,
+    render: false,
+    preserveValidSnapshot: false,
+  });
+  messageCacheByConversationId.delete(convId);
+  clearDmMessageConversationAccessCache(convId);
+  clearMessageLoadingFailOpen(convId);
+  const persistentWriteTimer = dmMessagePersistentWriteTimers.get(convId);
+  if (persistentWriteTimer) clearTimeout(persistentWriteTimer);
+  dmMessagePersistentWriteTimers.delete(convId);
+  void deletePersistentConversationMessageCache(convId).catch(() => false);
+
+  if (!isActive) {
+    return { ok: true, active: false, serverId: sid, channelId: cid, conversationId: convId };
+  }
+
+  dmMessageLoadToken += 1;
+  dmShowRequestSeq += 1;
+  dmOpenIntentSeq += 1;
+  serverChannelUserNavigationVersion += 1;
+  clearActiveConversationMessageRestoreWatchdog?.();
+  stopDmOpenAutoScroll();
+  cancelDmInitialLatestStick();
+  stopDmReactionsSync();
+  setAltaraActiveConversationRealtimeRequirement(false);
+  unsubscribeTypingContext({ sendStop: true, reason });
+  if (dmChannel) {
+    try { supabase.removeChannel(dmChannel); } catch (_) {}
+    dmChannel = null;
+  }
+  if (dmReactionsChannel) {
+    try { supabase.removeChannel(dmReactionsChannel); } catch (_) {}
+    dmReactionsChannel = null;
+  }
+  dmReactionEventRefreshQueue.reset();
+  dmMessagesCache = [];
+  dmMessageIds = new Set();
+  dmHistoryHasMore = false;
+  dmHistoryLoadingOlder = false;
+  dmHistoryOldestCreatedAt = "";
+  dmPinsLastValidItems = [];
+  dmPinsRefreshSeq += 1;
+  closeDmPinsModal();
+  dmReplyTarget = null;
+  dmEditTarget = null;
+  renderDmReplyBar();
+  clearPendingDmAttachments();
+  resetDmDragDropState();
+  clearReactionCaches();
+  closeMessageMenu(reason);
+  closeBotContextMenu(reason);
+  dmLastRenderedMessagesSignature = "";
+  dmLastRenderedMessagesConversationId = "";
+  const messages = document.getElementById("dmMessages");
+  if (messages) {
+    if (renderDenied) {
+      setElementHtmlIfChanged(
+        messages,
+        `<div class="hint serverChannelAccessDenied" role="status">${esc("You do not have access to this server channel.")}</div>`
+      );
+    } else {
+      messages.replaceChildren();
+    }
+  }
+  setDmJumpLatestVisible(false);
+  return { ok: true, active: true, serverId: sid, channelId: cid, conversationId: convId };
+}
+
+function detachActiveConversationForServerShell(reason = "server_shell_without_channel", {
+  persistDraft = true,
+  preserveNavigationIntent = false,
+} = {}) {
+  const conversationId = normId(activeDmId || state.activeDm?.conversationId || "");
+  const input = document.getElementById("dmInput");
+  const draftValue = String(input?.value || "");
+  if (persistDraft && (conversationId || draftValue)) {
+    persistAltaraOfflineComposerDraft(conversationId, draftValue);
+  }
+
+  dmMessageLoadToken += 1;
+  dmShowRequestSeq += 1;
+  if (!preserveNavigationIntent) {
+    dmOpenIntentSeq += 1;
+    serverChannelUserNavigationVersion += 1;
+  }
+  dmSidebarRenderToken += 1;
+  clearActiveConversationMessageRestoreWatchdog?.();
+  stopDmOpenAutoScroll();
+  cancelDmInitialLatestStick();
+  stopDmReactionsSync();
+  setAltaraActiveConversationRealtimeRequirement(false);
+  unsubscribeTypingContext({ sendStop: true, reason });
+  stopActiveDmPrivacyListener();
+  if (dmChannel) {
+    try { supabase.removeChannel(dmChannel); } catch (_) {}
+    dmChannel = null;
+  }
+  if (dmReactionsChannel) {
+    try { supabase.removeChannel(dmReactionsChannel); } catch (_) {}
+    dmReactionsChannel = null;
+  }
+  dmReactionEventRefreshQueue.reset();
+  dmReplyTarget = null;
+  dmEditTarget = null;
+  renderDmReplyBar();
+  dmPinsLastValidItems = [];
+  dmPinsRefreshSeq += 1;
+  dmPinsPanelOpen = false;
+  dmProfilePanelOpen = false;
+  closeDmPinsModal();
+  closeDmProfilePanel();
+  closeMessageMenu(reason);
+  closeBotContextMenu(reason);
+  closeEmojiPicker();
+  closeDmAttachmentModal();
+  clearPendingDmAttachments();
+  resetDmDragDropState();
+  clearReactionCaches();
+  setDmJumpLatestVisible(false);
+  dmLastRenderedMessagesSignature = "";
+  dmLastRenderedMessagesConversationId = "";
+  if (input) input.value = "";
+  return { conversationId };
+}
+
+function syncNoAccessibleServerChannelsHeader(serverName = "Server") {
+  const safeName = normalizeConversationLabel(serverName || "Server", "Server");
+  currentConversationCallEnabled = false;
+  setCallStatus("", false);
+  dmPinsPanelOpen = false;
+  dmProfilePanelOpen = false;
+  closeDmPinsModal();
+  closeDmProfilePanel();
+  closeMessageMenu("server_no_access");
+  closeBotContextMenu("server_no_access");
+  syncDmPinsPanelState();
+  const titleEl = document.getElementById("dmTitle");
+  if (titleEl) setElementTextIfChanged(titleEl, safeName);
+  try { updateDmHeaderAvatar(); } catch (_) {}
+  try { applyDmTitleNameStyle(); } catch (_) {}
+  try { renderDmPrivacyUi(); } catch (_) {}
+  try { refreshCallUI(); } catch (_) {}
+  [
+    "btnCall",
+    "btnAnswer",
+    "btnHangup",
+    "btnDmCreateGroup",
+    "btnDmGroupEdit",
+    "btnDmGroupManage",
+    "btnDmPins",
+    "btnDmProfilePanel",
+    "btnShareScreen",
+    "btnCamera",
+  ].forEach((id) => {
+    const button = document.getElementById(id);
+    if (!button) return;
+    button.style.display = "none";
+    button.disabled = true;
+    button.setAttribute("aria-disabled", "true");
+  });
+}
+
+function syncServerChannelAuthorityShellHeader(serverName = "Server") {
+  const safeName = normalizeConversationLabel(serverName || "Server", "Server");
+  currentConversationCallEnabled = false;
+  const titleEl = document.getElementById("dmTitle");
+  if (titleEl) {
+    setElementTextIfChanged(titleEl, safeName);
+    titleEl.classList.remove("userNameCustom");
+    titleEl.style.removeProperty("--user-name-color");
+  }
+  try { updateDmHeaderAvatar(); } catch (_) {}
+  [
+    "btnCall",
+    "btnAnswer",
+    "btnHangup",
+    "btnDmCreateGroup",
+    "btnDmGroupEdit",
+    "btnDmGroupManage",
+    "btnDmPins",
+    "btnDmProfilePanel",
+    "btnShareScreen",
+    "btnCamera",
+  ].forEach((id) => {
+    const button = document.getElementById(id);
+    if (!button) return;
+    button.style.display = "none";
+    button.disabled = true;
+    button.setAttribute("aria-disabled", "true");
+  });
+}
+
+function renderServerChannelAuthorityShellState(serverId = "", phase = "resolving", options = {}) {
+  const sid = normId(serverId || "");
+  const navigationIntent = options?.navigationIntent || null;
+  if (!sid || !canPreserveSelectedServerShell(sid)) return false;
+  if (navigationIntent && !isMainContentNavigationIntentCurrent(navigationIntent)) return false;
+  const isError = String(phase || "").trim().toLowerCase() === "error";
+  const previousState = (state.activeDm && typeof state.activeDm === "object") ? state.activeDm : {};
+  const previousStateBelongsToServer = !!(
+    normId(previousState?.serverId || "") === sid
+    && String(previousState?.kind || "").trim().toLowerCase() === "server"
+  );
+  const previousConversationId = normId(
+    options?.fallbackConversationId
+    || previousState?.previousConversationId
+    || (previousStateBelongsToServer ? (activeDmId || previousState?.conversationId) : "")
+    || getRememberedServerLastChannel(sid)
+    || ""
+  );
+  const previousChannelId = normId(
+    previousState?.previousChannelId
+    || (previousStateBelongsToServer ? (previousState?.channelId || previousState?.channel_id) : "")
+    || ""
+  );
+  const serverRow = getServerRowById(sid) || {};
+  const serverName = normalizeConversationLabel(
+    options?.serverName || serverRow?.name || previousState?.serverName || "Server",
+    "Server"
+  );
+  const serverIconUrl = String(serverRow?.iconUrl || previousState?.avatarUrl || "").trim();
+  const alreadyDetached = isServerChannelAuthorityShellState(sid);
+  if (!alreadyDetached) {
+    detachActiveConversationForServerShell(options?.reason || "server_visibility_resolving", {
+      persistDraft: !previousStateBelongsToServer,
+      preserveNavigationIntent: true,
+    });
+  }
+  teardownActiveServerChannelsRealtime();
+  teardownActiveServerPermissionsRealtime();
+  stopActiveServerBotInstallRealtime();
+  stopActiveServerBotPresencePolling();
+  serverChannelsRenderToken += 1;
+  serverMembersRefreshToken += 1;
   activeDmId = null;
   state.activeDm = {
     kind: "server",
     isGroup: true,
     serverId: sid,
-    serverName: normalizeConversationLabel(getServerRowById(sid)?.name || "Server", "Server"),
-    displayName: "No channels available",
+    serverName,
+    displayName: serverName,
+    avatarUrl: serverIconUrl,
+    channelId: "",
+    channelType: "text",
+    conversationId: "",
+    serverVisibilityResolving: !isError,
+    serverVisibilityError: isError,
+    previousConversationId,
+    previousChannelId,
+    serverNavigationOpenIntentSeq: Number(navigationIntent?.openIntentSeq || 0),
+    serverNavigationVersion: Number(navigationIntent?.navigationVersion || 0),
+  };
+  dmMessagesCache = [];
+  dmMessageIds = new Set();
+  dmHistoryHasMore = false;
+  dmHistoryLoadingOlder = false;
+  dmHistoryOldestCreatedAt = "";
+  setMidMode("dm", {
+    skipServerConversationRefresh: true,
+    skipBroadUiRefresh: true,
+  });
+  recordServerNavigationPerfPhase(options?.traceId, "selected_server_committed", { authorityPhase: isError ? "error" : "resolving" });
+  const serverCtx = {
+    serverId: sid,
+    name: serverName,
+    iconUrl: serverIconUrl,
+    ownerUserId: normId(serverRow?.ownerUserId || ""),
+    defaultConversationId: normId(serverRow?.defaultConversationId || previousConversationId || ""),
+    memberCount: Number(serverRow?.memberCount || 0),
+    conversationId: "",
+    serverVisibilityResolving: !isError,
+    serverVisibilityError: isError,
+  };
+  renderServerSidebarShell(serverCtx, {
+    reason: options?.reason || (isError ? "server-visibility-error" : "server-visibility-resolving"),
+    forceHydration: false,
+  });
+  recordServerNavigationPerfPhase(options?.traceId, "server_sidebar_shell_rendered");
+  const sidebarHint = document.querySelector("#serverChannelsPanel .serverChannelsHint");
+  if (sidebarHint && isError) sidebarHint.textContent = "Channels unavailable";
+  updateServerChannelActiveState("", { reason: options?.reason || phase, serverId: sid });
+  syncDmActiveListHighlight();
+  setRightSidebarToServerNoChannelState(serverName);
+  const messages = document.getElementById("dmMessages");
+  if (messages) {
+    const content = isError
+      ? `
+        <div class="serverNoAccessibleChannelsState" data-server-entry-authority-state="error">
+          <div class="serverNoAccessibleChannelsState__inner">
+            <div class="serverNoAccessibleChannelsState__icon" aria-hidden="true">!</div>
+            <div class="serverNoAccessibleChannelsState__title">Channels couldn't load</div>
+            <div class="serverNoAccessibleChannelsState__text">Your server is still selected. Check your connection and try again.</div>
+            <button class="btn ghost" type="button" data-server-visibility-retry="${escAttr(sid)}">Try again</button>
+          </div>
+        </div>
+      `
+      : `
+        <div class="serverNoAccessibleChannelsState" data-server-entry-authority-state="resolving" role="status" aria-live="polite">
+          <div class="serverNoAccessibleChannelsState__inner">
+            <div class="serverNoAccessibleChannelsState__icon" aria-hidden="true">#</div>
+            <div class="serverNoAccessibleChannelsState__title">Opening ${esc(serverName)}</div>
+            <div class="serverNoAccessibleChannelsState__text">Checking channel access...</div>
+          </div>
+        </div>
+      `;
+    setElementHtmlIfChanged(messages, content);
+    const retryButton = messages.querySelector("[data-server-visibility-retry]");
+    if (retryButton) {
+      retryButton.onclick = () => {
+        void navigateToServerFromKnownEnvelope({
+          serverId: sid,
+          fallbackConversationId: previousConversationId,
+          serverName,
+          reason: "server-visibility-retry",
+        });
+      };
+    }
+  }
+  recordServerNavigationPerfPhase(options?.traceId, "secure_center_state_rendered");
+  setActiveMessageComposerPermissionState({
+    key: `server-visibility:${sid}:${normId(state.user?.id || "")}`,
+    loading: !isError,
+    canSend: false,
+    canReact: false,
+    canAttach: false,
+    reason: isError ? "visibility_unresolved" : "checking",
+    trace: { reason: options?.reason || phase, serverId: sid, visibilityUnresolved: true },
+  });
+  renderMessageComposer(options?.reason || phase);
+  recordServerNavigationPerfPhase(options?.traceId, "composer_fail_closed_rendered");
+  syncServerChannelAuthorityShellHeader(serverName);
+  recordServerNavigationPerfPhase(options?.traceId, "server_header_rendered");
+  renderGroupsRail();
+  recordServerNavigationPerfPhase(options?.traceId, "server_rail_selection_rendered");
+  try { captureCurrentMainNavigationRoute(); } catch (_) {}
+  recordServerNavigationPerfPhase(options?.traceId, isError ? "server_error_shell_rendered" : "server_shell_first_rendered");
+  return true;
+}
+
+function renderNoAccessibleServerChannelsState(serverId = "", reason = "channel_permissions_changed", options = {}) {
+  const sid = normId(serverId || "");
+  if (!sid || !canPreserveSelectedServerShell(sid)) return false;
+  const previousState = state.activeDm || {};
+  const previousStateBelongsToServer = !!(
+    normId(previousState?.serverId || "") === sid
+    && String(previousState?.kind || "").trim().toLowerCase() === "server"
+  );
+  const previousConversationId = normId(
+    options?.previousConversationId
+    || (previousState?.noAccessibleServerChannels ? previousState?.previousConversationId : "")
+    || (previousStateBelongsToServer ? (activeDmId || previousState?.conversationId) : "")
+    || ""
+  );
+  const previousChannelId = normId(
+    options?.previousChannelId
+    || (previousState?.noAccessibleServerChannels ? previousState?.previousChannelId : "")
+    || (previousStateBelongsToServer ? (previousState?.channelId || previousState?.channel_id) : "")
+    || ""
+  );
+  const serverRow = getServerRowById(sid) || {};
+  const serverName = normalizeConversationLabel(serverRow?.name || previousState?.serverName || "Server", "Server");
+  const serverIconUrl = String(serverRow?.iconUrl || previousState?.avatarUrl || "").trim();
+  if (!isNoAccessibleServerChannelsState(sid)) {
+    detachActiveConversationForServerShell(reason, {
+      persistDraft: !previousStateBelongsToServer,
+      preserveNavigationIntent: options?.preserveNavigationIntent === true,
+    });
+  }
+  activeDmId = null;
+  state.activeDm = {
+    kind: "server",
+    isGroup: true,
+    serverId: sid,
+    serverName,
+    displayName: serverName,
+    avatarUrl: serverIconUrl,
     channelId: "",
     channelType: "text",
     conversationId: "",
     noAccessibleServerChannels: true,
+    previousConversationId,
+    previousChannelId,
   };
   dmMessagesCache = [];
   dmMessageIds = new Set();
-  setMidMode("dm");
+  setMidMode("dm", {
+    skipServerConversationRefresh: true,
+    skipBroadUiRefresh: true,
+  });
+  renderServerChannelsPanel(
+    {
+      serverId: sid,
+      name: serverName,
+      iconUrl: serverIconUrl,
+      ownerUserId: normId(serverRow?.ownerUserId || ""),
+      defaultConversationId: normId(serverRow?.defaultConversationId || ""),
+      memberCount: Number(serverRow?.memberCount || 0),
+      conversationId: "",
+      noAccessibleServerChannels: true,
+    },
+    getVisibleServerChannelsForCurrentUser(sid, serverChannelListByServerId.get(sid) || []),
+    [],
+    serverChannelCategoryListByServerId.get(sid) || [],
+    { skipVoiceRefresh: true }
+  );
+  updateServerChannelActiveState("", { reason, serverId: sid });
   syncDmActiveListHighlight();
-  setRightSidebarToServerMembers({ active: false });
+  setRightSidebarToServerNoChannelState(serverName);
   const msgsBox = document.getElementById("dmMessages");
   if (msgsBox) {
     setElementHtmlIfChanged(msgsBox, `
@@ -56175,13 +58018,63 @@ function renderNoAccessibleServerChannelsState(serverId = "", reason = "channel_
     trace: { reason, serverId: sid, noVisibleChannels: true },
   });
   renderMessageComposer(reason);
-  try { updateDmHeaderAvatar(); } catch (_) {}
+  syncNoAccessibleServerChannelsHeader(serverName);
+  renderGroupsRail();
+  try { captureCurrentMainNavigationRoute({ replace: true }); } catch (_) {}
+  return true;
+}
+
+function preserveNoAccessibleServerChannelsShell(serverCtx = null, reason = "server_no_access_guard") {
+  const sid = normId(serverCtx?.serverId || state.activeDm?.serverId || "");
+  if (!sid || !isNoAccessibleServerChannelsState(sid) || !canPreserveSelectedServerShell(sid)) return false;
+  const serverRow = getServerRowById(sid) || {};
+  const serverName = normalizeConversationLabel(serverCtx?.name || serverRow?.name || state.activeDm?.serverName || "Server", "Server");
+  renderServerChannelsPanel(
+    {
+      ...(serverCtx || {}),
+      serverId: sid,
+      name: serverName,
+      iconUrl: String(serverCtx?.iconUrl || serverRow?.iconUrl || state.activeDm?.avatarUrl || "").trim(),
+      conversationId: "",
+      noAccessibleServerChannels: true,
+    },
+    getVisibleServerChannelsForCurrentUser(sid, serverChannelListByServerId.get(sid) || []),
+    [],
+    serverChannelCategoryListByServerId.get(sid) || [],
+    { skipVoiceRefresh: true }
+  );
+  updateServerChannelActiveState("", { reason, serverId: sid });
+  setRightSidebarToServerNoChannelState(serverName);
+  return true;
+}
+
+function preserveServerChannelAuthorityShell(serverCtx = null, reason = "server_visibility_guard") {
+  const sid = normId(serverCtx?.serverId || state.activeDm?.serverId || "");
+  if (!sid || !isServerChannelAuthorityShellState(sid) || !canPreserveSelectedServerShell(sid)) return false;
+  const serverRow = getServerRowById(sid) || {};
+  const serverName = normalizeConversationLabel(
+    serverCtx?.name || serverRow?.name || state.activeDm?.serverName || "Server",
+    "Server"
+  );
+  renderServerSidebarShell({
+    ...(serverCtx || {}),
+    serverId: sid,
+    name: serverName,
+    iconUrl: String(serverCtx?.iconUrl || serverRow?.iconUrl || state.activeDm?.avatarUrl || "").trim(),
+    conversationId: "",
+    serverVisibilityResolving: isServerChannelVisibilityResolvingState(sid),
+    serverVisibilityError: isServerChannelVisibilityErrorState(sid),
+  }, { reason, forceHydration: false });
+  updateServerChannelActiveState("", { reason, serverId: sid });
+  setRightSidebarToServerNoChannelState(serverName);
+  return true;
 }
 
 async function openVisibleServerChannelAfterPermissionChange(serverId = "", channel = null, reason = "channel_permissions_changed") {
   const sid = normId(serverId || "");
   const row = channel || getFirstVisibleServerTextChannel(sid) || getFirstVisibleServerChannel(sid);
-  if (!sid || !row?.conversationId) return false;
+  const channelId = normId(row?.id || row?.channelId || row?.channel_id || "");
+  if (!sid || !row?.conversationId || !channelId || !canCurrentUserViewServerChannelSync(sid, channelId)) return false;
   const serverRow = getServerRowById(sid) || null;
   const channelType = normalizeConversationChannelType(row?.channelType || "text");
   const meta = {
@@ -56205,33 +58098,76 @@ async function openVisibleServerChannelAfterPermissionChange(serverId = "", chan
     channelName: meta.displayName,
   });
   commitServerChannelSelectionForUi(row.conversationId, meta, { reason, userInitiated: false });
+  primeDmOpeningShell(row.conversationId, meta, { reason, pending: false });
   await openConversationById(row.conversationId, meta);
   return true;
 }
 
-async function reconcileActiveServerChannelAfterPermissionChange(reason = "channel_permissions_changed") {
+async function reconcileActiveServerChannelAfterPermissionChange(reason = "channel_permissions_changed", options = {}) {
+  // state.activeDm is intentionally NOT cleared on Home/DM navigation (it backs
+  // "remembered last channel" restoration), so it can lag well behind what is
+  // actually on screen. The display style of dmMain is updated synchronously
+  // by setMidMode on every navigation, so it is the one reliable "is a server
+  // actually showing right now" signal -- refuse to touch selection/DOM if not.
+  if (!isServerConversationUiOpen()) return { ok: true, action: "no_server_ui_open" };
   const activeConvId = normId(activeDmId || state.activeDm?.conversationId || "");
   const activeCtx = getServerPermissionContextForConversation(activeConvId) || null;
   const sid = normId(activeCtx?.serverId || getActiveServerIdForSidebar?.() || state.activeDm?.serverId || "");
   if (!sid) return { ok: true, action: "no_server" };
+  const expectedServerId = normId(options?.expectedServerId || "");
+  if (expectedServerId && expectedServerId !== sid) return { ok: true, action: "server_mismatch" };
   const { serverCtx } = getActiveServerChannelsRuntimeContext();
-  if (serverCtx && normId(serverCtx.serverId || "") === sid) {
+  let sidebarRendered = false;
+  if (options?.renderSidebar !== false && serverCtx && normId(serverCtx.serverId || "") === sid) {
     renderServerChannelsPanel(
       serverCtx,
       serverChannelListByServerId.get(sid) || [],
       serverMemberListByServerId.get(sid) || [],
-      serverChannelCategoryListByServerId.get(sid) || []
+      serverChannelCategoryListByServerId.get(sid) || [],
+      { skipVoiceRefresh: true }
     );
+    sidebarRendered = true;
   }
   if (!activeCtx?.channelId) {
-    await refreshActiveMessageComposerPermission({ reason });
-    return { ok: true, action: "no_active_channel" };
+    if (isNoAccessibleServerChannelsState(sid)) {
+      const preferredConversationId = normId(state.activeDm?.previousConversationId || "");
+      const next = getPreferredVisibleServerChannel(sid, preferredConversationId);
+      if (next?.conversationId) {
+        await openVisibleServerChannelAfterPermissionChange(sid, next, reason);
+        if (options?.refreshComposer !== false) await refreshActiveMessageComposerPermission({ reason });
+        return {
+          ok: true,
+          action: "restored",
+          channelId: normId(next.id || ""),
+          conversationId: normId(next.conversationId || ""),
+          sidebarRendered,
+        };
+      }
+      renderNoAccessibleServerChannelsState(sid, reason);
+      return { ok: true, action: "no_visible_channels", sidebarRendered };
+    }
+    if (options?.refreshComposer !== false) {
+      await refreshActiveMessageComposerPermission({
+        reason,
+        preserveTimeline: options?.preserveVisibleTimeline === true,
+        preserveLayout: options?.preserveVisibleTimeline === true,
+      });
+    }
+    return { ok: true, action: "no_active_channel", sidebarRendered };
   }
   const stillVisible = canCurrentUserViewServerChannelSync(sid, activeCtx.channelId);
   if (stillVisible) {
-    await refreshActiveMessageComposerPermission({ reason });
-    renderMessagesFromCache({ keepBottom: true, reason, force: true });
-    return { ok: true, action: "still_visible", channelId: activeCtx.channelId };
+    if (options?.refreshComposer !== false) {
+      await refreshActiveMessageComposerPermission({
+        reason,
+        preserveTimeline: options?.preserveVisibleTimeline === true,
+        preserveLayout: options?.preserveVisibleTimeline === true,
+      });
+    }
+    if (options?.preserveVisibleTimeline !== true) {
+      renderMessagesFromCache({ keepBottom: true, reason, force: true });
+    }
+    return { ok: true, action: "still_visible", channelId: activeCtx.channelId, sidebarRendered };
   }
   console.info("[channel-permissions] active channel no longer visible", {
     reason,
@@ -56239,40 +58175,59 @@ async function reconcileActiveServerChannelAfterPermissionChange(reason = "chann
     channelId: activeCtx.channelId,
     conversationId: activeConvId,
   });
+  await purgeInaccessibleServerChannelConversationState(activeConvId, {
+    serverId: sid,
+    channelId: activeCtx.channelId,
+    reason,
+    renderDenied: false,
+  });
   const next = getFirstVisibleServerTextChannel(sid) || getFirstVisibleServerChannel(sid);
   if (next?.conversationId) {
     await openVisibleServerChannelAfterPermissionChange(sid, next, reason);
-    await refreshActiveMessageComposerPermission({ reason });
-    return { ok: true, action: "switched", channelId: normId(next.id || ""), conversationId: normId(next.conversationId || "") };
+    if (options?.refreshComposer !== false) await refreshActiveMessageComposerPermission({ reason });
+    return { ok: true, action: "switched", channelId: normId(next.id || ""), conversationId: normId(next.conversationId || ""), sidebarRendered };
   }
   console.info("[channel-permissions] no visible channels available", { reason, serverId: sid });
   renderNoAccessibleServerChannelsState(sid, reason);
-  return { ok: true, action: "no_visible_channels" };
+  return { ok: true, action: "no_visible_channels", sidebarRendered };
 }
 
 async function resolveCurrentUserMessagePermission({ serverId = "", channelId = "", reason = "send-message" } = {}) {
   const sid = normId(serverId || "");
   const cid = normId(channelId || "");
-  await resolveCurrentUserServerPermissions({ serverId: sid, reason });
-  if (cid && channelPermissionOverwritesSqlAvailable !== false && !hasChannelPermissionOverwritesLoaded(cid)) {
-    const load = await loadChannelPermissionOverwrites(sid, cid, { force: false });
-    if (load?.error && !load?.missingSql) {
-      const fallback = await resolveCurrentUserServerPermissions({ serverId: sid, reason });
-      fallback.channelId = cid;
-      fallback.trace.channelId = cid;
-      fallback.ok = false;
-      fallback.error = load.error?.message || "channel_permissions_not_verified";
-      return fallback;
+  const base = await resolveCurrentUserServerPermissions({ serverId: sid, reason });
+  let effective = getMyEffectiveServerChannelPermission(sid, cid);
+  if (!effective) {
+    const load = await loadMyEffectiveServerChannelPermissionsBatch(sid, { force: false });
+    effective = getMyEffectiveServerChannelPermission(sid, cid);
+    if (!load?.ok || !effective) {
+      return {
+        ...base,
+        ok: false,
+        channelId: cid,
+        error: load?.error?.message || "channel_permissions_not_verified",
+        trace: { ...(base?.trace || {}), reason, channelId: cid, source: "self_bound_effective_permissions", loaded: false },
+      };
     }
   }
-  const result = resolveEffectiveChannelPermissionsForUser({
-    serverId: sid,
+  return {
+    ...base,
+    ok: base?.ok !== false,
     channelId: cid,
-    userId: state.user?.id || "",
-    reason,
-  });
-  result.channelId = cid;
-  return result;
+    permissions: {
+      ...(base?.permissions || {}),
+      view_channels: effective.canViewChannels === true,
+      send_messages: effective.canSendMessages === true,
+      read_message_history: effective.canReadMessageHistory === true,
+    },
+    trace: {
+      ...(base?.trace || {}),
+      reason,
+      channelId: cid,
+      source: "self_bound_effective_permissions",
+      loaded: true,
+    },
+  };
 }
 
 function installAltaraPermissionDebugHelpers() {
@@ -56410,6 +58365,8 @@ function installAltaraPermissionDebugHelpers() {
     return result;
   };
   window.altaraDebugChannelPermissions.inspectCache = function inspectCache() {
+    const sid = normId(getServerPermissionContextForConversation(activeDmId)?.serverId || getActiveServerIdForSidebar?.() || "");
+    if (!sid || !currentUserCanManageChannels(sid)) return { error: "missing_manage_channels" };
     return {
       sqlAvailable: channelPermissionOverwritesSqlAvailable,
       loadedAt: Array.from(channelPermissionOverwritesLoadedAtByChannel.entries()),
@@ -56423,16 +58380,6 @@ function installAltaraPermissionDebugHelpers() {
       explanation: context.channelId ? window.altaraDebugChannelPermissions.explain(context.channelId) : null,
       composer: activeMessageComposerPermissionState,
     };
-  };
-  window.altaraDebugChannelPermissions.testDenySend = async function testDenySend(channelId = "") {
-    const sid = normId(getActiveServerIdForSidebar?.() || getServerPermissionContextForConversation(activeDmId)?.serverId || "");
-    const cid = normId(channelId || getServerPermissionContextForConversation(activeDmId)?.channelId || "");
-    return setChannelPermissionOverwrite({ serverId: sid, channelId: cid, targetType: "everyone", targetId: sid, allow: {}, deny: { send_messages: true } });
-  };
-  window.altaraDebugChannelPermissions.testAllowView = async function testAllowView(channelId = "") {
-    const sid = normId(getActiveServerIdForSidebar?.() || getServerPermissionContextForConversation(activeDmId)?.serverId || "");
-    const cid = normId(channelId || getServerPermissionContextForConversation(activeDmId)?.channelId || "");
-    return setChannelPermissionOverwrite({ serverId: sid, channelId: cid, targetType: "everyone", targetId: sid, allow: { view_channels: true }, deny: {} });
   };
   window.altaraDebugChannelPermissions.reconcileActiveChannel = function reconcileActiveChannel() {
     return reconcileActiveServerChannelAfterPermissionChange("debug_manual");
@@ -57234,6 +59181,7 @@ function installAltaraServerModerationDebugHelpers() {
   const resolveModerationDebugServerId = (serverId = "") => normId(serverId || serverSettingsServerId || getActiveServerIdForSidebar?.() || "");
   const inspectModerationState = (serverId = "") => {
     const sid = resolveModerationDebugServerId(serverId);
+    const canViewAuditLog = currentUserCanViewAuditLog(sid);
     const bans = serverBanListByServerId.get(sid) || [];
     const timeouts = Array.from((serverMemberTimeoutsByServerId.get(sid) || new Map()).values()).filter((row) => isServerMemberTimeoutActive(row));
     const visibleBans = getServerBanRowsForDisplay(sid);
@@ -57267,7 +59215,8 @@ function installAltaraServerModerationDebugHelpers() {
       lastRealtimeEvent: serverSettingsModerationLastRealtimeEvent || lastServerTimeoutRealtimeEvent || null,
       visibleBanRows: visibleBans.length,
       visibleTimeoutRows: visibleTimeouts.length,
-      auditLogCount: (serverAuditLogsByServerId.get(sid) || []).length,
+      canViewAuditLog,
+      auditLogCount: canViewAuditLog ? (serverAuditLogsByServerId.get(sid) || []).length : 0,
       auditLogLoadedAt: serverAuditLogLastLoadedAtByServerId.get(sid) || 0,
       auditLogInFlight: serverAuditLogLoadInFlightByServerId.has(sid),
       auditLogFilter: serverAuditLogFilterByServerId.get(sid) || "all",
@@ -57395,11 +59344,13 @@ function installAltaraServerAuditLogDebugHelpers() {
   };
   window.altaraDebugServerAuditLog.inspect = function inspect(serverId = "") {
     const sid = resolveAuditServerId(serverId);
+    const canViewAuditLog = currentUserCanViewAuditLog(sid);
     const hydration = getServerAuditLogProfileHydrationState(sid);
     const visibleRows = getServerAuditLogRowsForDisplay(sid);
     return {
       serverId: sid,
-      rowsCount: (serverAuditLogsByServerId.get(sid) || []).length,
+      canViewAuditLog,
+      rowsCount: canViewAuditLog ? (serverAuditLogsByServerId.get(sid) || []).length : 0,
       visibleRowsCount: visibleRows.length,
       loadedAt: serverAuditLogLastLoadedAtByServerId.get(sid) || 0,
       loading: !!serverAuditLogLoadingByServerId.get(sid),
@@ -58017,7 +59968,7 @@ function computeServerAccessChannelSectionData(serverId = "") {
         canSend: perms.send_messages === true,
         canConnect: perms.connect === true,
         canSpeak: perms.speak === true,
-        holdsManageChannels: basePerms.manage_channels === true,
+        holdsManageChannels: basePerms.manage_channels === true || basePerms.manage_voice_channels === true,
         holdsRiskyServerPerm,
       };
     });
@@ -58294,6 +60245,7 @@ function currentUserCanManageServer(serverId = "") {
   if (!sid) return false;
   const caps = getServerCapabilityMeta(sid);
   if (caps.isActualOwner || caps.isOwner) return true;
+  if (!isCurrentServerPermissionSnapshotResolved(sid)) return false;
   return getEffectiveServerPermissionsForCurrentUser(sid).manage_server === true;
 }
 
@@ -58302,7 +60254,36 @@ function currentUserCanManageRoles(serverId = "") {
   if (!sid) return false;
   const caps = getServerCapabilityMeta(sid);
   if (caps.isActualOwner || caps.isOwner) return true;
+  if (!isCurrentServerPermissionSnapshotResolved(sid)) return false;
   return getEffectiveServerPermissionsForCurrentUser(sid).manage_roles === true;
+}
+
+function currentUserCanCreateServerRole(serverId = "") {
+  const sid = normId(serverId || "");
+  if (!sid || !currentUserCanManageRoles(sid)) return false;
+  const caps = getServerCapabilityMeta(sid);
+  if (caps.isActualOwner || caps.isOwner) return true;
+  const actorTopRole = getServerRoleHighestPositionForMember(sid, state.user?.id || "");
+  return Number.isFinite(getRoleHierarchyRank(actorTopRole));
+}
+
+function constrainServerRolePermissionsToCurrentActor(serverId = "", permissions = {}) {
+  const sid = normId(serverId || "");
+  const normalized = normalizeServerRolePermissions(permissions || {});
+  const caps = getServerCapabilityMeta(sid);
+  if (caps.isActualOwner || caps.isOwner) return normalized;
+  const actorPermissions = getEffectiveServerPermissionsForCurrentUser(sid);
+  SERVER_ROLE_PERMISSION_DEFINITIONS.forEach((definition) => {
+    const key = normalizeServerPermissionKey(definition?.key || "");
+    if (!key) return;
+    const aliases = Array.isArray(definition?.aliases)
+      ? definition.aliases.map((alias) => normalizeServerPermissionKey(alias || "")).filter(Boolean)
+      : [];
+    const keys = Array.from(new Set([key, ...aliases]));
+    if (keys.some((candidate) => actorPermissions?.[candidate] === true)) return;
+    keys.forEach((candidate) => { normalized[candidate] = false; });
+  });
+  return normalized;
 }
 
 function currentUserCanManageMembers(serverId = "") {
@@ -58311,7 +60292,7 @@ function currentUserCanManageMembers(serverId = "") {
   const caps = getServerCapabilityMeta(sid);
   if (caps.isActualOwner || caps.isOwner) return true;
   const perms = getEffectiveServerPermissionsForCurrentUser(sid);
-  return perms.manage_members === true || perms.manage_server === true || perms.manage_roles === true;
+  return perms.manage_roles === true;
 }
 
 function currentUserCanKickMembers(serverId = "") {
@@ -58323,13 +60304,22 @@ function currentUserCanKickMembers(serverId = "") {
   return perms.kick_members === true || perms.server_kick_members === true;
 }
 
+function currentUserCanViewAuditLog(serverId = "") {
+  const sid = normId(serverId || "");
+  if (!sid) return false;
+  const caps = getServerCapabilityMeta(sid);
+  if (caps.isActualOwner || caps.isOwner) return true;
+  if (!isCurrentServerPermissionSnapshotResolved(sid)) return false;
+  return getEffectiveServerPermissionsForCurrentUser(sid).view_audit_log === true;
+}
+
 function currentUserCanCreateInvites(serverId = "") {
   const sid = normId(serverId || "");
   if (!sid) return false;
   const caps = getServerCapabilityMetaWithoutInvitePermission(sid);
   if (caps.isActualOwner || caps.isOwner) return true;
   const perms = getEffectiveServerPermissionsForCurrentUser(sid);
-  return perms.create_invite === true || perms.manage_invites === true;
+  return perms.create_invites === true;
 }
 
 function currentUserCanManageInvites(serverId = "") {
@@ -58346,7 +60336,7 @@ function currentUserCanChangeOwnServerNickname(serverId = "") {
   const caps = getServerCapabilityMeta(sid);
   if (caps.isActualOwner || caps.isOwner) return true;
   const perms = getEffectiveServerPermissionsForCurrentUser(sid);
-  return perms.change_nickname === true || perms.manage_nicknames === true;
+  return perms.change_nickname === true;
 }
 
 function currentUserCanManageServerNicknames(serverId = "") {
@@ -58566,16 +60556,117 @@ function currentUserCanTimeoutMembers(serverId = "") {
   const caps = getServerCapabilityMeta(sid);
   if (caps.isActualOwner || caps.isOwner) return true;
   const perms = getEffectiveServerPermissionsForCurrentUser(sid);
-  return perms.timeout_members === true || perms.moderate_members === true || perms.manage_server === true;
+  return perms.timeout_members === true;
+}
+
+// server-manage-channels-frontend-fail-closed-v1
+function getCurrentManageChannelsCapabilityState(serverId = "") {
+  const sid = normId(serverId || "");
+  const userId = normId(state.user?.id || "");
+  const key = sid && userId ? `${sid}:${userId}` : "";
+  const denied = (reason = "unresolved") => ({
+    key,
+    serverId: sid,
+    userId,
+    resolved: false,
+    allowed: false,
+    isOwner: false,
+    reason,
+  });
+  if (!sid || !userId) return denied("missing_context");
+
+  const server = getServerRowById(sid);
+  const resolvedServerId = normId(server?.serverId || server?.server_id || server?.id || "");
+  if (!server || resolvedServerId !== sid) return denied("server_snapshot_mismatch");
+
+  const memberLoadState = serverMemberLoadStateByServerId.get(sid) || null;
+  if (
+    !serverMemberListByServerId.has(sid)
+    || memberLoadState?.loading === true
+    || !!memberLoadState?.error
+  ) {
+    return denied("membership_unresolved");
+  }
+  const member = getCachedServerMemberForUser(sid, userId);
+  if (!member || normId(member?.userId || member?.user_id || "") !== userId) {
+    return denied("membership_missing");
+  }
+
+  if (
+    !serverRolePermissionCacheFetchedAtByServerId.has(sid)
+    || !serverRoleListByServerId.has(sid)
+    || !serverRoleMemberMapByServerId.has(sid)
+  ) {
+    return denied("permission_snapshot_unresolved");
+  }
+
+  const ownerUserId = normId(
+    server?.ownerUserId
+    || server?.owner_user_id
+    || server?.ownerId
+    || server?.owner_id
+    || server?.createdBy
+    || server?.created_by
+    || ""
+  );
+  const isOwner = !!(ownerUserId && ownerUserId === userId);
+  const permissions = getServerRolePermissionsForUser(sid, userId, {
+    members: serverMemberListByServerId.get(sid) || [],
+    roles: serverRoleListByServerId.get(sid) || [],
+    roleMemberMap: serverRoleMemberMapByServerId.get(sid) || new Map(),
+  });
+  const allowed = isOwner || permissions.manage_channels === true;
+  return {
+    key,
+    serverId: sid,
+    userId,
+    resolved: true,
+    allowed,
+    isOwner,
+    reason: allowed ? "allowed" : "missing_manage_channels",
+  };
 }
 
 function currentUserCanManageChannels(serverId = "") {
+  // Exact manage_channels authority (including its normalized alias) lives in the resolved helper.
+  const capability = getCurrentManageChannelsCapabilityState(serverId);
+  return capability.resolved === true && capability.allowed === true;
+}
+
+function canCurrentUserTargetRoleForChannelPermissions(serverId = "", role = null) {
   const sid = normId(serverId || "");
-  if (!sid) return false;
-  const caps = getServerCapabilityMeta(sid);
-  if (caps.isActualOwner || caps.isOwner) return true;
-  const perms = getEffectiveServerPermissionsForCurrentUser(sid);
-  return perms.manage_channels === true;
+  const roleId = normId(role?.id || "");
+  const capability = getCurrentManageChannelsCapabilityState(sid);
+  if (!sid || !roleId || isDefaultServerRole(role) || !capability.allowed) return false;
+  if (capability.isOwner) return true;
+  const actorTopRole = getServerRoleHighestPositionForMember(sid, state.user?.id || "");
+  const actorRank = getRoleHierarchyRank(actorTopRole);
+  const targetRank = getRoleHierarchyRank(role);
+  return Number.isFinite(actorRank) && Number.isFinite(targetRank) && targetRank > actorRank;
+}
+
+function canCurrentUserTargetMemberForChannelPermissions(serverId = "", targetUserId = "") {
+  const sid = normId(serverId || "");
+  const targetId = normId(targetUserId || "");
+  const capability = getCurrentManageChannelsCapabilityState(sid);
+  if (!sid || !targetId || !capability.allowed) return false;
+  const context = getServerMemberManagementContext(sid, targetId);
+  if (!context.targetUserId || context.isSelf || context.targetIsOwner) return false;
+  return !!(capability.isOwner || context.targetBelowActor);
+}
+
+function canCurrentUserTargetChannelPermissionOverride(serverId = "", targetType = "", targetId = "") {
+  const sid = normId(serverId || "");
+  const type = String(targetType || "").trim().toLowerCase();
+  const id = normId(targetId || "");
+  if (!sid || !id || !currentUserCanManageChannels(sid)) return false;
+  if (type === "everyone") return id === sid;
+  if (type === "role") {
+    const role = getServerRolesForSettingsDisplay(sid).find((entry) => normId(entry?.id || "") === id) || null;
+    return canCurrentUserTargetRoleForChannelPermissions(sid, role);
+  }
+  if (type === "member") return canCurrentUserTargetMemberForChannelPermissions(sid, id);
+  return false;
 }
 
 function currentUserCanSendMessages(serverId = "") {
@@ -58618,11 +60709,12 @@ function getCurrentUserServerCapabilityStateSnapshot(serverId = "") {
     canViewChannels: isOwner || permissions.view_channels === true,
     canSendMessages: isOwner || permissions.send_messages === true,
     canReadMessageHistory: isOwner || permissions.read_message_history === true,
-    canManageChannels: isOwner || permissions.manage_channels === true,
+    canManageChannels: currentUserCanManageChannels(sid),
     canManageServer: isOwner || permissions.manage_server === true,
     canManageRoles: isOwner || permissions.manage_roles === true,
     canKickMembers: isOwner || permissions.kick_members === true || permissions.server_kick_members === true,
-    canCreateInvite: isOwner || permissions.create_invite === true || permissions.manage_invites === true,
+    canTimeoutMembers: isOwner || permissions.timeout_members === true,
+    canCreateInvite: isOwner || permissions.create_invites === true,
     canManageInvites: isOwner || permissions.manage_invites === true,
     canManageApps: isOwner || permissions.manage_apps === true,
     canUseApplicationCommands: isOwner || permissions.use_application_commands === true,
@@ -58649,11 +60741,12 @@ async function resolveCurrentUserServerCapabilityState(serverId, options = {}) {
     canViewChannels: Boolean(result?.permissions?.view_channels),
     canSendMessages: Boolean(result?.permissions?.send_messages),
     canReadMessageHistory: Boolean(result?.isOwner || result?.permissions?.read_message_history),
-    canManageChannels: Boolean(result?.isOwner || result?.permissions?.manage_channels),
+    canManageChannels: currentUserCanManageChannels(sid),
     canManageServer: Boolean(result?.permissions?.manage_server),
     canManageRoles: Boolean(result?.permissions?.manage_roles),
     canKickMembers: Boolean(result?.isOwner || result?.permissions?.kick_members || result?.permissions?.server_kick_members),
-    canCreateInvite: Boolean(result?.isOwner || result?.permissions?.create_invite || result?.permissions?.manage_invites),
+    canTimeoutMembers: Boolean(result?.isOwner || result?.permissions?.timeout_members),
+    canCreateInvite: Boolean(result?.isOwner || result?.permissions?.create_invites),
     canManageInvites: Boolean(result?.isOwner || result?.permissions?.manage_invites),
     canManageApps: Boolean(result?.isOwner || result?.permissions?.manage_apps),
     canUseApplicationCommands: Boolean(result?.isOwner || result?.permissions?.use_application_commands),
@@ -58785,6 +60878,7 @@ function currentUserCanReorderServerRoles(serverId = "") {
   const sid = normId(serverId || "");
   if (!sid) return false;
   if (isServerActualOwner(sid)) return true;
+  if (!isCurrentServerPermissionSnapshotResolved(sid)) return false;
   return getEffectiveServerPermissionsForCurrentUser(sid).manage_roles === true;
 }
 function getServerRoleHierarchyLimitForCurrentUser(serverId = "") {
@@ -59264,6 +61358,96 @@ function buildServerRoleMemberMap(rows = []) {
   return out;
 }
 
+// manual-qa-fix-2: role invalidation refreshes are allowed to replace authority
+// snapshots only when their semantic contents changed. Keeping the existing
+// array/Map references prevents otherwise-identical realtime echoes from
+// rebuilding the open server UI.
+function toServerRoleReconciliationComparable(value) {
+  if (value instanceof Map) {
+    return Array.from(value.entries())
+      .map(([key, entry]) => [String(key || ""), toServerRoleReconciliationComparable(entry)])
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  }
+  if (value instanceof Set) {
+    return Array.from(value.values()).map((entry) => String(entry || "")).sort();
+  }
+  if (Array.isArray(value)) return value.map((entry) => toServerRoleReconciliationComparable(entry));
+  if (!value || typeof value !== "object") return value;
+  return Object.keys(value).sort().reduce((out, key) => {
+    out[key] = toServerRoleReconciliationComparable(value[key]);
+    return out;
+  }, {});
+}
+
+function getServerRoleReconciliationSignature(value) {
+  try {
+    return JSON.stringify(toServerRoleReconciliationComparable(value));
+  } catch (_) {
+    return "";
+  }
+}
+
+function getServerRoleListSemanticSnapshot(roles = [], { includePermissions = true } = {}) {
+  return (Array.isArray(roles) ? roles : []).map((role) => {
+    const normalized = normalizeServerRoleRow(role) || role || {};
+    const row = {
+      id: normId(normalized?.id || normalized?.role_id || ""),
+      name: String(normalized?.name || ""),
+      color: String(normalized?.color || ""),
+      position: Number(normalized?.position ?? normalized?.role_position ?? 0),
+      isDefault: isDefaultServerRole(normalized),
+      isManaged: isManagedServerRole(normalized),
+      managedByBotId: normId(normalized?.managedByBotId || normalized?.managed_by_bot_id || ""),
+      managedKind: String(normalized?.managedKind || normalized?.managed_kind || ""),
+      managedMetadata: normalized?.managedMetadata || normalized?.managed_metadata || {},
+    };
+    if (includePermissions) {
+      const permissions = normalizeServerRolePermissions(normalized?.permissions || normalized?.role_permissions || {}, normalized);
+      row.permissions = Object.fromEntries(
+        SERVER_ROLE_PERMISSION_KEYS.slice().sort().map((key) => [key, permissions[key] === true])
+      );
+    }
+    return row;
+  });
+}
+
+function getServerRoleListSemanticSignature(roles = [], options = {}) {
+  return getServerRoleReconciliationSignature(getServerRoleListSemanticSnapshot(roles, options));
+}
+
+function getServerRoleMemberMapSemanticSignature(roleMemberMap = new Map()) {
+  return getServerRoleReconciliationSignature(roleMemberMap instanceof Map ? roleMemberMap : new Map());
+}
+
+function commitServerRoleAuthorityCacheSnapshot(serverId = "", roles = [], roleMemberMap = new Map()) {
+  const sid = normId(serverId || "");
+  if (!sid) return { rolesChanged: false, rolePresentationChanged: false, assignmentsChanged: false };
+  const previousRoles = serverRoleListByServerId.get(sid);
+  const previousRoleMemberMap = serverRoleMemberMapByServerId.get(sid);
+  const rolesChanged = !Array.isArray(previousRoles)
+    || getServerRoleListSemanticSignature(previousRoles) !== getServerRoleListSemanticSignature(roles);
+  const rolePresentationChanged = !Array.isArray(previousRoles)
+    || getServerRoleListSemanticSignature(previousRoles, { includePermissions: false })
+      !== getServerRoleListSemanticSignature(roles, { includePermissions: false });
+  const assignmentsChanged = !(previousRoleMemberMap instanceof Map)
+    || getServerRoleMemberMapSemanticSignature(previousRoleMemberMap)
+      !== getServerRoleMemberMapSemanticSignature(roleMemberMap);
+  serverRoleListByServerId.set(sid, rolesChanged ? roles : previousRoles);
+  serverRoleMemberMapByServerId.set(sid, assignmentsChanged ? roleMemberMap : previousRoleMemberMap);
+  return { rolesChanged, rolePresentationChanged, assignmentsChanged };
+}
+
+function commitServerMemberListSemanticSnapshot(serverId = "", members = []) {
+  const sid = normId(serverId || "");
+  const previousMembers = sid ? serverMemberListByServerId.get(sid) : null;
+  const changed = !Array.isArray(previousMembers)
+    || getServerRoleReconciliationSignature(previousMembers)
+      !== getServerRoleReconciliationSignature(Array.isArray(members) ? members : []);
+  const committed = changed ? (Array.isArray(members) ? members : []) : previousMembers;
+  if (sid) serverMemberListByServerId.set(sid, committed);
+  return { changed, members: committed || [] };
+}
+
 function applyServerRoleMemberAssignment(serverId, roleId, userId, enabled) {
   const sid = normId(serverId);
   const rid = normId(roleId);
@@ -59321,13 +61505,27 @@ function mergeConfirmedRolePermissionsIntoLocalState(serverId, roleId, permissio
   return changed;
 }
 
+const serverRolePermissionCacheInFlightByServerId = new Map();
+
 async function ensureServerRolePermissionCache(serverId, { force = false } = {}) {
   const sid = normId(serverId);
   if (!sid) return { ok: false, error: { message: "server_id invalido" } };
   if (!force && serverRoleListByServerId.has(sid) && serverRoleMemberMapByServerId.has(sid)) {
     return { ok: true, error: null };
   }
+  const existing = serverRolePermissionCacheInFlightByServerId.get(sid) || null;
+  if (existing) return existing;
+  const request = loadServerRolePermissionCacheSnapshot(sid)
+    .finally(() => {
+      if (serverRolePermissionCacheInFlightByServerId.get(sid) === request) {
+        serverRolePermissionCacheInFlightByServerId.delete(sid);
+      }
+    });
+  serverRolePermissionCacheInFlightByServerId.set(sid, request);
+  return request;
+}
 
+async function loadServerRolePermissionCacheSnapshot(sid) {
   const [rolesRes, roleMembersRes] = await Promise.all([
     listServerRolesForServer(sid),
     listServerRoleMembersForServer(sid),
@@ -59340,10 +61538,13 @@ async function ensureServerRolePermissionCache(serverId, { force = false } = {})
     applyConfirmedRolePermissionsOverlay(enrichedRoleRows).map(normalizeServerRoleRow).filter(Boolean),
     { serverId: sid }
   );
-  serverRoleListByServerId.set(sid, roles);
-  serverRoleMemberMapByServerId.set(sid, buildServerRoleMemberMap(roleMembersRes?.rows || []));
+  const commit = commitServerRoleAuthorityCacheSnapshot(
+    sid,
+    roles,
+    buildServerRoleMemberMap(roleMembersRes?.rows || [])
+  );
   serverRolePermissionCacheFetchedAtByServerId.set(sid, Date.now());
-  return { ok: true, error: null };
+  return { ok: true, error: null, ...commit };
 }
 
 function getServerRolePermissionsForUser(serverId, userId, {
@@ -59430,10 +61631,10 @@ function canServerActorModerateTargetWithPermission({
   });
   const permissions = normalizeServerRolePermissions({
     ...actorFlags,
-    move_members: actorIsAdmin || !!actorFlags.move_members || !!actorFlags.voice_disconnect_members,
-    voice_disconnect_members: actorIsAdmin || !!actorFlags.move_members || !!actorFlags.voice_disconnect_members,
-    mute_members: actorIsAdmin || !!actorFlags.mute_members || !!actorFlags.voice_mute_microphone,
-    voice_mute_microphone: actorIsAdmin || !!actorFlags.mute_members || !!actorFlags.voice_mute_microphone,
+    move_members: actorIsOwner || !!actorFlags.move_members || !!actorFlags.voice_disconnect_members,
+    voice_disconnect_members: actorIsOwner || !!actorFlags.move_members || !!actorFlags.voice_disconnect_members,
+    mute_members: actorIsOwner || !!actorFlags.mute_members || !!actorFlags.voice_mute_microphone,
+    voice_mute_microphone: actorIsOwner || !!actorFlags.mute_members || !!actorFlags.voice_mute_microphone,
     deafen_members: actorIsAdmin || !!actorFlags.deafen_members || !!actorFlags.voice_deafen_members,
     voice_deafen_members: actorIsAdmin || !!actorFlags.deafen_members || !!actorFlags.voice_deafen_members,
     kick_members: actorIsOwner || !!actorFlags.kick_members || !!actorFlags.server_kick_members,
@@ -59688,6 +61889,23 @@ try {
   window.altaraDebugRoles.testSaveManageRoles = function testSaveManageRoles(roleNameOrId, value = true) {
     return window.altaraDebugRoles.testSaveRolePermission(roleNameOrId, "manage_roles", value);
   };
+  window.altaraDebugRoles.inspectLastPermissionSave = function inspectLastPermissionSave() {
+    return serverSettingsLastRolePermissionSaveTrace
+      ? JSON.parse(JSON.stringify(serverSettingsLastRolePermissionSaveTrace))
+      : null;
+  };
+  window.altaraDebugRoles.inspectZeroFlickerReconciliation = function inspectZeroFlickerReconciliation(serverId = "") {
+    const sid = normId(serverId || serverSettingsServerId || state.activeDm?.serverId || "");
+    const entry = serverRoleAuthorityRefreshStateByServerId.get(sid) || null;
+    return {
+      serverId: sid || null,
+      timerPending: !!entry?.timer,
+      inFlight: entry?.inFlight === true,
+      pendingSignalCount: Number(entry?.pending?.signalCount || 0),
+      lastResult: entry?.lastResult ? JSON.parse(JSON.stringify(entry.lastResult)) : null,
+      visualStability: serverRoleAuthorityVisualDebugByServerId.get(sid) || null,
+    };
+  };
   window.altaraDebugRoles.inspectReorder = function inspectReorder(serverId = "") {
     const sid = normId(serverId || serverSettingsServerId || state.activeDm?.serverId || "");
     const highestPosition = getServerRoleHierarchyLimitForCurrentUser(sid);
@@ -59745,6 +61963,11 @@ function clearServerSettingsRolesState() {
 function setServerSettingsRolesMeta(message = "", { error = false } = {}) {
   serverSettingsRolesMetaMessage = String(message || "").trim();
   serverSettingsRolesMetaIsError = !!(serverSettingsRolesMetaMessage && error);
+  const metaEl = document.getElementById("serverSettingsRolesMeta");
+  if (metaEl) {
+    metaEl.textContent = serverSettingsRolesMetaMessage;
+    metaEl.classList.toggle("error", serverSettingsRolesMetaIsError);
+  }
 }
 
 try {
@@ -59837,18 +62060,19 @@ function renderServerSettingsRolesUi() {
   const sid = normId(serverSettingsServerId || "");
 
   if (createBtn) {
-    const createDisabled = !sid || !currentUserCanManageRoles(sid) || serverSettingsRolesLoading || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
+    const canCreateRole = currentUserCanCreateServerRole(sid);
+    const createDisabled = !sid || !canCreateRole || serverSettingsRolesLoading || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
     createBtn.disabled = createDisabled;
-    createBtn.title = !sid ? "Open a server to manage roles" : (!currentUserCanManageRoles(sid) ? "Requires Manage Roles" : "Create role");
+    createBtn.title = !sid ? "Open a server to manage roles" : (!canCreateRole ? "Requires Manage Roles and a resolved highest role" : "Create role");
   }
   if (roleNameInput) {
-    roleNameInput.disabled = !sid || !currentUserCanManageRoles(sid) || serverSettingsRolesLoading || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
+    roleNameInput.disabled = !sid || !currentUserCanCreateServerRole(sid) || serverSettingsRolesLoading || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
   }
   if (roleColorInput) {
-    roleColorInput.disabled = !sid || !currentUserCanManageRoles(sid) || serverSettingsRolesLoading || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
+    roleColorInput.disabled = !sid || !currentUserCanCreateServerRole(sid) || serverSettingsRolesLoading || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
   }
   if (rolePresetInput) {
-    rolePresetInput.disabled = !sid || !currentUserCanManageRoles(sid) || serverSettingsRolesLoading || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
+    rolePresetInput.disabled = !sid || !currentUserCanCreateServerRole(sid) || serverSettingsRolesLoading || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
     const safePreset = serverSettingsRoleCreatePreset === "safe" || serverSettingsRoleCreatePreset === "staff" ? "safe" : "custom";
     if (rolePresetInput.value !== safePreset) rolePresetInput.value = safePreset;
   }
@@ -60017,7 +62241,7 @@ function renderServerSettingsRolesUi() {
     const displayName = String(member?.displayName || username || "Member").trim();
     const avatarUrl = String(member?.avatarUrl || "").trim();
     const busyKey = `${selectedRole.id}:${userId}`;
-    const isBusy = !canEditServerRoleInSettings(sid, selectedRole) || selectedRoleManaged || serverSettingsRoleMemberBusy.has(busyKey) || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
+    const isBusy = !canCurrentUserAssignServerRoleToMember(sid, userId, selectedRole.id) || selectedRoleManaged || serverSettingsRoleMemberBusy.has(busyKey) || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
     const isChecked = assignedSet.has(userId);
     const baseRoleTag = member?.role === "owner"
       ? "OWNER"
@@ -60213,6 +62437,13 @@ function stringifyServerBanSnapshotRows(rows = []) {
 async function listServerBansForServer(serverId = "", { force = false } = {}) {
   const sid = normId(serverId || "");
   if (!sid) return { rows: [], error: { message: "server_id invalido" } };
+  if (!currentUserCanBanMembers(sid)) {
+    serverBanListByServerId.delete(sid);
+    serverBanListLastSnapshotByServerId.delete(sid);
+    serverBanListLoadedAtByServerId.delete(sid);
+    serverBanListErrorByServerId.delete(sid);
+    return { rows: [], error: null, denied: true };
+  }
   const inFlight = serverBanListLoadInFlightByServerId.get(sid);
   if (inFlight && !force) return inFlight;
   const lastLoadedAt = Number(serverBanListLoadedAtByServerId.get(sid) || 0);
@@ -60587,10 +62818,18 @@ function normalizeServerTimeoutRpcError(error = null) {
     return "Timeout SQL patch is required.";
   }
   if (/role_hierarchy_blocked/i.test(message)) return "Role hierarchy blocks this timeout.";
+  if (/role_hierarchy_unresolved/i.test(message)) return "Role hierarchy could not be verified. Try again.";
   if (/missing_timeout_members|permission/i.test(message)) return "You don't have permission to timeout this member.";
-  if (/cannot_timeout_self/i.test(message)) return "You cannot timeout yourself.";
-  if (/cannot_timeout_owner/i.test(message)) return "You cannot timeout the server owner.";
-  return message;
+  if (/cannot_(?:clear_)?timeout_self/i.test(message)) return "You cannot timeout yourself.";
+  if (/cannot_(?:clear_)?owner_timeout|cannot_timeout_owner/i.test(message)) return "You cannot timeout the server owner.";
+  if (/active_bot_use_uninstall_flow/i.test(message)) return "Active bots cannot be timed out. Use the bot management flow.";
+  if (/target_not_server_member/i.test(message)) return "This user is no longer a member of this server.";
+  if (/invalid_timeout_duration/i.test(message)) return "Choose one of the supported timeout durations.";
+  if (/timeout_not_found/i.test(message)) return "That timeout is no longer active.";
+  if (/global_banned|server_banned/i.test(message)) return "Your account cannot perform moderation actions in this server.";
+  if (/server_not_found/i.test(message)) return "This server is no longer available.";
+  if (/timeout_(?:write|clear)_failed/i.test(message)) return "The timeout could not be saved safely. Try again.";
+  return "Could not update this timeout safely. Try again.";
 }
 
 function markServerTimeoutSqlAvailability(available = true, error = null) {
@@ -60705,7 +62944,8 @@ async function checkAuthoritativePrivateVoiceAccess(serverId = "", channelId = "
 } = {}) {
   const sid = normId(serverId || "");
   const cid = normId(channelId || "");
-  const uid = normId(targetUserId || state.user?.id || "");
+  const currentUserId = normId(state.user?.id || "");
+  const uid = normId(targetUserId || currentUserId);
   const key = `${sid}:${cid}:${uid}`;
   if (!sid || !cid || !uid) {
     return { ok: false, allowed: false, error: "invalid_voice_access_context", serverId: sid, suppliedChannelId: cid, targetUserId: uid };
@@ -60716,6 +62956,51 @@ async function checkAuthoritativePrivateVoiceAccess(serverId = "", channelId = "
 
   const request = (async () => {
     const startedAt = Date.now();
+    if (uid === currentUserId) {
+      const selfPermissions = await loadMyEffectiveServerChannelPermissionsBatch(sid, { force });
+      const channelPermissions = getMyEffectiveServerChannelPermission(sid, cid);
+      const result = {
+        ok: selfPermissions?.ok === true,
+        allowed: selfPermissions?.ok === true && channelPermissions?.canViewChannels === true,
+        serverId: sid,
+        suppliedChannelId: cid,
+        canonicalChannelId: cid,
+        conversationId: "",
+        currentUserId,
+        targetUserId: uid,
+        ownerUserId: "",
+        isPrivate: null,
+        channelVisible: channelPermissions?.canViewChannels === true,
+        effectiveViewChannels: channelPermissions?.canViewChannels === true,
+        ownerBypass: false,
+        decisionSource: "self_effective_channel_permissions",
+        source,
+        checkedAt: Date.now(),
+        durationMs: Date.now() - startedAt,
+        error: selfPermissions?.ok === true
+          ? null
+          : String(selfPermissions?.error?.message || selfPermissions?.error || "voice_access_check_failed"),
+      };
+      privateVoiceAccessDecisionByChannel.set(key, result);
+      lastPrivateVoiceAccessDecision = result;
+      return { ...result };
+    }
+    if (!currentUserCanManageChannels(sid)) {
+      return {
+        ok: false,
+        allowed: false,
+        serverId: sid,
+        suppliedChannelId: cid,
+        canonicalChannelId: cid,
+        currentUserId,
+        targetUserId: uid,
+        decisionSource: "manager_only_target_diagnostic",
+        source,
+        checkedAt: Date.now(),
+        durationMs: Date.now() - startedAt,
+        error: "missing_manage_channels",
+      };
+    }
     const rpc = await supabase.rpc("explain_server_channel_visibility_v1", {
       p_server_id: sid,
       p_channel_id: cid,
@@ -60729,13 +63014,14 @@ async function checkAuthoritativePrivateVoiceAccess(serverId = "", channelId = "
       suppliedChannelId: cid,
       canonicalChannelId: normId(row.channelId || cid),
       conversationId: normId(row.conversationId || ""),
-      currentUserId: normId(state.user?.id || ""),
+      currentUserId,
       targetUserId: uid,
       ownerUserId: normId(row.ownerUserId || ""),
       isPrivate: row.isPrivate === true,
       channelVisible: row.backendListIncludesChannel === true,
       effectiveViewChannels: row.effectiveViewChannels === true,
       ownerBypass: row.ownerBypass === true,
+      decisionSource: "manager_visibility_diagnostic",
       source,
       checkedAt: Date.now(),
       durationMs: Date.now() - startedAt,
@@ -61356,33 +63642,64 @@ function resolveLocalServerVoicePermissionDecision(serverId = "", channelId = ""
   const sid = normId(serverId || "");
   const cid = normId(channelId || "");
   if (!sid || !cid) return normalizeServerVoicePermissionDecision(null, { serverId: sid, channelId: cid, source: reason });
-  const result = resolveEffectiveChannelPermissionsForUser({
+  const base = resolveEffectiveServerPermissionsForUser({
     serverId: sid,
-    channelId: cid,
     userId: state.user?.id || "",
+    server: getServerRowById(sid) || { id: sid },
+    roles: getServerRolesForSettingsDisplay(sid),
+    memberRoles: getCachedServerMemberRoleIdsForUser(sid, state.user?.id || ""),
+    serverMembers: serverMemberListByServerId.get(sid) || [],
     reason: `server-voice:${reason}`,
   });
-  const loaded = result?.isOwner === true || (
-    result?.ok !== false
-    && result?.trace?.loaded === true
-    && result?.trace?.baseTrace?.missingData?.length === 0
+  const channelPermission = getMyEffectiveServerChannelPermission(sid, cid);
+  const loaded = (
+    base?.ok !== false
+    && channelPermission?.canViewChannels === true
+    && base?.trace?.missingData?.length === 0
   );
   return normalizeServerVoicePermissionDecision({
     ok: loaded,
     isMember: loaded,
-    isOwner: result?.isOwner === true,
-    privateAccess: loaded && result?.permissions?.view_channels === true,
-    viewChannels: loaded && result?.permissions?.view_channels === true,
-    connect: loaded && result?.permissions?.connect === true,
-    speak: loaded && result?.permissions?.speak === true,
-    video: loaded && result?.permissions?.video === true,
-    stream: loaded && result?.permissions?.stream === true,
+    isOwner: base?.isOwner === true,
+    privateAccess: loaded && channelPermission?.canViewChannels === true,
+    viewChannels: loaded && channelPermission?.canViewChannels === true,
+    connect: loaded && base?.permissions?.connect === true,
+    speak: loaded && base?.permissions?.speak === true,
+    video: loaded && base?.permissions?.video === true,
+    stream: loaded && base?.permissions?.stream === true,
     error: loaded ? null : "permissions_unresolved",
   }, {
     serverId: sid,
     channelId: cid,
     source: reason,
   });
+}
+
+function getServerKickSafeError(error = null) {
+  const safeCode = String(error?.code || "").trim().toLowerCase();
+  const safeSignal = [safeCode, error?.message, error?.details, error?.hint]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  if (safeSignal.includes("target_not_server_member")) return "That member is no longer in this server.";
+  if (safeSignal.includes("cannot_kick_self")) return "You cannot kick yourself. Use Leave Server instead.";
+  if (safeSignal.includes("cannot_kick_owner")) return "The server owner cannot be kicked.";
+  if (safeSignal.includes("active_bot_use_uninstall_flow")) return "Installed bots must be removed from Bots & Integrations.";
+  if (safeSignal.includes("role_hierarchy_blocked") || safeSignal.includes("role_hierarchy_unresolved")) {
+    return "You can only kick a lower-ranked member.";
+  }
+  if (
+    safeSignal.includes("missing_kick_members")
+    || safeSignal.includes("not_server_member")
+    || safeSignal.includes("global_banned")
+    || safeSignal.includes("server_banned")
+    || safeCode === "42501"
+  ) return "You don't have permission to kick this member.";
+  if (safeSignal.includes("server_not_found")) return "This server is no longer available.";
+  if (safeSignal.includes("invalid_target")) return "That member could not be identified.";
+  if (safeSignal.includes("kick_membership_delete_failed")) return "The member could not be removed safely. Please refresh and try again.";
+  if (isMissingRpcError(error)) return "Kick Members is not available yet. Apply and verify its server patch first.";
+  return "Could not kick this member. Please try again.";
 }
 
 function getCurrentServerVoicePermissionDecision(conversationId = "") {
@@ -61966,7 +64283,45 @@ function getSafeServerVoiceJoinError(error = null, phase = "join_failed") {
   };
 }
 
+function isServerVoiceChannelFullError(error = null) {
+  const source = error?.cause && typeof error.cause === "object" ? error.cause : error;
+  const candidates = [
+    error?.code,
+    source?.code,
+    error?.reason,
+    source?.reason,
+    error?.error,
+    source?.error,
+    error?.message,
+    source?.message,
+    error?.details,
+    source?.details,
+    error?.responseBody,
+    source?.responseBody,
+  ];
+  let normalized = "";
+  try {
+    normalized = candidates.map((value) => (
+      value && typeof value === "object" ? JSON.stringify(value) : String(value || "")
+    )).join(" ").toLowerCase();
+  } catch (_) {
+    normalized = candidates.map((value) => String(value || "")).join(" ").toLowerCase();
+  }
+  return normalized.includes("server_voice_channel_full")
+    || normalized.includes("channel_full")
+    || normalized.includes("manual_limit");
+}
+
+function createServerVoiceChannelFullError(details = null) {
+  return Object.assign(new Error("This voice channel is full."), {
+    code: "server_voice_channel_full",
+    reason: "manual_limit",
+    details,
+  });
+}
+
 function getServerVoiceJoinFailureNotice(error = null, phase = "") {
+  if (isServerVoiceChannelFullError(error)) return "This voice channel is full.";
   if (isServerTimeoutVoiceBlockError(error)) return getServerTimeoutVoiceBlockedMessage();
   if (isServerVoicePermissionDeniedError(error, "connect")) {
     return getServerVoicePermissionDeniedMessage("connect");
@@ -62044,12 +64399,24 @@ function summarizeServerVoiceTokenResponse(data = null) {
     errorDetails: String(payload.errorDetails || payload.details || "").slice(0, 240),
     errorHint: String(payload.errorHint || payload.hint || "").slice(0, 240),
     deploymentMarker: String(payload.deploymentMarker || payload.functionVersion || ""),
+    capacityMarker: String(payload.capacityMarker || ""),
     serverId: normId(payload.serverId || ""),
     channelId: normId(payload.channelId || payload.voiceChannelId || ""),
     conversationId: normId(payload.conversationId || ""),
     roomName: String(payload.roomName || ""),
     participantIdentity: normId(payload.participantIdentity || payload.identity || state.user?.id || ""),
     tokenPresent: typeof payload.token === "string" && payload.token.trim().length > 0,
+    serverVoiceAdmission: payload.serverVoiceAdmission && typeof payload.serverVoiceAdmission === "object"
+      ? {
+        ok: payload.serverVoiceAdmission.ok === true,
+        admitted: payload.serverVoiceAdmission.admitted === true,
+        channelId: normId(payload.serverVoiceAdmission.channelId || ""),
+        userLimit: Number(payload.serverVoiceAdmission.userLimit || 0) || 0,
+        occupantCount: Number(payload.serverVoiceAdmission.occupantCount || 0) || 0,
+        atCapacity: payload.serverVoiceAdmission.atCapacity === true,
+        bypassActive: payload.serverVoiceAdmission.bypassActive === true,
+      }
+      : null,
     voicePermissions: {
       ok: permissions.ok,
       isMember: permissions.isMember,
@@ -62439,6 +64806,9 @@ async function checkServerTimeoutSqlAvailable({ force = false, serverId = "" } =
 async function listServerMemberTimeoutsForServer(serverId = "", { force = false } = {}) {
   const sid = normId(serverId || "");
   if (!sid) return { rows: [], error: { message: "server_id invalido" } };
+  if (!currentUserCanTimeoutMembers(sid)) {
+    return { rows: [], error: null, denied: true };
+  }
   const now = Date.now();
   const inFlight = serverTimeoutLoadInFlightByServerId.get(sid);
   if (inFlight && !force) return inFlight;
@@ -62516,6 +64886,8 @@ async function loadCurrentUserServerTimeout(serverId = "") {
   return null;
 }
 
+const SERVER_TIMEOUT_SUPPORTED_DURATIONS_SECONDS = Object.freeze([60, 300, 600, 3600, 86400, 604800]);
+
 async function timeoutServerMemberOnServer(serverId = "", userId = "", { seconds = 600, reason = "" } = {}) {
   const sid = normId(serverId || "");
   const uid = normId(userId || "");
@@ -62526,7 +64898,10 @@ async function timeoutServerMemberOnServer(serverId = "", userId = "", { seconds
   if (serverTimeoutSqlAvailability.checked && serverTimeoutSqlAvailability.available === false) {
     return { data: null, error: { message: getServerTimeoutSqlMissingError(), code: "timeout_sql_missing", _timeoutSqlMissing: true } };
   }
-  const duration = Math.max(60, Math.min(2419200, Math.round(Number(seconds || 0) || 600)));
+  const duration = Math.round(Number(seconds));
+  if (!SERVER_TIMEOUT_SUPPORTED_DURATIONS_SECONDS.includes(duration)) {
+    return { data: null, error: { message: "invalid_timeout_duration", code: "invalid_timeout_duration" } };
+  }
   const res = await supabase.rpc("timeout_server_member_v2", {
     p_server_id: sid,
     p_target_user_id: uid,
@@ -62606,7 +64981,7 @@ async function broadcastServerTimeoutUpdated(serverId = "", payload = {}) {
   const channelName = getServerMemberBroadcastChannelName(sid);
   if (!sid || !channelName) return false;
   try {
-    const channel = serverMemberRemovalBroadcastChannels.get(sid) || supabase.channel(channelName, { config: { broadcast: { self: false } } });
+    const channel = serverMemberRemovalBroadcastChannels.get(sid) || supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
     if (!serverMemberRemovalBroadcastChannels.has(sid)) {
       serverMemberRemovalBroadcastChannels.set(sid, channel);
       await new Promise((resolve) => {
@@ -62635,7 +65010,7 @@ async function broadcastServerModerationUpdated(serverId = "", payload = {}) {
   const channelName = getServerMemberBroadcastChannelName(sid);
   if (!sid || !channelName) return false;
   try {
-    const channel = serverMemberRemovalBroadcastChannels.get(sid) || supabase.channel(channelName, { config: { broadcast: { self: false } } });
+    const channel = serverMemberRemovalBroadcastChannels.get(sid) || supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
     if (!serverMemberRemovalBroadcastChannels.has(sid)) {
       serverMemberRemovalBroadcastChannels.set(sid, channel);
       await new Promise((resolve) => {
@@ -63294,6 +65669,7 @@ function ensureServerSettingsModerationStyles() {
 
 function getServerTimeoutRowsForDisplay(serverId = "") {
   const sid = normId(serverId || "");
+  if (!currentUserCanTimeoutMembers(sid)) return [];
   const query = String(serverSettingsTimeoutsSearchQuery || "").trim().toLowerCase();
   return Array.from((serverMemberTimeoutsByServerId.get(sid) || new Map()).values())
     .filter((row) => isServerMemberTimeoutActive(row))
@@ -63315,8 +65691,10 @@ function getServerTimeoutRowsForDisplay(serverId = "") {
 function getServerSettingsModerationCounts(serverId = "") {
   const sid = normId(serverId || "");
   return {
-    bans: (serverBanListByServerId.get(sid) || []).length,
-    timeouts: Array.from((serverMemberTimeoutsByServerId.get(sid) || new Map()).values()).filter((row) => isServerMemberTimeoutActive(row)).length,
+    bans: currentUserCanBanMembers(sid) ? (serverBanListByServerId.get(sid) || []).length : 0,
+    timeouts: currentUserCanTimeoutMembers(sid)
+      ? Array.from((serverMemberTimeoutsByServerId.get(sid) || new Map()).values()).filter((row) => isServerMemberTimeoutActive(row)).length
+      : 0,
   };
 }
 
@@ -63331,6 +65709,48 @@ function buildServerSettingsModerationAvatarHtml(row = {}, fallback = "U") {
 
 function buildServerSettingsModerationEmptyHtml(message = "") {
   return `<div class="serverSettingsPlaceholder serverSettingsModerationEmpty">${esc(message || "No results found.")}</div>`;
+}
+
+function getServerAuditLogPermissionError() {
+  return { code: "42501", message: "Requires View Audit Log permission.", auditLogDenied: true };
+}
+
+function isServerAuditLogPermissionError(error = null) {
+  const code = String(error?.code || "");
+  const message = String(error?.message || error || "").toLowerCase();
+  return code === "42501" || message.includes("missing_view_audit_log") || message.includes("requires view audit log");
+}
+
+function getServerAuditLogSafeError(error = null) {
+  if (isServerAuditLogPermissionError(error)) return "Requires View Audit Log permission.";
+  if (isServerAuditLogMissingSqlError(error)) return "Audit Log is not available yet.";
+  return "Could not load the audit log. Try again.";
+}
+
+function clearServerAuditLogProtectedState(serverId = "", { render = false, reason = "permission_revoked" } = {}) {
+  const sid = normId(serverId || "");
+  if (!sid) return false;
+  const hadProtectedState = !!(
+    (serverAuditLogsByServerId.get(sid) || []).length
+    || serverAuditLogLastSnapshotByServerId.has(sid)
+    || serverAuditLogLastLoadedAtByServerId.has(sid)
+  );
+  serverAuditLogsByServerId.delete(sid);
+  serverAuditLogLastLoadedAtByServerId.delete(sid);
+  serverAuditLogLastSnapshotByServerId.delete(sid);
+  serverAuditLogProfileHydrationInFlightByServerId.delete(sid);
+  serverAuditLogErrorByServerId.delete(sid);
+  serverAuditLogLoadingByServerId.set(sid, false);
+  serverAuditLogFilterByServerId.delete(sid);
+  serverAuditLogSearchByServerId.delete(sid);
+  if (normId(lastServerAuditLogRpcError?.serverId || "") === sid) lastServerAuditLogRpcError = null;
+  if (normId(lastServerAuditLogRealtimeEvent?.row?.serverId || lastServerAuditLogRealtimeEvent?.row?.server_id || "") === sid) {
+    lastServerAuditLogRealtimeEvent = { source: reason, row: null, at: Date.now() };
+  }
+  if (render && normId(serverSettingsServerId || "") === sid) {
+    renderModerationPanelPreservingServerSettingsScroll();
+  }
+  return hadProtectedState;
 }
 
 function normalizeServerAuditLog(row = {}) {
@@ -63377,7 +65797,7 @@ function mergeServerAuditLogWithCachedProfiles(row = {}) {
 
 function getServerAuditLogProfileHydrationState(serverId = "") {
   const sid = normId(serverId || "");
-  const rows = serverAuditLogsByServerId.get(sid) || [];
+  const rows = currentUserCanViewAuditLog(sid) ? (serverAuditLogsByServerId.get(sid) || []) : [];
   const missingActorProfiles = [];
   const missingTargetProfiles = [];
   rows.forEach((row) => {
@@ -63393,7 +65813,7 @@ function getServerAuditLogProfileHydrationState(serverId = "") {
 
 async function hydrateServerAuditLogProfiles(serverId = "", { force = false } = {}) {
   const sid = normId(serverId || "");
-  if (!sid) return false;
+  if (!sid || !currentUserCanViewAuditLog(sid)) return false;
   const inFlight = serverAuditLogProfileHydrationInFlightByServerId.get(sid);
   if (inFlight && !force) return inFlight;
   const promise = (async () => {
@@ -63406,6 +65826,10 @@ async function hydrateServerAuditLogProfiles(serverId = "", { force = false } = 
     });
     if (ids.size) {
       await fetchProfilesByIds(Array.from(ids), { includeBio: false, force, maxAgeMs: PROFILE_CACHE_TTL_MS }).catch(() => []);
+    }
+    if (!currentUserCanViewAuditLog(sid)) {
+      clearServerAuditLogProtectedState(sid, { reason: "profile_hydration_permission_revoked" });
+      return false;
     }
     let changed = false;
     const next = rows.map((row) => {
@@ -63516,6 +65940,7 @@ function formatServerAuditDate(value = "") {
 
 function getServerAuditLogRowsForDisplay(serverId = "") {
   const sid = normId(serverId || "");
+  if (!sid || !currentUserCanViewAuditLog(sid)) return [];
   const filter = String(serverAuditLogFilterByServerId.get(sid) || "all").trim() || "all";
   const query = String(serverAuditLogSearchByServerId.get(sid) || "").trim().toLowerCase();
   return (serverAuditLogsByServerId.get(sid) || [])
@@ -63544,6 +65969,10 @@ function isServerAuditLogMissingSqlError(error = null) {
 async function loadServerAuditLogs(serverId = "", { force = false } = {}) {
   const sid = normId(serverId || "");
   if (!sid) return { rows: [], error: { message: "server_id invalido" } };
+  if (!currentUserCanViewAuditLog(sid)) {
+    clearServerAuditLogProtectedState(sid, { reason: "load_permission_denied" });
+    return { rows: [], error: getServerAuditLogPermissionError(), denied: true };
+  }
   const inFlight = serverAuditLogLoadInFlightByServerId.get(sid);
   if (inFlight && !force) return inFlight;
   const lastLoadedAt = Number(serverAuditLogLastLoadedAtByServerId.get(sid) || 0);
@@ -63565,9 +65994,16 @@ async function loadServerAuditLogs(serverId = "", { force = false } = {}) {
     serverAuditLogLoadingByServerId.set(sid, false);
     serverAuditLogLastLoadedAtByServerId.set(sid, Date.now());
     if (res?.error) {
+      if (isServerAuditLogPermissionError(res.error)) {
+        clearServerAuditLogProtectedState(sid, { reason: "rpc_permission_denied" });
+      }
       serverAuditLogErrorByServerId.set(sid, res.error);
       lastServerAuditLogRpcError = { rpcName: "list_server_audit_logs_v2", serverId: sid, message: res.error?.message || String(res.error || ""), code: res.error?.code || "", at: Date.now() };
       return { rows: [], error: res.error };
+    }
+    if (!currentUserCanViewAuditLog(sid)) {
+      clearServerAuditLogProtectedState(sid, { reason: "rpc_completed_after_permission_revoked" });
+      return { rows: [], error: getServerAuditLogPermissionError(), denied: true };
     }
     const rows = (Array.isArray(res.data) ? res.data : []).map(mergeServerAuditLogWithCachedProfiles).filter(Boolean);
     const previous = serverAuditLogLastSnapshotByServerId.get(sid) || stringifyServerAuditLogSnapshot(serverAuditLogsByServerId.get(sid) || []);
@@ -63585,10 +66021,67 @@ async function loadServerAuditLogs(serverId = "", { force = false } = {}) {
   return promise;
 }
 
+function renderModerationPanelPreservingServerSettingsScroll(options = {}) {
+  const modal = document.getElementById("serverSettingsModal");
+  const body = modal?.querySelector?.(".serverSettingsBody") || null;
+  const panel = modal?.querySelector?.('[data-server-settings-panel="moderation"]') || null;
+  const bodyScrollTop = Number(body?.scrollTop || 0);
+  const bodyScrollLeft = Number(body?.scrollLeft || 0);
+  const panelScrollTop = Number(panel?.scrollTop || 0);
+  const panelScrollLeft = Number(panel?.scrollLeft || 0);
+  renderServerSettingsModerationPanel(options);
+  if (body) {
+    body.scrollTop = bodyScrollTop;
+    body.scrollLeft = bodyScrollLeft;
+  }
+  if (panel) {
+    panel.scrollTop = panelScrollTop;
+    panel.scrollLeft = panelScrollLeft;
+  }
+}
+
+function refreshOpenServerAuditLogAfterAuthorityGrant(serverId = "", reason = "role_authority_granted") {
+  const sid = normId(serverId || "");
+  const modal = document.getElementById("serverSettingsModal");
+  if (
+    !sid
+    || !modal
+    || modal.classList.contains("hidden")
+    || normId(serverSettingsServerId || "") !== sid
+    || getServerSettingsActivePanelName() !== "moderation"
+    || !currentUserCanViewAuditLog(sid)
+  ) return false;
+  const inFlight = serverAuditLogLoadInFlightByServerId.get(sid);
+  const request = inFlight || loadServerAuditLogs(sid, { force: true });
+  void Promise.resolve(request).then(() => {
+    if (
+      modal.classList.contains("hidden")
+      || normId(serverSettingsServerId || "") !== sid
+      || getServerSettingsActivePanelName() !== "moderation"
+      || !currentUserCanViewAuditLog(sid)
+    ) return;
+    renderModerationPanelPreservingServerSettingsScroll({ force: false });
+  }).catch((error) => {
+    if (
+      modal.classList.contains("hidden")
+      || normId(serverSettingsServerId || "") !== sid
+      || getServerSettingsActivePanelName() !== "moderation"
+      || !currentUserCanViewAuditLog(sid)
+    ) return;
+    serverAuditLogErrorByServerId.set(sid, error || { message: String(reason || "Could not refresh the audit log.") });
+    renderModerationPanelPreservingServerSettingsScroll({ force: false });
+  });
+  return true;
+}
+
 function applyServerAuditLogRealtimeRow(rowInput = {}, { source = "realtime" } = {}) {
   const row = mergeServerAuditLogWithCachedProfiles(rowInput);
   if (!row) return false;
   const sid = row.serverId;
+  if (!currentUserCanViewAuditLog(sid)) {
+    clearServerAuditLogProtectedState(sid, { reason: "realtime_permission_denied" });
+    return false;
+  }
   const rows = serverAuditLogsByServerId.get(sid) || [];
   const next = [row, ...rows.filter((entry) => normId(entry?.id || "") !== row.id)]
     .sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""))
@@ -63605,14 +66098,16 @@ function applyServerAuditLogRealtimeRow(rowInput = {}, { source = "realtime" } =
 async function loadServerSettingsModerationBestEffort(serverId, { force = false } = {}) {
   const sid = normId(serverId || "");
   if (!sid || normId(serverSettingsServerId || "") !== sid) return null;
+  const canViewAuditLog = currentUserCanViewAuditLog(sid);
+  if (!canViewAuditLog) clearServerAuditLogProtectedState(sid, { reason: "moderation_load_permission_denied" });
   serverBanListLoadingByServerId.set(sid, true);
   serverMemberTimeoutLoadingByServerId.set(sid, true);
-  serverAuditLogLoadingByServerId.set(sid, true);
+  serverAuditLogLoadingByServerId.set(sid, canViewAuditLog);
   renderServerSettingsModerationPanel();
   const [bansResult, timeoutsResult, auditResult] = await Promise.allSettled([
     listServerBansForServer(sid, { force }),
     listServerMemberTimeoutsForServer(sid, { force }),
-    loadServerAuditLogs(sid, { force }),
+    canViewAuditLog ? loadServerAuditLogs(sid, { force }) : Promise.resolve({ rows: [], error: null, denied: true }),
   ]);
   if (normId(serverSettingsServerId || "") !== sid) return null;
   serverBanListLoadingByServerId.set(sid, false);
@@ -63632,7 +66127,9 @@ async function loadServerSettingsModerationBestEffort(serverId, { force = false 
     serverMemberTimeoutErrorByServerId.set(sid, timeoutsResult.reason || { message: "Could not load timeouts." });
     serverSettingsModerationLastRpcError = { rpcName: "list_server_member_timeouts_v2", serverId: sid, message: timeoutsResult.reason?.message || String(timeoutsResult.reason || ""), at: Date.now() };
   }
-  if (auditResult.status === "fulfilled") {
+  if (!currentUserCanViewAuditLog(sid)) {
+    clearServerAuditLogProtectedState(sid, { reason: "moderation_load_completed_without_permission" });
+  } else if (auditResult.status === "fulfilled") {
     if (auditResult.value?.error) serverAuditLogErrorByServerId.set(sid, auditResult.value.error);
     else serverAuditLogErrorByServerId.delete(sid);
   } else {
@@ -63791,7 +66288,9 @@ function buildServerSettingsMemberDetailsHtml(serverId = "", member = null) {
   const avatarUrl = String(member?.avatarUrl || "").trim();
   const isOwner = isServerOwnerUser(server, uid, member);
   const isBot = member?.isBot === true;
-  const timeout = getServerMemberTimeout(sid, uid);
+  const timeout = (currentUserCanTimeoutMembers(sid) || uid === normId(state.user?.id || ""))
+    ? getServerMemberTimeout(sid, uid)
+    : null;
   const roles = getServerSettingsMemberRoles(sid, uid);
   const canRoles = !isBot && canCurrentUserManageMemberRoles(sid, uid);
   const canKick = !isBot && canCurrentUserKickServerMember(sid, uid);
@@ -63881,7 +66380,6 @@ function renderServerSettingsMembersPanel({ force = false } = {}) {
   const members = getServerSettingsMembersForDisplay(sid);
   const server = getServerRowById(sid) || { id: sid };
   const canOpen = currentUserCanManageMembers(sid);
-  const canManageRoles = currentUserCanManageRoles(sid) || currentUserCanManageServer(sid) || getServerCapabilityMeta(sid).isOwner || getServerCapabilityMeta(sid).isActualOwner;
   const canKickAny = currentUserCanKickMembers(sid);
   const canBanAny = currentUserCanBanMembers(sid);
   const canTimeoutAny = currentUserCanTimeoutMembers(sid);
@@ -63907,7 +66405,9 @@ function renderServerSettingsMembersPanel({ force = false } = {}) {
         const canManageThisRoles = canCurrentUserManageMemberRoles(sid, uid);
         const canKickThis = canCurrentUserKickServerMember(sid, uid);
         const canBanThis = canCurrentUserBanServerMember(sid, uid);
-        const timeout = getServerMemberTimeout(sid, uid);
+        const timeout = (canTimeoutAny || uid === normId(state.user?.id || ""))
+          ? getServerMemberTimeout(sid, uid)
+          : null;
         const canTimeoutThis = canCurrentUserTimeoutServerMember(sid, uid);
         const roleLabel = isOwner ? "OWNER" : (member?.role === "admin" ? "ADMIN" : "MEMBER");
         const isBot = member?.isBot === true;
@@ -63984,28 +66484,31 @@ function renderServerSettingsModerationPanel({ force = false } = {}) {
     return;
   }
   if (force) void loadServerSettingsModerationBestEffort(sid, { force: true });
-  const rows = getServerBanRowsForDisplay(sid);
-  const timeoutRows = getServerTimeoutRowsForDisplay(sid);
-  const auditRows = getServerAuditLogRowsForDisplay(sid);
+  const canModerate = currentUserCanBanMembers(sid);
+  const canTimeout = currentUserCanTimeoutMembers(sid);
+  const canViewAuditLog = currentUserCanViewAuditLog(sid);
+  const rows = canModerate ? getServerBanRowsForDisplay(sid) : [];
+  const timeoutRows = canTimeout ? getServerTimeoutRowsForDisplay(sid) : [];
+  const auditRows = canViewAuditLog ? getServerAuditLogRowsForDisplay(sid) : [];
   const counts = getServerSettingsModerationCounts(sid);
   const hasBanSearch = !!String(serverSettingsBansSearchQuery || "").trim();
   const hasTimeoutSearch = !!String(serverSettingsTimeoutsSearchQuery || "").trim();
-  const hasAuditSearch = !!String(serverAuditLogSearchByServerId.get(sid) || "").trim();
+  const hasAuditSearch = canViewAuditLog && !!String(serverAuditLogSearchByServerId.get(sid) || "").trim();
   const loading = !!serverBanListLoadingByServerId.get(sid);
   const error = serverBanListErrorByServerId.get(sid) || null;
   const timeoutLoading = !!serverMemberTimeoutLoadingByServerId.get(sid);
   const timeoutError = serverMemberTimeoutErrorByServerId.get(sid) || null;
-  const auditLoading = !!serverAuditLogLoadingByServerId.get(sid);
-  const auditError = serverAuditLogErrorByServerId.get(sid) || null;
+  const auditLoading = canViewAuditLog && !!serverAuditLogLoadingByServerId.get(sid);
+  const auditError = canViewAuditLog ? (serverAuditLogErrorByServerId.get(sid) || null) : null;
   const timeoutMissingSql = timeoutError && (isMissingRpcError(timeoutError) || isMissingTableError(timeoutError, "server_member_timeouts"));
   const missingSql = error && (isMissingRpcError(error) || isMissingTableError(error, "server_bans"));
   const auditMissingSql = auditError && isServerAuditLogMissingSqlError(auditError);
-  const canModerate = currentUserCanBanMembers(sid);
-  const canTimeout = currentUserCanTimeoutMembers(sid);
-  const status = loading
+  const status = !canModerate
+    ? "Requires Ban Members to view server bans."
+    : loading
     ? "Loading banned members..."
     : error
-      ? (missingSql ? "Missing SQL patch: apply 2026-07-19_server_bans.sql." : `Could not load bans: ${error?.message || error}`)
+      ? (missingSql ? "Ban management is not available yet." : getServerBanSafeError(error, "list"))
       : `${counts.bans} banned member${counts.bans === 1 ? "" : "s"}`;
   const rowsHtml = rows.length
     ? rows.map((row) => {
@@ -64035,7 +66538,7 @@ function renderServerSettingsModerationPanel({ force = false } = {}) {
           </div>
         `;
       }).join("")
-    : buildServerSettingsModerationEmptyHtml(loading ? "Loading banned members..." : (hasBanSearch ? "No results found." : "No banned members."));
+    : buildServerSettingsModerationEmptyHtml(!canModerate ? "Requires Ban Members to view server bans." : (loading ? "Loading banned members..." : (hasBanSearch ? "No results found." : "No banned members.")));
   const timeoutRowsHtml = timeoutRows.length
     ? timeoutRows.map((row) => {
       const timedOutBy = row.timedOutByDisplayName || row.timedOutByUsername || (row.timedOutBy ? "unknown moderator" : "");
@@ -64067,16 +66570,20 @@ function renderServerSettingsModerationPanel({ force = false } = {}) {
       </div>
     `;
     }).join("")
-    : buildServerSettingsModerationEmptyHtml(timeoutLoading ? "Loading timed out members..." : (hasTimeoutSearch ? "No results found." : "No timed out members."));
-  const timeoutStatus = timeoutLoading
+    : buildServerSettingsModerationEmptyHtml(!canTimeout ? "Requires Timeout Members to view server timeouts." : (timeoutLoading ? "Loading timed out members..." : (hasTimeoutSearch ? "No results found." : "No timed out members.")));
+  const timeoutStatus = !canTimeout
+    ? "Requires Timeout Members to view server timeouts."
+    : timeoutLoading
     ? "Loading timed out members..."
     : timeoutError
       ? (timeoutMissingSql ? "Missing SQL patch: apply 2026-07-22_server_member_timeouts.sql." : `Could not load timeouts: ${timeoutError?.message || timeoutError}`)
       : `${counts.timeouts} timed out member${counts.timeouts === 1 ? "" : "s"}`;
-  const auditStatus = auditLoading
+  const auditStatus = !canViewAuditLog
+    ? "Requires View Audit Log permission."
+    : auditLoading
     ? "Loading audit log..."
     : auditError
-      ? (auditMissingSql ? "Apply server audit log SQL patch." : `Could not load audit log: ${auditError?.message || auditError}`)
+      ? getServerAuditLogSafeError(auditError)
       : "Latest moderation actions";
   const auditFilter = String(serverAuditLogFilterByServerId.get(sid) || "all");
   const auditFilterButtons = [
@@ -64147,10 +66654,10 @@ function renderServerSettingsModerationPanel({ force = false } = {}) {
           <div class="label">Safety Status</div>
           <strong style="font-size:14px; line-height:1.25;">Moderation active</strong>
         </div>
-        <div class="serverSettingsModerationCard">
+        ${canViewAuditLog ? `<div class="serverSettingsModerationCard">
           <div class="label">Audit Events</div>
           <strong>${esc(String((serverAuditLogsByServerId.get(sid) || []).length))}</strong>
-        </div>
+        </div>` : ""}
       </div>
 
       <section class="serverSettingsRolesSection serverSettingsModerationSection" aria-label="Banned Members">
@@ -64183,7 +66690,7 @@ function renderServerSettingsModerationPanel({ force = false } = {}) {
           ${timeoutRowsHtml}
         </div>
       </section>
-      <section class="serverSettingsRolesSection serverSettingsModerationSection" aria-label="Audit Log">
+      ${canViewAuditLog ? `<section class="serverSettingsRolesSection serverSettingsModerationSection" aria-label="Audit Log">
         <div class="serverSettingsRolesHead">
           <div>
             <div class="label">Audit Log</div>
@@ -64200,7 +66707,7 @@ function renderServerSettingsModerationPanel({ force = false } = {}) {
         <div class="serverSettingsBotsList serverSettingsMembersList">
           ${auditRowsHtml}
         </div>
-      </section>
+      </section>` : ""}
     </div>
   `;
 }
@@ -64212,9 +66719,19 @@ function getServerNicknameSafeError(error = null) {
   if (lower.includes("nickname_too_long")) return "Server nickname must be 32 characters or fewer.";
   if (lower.includes("nickname_contains_control_characters")) return "Server nickname cannot contain line breaks or control characters.";
   if (lower.includes("managed_bot_nickname_locked")) return "Managed bot nicknames cannot be changed.";
+  if (lower.includes("self_nickname_uses_change_nickname")) return "Use Change Own Nickname to update your own server nickname.";
+  if (lower.includes("target_not_server_member") || lower.includes("server_not_found")) return "This member is no longer available in this server.";
   if (lower.includes("target_is_owner")) return "The server owner's nickname cannot be managed by another member.";
   if (lower.includes("role_hierarchy_blocked")) return "You can only manage the nickname of a lower-ranked member.";
-  if (lower.includes("missing_change_nickname") || lower.includes("missing_manage_nicknames") || code === "42501") {
+  if (lower.includes("role_hierarchy_unresolved")) return "Could not verify the server role hierarchy. Try again.";
+  if (
+    lower.includes("missing_change_nickname")
+    || lower.includes("missing_manage_nicknames")
+    || lower.includes("not_server_member")
+    || lower.includes("global_banned")
+    || lower.includes("server_banned")
+    || code === "42501"
+  ) {
     return "You do not have permission to change this server nickname.";
   }
   return "Could not save the server nickname. Try again.";
@@ -64323,6 +66840,9 @@ function renderServerNicknameModal() {
   stateObj.inputValue = nicknameValue;
   const normalized = normalizeServerNicknameInput(nicknameValue);
   const length = normalized.length;
+  const actionState = getServerNicknameActionState(sid, uid);
+  const permissionMessage = actionState.allowed ? "" : "You do not have permission to change this server nickname.";
+  const controlsDisabled = stateObj.saving || !actionState.allowed;
   let modal = document.getElementById("serverNicknameModal");
   if (!modal) {
     modal = document.createElement("div");
@@ -64346,14 +66866,14 @@ function renderServerNicknameModal() {
           <div class="serverSettingsMemberDetailsValue">${esc(identity.globalDisplayName)}</div>
         </div>
         <label class="label" for="serverNicknameInput">Server nickname</label>
-        <input id="serverNicknameInput" class="input" type="text" autocomplete="off" value="${escAttr(nicknameValue)}" placeholder="${escAttr(identity.globalDisplayName)}" ${stateObj.saving ? "disabled" : ""} />
+        <input id="serverNicknameInput" class="input" type="text" autocomplete="off" value="${escAttr(nicknameValue)}" placeholder="${escAttr(identity.globalDisplayName)}" ${controlsDisabled ? "disabled" : ""} />
         <div class="serverNicknameCounter" data-server-nickname-counter="1">${length}/32</div>
-        <div class="hint${stateObj.error ? " error" : ""}" data-server-nickname-status="1">${esc(stateObj.error || stateObj.status || "Leave empty to use the global display name.")}</div>
+        <div class="hint${stateObj.error || permissionMessage ? " error" : ""}" data-server-nickname-status="1">${esc(stateObj.error || permissionMessage || stateObj.status || "Leave empty to use the global display name.")}</div>
       </div>
       <div class="serverCreateFooter">
-        <button class="btn ghost" type="button" data-server-nickname-reset="1" ${stateObj.saving ? "disabled" : ""}>Reset Nickname</button>
+        <button class="btn ghost" type="button" data-server-nickname-reset="1" ${controlsDisabled ? "disabled" : ""}>Reset Nickname</button>
         <button class="btn ghost" type="button" data-server-nickname-close="1" ${stateObj.saving ? "disabled" : ""}>Cancel</button>
-        <button class="btn primary" type="button" data-server-nickname-save="1" ${stateObj.saving || !normalized.ok ? "disabled" : ""}>${stateObj.saving ? "Saving..." : "Save"}</button>
+        <button class="btn primary" type="button" data-server-nickname-save="1" ${controlsDisabled || !normalized.ok ? "disabled" : ""}>${stateObj.saving ? "Saving..." : "Save"}</button>
       </div>
     </div>
   `;
@@ -64549,7 +67069,11 @@ function bindServerNicknameModalHandlersOnce() {
     const counter = document.querySelector("[data-server-nickname-counter]");
     if (counter) counter.textContent = `${result.length}/32`;
     const save = document.querySelector("[data-server-nickname-save]");
-    if (save instanceof HTMLButtonElement) save.disabled = !result.ok || serverNicknameModalState.saving;
+    const actionState = getServerNicknameActionState(
+      serverNicknameModalState.serverId,
+      serverNicknameModalState.targetUserId
+    );
+    if (save instanceof HTMLButtonElement) save.disabled = !result.ok || serverNicknameModalState.saving || !actionState.allowed;
   });
 }
 bindServerNicknameModalHandlersOnce();
@@ -64727,7 +67251,12 @@ async function submitServerSettingsMemberRolesModal() {
     lockedRoleIds: getServerMemberRoleIds(sid, uid).filter((roleId) => !canCurrentUserAssignServerRoleToMember(sid, uid, roleId)),
   };
   void emitServerPermissionsChangedBroadcast(sid, { reason: "member_roles_saved", changedUserId: uid, changedRoleIds: desiredRoleIds });
-  scheduleActivePermissionsRefresh("member_roles_saved_local", { serverId: sid });
+  scheduleActivePermissionsRefresh("member_roles_saved_local", {
+    serverId: sid,
+    changedRoleIds,
+    changedUserId: uid,
+    currentUserAffected: uid === normId(state.user?.id || ""),
+  });
   void invokeServerVoicePermissionReconciliation({
     serverId: sid,
     scope: "server",
@@ -64768,7 +67297,7 @@ function renderServerSettingsTimeoutModal() {
   const sqlMissing = serverTimeoutSqlAvailability.checked && serverTimeoutSqlAvailability.available === false;
   const metaText = sqlMissing
     ? getServerTimeoutSqlMissingError()
-    : (serverSettingsMembersMetaMessage || "Timeout only affects server text messages. DMs are unaffected.");
+    : (serverSettingsMembersMetaMessage || "Timeout restricts server messages, application commands, and voice participation. DMs are unaffected.");
   const metaIsError = sqlMissing || serverSettingsMembersMetaIsError;
   let modal = document.getElementById("serverSettingsTimeoutModal");
   if (!modal) {
@@ -64814,7 +67343,7 @@ function updateServerSettingsTimeoutModalStatus(message = "", { error = false, d
   if (!modal) return false;
   const meta = modal.querySelector("#serverSettingsTimeoutMeta");
   if (meta) {
-    meta.textContent = String(message || "").trim() || "Timeout only affects server text messages. DMs are unaffected.";
+    meta.textContent = String(message || "").trim() || "Timeout restricts server messages, application commands, and voice participation. DMs are unaffected.";
     meta.classList.toggle("error", !!error);
   }
   const submit = modal.querySelector("[data-server-settings-timeout-apply]");
@@ -64845,7 +67374,7 @@ async function openServerSettingsTimeoutModal(userId = "", options = {}) {
     if (availability?.available === false) {
       updateServerSettingsTimeoutModalStatus(getServerTimeoutSqlMissingError(), { error: true, disableSubmit: true });
     } else {
-      updateServerSettingsTimeoutModalStatus("Timeout only affects server text messages. DMs are unaffected.", { error: false, disableSubmit: false });
+      updateServerSettingsTimeoutModalStatus("Timeout restricts server messages, application commands, and voice participation. DMs are unaffected.", { error: false, disableSubmit: false });
     }
   }).catch(() => {});
 }
@@ -64962,8 +67491,7 @@ async function handleServerSettingsMemberKick(userId = "", options = {}) {
   serverSettingsMembersMutating = false;
   if (res?.error) {
     serverSettingsMembersLastMutation = { ...serverSettingsMembersLastMutation, phase: "failed", finishedAt: Date.now(), error: { code: String(res.error?.code || ""), message: String(res.error?.message || res.error || ""), details: String(res.error?.details || ""), hint: String(res.error?.hint || "") } };
-    const missingSql = isMissingRpcError(res.error) || isMissingTableError(res.error, "server_members");
-    setServerSettingsMembersMeta(missingSql ? "Missing SQL patch: apply 2026-07-15_server_member_management.sql." : `Could not kick member: ${res.error?.message || res.error}`, { error: true });
+    setServerSettingsMembersMeta(getServerKickSafeError(res.error), { error: true });
     renderServerSettingsMembersPanel();
     return;
   }
@@ -65024,7 +67552,7 @@ async function handleServerSettingsMemberBan(userId = "", options = {}) {
   if (res?.error) {
     serverSettingsMembersLastMutation = { ...serverSettingsMembersLastMutation, phase: "failed", finishedAt: Date.now(), error: { code: String(res.error?.code || ""), message: String(res.error?.message || res.error || ""), details: String(res.error?.details || ""), hint: String(res.error?.hint || "") } };
     const missingSql = isMissingRpcError(res.error) || isMissingTableError(res.error, "server_bans");
-    setServerSettingsMembersMeta(missingSql ? "Missing SQL patch: apply 2026-07-19_server_bans.sql." : `Could not ban member: ${res.error?.message || res.error}`, { error: true });
+    setServerSettingsMembersMeta(missingSql ? "Ban management is not available yet." : getServerBanSafeError(res.error, "ban"), { error: true });
     renderServerSettingsMembersPanel();
     return;
   }
@@ -65087,7 +67615,10 @@ async function handleServerSettingsMemberUnban(userId = "", options = {}) {
   serverSettingsBansMutating = false;
   if (res?.error) {
     const missingSql = isMissingRpcError(res.error) || isMissingTableError(res.error, "server_bans");
-    serverBanListErrorByServerId.set(sid, missingSql ? { message: "Missing SQL patch: apply 2026-07-19_server_bans.sql." } : res.error);
+    serverBanListErrorByServerId.set(sid, {
+      ...(res.error || {}),
+      message: missingSql ? "Ban management is not available yet." : getServerBanSafeError(res.error, "unban"),
+    });
     renderServerSettingsModerationPanel();
     return;
   }
@@ -65349,8 +67880,8 @@ async function loadServerSettingsRolesForModal(serverId, { force = false } = {})
 async function submitServerSettingsRoleCreate() {
   const sid = normId(serverSettingsServerId || "");
   if (!sid || serverSettingsRolesMutating) return;
-  if (!currentUserCanManageRoles(sid)) {
-    setServerSettingsRolesMeta("Requires Manage Roles permission.", { error: true });
+  if (!currentUserCanCreateServerRole(sid)) {
+    setServerSettingsRolesMeta("Requires Manage Roles permission and a resolved highest role.", { error: true });
     renderServerSettingsRolesUi();
     return;
   }
@@ -65360,9 +67891,10 @@ async function submitServerSettingsRoleCreate() {
   const roleName = normalizeServerRoleName(roleNameInput?.value || "");
   const roleColor = normalizeServerRoleColor(roleColorInput?.value || SERVER_ROLE_DEFAULT_COLOR);
   const presetName = String(rolePresetInput?.value || serverSettingsRoleCreatePreset || "custom").trim().toLowerCase();
-  const rolePermissions = presetName === "custom"
+  const requestedRolePermissions = presetName === "custom"
     ? normalizeServerRolePermissions({ view_channels: true, send_messages: false, manage_server: false, manage_roles: false })
     : resolveServerRolePermissionPreset(presetName);
+  const rolePermissions = constrainServerRolePermissionsToCurrentActor(sid, requestedRolePermissions);
   if (!roleName) {
     setServerSettingsRolesMeta("Write a role name first.", { error: true });
     renderServerSettingsRolesUi();
@@ -65447,6 +67979,10 @@ async function submitServerSettingsRoleDelete(roleId) {
     return;
   }
   const roleName = normalizeServerRoleName(role?.name || "Role") || "Role";
+  const deletedRoleAffectedCurrentUser = !!serverRoleMemberMapByServerId.get(sid)?.get(rid)?.has(normId(state.user?.id || ""));
+  const deletedRolePermissionKeys = getImplementedServerPermissionKeys().filter(
+    (key) => getServerRolePermissions(role)[key] === true
+  );
   const ok = await requestAppConfirm(`Delete role "${roleName}"?`, {
     title: "Server Roles",
     okText: t("dialog.confirm.ok", "Confirm"),
@@ -65481,8 +68017,15 @@ async function submitServerSettingsRoleDelete(roleId) {
   void emitServerPermissionsChangedBroadcast(sid, {
     reason: "role_deleted",
     changedRoleIds: [rid],
+    changedPermissionKeys: deletedRolePermissionKeys,
+    currentUserAffected: deletedRoleAffectedCurrentUser,
   });
-  scheduleActivePermissionsRefresh("role_deleted_local", { serverId: sid });
+  scheduleActivePermissionsRefresh("role_deleted_local", {
+    serverId: sid,
+    changedRoleIds: [rid],
+    changedPermissionKeys: deletedRolePermissionKeys,
+    currentUserAffected: deletedRoleAffectedCurrentUser,
+  });
   renderServerSettingsRolesUi();
 }
 
@@ -65501,6 +68044,12 @@ async function submitServerSettingsRolePermissionsSave(roleId, nextPermissions =
   }
 
   const normalizedPermissions = normalizeServerRolePermissions(nextPermissions || {}, role);
+  if (!serverSettingsOriginalRolePermissionsByRoleId.has(rid)) {
+    serverSettingsOriginalRolePermissionsByRoleId.set(rid, {
+      serverId: sid,
+      permissions: getServerRolePermissions(role),
+    });
+  }
   applyServerRolePermissionsAssignment(sid, rid, normalizedPermissions);
   serverSettingsPendingRolePermissionUpdates.set(rid, normalizedPermissions);
   serverSettingsRolePermissionsDirty = true;
@@ -65511,6 +68060,14 @@ async function submitServerSettingsRolePermissionsSave(roleId, nextPermissions =
 
 function doServerRolePermissionsMatch(expected = {}, actual = {}, role = null) {
   return doImplementedRolePermissionsMatch(expected || {}, actual || {}, role);
+}
+
+function getChangedImplementedServerRolePermissionKeys(before = {}, after = {}, role = null) {
+  const previous = normalizeServerRolePermissions(before || {}, role);
+  const next = normalizeServerRolePermissions(after || {}, role);
+  return getImplementedServerPermissionKeys()
+    .filter((key) => previous[key] !== next[key])
+    .sort();
 }
 
 async function submitServerSettingsRolePermissionUpdatesSave({ silent = false } = {}) {
@@ -65545,6 +68102,7 @@ async function submitServerSettingsRolePermissionUpdatesSave({ silent = false } 
 
   if (!savePlan.plan.length) {
     removeServerSettingsPendingRolePermissionIds(savePlan.skipped.map((item) => item.roleId));
+    savePlan.skipped.forEach((item) => serverSettingsOriginalRolePermissionsByRoleId.delete(normId(item?.roleId || "")));
     serverSettingsRolePermissionsMutating = false;
     if (!getServerSettingsPendingRolePermissionEntries().length) {
       serverSettingsPendingRolePermissionUpdates = new Map();
@@ -65555,12 +68113,23 @@ async function submitServerSettingsRolePermissionUpdatesSave({ silent = false } 
     return true;
   }
 
+  if (!serverSettingsLastRolePermissionSaveTrace || serverSettingsLastRolePermissionSaveTrace.serverId !== sid) {
+    beginServerRolePermissionSaveTiming(sid, savePlan.plan.length);
+  }
+  recordServerRolePermissionSaveTiming("save_plan_ready", {
+    serverId: sid,
+    roleCount: savePlan.plan.length,
+  });
+
   serverSettingsRolePermissionsMutating = true;
   if (!silent) setServerSettingsRolesMeta("Saving role permissions...", { error: false });
-  renderServerSettingsRolesUi();
+  document.querySelectorAll("[data-server-settings-role-perm-toggle], [data-server-settings-role-perm-preset]").forEach((control) => {
+    if ("disabled" in control) control.disabled = true;
+  });
 
   const persistedEntries = [];
   const failedEntries = [];
+  const changedPermissionKeys = new Set();
 
   for (const item of savePlan.plan) {
     const latestRole = getServerSettingsRoleById(item.roleId, sid);
@@ -65593,6 +68162,14 @@ async function submitServerSettingsRolePermissionUpdatesSave({ silent = false } 
       continue;
     }
     const persistedPermissions = row?.permissions || item.permissions;
+    const originalPermissions = serverSettingsOriginalRolePermissionsByRoleId.get(item.roleId);
+    if (normId(originalPermissions?.serverId || "") === sid) {
+      getChangedImplementedServerRolePermissionKeys(
+        originalPermissions?.permissions || {},
+        persistedPermissions,
+        getServerSettingsRoleById(item.roleId, sid)
+      ).forEach((key) => changedPermissionKeys.add(key));
+    }
     rememberConfirmedRolePermissions(item.roleId, persistedPermissions, getServerSettingsRoleById(item.roleId, sid));
     applyServerRolePermissionsAssignment(sid, item.roleId, persistedPermissions);
     persistedEntries.push({
@@ -65612,96 +68189,10 @@ async function submitServerSettingsRolePermissionUpdatesSave({ silent = false } 
   }
 
   const failedIds = failedEntries.map((entry) => entry.item.roleId).filter(Boolean);
-  if (persistedEntries.length) {
-    await loadServerSettingsRolesForModal(sid, { force: true });
-    if (normId(serverSettingsServerId || "") !== sid) return false;
-
-    const reloadedRoles = serverRoleListByServerId.get(sid) || [];
-    for (const saved of persistedEntries) {
-      const rid = saved.roleId;
-      const expectedPermissions = saved.permissions;
-      const reloadedRole = reloadedRoles.find((entry) => normId(entry?.id || "") === rid) || null;
-      const actualPermissions = getRawServerRolePermissionsFromRow(reloadedRole || {});
-      if (reloadedRole && doServerRolePermissionsMatch(expectedPermissions, actualPermissions, reloadedRole)) {
-        continue;
-      }
-
-      let directRow = null;
-      try {
-        directRow = await readServerRolePermissionsRow(sid, rid);
-      } catch (readError) {
-        const error = { message: "role_permissions_direct_readback_failed", cause: readError };
-        failedEntries.push({ item: { roleId: rid, roleName: saved.roleName || reloadedRole?.name || rid, permissions: expectedPermissions }, error, message: error.message });
-        console.error("[server-settings] failed to verify saved role permissions with direct readback", {
-          serverId: sid,
-          roleId: rid,
-          roleName: saved.roleName || reloadedRole?.name || rid,
-          permissions: expectedPermissions,
-          loaded: actualPermissions,
-          message: readError?.message,
-          details: readError?.details,
-          hint: readError?.hint,
-          code: readError?.code,
-          error: readError,
-        });
-        continue;
-      }
-
-      const compareRole = { ...(reloadedRole || {}), ...(directRow || {}) };
-      if (directRow && doImplementedRolePermissionsMatch(expectedPermissions, directRow.permissions || {}, compareRole)) {
-        console.warn("[server-settings] roles reload returned stale permissions after confirmed save; using direct readback", {
-          serverId: sid,
-          roleId: rid,
-          roleName: saved.roleName || reloadedRole?.name || directRow?.name || rid,
-          expected: expectedPermissions,
-          loaded: actualPermissions,
-          direct: directRow.permissions || {},
-        });
-        mergeConfirmedRolePermissionsIntoLocalState(sid, rid, directRow.permissions || expectedPermissions, { reason: "reload-stale-direct-readback" });
-        continue;
-      }
-
-      const error = { message: "role_permissions_confirmed_save_lost_after_reload" };
-      failedEntries.push({ item: { roleId: rid, roleName: saved.roleName || reloadedRole?.name || directRow?.name || rid, permissions: expectedPermissions }, error, message: error.message });
-      console.error("[server-settings] failed to save role permissions", {
-        serverId: sid,
-        roleId: rid,
-        roleName: saved.roleName || reloadedRole?.name || directRow?.name || rid,
-        permissions: expectedPermissions,
-        message: error.message,
-        details: null,
-        hint: "Direct readback after reload did not match the staged permissions.",
-        code: "permission_persist_verify_failed",
-        loaded: actualPermissions,
-        direct: directRow?.permissions || null,
-        error,
-      });
-    }
-  }
-
-  const postReconcileFailedIds = new Set(failedEntries.map((entry) => entry.item.roleId).filter(Boolean));
-  for (const saved of persistedEntries) {
-    const rid = saved.roleId;
-    if (!rid || postReconcileFailedIds.has(rid)) continue;
-    const loadedRole = getServerSettingsRoleById(rid, sid);
-    const loadedPermissions = loadedRole?.permissions || loadedRole?.role_permissions || {};
-    if (!loadedRole || !doImplementedRolePermissionsMatch(saved.permissions, loadedPermissions, loadedRole)) {
-      const error = { message: "role_permissions_local_state_not_updated" };
-      postReconcileFailedIds.add(rid);
-      failedEntries.push({ item: { roleId: rid, roleName: saved.roleName || loadedRole?.name || rid, permissions: saved.permissions }, error, message: error.message });
-      console.error("[server-settings] saved role permissions but local state did not match after reconcile", {
-        serverId: sid,
-        roleId: rid,
-        roleName: saved.roleName || loadedRole?.name || rid,
-        expected: saved.permissions,
-        loaded: loadedPermissions,
-        error,
-      });
-    }
-  }
   const verifiedFailedIds = new Set(failedEntries.map((entry) => entry.item.roleId).filter(Boolean));
   const verifiedSuccessIds = persistedEntries.map((entry) => entry.roleId).filter((rid) => !verifiedFailedIds.has(rid));
   removeServerSettingsPendingRolePermissionIds(verifiedSuccessIds);
+  verifiedSuccessIds.forEach((roleId) => serverSettingsOriginalRolePermissionsByRoleId.delete(roleId));
 
   serverSettingsRolePermissionsMutating = false;
 
@@ -65732,24 +68223,24 @@ async function submitServerSettingsRolePermissionUpdatesSave({ silent = false } 
   }
 
   serverSettingsPendingRolePermissionUpdates = new Map();
+  serverSettingsOriginalRolePermissionsByRoleId.clear();
   serverSettingsRolePermissionsDirty = false;
-  if (!silent) setServerSettingsRolesMeta("Role permissions saved.", { error: false });
-  renderServerSettingsRolesUi();
+  if (!silent) setServerSettingsRolesMeta("Saved.", { error: false });
+  recordServerRolePermissionSaveTiming("local_commit", {
+    serverId: sid,
+    roleIds: verifiedSuccessIds,
+  });
   void emitServerPermissionsChangedBroadcast(sid, {
     reason: "role_permissions_saved",
     changedRoleIds: verifiedSuccessIds,
+    changedPermissionKeys: Array.from(changedPermissionKeys),
+    currentUserAffected: changedRoleIdsCanAffectCurrentUser(sid, verifiedSuccessIds),
   });
-  scheduleActivePermissionsRefresh("role_permissions_saved_local", { serverId: sid });
-  void refreshActiveServerCapabilityState({ serverId: sid, reason: "role_permissions_saved_local", force: true });
-  void invokeServerVoicePermissionReconciliation({
+  scheduleActivePermissionsRefresh("role_permissions_saved_local", {
     serverId: sid,
-    scope: "server",
-    reason: "role_permissions_saved_local",
-  }).catch((error) => {
-    console.warn("[server-voice-permissions] server reconciliation failed after role save", {
-      serverId: sid,
-      message: error?.message || error,
-    });
+    changedRoleIds: verifiedSuccessIds,
+    changedPermissionKeys: Array.from(changedPermissionKeys),
+    currentUserAffected: changedRoleIdsCanAffectCurrentUser(sid, verifiedSuccessIds),
   });
   return true;
 }
@@ -65802,7 +68293,7 @@ async function submitServerSettingsRolePermissionPreset(roleId, presetName) {
     return;
   }
   const currentPermissions = getServerRolePermissions(role);
-  const nextPermissions = { ...currentPermissions };
+  let nextPermissions = { ...currentPermissions };
   getImplementedServerPermissionKeys().forEach((permissionKey) => {
     nextPermissions[permissionKey] = false;
   });
@@ -65827,10 +68318,12 @@ async function submitServerSettingsRolePermissionPreset(roleId, presetName) {
     }
   }
 
+  nextPermissions = constrainServerRolePermissionsToCurrentActor(sid, nextPermissions);
+
   // Batch 0A: show exactly which permissions will change before applying --
   // both presets zero every implemented permission first, which previously
   // had no confirmation and could silently revoke permissions (manage_channels,
-  // manage_members, ban_members, timeout_members, view_audit_log, etc.) an
+  // manage_roles, ban_members, timeout_members, view_audit_log, etc.) an
   // admin did not intend to touch.
   const changedKeys = getImplementedServerPermissionKeys().filter(
     (permissionKey) => !!currentPermissions[permissionKey] !== !!nextPermissions[permissionKey]
@@ -65869,7 +68362,7 @@ async function submitServerSettingsRoleMemberToggle(roleId, userId, enabled) {
   if (!sid || !rid || !uid) return;
   const roleList = serverRoleListByServerId.get(sid) || [];
   const role = roleList.find((entry) => normId(entry?.id || "") === rid) || null;
-  if (!role || !canEditServerRoleInSettings(sid, role)) {
+  if (!role || !canCurrentUserAssignServerRoleToMember(sid, uid, rid)) {
     setServerSettingsRolesMeta("Requires Manage Roles permission for this role.", { error: true });
     renderServerSettingsRolesUi();
     return;
@@ -65906,7 +68399,12 @@ async function submitServerSettingsRoleMemberToggle(roleId, userId, enabled) {
     changedRoleIds: [rid],
     changedUserId: uid,
   });
-  scheduleActivePermissionsRefresh("role_membership_saved_local", { serverId: sid });
+  scheduleActivePermissionsRefresh("role_membership_saved_local", {
+    serverId: sid,
+    changedRoleIds: [rid],
+    changedUserId: uid,
+    currentUserAffected: uid === normId(state.user?.id || ""),
+  });
   renderServerSettingsRolesUi();
 }
 
@@ -66002,6 +68500,8 @@ const serverSettingsChannelsRenderSignatureByServerId = new Map();
 const serverSettingsChannelsScrollStateByServerId = new Map();
 const serverSettingsChannelsMutationInFlightByServerId = new Map();
 const serverSettingsChannelsReorderInFlightByServerId = new Map();
+const serverSettingsBatch7aExtraTargetsByScope = new Map();
+let serverSettingsBatch7aSavingKey = "";
 let serverSettingsChannelsDragState = null;
 let serverSettingsChannelsLastMutation = null;
 let serverSettingsChannelsLastError = null;
@@ -66134,6 +68634,19 @@ function installServerSettingsChannelsStyles() {
     .serverSettingsChannelsFeedback[data-kind="success"]{border-color:rgba(118,190,139,.3);color:rgba(169,224,183,.92)}
     .serverSettingsChannelsFeedback[data-kind="error"]{border-color:rgba(220,107,107,.34);color:rgba(244,159,159,.94)}
     .serverSettingsChannelsEmpty{padding:34px 18px;text-align:center;color:rgba(246,243,238,.48);font-size:12px}
+    .batch7aPermissionPanel{display:grid;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)}
+    .batch7aPermissionPanel.is-warning{padding:10px;border:1px solid rgba(220,170,95,.25);border-radius:7px;color:rgba(244,209,159,.9)}
+    .batch7aPermissionPanel>p{margin:0;color:rgba(246,243,238,.5);font-size:10px;line-height:1.5}
+    .batch7aPermissionHeader,.batch7aPermissionTargetHead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .batch7aPermissionHeader>div,.batch7aPermissionTargetHead>div{display:grid;gap:2px}
+    .batch7aPermissionHeader span,.batch7aPermissionTargetHead small{color:rgba(246,243,238,.44);font-size:10px;text-transform:capitalize}
+    .batch7aPermissionAdders{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
+    .batch7aPermissionTargets{display:grid;gap:8px}
+    .batch7aPermissionTarget{padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(255,255,255,.025)}
+    .batch7aPermissionRows{display:grid;gap:7px;margin-top:9px}
+    .batch7aPermissionRow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
+    .batch7aPermissionRow>div:first-child{display:grid;gap:2px;font-size:11px}
+    .batch7aPermissionRow small{color:rgba(246,243,238,.4);font-size:9px;line-height:1.35}
     @media(max-width:760px){.serverSettingsChannelsShell{grid-template-columns:1fr}.serverSettingsChannelsTree{max-height:42vh}}
   `;
   document.head.appendChild(style);
@@ -66159,6 +68672,7 @@ function getServerSettingsChannelsSnapshot(serverId = "") {
       normId(row?.categoryId || ""),
       Number(row?.position || 0),
       !!row?.isPrivate,
+      row?.permissionsSynced !== false,
     ]),
   });
   return { serverId: sid, channels, categories, fingerprint };
@@ -66208,6 +68722,178 @@ function buildServerSettingsChannelRowsHtml(rows = [], selected = null, category
   }).join("");
 }
 
+function getBatch7aScopeCacheKey(serverId = "", scopeType = "", scopeId = "") {
+  return `${normId(serverId || "")}:${String(scopeType || "").trim().toLowerCase()}:${normId(scopeId || "")}`;
+}
+
+function getBatch7aScopeRows(scopeType = "", scopeId = "") {
+  const type = String(scopeType || "").trim().toLowerCase();
+  return type === "category" ? getCategoryPermissionOverwrites(scopeId) : getChannelPermissionOverwrites(scopeId);
+}
+
+function getBatch7aScopeEditorTargets(serverId = "", scopeType = "", scopeId = "") {
+  const sid = normId(serverId || "");
+  const key = getBatch7aScopeCacheKey(sid, scopeType, scopeId);
+  const targets = [{ targetType: "everyone", targetId: sid }];
+  [...getBatch7aScopeRows(scopeType, scopeId), ...(serverSettingsBatch7aExtraTargetsByScope.get(key) || [])].forEach((row) => {
+    const targetType = String(row?.targetType || "").trim().toLowerCase();
+    const targetId = normId(row?.targetId || "");
+    if (targetId && ["role", "member"].includes(targetType)
+      && !targets.some((target) => target.targetType === targetType && target.targetId === targetId)) {
+      targets.push({ targetType, targetId });
+    }
+  });
+  return targets;
+}
+
+function buildBatch7aScopeTargetHtml(serverId = "", scopeType = "", scopeId = "", target = {}) {
+  const rows = getBatch7aScopeRows(scopeType, scopeId);
+  const row = rows.find((entry) => entry.targetType === target.targetType && entry.targetId === target.targetId) || null;
+  const label = getChannelPermissionTargetLabel(serverId, target.targetType, target.targetId);
+  const saving = serverSettingsBatch7aSavingKey === getBatch7aScopeCacheKey(serverId, scopeType, scopeId);
+  const disabled = saving || !canCurrentUserTargetChannelPermissionOverride(serverId, target.targetType, target.targetId);
+  return `
+    <section class="batch7aPermissionTarget" data-batch7a-permission-target="1"
+      data-batch7a-target-type="${escAttr(target.targetType)}" data-batch7a-target-id="${escAttr(target.targetId)}">
+      <div class="batch7aPermissionTargetHead">
+        <div><strong>${esc(label)}</strong><small>${target.targetType === "everyone" ? "Server default role" : esc(target.targetType)}</small></div>
+        <button class="btn ghost" type="button" data-batch7a-save-target="1" ${disabled ? "disabled" : ""}>Save</button>
+      </div>
+      <div class="batch7aPermissionRows">
+        ${CHANNEL_PERMISSION_META.map((permission) => {
+          const value = row?.deny?.[permission.key] === true ? "deny" : (row?.allow?.[permission.key] === true ? "allow" : "neutral");
+          return `<div class="batch7aPermissionRow">
+            <div><span>${esc(permission.label)}</span><small>${esc(permission.hint)}</small></div>
+            ${buildChannelPermissionTriStateHtml({ key: permission.key, value, disabled })}
+          </div>`;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function buildBatch7aScopePermissionEditorHtml(serverId = "", scopeType = "", scopeId = "", scopeRow = null) {
+  const sid = normId(serverId || "");
+  const type = String(scopeType || "").trim().toLowerCase();
+  const id = normId(scopeId || "");
+  if (!sid || !id || !["category", "channel"].includes(type)) return "";
+  if (batch7aPermissionOverridesSqlAvailable === false) {
+    return `<div class="batch7aPermissionPanel is-warning"><strong>Batch 7A is not available.</strong><span>Apply and verify the manual SQL patch before editing.</span></div>`;
+  }
+  const roles = getServerRolesForSettingsDisplay(sid).filter((role) => canCurrentUserTargetRoleForChannelPermissions(sid, role));
+  const currentUserId = normId(state.user?.id || "");
+  const ownerId = getCanonicalServerOwnerUserIdSync(sid);
+  const members = (serverMemberListByServerId.get(sid) || []).map((member) => ({
+    id: normId(member?.userId || member?.user_id || member?.id || ""),
+    label: member?.displayName || member?.display_name || member?.username || "Member",
+  })).filter((member) => member.id && member.id !== currentUserId && member.id !== ownerId && canCurrentUserTargetMemberForChannelPermissions(sid, member.id));
+  const targets = getBatch7aScopeEditorTargets(sid, type, id);
+  const isChannel = type === "channel";
+  const isSynced = isChannel && scopeRow?.permissionsSynced !== false;
+  const hasCategory = isChannel && !!normId(scopeRow?.categoryId || "");
+  return `
+    <div class="batch7aPermissionPanel" data-batch7a-scope-type="${escAttr(type)}" data-batch7a-scope-id="${escAttr(id)}">
+      <div class="batch7aPermissionHeader">
+        <div><strong>Permission Overrides</strong><span>${isChannel ? (isSynced ? "Synced" : "Custom") : "Category defaults"}</span></div>
+        ${isChannel && hasCategory && !isSynced ? `<button class="btn ghost" type="button" data-batch7a-sync-category="1">Sync with category</button>` : ""}
+      </div>
+      <p>Inherit keeps the previous level. Member overrides are applied after roles, and a role deny wins over role allow.</p>
+      <div class="batch7aPermissionAdders">
+        <select class="input" data-batch7a-role-select>${roles.map((role) => `<option value="${escAttr(role.id)}">${esc(role.name || "Role")}</option>`).join("") || `<option value="">No editable roles</option>`}</select>
+        <button class="btn ghost" type="button" data-batch7a-add-target="role" ${roles.length ? "" : "disabled"}>Add Role</button>
+        <select class="input" data-batch7a-member-select>${members.map((member) => `<option value="${escAttr(member.id)}">${esc(member.label)}</option>`).join("") || `<option value="">No editable members</option>`}</select>
+        <button class="btn ghost" type="button" data-batch7a-add-target="member" ${members.length ? "" : "disabled"}>Add Member</button>
+      </div>
+      <div class="batch7aPermissionTargets">${targets.map((target) => buildBatch7aScopeTargetHtml(sid, type, id, target)).join("")}</div>
+    </div>
+  `;
+}
+
+async function saveServerSettingsBatch7aTarget(button = null) {
+  const panel = button?.closest?.("[data-batch7a-scope-type]");
+  const target = button?.closest?.("[data-batch7a-permission-target]");
+  const sid = normId(serverSettingsServerId || "");
+  const scopeType = String(panel?.getAttribute("data-batch7a-scope-type") || "").trim().toLowerCase();
+  const scopeId = normId(panel?.getAttribute("data-batch7a-scope-id") || "");
+  const targetType = String(target?.getAttribute("data-batch7a-target-type") || "").trim().toLowerCase();
+  const targetId = normId(target?.getAttribute("data-batch7a-target-id") || "");
+  const saveKey = getBatch7aScopeCacheKey(sid, scopeType, scopeId);
+  if (!sid || !scopeId || !targetId || serverSettingsBatch7aSavingKey) return false;
+  if (!canCurrentUserTargetChannelPermissionOverride(sid, targetType, targetId)) {
+    setServerSettingsChannelsFeedback("You cannot edit this permission target.", "error");
+    return false;
+  }
+  serverSettingsBatch7aSavingKey = saveKey;
+  setServerSettingsChannelsFeedback("Saving permission override...", "info");
+  renderServerSettingsChannelsPanel({ force: true, reason: "batch7a-save-start" });
+  const result = await setServerPermissionOverrideBatch7a({
+    serverId: sid,
+    scopeType,
+    scopeId,
+    targetType,
+    targetId,
+    permissions: buildBatch7aPermissionValuesFromElement(target),
+  });
+  serverSettingsBatch7aSavingKey = "";
+  if (!result?.ok) {
+    setServerSettingsChannelsFeedback(result?.missingSql ? "Apply and verify Batch 7A first." : `Could not save: ${result?.error?.message || result?.error || "Unknown error"}`, "error");
+    renderServerSettingsChannelsPanel({ force: true, reason: "batch7a-save-error" });
+    return false;
+  }
+  serverSettingsChannelsLastMutation = { serverId: sid, message: "Permission override saved.", kind: "success", at: Date.now() };
+  await emitServerPermissionsChangedBroadcast(sid, {
+    reason: `${scopeType}_permission_override_saved`, scopeType, scopeId, targetType, targetId,
+  }).catch(() => {});
+  scheduleActivePermissionsRefresh(`${scopeType}_permission_overwrite_saved`, { serverId: sid, new: { server_id: sid, [`${scopeType}_id`]: scopeId } });
+  void reconcileActiveServerChannelAfterPermissionChange(`${scopeType}_permission_override_saved`).catch(() => {});
+  renderServerSettingsChannelsPanel({ force: true, reason: "batch7a-save-complete" });
+  return true;
+}
+
+function addServerSettingsBatch7aTarget(button = null) {
+  const panel = button?.closest?.("[data-batch7a-scope-type]");
+  const sid = normId(serverSettingsServerId || "");
+  const scopeType = String(panel?.getAttribute("data-batch7a-scope-type") || "").trim().toLowerCase();
+  const scopeId = normId(panel?.getAttribute("data-batch7a-scope-id") || "");
+  const targetType = String(button?.getAttribute("data-batch7a-add-target") || "").trim().toLowerCase();
+  const selector = targetType === "member" ? "[data-batch7a-member-select]" : "[data-batch7a-role-select]";
+  const targetId = normId(panel?.querySelector(selector)?.value || "");
+  if (!sid || !scopeId || !targetId || !["role", "member"].includes(targetType)) return false;
+  const key = getBatch7aScopeCacheKey(sid, scopeType, scopeId);
+  const targets = serverSettingsBatch7aExtraTargetsByScope.get(key) || [];
+  if (!targets.some((entry) => entry.targetType === targetType && entry.targetId === targetId)) {
+    targets.push({ targetType, targetId });
+    serverSettingsBatch7aExtraTargetsByScope.set(key, targets);
+  }
+  renderServerSettingsChannelsPanel({ force: true, reason: "batch7a-add-target" });
+  return true;
+}
+
+async function syncSelectedServerSettingsChannelBatch7a(button = null) {
+  const panel = button?.closest?.("[data-batch7a-scope-type='channel']");
+  const sid = normId(serverSettingsServerId || "");
+  const channelId = normId(panel?.getAttribute("data-batch7a-scope-id") || "");
+  if (!sid || !channelId || serverSettingsBatch7aSavingKey) return false;
+  if (!currentUserCanManageChannels(sid)) {
+    setServerSettingsChannelsFeedback("Requires Manage Channels.", "error");
+    return false;
+  }
+  serverSettingsBatch7aSavingKey = getBatch7aScopeCacheKey(sid, "channel", channelId);
+  setServerSettingsChannelsFeedback("Syncing with category...", "info");
+  const result = await syncServerChannelPermissionsWithCategoryBatch7a(sid, channelId);
+  serverSettingsBatch7aSavingKey = "";
+  if (!result?.ok) {
+    setServerSettingsChannelsFeedback(`Could not sync: ${result?.error?.message || result?.error || "Unknown error"}`, "error");
+    renderServerSettingsChannelsPanel({ force: true, reason: "batch7a-sync-error" });
+    return false;
+  }
+  await emitServerPermissionsChangedBroadcast(sid, { reason: "channel_permissions_synced", channelId }).catch(() => {});
+  scheduleActivePermissionsRefresh("channel_permissions_synced", { serverId: sid, new: { server_id: sid, channel_id: channelId } });
+  serverSettingsChannelsLastMutation = { serverId: sid, message: "Channel synced with category.", kind: "success", at: Date.now() };
+  renderServerSettingsChannelsPanel({ force: true, reason: "batch7a-sync-complete" });
+  return true;
+}
+
 function buildServerSettingsChannelsDetailsHtml(serverId = "", selection = null) {
   const sid = normId(serverId || "");
   if (!selection) {
@@ -66229,6 +68915,7 @@ function buildServerSettingsChannelsDetailsHtml(serverId = "", selection = null)
         <button class="btn ghost" type="button" data-server-settings-channels-copy="1">Copy ID</button>
         <button class="btn danger" type="button" data-server-settings-channels-delete="1">Delete</button>
       </div>
+      ${buildBatch7aScopePermissionEditorHtml(sid, "category", category.id, category)}
     `;
   }
   const channel = snapshot.channels.find((row) => normId(row?.id || "") === selection.id);
@@ -66241,12 +68928,14 @@ function buildServerSettingsChannelsDetailsHtml(serverId = "", selection = null)
     <dl class="serverSettingsChannelsFacts">
       <div class="serverSettingsChannelsFact"><dt>Category</dt><dd>${esc(category?.name || "No Category")}</dd></div>
       <div class="serverSettingsChannelsFact"><dt>Access</dt><dd>${channel?.isPrivate ? "Private" : "Public"}</dd></div>
+      <div class="serverSettingsChannelsFact"><dt>Permissions</dt><dd>${channel?.permissionsSynced !== false ? "Synced with category" : "Custom"}</dd></div>
     </dl>
     <div class="serverSettingsChannelsDetailsActions">
       <button class="btn primary" type="button" data-server-settings-channels-edit="1">Edit</button>
       <button class="btn ghost" type="button" data-server-settings-channels-copy="1">Copy ID</button>
       <button class="btn danger" type="button" data-server-settings-channels-delete="1">Delete</button>
     </div>
+    ${buildBatch7aScopePermissionEditorHtml(sid, "channel", channel.id, channel)}
   `;
 }
 
@@ -66259,10 +68948,9 @@ function renderServerSettingsChannelsPanel({ force = false, reason = "render" } 
   if (!panel?.classList.contains("is-active") && !force) return false;
   const stateEntry = getServerSettingsChannelsState(sid);
   const snapshot = getServerSettingsChannelsSnapshot(sid);
-  const canManage = currentUserCanManageChannels(sid);
-  const hasPermissionSnapshot = serverRolePermissionCacheFetchedAtByServerId.has(sid)
-    || !!getServerCapabilityMeta(sid).isActualOwner
-    || !!getServerCapabilityMeta(sid).isOwner;
+  const manageChannelsCapability = getCurrentManageChannelsCapabilityState(sid);
+  const canManage = manageChannelsCapability.allowed === true;
+  const hasPermissionSnapshot = manageChannelsCapability.resolved === true;
   if (!hasPermissionSnapshot) {
     root.innerHTML = `<div class="serverSettingsPlaceholder">Checking channel permissions...</div>`;
     return true;
@@ -66286,6 +68974,8 @@ function renderServerSettingsChannelsPanel({ force = false, reason = "render" } 
     loading: !!stateEntry.loading,
     error: String(stateEntry.error?.code || stateEntry.error?.message || ""),
     canManage,
+    permissionOverrides: selection ? getBatch7aScopeRows(selection.type, selection.id).map((row) => [row.id, row.targetType, row.targetId, row.allow, row.deny, row.updatedAt]) : [],
+    batch7aSaving: serverSettingsBatch7aSavingKey,
     mutation: serverSettingsChannelsLastMutation?.serverId === sid
       ? [serverSettingsChannelsLastMutation?.message || "", serverSettingsChannelsLastMutation?.kind || "", serverSettingsChannelsLastMutation?.at || 0]
       : null,
@@ -66370,7 +69060,10 @@ async function loadServerSettingsChannels(serverId = "", { force = false, reason
   renderServerSettingsChannelsPanel({ force: true, reason });
   const promise = (async () => {
     try {
-      await ensureServerRolePermissionCache(sid, { force: false });
+      await Promise.all([
+        ensureServerRolePermissionCache(sid, { force: false }),
+        fetchServerMembersForSidebar(sid, { force: false }),
+      ]);
       if (!currentUserCanManageChannels(sid)) {
         serverSettingsChannelsStateByServerId.set(sid, {
           ...getServerSettingsChannelsState(sid),
@@ -66384,8 +69077,8 @@ async function loadServerSettingsChannels(serverId = "", { force = false, reason
         return false;
       }
       const [channelResult, categories] = await Promise.all([
-        fetchServerChannelsForSidebarResult(sid, { force: true }),
-        fetchServerChannelCategoriesForSidebar(sid, { force: true }),
+        fetchServerChannelsForSidebarResult(sid, { force }),
+        fetchServerChannelCategoriesForSidebar(sid, { force }),
       ]);
       if (channelResult?.ok === false && !(channelResult?.channels || []).length) {
         throw channelResult?.error || new Error("server_channels_load_failed");
@@ -66393,6 +69086,10 @@ async function loadServerSettingsChannels(serverId = "", { force = false, reason
       const nextChannels = Array.isArray(channelResult?.channels) ? channelResult.channels : (serverChannelListByServerId.get(sid) || []);
       const nextCategories = Array.isArray(categories) ? categories : (serverChannelCategoryListByServerId.get(sid) || []);
       applyServerChannelsSnapshot(sid, nextChannels, nextCategories, { reason: `settings:${reason}` });
+      await loadAllBatch7aPermissionOverridesForServer(sid, { force }).catch((error) => {
+        if (!isMissingBatch7aPermissionsSqlError(error)) console.warn("[batch7a-permissions] settings preload failed", { serverId: sid, message: error?.message || error });
+        return null;
+      });
       const snapshot = getServerSettingsChannelsSnapshot(sid);
       serverSettingsChannelsStateByServerId.set(sid, {
         loaded: true,
@@ -66917,6 +69614,19 @@ function normalizeServerInviteStatus(row = {}) {
   return ["active", "expired", "exhausted", "revoked"].includes(supplied) ? supplied : "active";
 }
 
+function getServerSettingsInvitesSafeErrorMessage(error = null, fallback = "Could not refresh invites. Try again.") {
+  const safeCode = String(error?.code || "").trim().toLowerCase();
+  const safeMessage = String(error?.message || "").trim().toLowerCase();
+  const safeSignal = `${safeCode}:${safeMessage}`;
+  if (/missing_manage_invites|not_server_member|global_banned|server_banned/.test(safeSignal)) {
+    return "You do not have permission to manage this server's invites.";
+  }
+  if (/server_not_found|invite_not_found/.test(safeSignal)) {
+    return "This server or invite is no longer available.";
+  }
+  return fallback;
+}
+
 function normalizeServerSettingsInviteRow(row = {}) {
   const id = normId(row?.id || row?.invite_id || row?.inviteId || "");
   const serverId = normId(row?.server_id || row?.serverId || "");
@@ -66978,6 +69688,7 @@ function getServerSettingsInvitesRenderSignature(serverId = "") {
     selected: serverSettingsInvitesSelectionByServerId.get(sid) || "",
     mutating: serverSettingsInvitesMutationPromiseByServerId.has(sid),
     canManage: currentUserCanManageInvites(sid),
+    canCreate: currentUserCanCreateInvites(sid),
     rows: snapshot.rows.map((row) => [row.id, row.status, row.usesCount, row.maxUses, row.expiresAt, row.revokedAt]),
   });
 }
@@ -67040,9 +69751,9 @@ function renderServerSettingsInvitesPanel({ force = false } = {}) {
       </label>
       <span class="serverSettingsInvitesCount">${activeCount} active</span>
       <button class="btn ghost" type="button" data-server-settings-invites-refresh="1" ${snapshot.loading ? "disabled" : ""}>Refresh</button>
-      <button class="btn primary" type="button" data-server-settings-invites-create="1" ${isMutating ? "disabled" : ""}>Create Invite</button>
+      <button class="btn primary" type="button" data-server-settings-invites-create="1" ${isMutating || !currentUserCanCreateInvites(sid) ? "disabled" : ""}>Create Invite</button>
     </div>
-    ${snapshot.lastError ? `<div class="serverSettingsInvitesNotice is-error">Could not refresh invites. The last valid list is still shown.</div>` : ""}
+    ${snapshot.lastError ? `<div class="serverSettingsInvitesNotice is-error">${esc(snapshot.lastError.userMessage || "Could not refresh invites. The last valid list is still shown.")}</div>` : ""}
     ${snapshot.loading && !snapshot.loaded ? `<div class="serverSettingsPlaceholder">Loading invites...</div>` : ""}
     ${snapshot.loaded && !rows.length ? `<div class="serverSettingsPlaceholder">${search ? "No invites match your search." : "No invites have been created yet."}</div>` : ""}
     ${rows.length ? `<div class="serverSettingsInvitesList">${rowsHtml}</div>` : ""}
@@ -67073,10 +69784,20 @@ async function loadServerSettingsInvites(serverId = "", { force = false, reason 
       return { ok: false, stale: true };
     }
     if (error) {
+      const userMessage = getServerSettingsInvitesSafeErrorMessage(
+        error,
+        "Could not refresh invites. The last valid list is still shown.",
+      );
       serverSettingsInvitesSnapshotByServerId.set(sid, {
         ...previous,
         loading: false,
-        lastError: { code: error.code || "", message: error.message || "invite_list_failed", details: error.details || "", hint: error.hint || "" },
+        lastError: {
+          code: error.code || "",
+          message: error.message || "invite_list_failed",
+          details: error.details || "",
+          hint: error.hint || "",
+          userMessage,
+        },
         lastReason: reason,
       });
       renderServerSettingsInvitesPanel({ force: true });
@@ -67116,7 +69837,7 @@ function ensureServerSettingsInvitesRealtime(serverId = "") {
     void loadServerSettingsInvites(sid, { force: true, reason });
   };
   const channel = supabase
-    .channel(`server-invites-settings:${sid}`, { config: { broadcast: { self: false } } })
+    .channel(`server-invites-settings:${sid}`, { config: { private: true, broadcast: { self: false } } })
     .on("postgres_changes", { event: "*", schema: "public", table: "server_invite_links", filter: `server_id=eq.${sid}` }, () => refresh("postgres-change"))
     .on("broadcast", { event: "server-invites-changed" }, () => refresh("invite-broadcast"))
     .subscribe((status) => {
@@ -67125,7 +69846,7 @@ function ensureServerSettingsInvitesRealtime(serverId = "") {
         refresh("realtime-subscribed");
         return;
       }
-      if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(String(status || "")) || entry.restartTimer) return;
+      if (String(status || "") !== "CLOSED" || entry.restartTimer) return;
       entry.restartTimer = setTimeout(() => {
         entry.restartTimer = null;
         try { supabase.removeChannel(channel); } catch (_) {}
@@ -67147,7 +69868,7 @@ async function emitServerInvitesChangedBroadcast(serverId = "", payload = {}) {
   try {
     if (!channel) {
       temporaryChannel = true;
-      channel = supabase.channel(`server-invites-settings:${sid}`, { config: { broadcast: { self: false } } });
+      channel = supabase.channel(`server-invites-settings:${sid}`, { config: { private: true, broadcast: { self: false } } });
       await new Promise((resolve) => {
         let done = false;
         const finish = () => {
@@ -67196,15 +69917,25 @@ async function revokeServerSettingsInvite(inviteId = "") {
   const promise = (async () => {
     const { data, error } = await supabase.rpc("revoke_server_invite_v1", { p_server_id: sid, p_invite_id: iid });
     if (error) {
+      const userMessage = getServerSettingsInvitesSafeErrorMessage(
+        error,
+        "Could not revoke this invite. Try again.",
+      );
       serverSettingsInvitesLastMutation = {
         serverId: sid,
         inviteId: iid,
         phase: "failed",
         at: Date.now(),
-        error: { code: error.code || "", message: error.message || "invite_revoke_failed", details: error.details || "", hint: error.hint || "" },
+        error: {
+          code: error.code || "",
+          message: error.message || "invite_revoke_failed",
+          details: error.details || "",
+          hint: error.hint || "",
+          userMessage,
+        },
       };
       renderServerSettingsInvitesPanel({ force: true });
-      await requestAppAlert("Could not revoke this invite. Try again.", { title: "Invites" }).catch(() => {});
+      await requestAppAlert(userMessage, { title: "Invites" }).catch(() => {});
       return false;
     }
     serverSettingsInvitesLastMutation = { serverId: sid, inviteId: iid, phase: "revoked", at: Date.now(), response: data, error: null };
@@ -67232,7 +69963,7 @@ function installAltaraDebugServerInvitesSettings() {
         serverId: sid,
         owner: !!(getServerCapabilityMeta(sid).isOwner || getServerCapabilityMeta(sid).isActualOwner),
         createInvite: currentUserCanCreateInvites(sid),
-        canonicalCreateInviteKey: "create_invite",
+        canonicalCreateInviteKey: "create_invites",
         manageInvites: currentUserCanManageInvites(sid),
         kickMembers: currentUserCanKickMembers(sid),
         snapshotVersion: snapshot.version,
@@ -67242,7 +69973,7 @@ function installAltaraDebugServerInvitesSettings() {
         scrollTop: serverSettingsInvitesScrollByServerId.get(sid) || 0,
         permissions: {
           kick_members: permissions.kick_members === true,
-          create_invite: permissions.create_invite === true,
+          create_invites: permissions.create_invites === true,
           manage_invites: permissions.manage_invites === true,
           change_nickname: permissions.change_nickname === true,
           manage_nicknames: permissions.manage_nicknames === true,
@@ -67308,11 +70039,11 @@ function canAccessServerSettingsPanel(panelName = "profile", serverId = serverSe
   const capabilityState = getCurrentServerCapabilityUiState(sid);
   if (panel === "danger") return !!getServerCapabilityMeta(sid).canDelete;
   if (panel === "roles") return !!(capabilityState.isOwner || capabilityState.canManageRoles);
-  if (panel === "channels") return !!(capabilityState.isOwner || currentUserCanManageChannels(sid));
+  if (panel === "channels") return currentUserCanManageChannels(sid);
   if (panel === "members") return !!getServerCapabilityMeta(sid).isMember;
   if (panel === "invites") return currentUserCanManageInvites(sid);
   if (panel === "bots") return !!getServerCapabilityMeta(sid).isMember;
-  if (panel === "moderation") return !!(capabilityState.isOwner || currentUserCanBanMembers(sid) || currentUserCanTimeoutMembers(sid) || currentUserCanManageServer(sid));
+  if (panel === "moderation") return !!(capabilityState.isOwner || currentUserCanBanMembers(sid) || currentUserCanTimeoutMembers(sid) || currentUserCanViewAuditLog(sid));
   if (panel === "profile") return !!(capabilityState.isOwner || capabilityState.canManageServer);
   // Read-only diagnostics: any current member may view their own resolved access, the
   // server's risk overview, and the (read-only) role permissions matrix. This panel never
@@ -67402,10 +70133,18 @@ function captureServerSettingsVisualState() {
     const el = modal?.querySelector?.(selector) || document.querySelector(selector);
     if (el) scrolls.push({ selector, top: el.scrollTop || 0, left: el.scrollLeft || 0 });
   });
+  const activeElement = modal?.contains?.(document.activeElement) ? document.activeElement : null;
+  const focus = activeElement ? {
+    id: String(activeElement.id || ""),
+    rolePermissionSearch: activeElement.matches?.("[data-server-settings-role-perm-search]") === true,
+    selectionStart: Number.isInteger(activeElement.selectionStart) ? activeElement.selectionStart : null,
+    selectionEnd: Number.isInteger(activeElement.selectionEnd) ? activeElement.selectionEnd : null,
+  } : null;
   return {
     panel: getServerSettingsActivePanelName(),
     selectedRoleId: serverSettingsRoleSelectedId,
     scrolls,
+    focus,
   };
 }
 
@@ -67420,8 +70159,10 @@ function restoreServerSettingsVisualState(snapshot = null) {
   if (selectedRoleId && sid) {
     const roles = getServerRolesForSettingsDisplay(sid);
     if (roles.some((role) => getServerRoleUiId(role) === selectedRoleId || normId(role?.id || "") === normId(selectedRoleId))) {
-      serverSettingsRoleSelectedId = selectedRoleId;
-      renderServerSettingsRolesUi();
+      if (serverSettingsRoleSelectedId !== selectedRoleId) {
+        serverSettingsRoleSelectedId = selectedRoleId;
+        renderServerSettingsRolesUi();
+      }
     }
   }
 
@@ -67432,7 +70173,77 @@ function restoreServerSettingsVisualState(snapshot = null) {
       el.scrollTop = Number(entry.top) || 0;
       el.scrollLeft = Number(entry.left) || 0;
     });
+    const focusSnapshot = snapshot.focus || null;
+    const focusTarget = focusSnapshot?.id
+      ? document.getElementById(focusSnapshot.id)
+      : (focusSnapshot?.rolePermissionSearch ? modal.querySelector("[data-server-settings-role-perm-search]") : null);
+    if (focusTarget && modal.contains(focusTarget)) {
+      try {
+        focusTarget.focus({ preventScroll: true });
+        if (
+          Number.isInteger(focusSnapshot.selectionStart)
+          && Number.isInteger(focusSnapshot.selectionEnd)
+          && typeof focusTarget.setSelectionRange === "function"
+        ) {
+          focusTarget.setSelectionRange(focusSnapshot.selectionStart, focusSnapshot.selectionEnd);
+        }
+      } catch (_) {}
+    }
   });
+}
+
+function renderServerSettingsRolesUiPreservingVisualState() {
+  const snapshot = captureServerSettingsVisualState();
+  renderServerSettingsRolesUi();
+  restoreServerSettingsVisualState(snapshot);
+}
+
+function refreshServerSettingsRoleControlAvailability(serverId = "") {
+  const sid = normId(serverId || serverSettingsServerId || "");
+  if (!sid || normId(serverSettingsServerId || "") !== sid) return false;
+  const selectedRole = getServerSettingsRoleById(serverSettingsRoleSelectedId, sid);
+  const roleBusy = serverSettingsRolesLoading || serverSettingsRolesMutating || serverSettingsRolePermissionsMutating;
+  const canCreateRole = !roleBusy && currentUserCanCreateServerRole(sid);
+  const createBtn = document.getElementById("btnServerSettingsRoleCreate");
+  const roleNameInput = document.getElementById("serverSettingsRoleName");
+  const roleColorInput = document.getElementById("serverSettingsRoleColor");
+  const rolePresetInput = document.getElementById("serverSettingsRolePreset");
+  if (createBtn) createBtn.disabled = !canCreateRole;
+  if (roleNameInput) roleNameInput.disabled = !canCreateRole;
+  if (roleColorInput) roleColorInput.disabled = !canCreateRole;
+  if (rolePresetInput) rolePresetInput.disabled = !canCreateRole;
+
+  document.querySelectorAll("[data-server-settings-role-perm-toggle]").forEach((control) => {
+    const roleId = normId(control.getAttribute("data-server-settings-role-id") || "");
+    const permissionKey = normalizeServerPermissionKey(control.getAttribute("data-server-settings-role-perm-key") || "");
+    const role = roleId ? getServerSettingsRoleById(roleId, sid) : selectedRole;
+    const implemented = getImplementedServerPermissionKeys().includes(permissionKey);
+    control.disabled = roleBusy
+      || !role
+      || !implemented
+      || !canPersistServerRolePermissions(role)
+      || !canEditServerRolePermissionsInSettings(sid, role)
+      || !canEditServerRolePermissionKeyInSettings(sid, role, permissionKey, !control.checked);
+  });
+  document.querySelectorAll("[data-server-settings-role-perm-preset]").forEach((control) => {
+    const roleId = normId(control.getAttribute("data-server-settings-role-id") || "");
+    const role = roleId ? getServerSettingsRoleById(roleId, sid) : selectedRole;
+    control.disabled = roleBusy
+      || !role
+      || !canPersistServerRolePermissions(role)
+      || !canEditServerRolePermissionsInSettings(sid, role);
+  });
+  document.querySelectorAll("[data-server-settings-role-member-toggle]").forEach((control) => {
+    const roleId = normId(control.getAttribute("data-server-settings-role-id") || "");
+    const userId = normId(control.getAttribute("data-server-settings-user-id") || "");
+    const role = roleId ? getServerSettingsRoleById(roleId, sid) : selectedRole;
+    control.disabled = roleBusy
+      || !role
+      || isManagedServerRole(role)
+      || !canCurrentUserAssignServerRoleToMember(sid, userId, roleId)
+      || serverSettingsRoleMemberBusy.has(`${roleId}:${userId}`);
+  });
+  return true;
 }
 
 function getServerSettingsSaveFeedbackElement() {
@@ -67571,6 +70382,7 @@ function openServerDeleteConfirmModal(serverId = "", { serverName = "" } = {}) {
 function applyServerDeletionLocally(serverId = "", { source = "client" } = {}) {
   const sid = normId(serverId);
   if (!sid) return;
+  cancelServerRoleAuthorityRefreshForServer(sid, "server_deleted");
 
   ensureDeletedServersLoaded();
 
@@ -67859,7 +70671,10 @@ async function openServerSettingsModal(serverCtx = null) {
   if (!sid) return;
 
 
-  await ensureServerRolePermissionCache(sid, { force: false }).catch(() => null);
+  await Promise.all([
+    ensureServerRolePermissionCache(sid, { force: false }).catch(() => null),
+    fetchServerMembersForSidebar(sid, { force: false }).catch(() => []),
+  ]);
   const caps = getServerCapabilityMeta(sid);
   if (!currentUserCanOpenServerSettings(sid)) {
     alert("Sem permissao para configurar este server.");
@@ -67984,6 +70799,11 @@ async function deleteServerChannelById(serverId, {
     if (!ok) return false;
   }
 
+  if (!currentUserCanManageChannels(sid)) {
+    await requestAppAlert("You don't have permission to manage channels.", { title: "Server Channels" }).catch(() => {});
+    return false;
+  }
+
   let rpcError = null;
   if (cid) {
     const rpcRes = await deleteServerChannelRpc(sid, cid);
@@ -68006,12 +70826,14 @@ async function deleteServerChannelById(serverId, {
   const wasActiveDeletedChannel = !!convId && activeConvId === convId;
 
   if (convId) {
-    dmUnreadByConversationId.delete(convId);
-    persistDmUnreadConversationsToStorage();
-    serverConversationMemberIdsByConversationId.delete(convId);
-    if (normId(callConversationId || "") === convId && inCall) {
-      await hangupCurrentCallByUser("?? This channel was deleted.");
-    }
+    // A deleted server-channel conversation must never survive in the GDM
+    // collections through an earlier misclassification/offline snapshot. The
+    // backend origin registry is authoritative; this tombstone is immediate
+    // client-side defense in depth for the deleting session.
+    await purgeRevokedGroupDmClientState(convId, {
+      reason: "server_channel_origin_deleted",
+      navigate: wasActiveDeletedChannel,
+    });
   }
 
   serverChannelListByServerId.delete(sid);
@@ -68079,6 +70901,11 @@ async function deleteServerChannelCategoryById(serverId, {
     if (!ok) return false;
   }
 
+  if (!currentUserCanManageChannels(sid)) {
+    await requestAppAlert("You don't have permission to manage channels.", { title: "Server Channels" }).catch(() => {});
+    return false;
+  }
+
   const rpcRes = await deleteServerChannelCategoryRpc(sid, cid);
   const rpcError = rpcRes?.error || null;
   if (rpcError && !isMissingRpcError(rpcError)) {
@@ -68138,27 +70965,9 @@ async function leaveServerById(serverId, { serverName = "Server" } = {}) {
   });
   if (!ok) return;
 
-  let leaveSystemMessageId = "";
-  const leaveEventRes = await announceServerMembershipEvent(sid, {
-    event: "member_left",
-    actorName: getCurrentUserSystemDisplayName(),
-    fallbackConversationId: normId(getServerRowById(sid)?.defaultConversationId || ""),
-  }).catch(() => ({ ok: false }));
-  if (leaveEventRes?.ok) {
-    leaveSystemMessageId = normId(leaveEventRes.messageId || "");
-  }
-
+  const membershipEventNotBeforeMs = Date.now();
   const { error } = await leaveServerRpc(sid);
   if (error) {
-    if (leaveSystemMessageId) {
-      try {
-        await supabase
-          .from("messages")
-          .delete()
-          .eq("id", leaveSystemMessageId)
-          .eq("user_id", state.user?.id || "");
-      } catch (_) {}
-    }
     const msg = String(error?.message || "").toLowerCase();
     if (isMissingRpcError(error)) {
       alert("Falta SQL no Supabase: executa SQL/SUPABASE_PATCH_SERVER_INVITE_LINKS.sql");
@@ -68171,6 +70980,11 @@ async function leaveServerById(serverId, { serverName = "Server" } = {}) {
     alert(`Erro ao sair do server: ${error.message}`);
     return;
   }
+
+  await announceServerMembershipEvent(sid, {
+    event: "member_left",
+    notBeforeMs: membershipEventNotBeforeMs,
+  }).catch(() => ({ ok: false }));
 
   const wasActiveServer = normId(state.activeDm?.serverId || "") === sid;
   forgetServerLastChannel(sid, { persist: true });
@@ -68200,6 +71014,10 @@ async function submitServerSettingsModal() {
   }
 
   const visualSnapshot = captureServerSettingsVisualState();
+  const pendingRolePermissionCount = getServerSettingsPendingRolePermissionEntries().length;
+  if (serverSettingsRolePermissionsDirty && pendingRolePermissionCount > 0) {
+    beginServerRolePermissionSaveTiming(sid, pendingRolePermissionCount);
+  }
   clearServerSettingsSaveFeedback();
   const nameInput = document.getElementById("serverSettingsName");
   const welcomeSelect = document.getElementById("serverSettingsWelcomeChannel");
@@ -68227,29 +71045,32 @@ async function submitServerSettingsModal() {
       || bannerTouched
       || requestedWelcomeChannelId !== normId(currentServerRow?.welcomeConversationId || "")
     );
-    const capabilityState = await resolveCurrentUserServerCapabilityState(sid, { reason: "server-profile-save", force: true });
-    console.info("[server-settings] server profile save debug", {
-      resolvedServerId: getServerSettingsActiveServerId(),
-      serverId: sid,
-      serverSettingsServerId: typeof serverSettingsServerId !== "undefined" ? serverSettingsServerId : null,
-      currentUserId: normId(state.user?.id || ""),
-      draft: {
-        name: nextName,
-        iconRemoved: !!serverSettingsIconRemoved,
-        hasIconFile: !!serverSettingsIconFile,
-        iconUrl: serverSettingsIconRemoved ? "" : String(serverSettingsIconUrl || "").trim(),
-        bannerRemoved: !!serverSettingsBannerRemoved,
-        hasBannerFile: !!serverSettingsBannerFile,
-        bannerUrl: serverSettingsBannerRemoved ? "" : normalizeBannerUrl(serverSettingsBannerUrl || ""),
-        welcomeChannelId: requestedWelcomeChannelId,
-      },
-      activeServer: currentServerRow,
-      capabilityState,
-    });
-    const canSaveServerProfile = !!(capabilityState.isOwner || capabilityState.canManageServer);
-    if (profileChangesRequested && !canSaveServerProfile) {
-      showServerSettingsSaveFeedback("You do not have permission to manage this server.", "error");
-      return false;
+    let capabilityState = null;
+    if (profileChangesRequested) {
+      capabilityState = await resolveCurrentUserServerCapabilityState(sid, { reason: "server-profile-save", force: true });
+      console.info("[server-settings] server profile save debug", {
+        resolvedServerId: getServerSettingsActiveServerId(),
+        serverId: sid,
+        serverSettingsServerId: typeof serverSettingsServerId !== "undefined" ? serverSettingsServerId : null,
+        currentUserId: normId(state.user?.id || ""),
+        draft: {
+          name: nextName,
+          iconRemoved: !!serverSettingsIconRemoved,
+          hasIconFile: !!serverSettingsIconFile,
+          iconUrl: serverSettingsIconRemoved ? "" : String(serverSettingsIconUrl || "").trim(),
+          bannerRemoved: !!serverSettingsBannerRemoved,
+          hasBannerFile: !!serverSettingsBannerFile,
+          bannerUrl: serverSettingsBannerRemoved ? "" : normalizeBannerUrl(serverSettingsBannerUrl || ""),
+          welcomeChannelId: requestedWelcomeChannelId,
+        },
+        activeServer: currentServerRow,
+        capabilityState,
+      });
+      const canSaveServerProfile = !!(capabilityState?.isOwner || capabilityState?.canManageServer);
+      if (!canSaveServerProfile) {
+        showServerSettingsSaveFeedback("You do not have permission to manage this server.", "error");
+        return false;
+      }
     }
 
     let nextIcon = serverSettingsIconRemoved ? "" : String(serverSettingsIconUrl || "").trim();
@@ -68287,55 +71108,20 @@ async function submitServerSettingsModal() {
     serverSettingsWelcomeChannelId = nextWelcomeChannelId;
 
     if (profileChangesRequested) {
-      let saveError = null;
-      let saveMethod = "rpc";
-      let profileRpcSavedWelcomeChannel = false;
       const rpcRes = await updateServerProfileWithWelcomeRpc(sid, {
         name: nextName,
         iconUrl: nextIcon,
         welcomeChannelId: nextWelcomeChannelId,
         bannerUrl: nextBanner,
-        bannerTouched,
       });
-      profileRpcSavedWelcomeChannel = !!(!rpcRes?.error && rpcRes?.savedWelcomeChannel);
       if (rpcRes?.error) {
-        const shouldTryDirectProfileUpdate = canSaveServerProfile
-          && (isMissingRpcError(rpcRes.error) || isServerProfilePermissionError(rpcRes.error));
-
-        if (shouldTryDirectProfileUpdate) {
-          if (!isMissingRpcError(rpcRes.error)) {
-            console.warn("[server-settings] update_server_profile rejected effective manage_server user; trying direct server profile update", {
-              serverId: sid,
-              userId: normId(state.user?.id || ""),
-              canManageServer: capabilityState?.canManageServer,
-              capabilityState,
-              message: rpcRes.error?.message,
-              details: rpcRes.error?.details,
-              hint: rpcRes.error?.hint,
-              code: rpcRes.error?.code,
-              error: rpcRes.error,
-            });
-          }
-          const directRes = await updateServerProfileDirectForManageServer(
-            sid,
-            { name: nextName, iconUrl: nextIcon, bannerUrl: nextBanner, bannerTouched },
-            { capabilityState, rpcError: rpcRes.error }
-          );
-          saveMethod = directRes?.method || "direct";
-          profileRpcSavedWelcomeChannel = false;
-          saveError = directRes?.error || null;
-        } else {
-          saveError = rpcRes.error;
-        }
-      }
-
-      if (saveError) {
+        const saveError = rpcRes.error;
         console.error("[server-settings] failed to save server profile", {
           serverId: sid,
           userId: normId(state.user?.id || ""),
           canManageServer: capabilityState?.canManageServer,
           capabilityState,
-          method: saveMethod,
+          method: rpcRes?.method || "rpc:update_server_profile_v2",
           message: saveError?.message,
           details: saveError?.details,
           hint: saveError?.hint,
@@ -68347,18 +71133,6 @@ async function submitServerSettingsModal() {
           ? "Server profile could not be saved because the backend does not allow this role yet."
           : `Could not save server: ${serverProfileErrorMessage}`;
         showServerSettingsSaveFeedback(userMessage, "error");
-        return false;
-      }
-
-      let welcomeSave = profileRpcSavedWelcomeChannel
-        ? { ok: true, error: null, column: "rpc:update_server_profile_v2", value: nextWelcomeChannelId || "" }
-        : await saveServerWelcomeChannelToTable(sid, nextWelcomeChannelId || "");
-      if (!welcomeSave?.ok) {
-        if (welcomeSave?.needsPatch) {
-          showServerSettingsSaveFeedback(`Missing Supabase SQL for welcome channel persistence (${getSupabaseProjectRefLabel()}).`, "error");
-        } else {
-          showServerSettingsSaveFeedback("Server saved, but Welcome Channel could not be saved because the backend does not allow this field yet.", "error");
-        }
         return false;
       }
 
@@ -68375,7 +71149,7 @@ async function submitServerSettingsModal() {
         row.name = nextName;
         row.iconUrl = nextIcon;
         row.bannerUrl = nextBanner;
-        row.welcomeConversationId = normId(welcomeSave?.value || nextWelcomeChannelId || "");
+        row.welcomeConversationId = normId(nextWelcomeChannelId || "");
       }
       serverSettingsName = nextName;
       serverSettingsIconUrl = nextIcon;
@@ -68393,7 +71167,7 @@ async function submitServerSettingsModal() {
         serverBannerUrl: bannerWasRemovedExplicitly ? null : nextBanner,
         hasBanner: !bannerWasRemovedExplicitly && !!nextBanner,
         bannerRemoved: bannerWasRemovedExplicitly,
-        welcomeChannelId: normId(welcomeSave?.value || nextWelcomeChannelId || ""),
+        welcomeChannelId: normId(nextWelcomeChannelId || ""),
         updatedAt: new Date().toISOString(),
         sourceUserId: normId(state.user?.id || ""),
       };
@@ -68422,16 +71196,30 @@ async function submitServerSettingsModal() {
       return false;
     }
 
-    serverChannelListByServerId.delete(sid);
-    serverChannelCategoryListByServerId.delete(sid);
-    await loadGroupAndServerCollections({ force: true, hydrateGroupMetadata: true }).catch(() => {});
-    renderGroupsRail();
-    await refreshServerConversationUi({ force: true, reason: "server-channel-change", refreshChannels: true, refreshMembers: true }).catch(() => {});
-    await loadDmList().catch(() => {});
+    if (profileChangesRequested) {
+      serverChannelListByServerId.delete(sid);
+      serverChannelCategoryListByServerId.delete(sid);
+      void (async () => {
+        await loadGroupAndServerCollections({ force: true, hydrateGroupMetadata: true }).catch(() => {});
+        renderGroupsRail();
+        await Promise.allSettled([
+          refreshServerConversationUi({ force: true, reason: "server-profile-change", refreshChannels: true, refreshMembers: false }),
+          loadDmList(),
+        ]);
+      })();
+    }
     setServerSettingsRolesMeta("", { error: false });
-    renderServerSettingsRolesUi();
+    // The staged role editor already contains the authoritative RPC result.
+    // Re-enable its existing controls in place instead of rebuilding the role
+    // list and permission workspace (which moved the modal while scroll was
+    // restored on a later frame).
+    refreshServerSettingsRoleControlAvailability(sid);
     restoreServerSettingsVisualState(visualSnapshot);
     showServerSettingsSaveFeedback("Saved.", "success", { autoHideMs: 1500 });
+    recordServerRolePermissionSaveTiming("ui_saved", { serverId: sid });
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      recordServerRolePermissionSaveTiming("first_saved_paint", { serverId: sid });
+    }));
     return true;
   } catch (err) {
     showServerSettingsSaveFeedback(`Could not save server settings: ${err?.message || err}`, "error");
@@ -68442,6 +71230,7 @@ async function submitServerSettingsModal() {
       saveBtn.disabled = false;
       saveBtn.textContent = saveBtnPrevText;
     }
+    recordServerRolePermissionSaveTiming("save_button_reenabled", { serverId: sid });
   }
 }
 
@@ -68571,6 +71360,33 @@ function bindServerSettingsModalOnce() {
       renderServerSettingsChannelsPanel({ force: true, reason: "category-toggle" });
       return;
     }
+    const batch7aTriState = target?.closest?.("[data-batch7a-scope-type] [data-channel-permission-state]");
+    if (batch7aTriState) {
+      e.preventDefault();
+      const group = batch7aTriState.closest("[data-channel-permission-key]");
+      if (!group) return;
+      group.setAttribute("data-channel-permission-value", batch7aTriState.getAttribute("data-channel-permission-state") || "neutral");
+      renderChannelPermissionTriStateGroup(group);
+      return;
+    }
+    const batch7aAddTarget = target?.closest?.("[data-batch7a-add-target]");
+    if (batch7aAddTarget) {
+      e.preventDefault();
+      addServerSettingsBatch7aTarget(batch7aAddTarget);
+      return;
+    }
+    const batch7aSaveTarget = target?.closest?.("[data-batch7a-save-target]");
+    if (batch7aSaveTarget) {
+      e.preventDefault();
+      void saveServerSettingsBatch7aTarget(batch7aSaveTarget);
+      return;
+    }
+    const batch7aSync = target?.closest?.("[data-batch7a-sync-category]");
+    if (batch7aSync) {
+      e.preventDefault();
+      void syncSelectedServerSettingsChannelBatch7a(batch7aSync);
+      return;
+    }
     const channelRow = target?.closest?.("[data-server-settings-channel-id]");
     if (channelRow) {
       e.preventDefault();
@@ -68578,6 +71394,9 @@ function bindServerSettingsModalOnce() {
       const id = normId(channelRow.getAttribute("data-server-settings-channel-id") || "");
       if (sid && id) serverSettingsChannelsSelectionByServerId.set(sid, { type: "channel", id });
       renderServerSettingsChannelsPanel({ force: true, reason: "select-channel" });
+      if (sid && id) void loadServerPermissionOverridesBatch7a(sid, "channel", id, { force: false }).then(() => {
+        renderServerSettingsChannelsPanel({ force: true, reason: "select-channel-permissions-loaded" });
+      }).catch(() => {});
       return;
     }
     const categoryRow = target?.closest?.("[data-server-settings-category-id]");
@@ -68587,6 +71406,9 @@ function bindServerSettingsModalOnce() {
       const id = normId(categoryRow.getAttribute("data-server-settings-category-id") || "");
       if (sid && id) serverSettingsChannelsSelectionByServerId.set(sid, { type: "category", id });
       renderServerSettingsChannelsPanel({ force: true, reason: "select-category" });
+      if (sid && id) void loadServerPermissionOverridesBatch7a(sid, "category", id, { force: false }).then(() => {
+        renderServerSettingsChannelsPanel({ force: true, reason: "select-category-permissions-loaded" });
+      }).catch(() => {});
       return;
     }
     const editChannelItemBtn = target?.closest?.("[data-server-settings-channels-edit]");
@@ -68626,6 +71448,18 @@ function bindServerSettingsModalOnce() {
       e.preventDefault();
       if (installAppBtn.disabled) return;
       void handleServerSettingsInstallApp();
+      return;
+    }
+    const toggleBotBtn = target?.closest?.("[data-server-bot-toggle]");
+    if (toggleBotBtn) {
+      e.preventDefault();
+      if (toggleBotBtn.disabled) return;
+      const shouldEnable = toggleBotBtn.getAttribute("data-server-bot-enable") === "true";
+      toggleBotBtn.disabled = true;
+      Promise.resolve(handleServerSettingsBotToggle(
+        toggleBotBtn.getAttribute("data-server-bot-toggle") || "",
+        shouldEnable
+      )).finally(() => { toggleBotBtn.disabled = false; });
       return;
     }
     const removeBotBtn = target?.closest?.("[data-server-bot-remove]");
@@ -68816,6 +71650,10 @@ function bindServerSettingsModalOnce() {
     if (auditFilterBtn) {
       e.preventDefault();
       const sid = normId(serverSettingsServerId || "");
+      if (!currentUserCanViewAuditLog(sid)) {
+        clearServerAuditLogProtectedState(sid, { render: true, reason: "audit_filter_permission_denied" });
+        return;
+      }
       const filter = String(auditFilterBtn.getAttribute("data-server-settings-audit-filter") || "all").trim() || "all";
       if (sid) serverAuditLogFilterByServerId.set(sid, filter);
       renderServerSettingsModerationPanel();
@@ -68824,6 +71662,10 @@ function bindServerSettingsModalOnce() {
     const auditCopyIdBtn = target?.closest?.("[data-server-settings-audit-copy-id]");
     if (auditCopyIdBtn) {
       e.preventDefault();
+      if (!currentUserCanViewAuditLog(serverSettingsServerId)) {
+        clearServerAuditLogProtectedState(serverSettingsServerId, { render: true, reason: "audit_copy_permission_denied" });
+        return;
+      }
       const uid = normId(auditCopyIdBtn.getAttribute("data-server-settings-audit-copy-id") || "");
       if (uid) void navigator.clipboard?.writeText?.(uid).catch(() => {});
       if (typeof showDmComposerNotice === "function") showDmComposerNotice("User ID copied.", { title: "Audit Log" });
@@ -68994,6 +71836,10 @@ function bindServerSettingsModalOnce() {
     const auditSearchInput = target?.closest?.('[data-server-settings-audit-search="1"]');
     if (auditSearchInput instanceof HTMLInputElement) {
       const sid = normId(serverSettingsServerId || "");
+      if (!currentUserCanViewAuditLog(sid)) {
+        clearServerAuditLogProtectedState(sid, { render: true, reason: "audit_search_permission_denied" });
+        return;
+      }
       const nextValue = String(auditSearchInput.value || "");
       const selectionStart = Number.isFinite(auditSearchInput.selectionStart) ? auditSearchInput.selectionStart : nextValue.length;
       if (sid) serverAuditLogSearchByServerId.set(sid, nextValue);
@@ -69446,6 +72292,17 @@ async function queryServerChannelsWithFallbacks(buildQuery, {
 } = {}) {
   const variants = [
     {
+      select: "id, server_id, conversation_id, name, position, created_at, channel_type, category_id, is_private, user_limit, media_mode, permission_overrides_synced",
+      hasPositionColumn: true,
+      hasCreatedAtColumn: true,
+      hasChannelTypeColumn: true,
+      hasCategoryIdColumn: true,
+      hasIsPrivateColumn: true,
+      hasUserLimitColumn: true,
+      hasMediaModeColumn: true,
+      hasPermissionOverridesSyncedColumn: true,
+    },
+    {
       select: "id, server_id, conversation_id, name, position, created_at, channel_type, category_id, is_private, user_limit, media_mode, deleted_at",
       hasPositionColumn: true,
       hasCreatedAtColumn: true,
@@ -69454,6 +72311,7 @@ async function queryServerChannelsWithFallbacks(buildQuery, {
       hasIsPrivateColumn: true,
       hasUserLimitColumn: true,
       hasMediaModeColumn: true,
+      hasPermissionOverridesSyncedColumn: false,
     },
     {
       select: "id, server_id, conversation_id, name, position, created_at, channel_type, category_id, is_private",
@@ -69557,6 +72415,7 @@ async function queryServerChannelsWithFallbacks(buildQuery, {
         || isMissingColumnError(lastError, "user_limit")
         || isMissingColumnError(lastError, "media_mode")
         || isMissingColumnError(lastError, "deleted_at")
+        || isMissingColumnError(lastError, "permission_overrides_synced")
         || isMissingColumnError(lastError, "position")
         || isMissingColumnError(lastError, "created_at");
       if (!missingSchemaColumn) break;
@@ -69567,6 +72426,7 @@ async function queryServerChannelsWithFallbacks(buildQuery, {
         || isMissingColumnError(lastError, "is_private")
         || isMissingColumnError(lastError, "user_limit")
         || isMissingColumnError(lastError, "media_mode")
+        || isMissingColumnError(lastError, "permission_overrides_synced")
         || isMissingColumnError(lastError, "position")
         || isMissingColumnError(lastError, "created_at");
       if (!missingSchemaColumn) break;
@@ -69583,6 +72443,7 @@ async function queryServerChannelsWithFallbacks(buildQuery, {
     hasIsPrivateColumn: false,
     hasUserLimitColumn: false,
     hasMediaModeColumn: false,
+    hasPermissionOverridesSyncedColumn: false,
   };
 }
 
@@ -69594,6 +72455,7 @@ function normalizeServerChannelSidebarRow(row, serverId, {
   hasIsPrivateColumn = true,
   hasUserLimitColumn = true,
   hasMediaModeColumn = true,
+  hasPermissionOverridesSyncedColumn = true,
 } = {}) {
   const sid = normId(serverId || row?.server_id || row?.serverId || "");
   const conversationId = normId(row?.conversation_id || row?.conversationId || "");
@@ -69607,6 +72469,9 @@ function normalizeServerChannelSidebarRow(row, serverId, {
   const rawPrivate = hasIsPrivateColumn ? (row?.is_private ?? row?.isPrivate ?? false) : (row?.isPrivate ?? false);
   const rawUserLimit = hasUserLimitColumn ? (row?.user_limit ?? row?.userLimit ?? 0) : (row?.userLimit ?? 0);
   const rawMediaMode = hasMediaModeColumn ? (row?.media_mode || row?.mediaMode || "audio_only") : (row?.mediaMode || "audio_only");
+  const rawPermissionsSynced = hasPermissionOverridesSyncedColumn
+    ? (row?.permission_overrides_synced ?? row?.permissionsSynced ?? true)
+    : (row?.permissionsSynced ?? true);
   return {
     id: normId(row?.id || ""),
     serverId: sid,
@@ -69619,6 +72484,7 @@ function normalizeServerChannelSidebarRow(row, serverId, {
     isPrivate: rawPrivate === true || String(rawPrivate || "").trim().toLowerCase() === "true",
     userLimit: channelType === "voice" ? clampServerVoiceUserLimit(rawUserLimit, 0) : 0,
     mediaMode: channelType === "voice" ? normalizeServerVoiceMediaMode(rawMediaMode, "audio_only") : "audio_only",
+    permissionsSynced: rawPermissionsSynced !== false && String(rawPermissionsSynced).trim().toLowerCase() !== "false",
   };
 }
 
@@ -69687,6 +72553,9 @@ function makeServerChannelSidebarFallbackRow(serverId, {
 function getKnownServerChannelsForSidebar(serverId, { activeConversationId = "" } = {}) {
   const sid = normId(serverId || "");
   if (!sid) return [];
+  if (isServerChannelAuthorityShellState(sid)) return [];
+  if (serverChannelVisibilityAuthorityResolvingByServerId.has(sid)) return [];
+  const backendVisibleIds = serverChannelBackendVisibleIdsByServerId.get(sid);
   const rows = [];
   const seen = new Set();
   const push = (row = null) => {
@@ -69713,6 +72582,8 @@ function getKnownServerChannelsForSidebar(serverId, { activeConversationId = "" 
       hasMediaModeColumn: true,
     });
     const convId = normId(normalized?.conversationId || "");
+    const channelId = normId(normalized?.id || "");
+    if (backendVisibleIds instanceof Set && (!channelId || !backendVisibleIds.has(channelId))) return;
     if (!convId || seen.has(convId)) return;
     seen.add(convId);
     rows.push(normalized);
@@ -69834,6 +72705,10 @@ function isServerChannelSidebarStillLoading(serverId = "") {
 function queueServerChannelHydrationRetry(serverId = "", reason = "channel-hydration-retry", { force = true } = {}) {
   const sid = normId(serverId || "");
   if (!sid || serverChannelHydrationRetryTimersByServerId.has(sid)) return;
+  if (
+    !serverChannelVisibilityAuthorityResolvingByServerId.has(sid)
+    && serverChannelBackendVisibleIdsByServerId.has(sid)
+  ) return;
   if (shouldSkipRemovedServerRender(sid, "queueServerChannelHydrationRetry")) return;
   const timer = setTimeout(() => {
     serverChannelHydrationRetryTimersByServerId.delete(sid);
@@ -69860,6 +72735,8 @@ function queueServerChannelHydrationRetry(serverId = "", reason = "channel-hydra
 function shouldHydrateServerChannelsFromSidebarGuard(serverId = "") {
   const sid = normId(serverId || "");
   if (!sid) return false;
+  if (serverChannelVisibilityAuthorityResolvingByServerId.has(sid)) return false;
+  if (serverChannelBackendVisibleIdsByServerId.has(sid)) return false;
   const realCachedChannels = Array.isArray(serverChannelListByServerId.get(sid))
     ? (serverChannelListByServerId.get(sid) || [])
     : [];
@@ -69896,10 +72773,26 @@ function buildServerChannelFallbackContext(serverId = "", serverCtx = null) {
 function queueServerChannelBackgroundHydration(serverId = "", serverCtx = null, reason = "channel-background-hydration") {
   const sid = normId(serverId || serverCtx?.serverId || "");
   if (!sid || serverChannelBackgroundHydrationTimersByServerId.has(sid)) return;
+  if (
+    !serverChannelVisibilityAuthorityResolvingByServerId.has(sid)
+    && serverChannelBackendVisibleIdsByServerId.has(sid)
+  ) return;
   if (shouldSkipRemovedServerRender(sid, "queueServerChannelBackgroundHydration")) return;
   const timer = setTimeout(async () => {
     serverChannelBackgroundHydrationTimersByServerId.delete(sid);
     if (shouldSkipRemovedServerRender(sid, "serverChannelBackgroundHydrationTimer")) return;
+    if (serverChannelVisibilityAuthorityResolvingByServerId.has(sid)) {
+      // A role-authority reconciliation or navigation-entry recovery already owns
+      // resolving this exact server/epoch (ensureServerChannelVisibilityAuthorityReadyForNavigation
+      // or refreshServerChannelVisibilityAuthorityAfterRoleChange). Starting a second,
+      // uncoordinated fetch here would just be discarded as stale and duplicates network work.
+      logSidebarRenderState("server_channel_background_hydration_skipped_resolving", {
+        mode: "server",
+        serverId: sid,
+        reason,
+      });
+      return;
+    }
     const panel = document.getElementById("serverChannelsPanel");
     if (normId(panel?.getAttribute?.("data-server-panel-server-id") || "") !== sid) return;
     const ctx = buildServerChannelFallbackContext(sid, serverCtx);
@@ -69971,7 +72864,9 @@ function renderServerChannelsLoadingState(serverCtx = null, { reason = "channel-
     domStillLoading: sid ? isServerChannelSidebarStillLoading(sid) : false,
   });
   if (!sid || !panel || !body || !isServerSidebarContextStillActive(sid)) return false;
-  const fallbackChannels = getKnownServerChannelsForSidebar(sid);
+  const exactVisibilityResolved = hasCurrentServerChannelVisibilityAuthority(sid)
+    && !isServerChannelAuthorityShellState(sid);
+  const fallbackChannels = exactVisibilityResolved ? getKnownServerChannelsForSidebar(sid) : [];
   if (fallbackChannels.length) {
     logSidebarRenderState("render_server_channels_loading_fallback", {
       mode: "server",
@@ -69994,6 +72889,8 @@ function renderServerChannelsLoadingState(serverCtx = null, { reason = "channel-
     return true;
   }
   if (
+    exactVisibilityResolved
+    &&
     normId(panel.getAttribute("data-server-panel-server-id") || "") === sid
     && panel.querySelector("[data-server-channel-id], [data-server-category-section]")
   ) {
@@ -70012,6 +72909,11 @@ function renderServerChannelsLoadingState(serverCtx = null, { reason = "channel-
   panel.setAttribute("aria-hidden", "false");
   panel.setAttribute("data-server-panel-server-id", sid);
   setServerChannelLoadState(sid, "loading", { reason, token });
+  // Same reasoning as the equivalent raw-wipe in renderServerSidebarShell: a stale
+  // cached signature here would let a later repaint believe this placeholder DOM
+  // still matches an old accepted snapshot and skip repainting it.
+  panel.removeAttribute("data-server-visible-channel-authority-signature");
+  serverChannelSidebarRenderSignatureByServerId.delete(sid);
   panel.innerHTML = `<div class="serverChannelsPanel__body"><div class="serverChannelsHint">Loading channels...</div></div>`;
   logSidebarRenderState("render_server_channels_loading_end", {
     mode: "server",
@@ -70096,7 +72998,27 @@ function isChannelAccessReadDebugEnabled() {
   }
 }
 
-async function fetchServerChannelsForSidebarResult(serverId, { force = false } = {}) {
+const serverChannelsSidebarResultInFlightByKey = new Map();
+function fetchServerChannelsForSidebarResult(serverId, options = {}) {
+  const sid = normId(serverId || getActiveServerIdForSidebar());
+  const commit = options?.commit !== false;
+  const force = options?.force === true;
+  // force is part of the key so a force:true caller (needs a guaranteed fresh
+  // network read) can never silently inherit a force:false caller's in-flight
+  // promise, which might resolve from cache without hitting the network at
+  // all -- the two are not interchangeable requests.
+  const key = `${sid}:${commit ? "commit" : "no-commit"}:${force ? "force" : "cache-ok"}`;
+  const existing = serverChannelsSidebarResultInFlightByKey.get(key);
+  if (existing) return existing;
+  const request = fetchServerChannelsForSidebarResultInner(serverId, options).finally(() => {
+    if (serverChannelsSidebarResultInFlightByKey.get(key) === request) {
+      serverChannelsSidebarResultInFlightByKey.delete(key);
+    }
+  });
+  serverChannelsSidebarResultInFlightByKey.set(key, request);
+  return request;
+}
+async function fetchServerChannelsForSidebarResultInner(serverId, { force = false, commit = true } = {}) {
   const sid = normId(serverId || getActiveServerIdForSidebar());
   if (shouldSkipRemovedServerRender(sid, "fetchServerChannelsForSidebarResult")) {
     return { ok: true, error: null, channels: [], skipped: true };
@@ -70114,15 +73036,25 @@ async function fetchServerChannelsForSidebarResult(serverId, { force = false } =
     domStillLoading: sid ? isServerChannelSidebarStillLoading(sid) : false,
   });
   if (!sid) return { ok: false, error: null, channels: [], aborted: true };
+  const requestUserId = normId(state.user?.id || "");
+  const requestAuthorityEpoch = Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0);
+  const isCommitContextCurrent = () => !!(
+    requestUserId
+    && normId(state.user?.id || "") === requestUserId
+    && Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0) === requestAuthorityEpoch
+    && !serverChannelVisibilityAuthorityResolvingByServerId.has(sid)
+  );
   if (isServerDeletedLocally(sid)) {
-    serverChannelListByServerId.delete(sid);
-    serverChannelCategoryListByServerId.delete(sid);
-    serverChannelLoadErrorByServerId.delete(sid);
-    setServerChannelLoadState(sid, "idle", { reason: "server-deleted" });
-    clearServerChannelLoadWatchdog(sid);
-    return { ok: true, error: null, channels: [] };
+    if (commit) {
+      serverChannelListByServerId.delete(sid);
+      serverChannelCategoryListByServerId.delete(sid);
+      serverChannelLoadErrorByServerId.delete(sid);
+      setServerChannelLoadState(sid, "idle", { reason: "server-deleted" });
+      clearServerChannelLoadWatchdog(sid);
+    }
+    return { ok: false, error: null, channels: [], skipped: true, authoritativeVisibility: false };
   }
-  if (!force && serverChannelListByServerId.has(sid)) {
+  if (!force && serverChannelListByServerId.has(sid) && hasCurrentServerChannelVisibilityAuthority(sid)) {
     const channels = getKnownServerChannelsForSidebar(sid);
     if (channels.length) serverChannelLoadErrorByServerId.delete(sid);
     logSidebarRenderState("fetch_server_channels_sidebar_cache_hit", {
@@ -70133,17 +73065,36 @@ async function fetchServerChannelsForSidebarResult(serverId, { force = false } =
       token: Number(getServerChannelLoadState(sid)?.token || 0) || 0,
       domStillLoading: isServerChannelSidebarStillLoading(sid),
     });
-    return { ok: true, error: null, channels };
+    return {
+      ok: true,
+      error: null,
+      channels,
+      authoritativeVisibility: hasCurrentServerChannelVisibilityAuthority(sid),
+    };
   }
 
   let rows = [];
   let queryError = null;
   let querySource = "list_visible_server_channels_v1";
   let queryRes = null;
+  let restOutcomeRecorded = false;
   if (serverChannelVisibleReadRpcAvailable !== false) {
-    const rpcRes = await supabase.rpc("list_visible_server_channels_v1", {
-      p_server_id: sid,
-    });
+    let rpcRes = null;
+    try {
+      rpcRes = await altaraWithTimeout(
+        supabase.rpc("list_visible_server_channels_v1", { p_server_id: sid }),
+        ALTARA_SERVER_VISIBILITY_REST_TIMEOUT_MS,
+        "server visibility REST read"
+      );
+    } catch (error) {
+      rpcRes = { data: null, error };
+    }
+    if (rpcRes?.error) {
+      recordAltaraAuthenticatedRestFailure(rpcRes.error, "server-visibility-rest-error");
+    } else {
+      recordAltaraAuthenticatedRestSuccess("server-visibility-rest-success");
+    }
+    restOutcomeRecorded = !isMissingRpcError(rpcRes?.error);
     if (!rpcRes?.error) {
       serverChannelVisibleReadRpcAvailable = true;
       queryRes = {
@@ -70156,6 +73107,7 @@ async function fetchServerChannelsForSidebarResult(serverId, { force = false } =
         hasIsPrivateColumn: true,
         hasUserLimitColumn: true,
         hasMediaModeColumn: true,
+        hasPermissionOverridesSyncedColumn: true,
       };
     } else if (isMissingRpcError(rpcRes.error)) {
       serverChannelVisibleReadRpcAvailable = false;
@@ -70167,15 +73119,27 @@ async function fetchServerChannelsForSidebarResult(serverId, { force = false } =
     querySource = "direct_server_channels_fallback";
   }
   if (!queryRes) {
-    queryRes = await queryServerChannelsWithFallbacks((select, variant = {}) => {
-      let query = supabase
-        .from("server_channels")
-        .select(select)
-        .eq("server_id", sid);
-      if (variant.hasPositionColumn !== false) query = query.order("position", { ascending: true });
-      if (variant.hasCreatedAtColumn !== false) query = query.order("created_at", { ascending: true });
-      return query;
-    });
+    try {
+      queryRes = await altaraWithTimeout(
+        queryServerChannelsWithFallbacks((select, variant = {}) => {
+          let query = supabase
+            .from("server_channels")
+            .select(select)
+            .eq("server_id", sid);
+          if (variant.hasPositionColumn !== false) query = query.order("position", { ascending: true });
+          if (variant.hasCreatedAtColumn !== false) query = query.order("created_at", { ascending: true });
+          return query;
+        }),
+        ALTARA_SERVER_VISIBILITY_REST_TIMEOUT_MS,
+        "server channel REST fallback"
+      );
+    } catch (error) {
+      queryRes = { data: [], error };
+    }
+    if (!restOutcomeRecorded) {
+      if (queryRes?.error) recordAltaraAuthenticatedRestFailure(queryRes.error, "server-channel-rest-error");
+      else recordAltaraAuthenticatedRestSuccess("server-channel-rest-success");
+    }
   }
   if (queryRes?.error) {
     queryError = queryRes.error;
@@ -70189,35 +73153,35 @@ async function fetchServerChannelsForSidebarResult(serverId, { force = false } =
       });
     }
   } else {
-    serverChannelLoadErrorByServerId.delete(sid);
+    if (commit && isCommitContextCurrent()) serverChannelLoadErrorByServerId.delete(sid);
     rows = Array.isArray(queryRes?.data) ? queryRes.data : [];
   }
-  serverChannelRawLoadDebugByServerId.set(sid, {
-    serverId: sid,
-    source: querySource,
-    rawRows: rows.map((row) => ({ ...row })),
-    rawRowIds: rows.map((row) => normId(row?.id || "")).filter(Boolean),
-    error: queryError,
-    loadedAt: Date.now(),
-  });
+  if (commit && isCommitContextCurrent()) {
+    serverChannelRawLoadDebugByServerId.set(sid, {
+      serverId: sid,
+      source: querySource,
+      rawRows: rows.map((row) => ({ ...row })),
+      rawRowIds: rows.map((row) => normId(row?.id || "")).filter(Boolean),
+      error: queryError,
+      loadedAt: Date.now(),
+    });
+  }
 
   const normalized = rows
     .map((row) => normalizeServerChannelSidebarRow(row, sid, queryRes))
     .filter(Boolean);
 
-  if (!normalized.length) {
-    getKnownServerChannelsForSidebar(sid).forEach((row) => normalized.push(row));
-  }
-
   if (queryError) {
     const fallbackChannels = getKnownServerChannelsForSidebar(sid);
-    if (fallbackChannels.length) {
-      serverChannelLoadErrorByServerId.delete(sid);
-      serverChannelListByServerId.set(sid, fallbackChannels);
-    } else {
-      serverChannelLoadErrorByServerId.set(sid, queryError);
+    if (commit && isCommitContextCurrent()) {
+      if (fallbackChannels.length) {
+        serverChannelLoadErrorByServerId.delete(sid);
+        serverChannelListByServerId.set(sid, fallbackChannels);
+      } else {
+        serverChannelLoadErrorByServerId.set(sid, queryError);
+      }
+      scheduleCallRealtimeSubscriptionSync(0);
     }
-    scheduleCallRealtimeSubscriptionSync(0);
     logSidebarRenderState("fetch_server_channels_sidebar_error", {
       mode: "server",
       serverId: sid,
@@ -70228,7 +73192,7 @@ async function fetchServerChannelsForSidebarResult(serverId, { force = false } =
       token: Number(getServerChannelLoadState(sid)?.token || 0) || 0,
       domStillLoading: isServerChannelSidebarStillLoading(sid),
     });
-    return { ok: false, error: queryError, channels: fallbackChannels };
+    return { ok: false, error: queryError, channels: fallbackChannels, querySource };
   }
 
   normalized.sort((a, b) => (
@@ -70237,59 +73201,82 @@ async function fetchServerChannelsForSidebarResult(serverId, { force = false } =
       || String(a.name || "").localeCompare(String(b.name || ""))
   ));
 
-  const rememberedConvId = getRememberedServerLastChannel(sid);
-  if (rememberedConvId) {
-    const stillExists = normalized.some((ch) => normId(ch?.conversationId || "") === rememberedConvId);
-    if (!stillExists) forgetServerLastChannel(sid, { persist: true });
+  const commitContextCurrent = commit && isCommitContextCurrent();
+  if (commit && !commitContextCurrent) {
+    return {
+      ok: false,
+      error: null,
+      channels: [],
+      querySource,
+      authoritativeVisibility: false,
+      stale: true,
+      reason: "authority_context_changed_during_channel_read",
+    };
   }
 
-  serverChannelListByServerId.set(sid, normalized);
-  persistAltaraOfflineNavigationSnapshot();
-  if (querySource === "list_visible_server_channels_v1") {
-    serverChannelBackendVisibleIdsByServerId.set(
-      sid,
-      new Set(normalized.map((channel) => normId(channel?.id || "")).filter(Boolean))
-    );
-  } else {
-    serverChannelBackendVisibleIdsByServerId.delete(sid);
-  }
-  await loadAllVisibleChannelPermissionOverwritesForServer(sid, { force: false }).catch((error) => {
-    console.warn("[channel-permissions] failed to preload channel overwrites", { serverId: sid, message: error?.message || error, error });
-    return null;
-  });
-  const visibleAfterFrontendFilter = getVisibleServerChannelsForCurrentUser(sid, normalized);
-  serverChannelRawLoadDebugByServerId.set(sid, {
-    ...(serverChannelRawLoadDebugByServerId.get(sid) || {}),
-    normalizedRowsBeforePrivacyFilter: normalized.map((row) => ({ ...row })),
-    rowsAfterPrivacyFilter: visibleAfterFrontendFilter.map((row) => ({ ...row })),
-    frontendVisibleRowIds: visibleAfterFrontendFilter.map((row) => normId(row?.id || "")).filter(Boolean),
-    ownerUserId: getCanonicalServerOwnerUserIdSync(sid),
-    currentUserId: normId(state.user?.id || ""),
-  });
-  if (isChannelAccessReadDebugEnabled()) {
-    console.info("[channel-access] authoritative-channel-load", {
-      ...serverChannelRawLoadDebugByServerId.get(sid),
-      channelDecisions: normalized.map((channel) => {
-        const channelId = normId(channel?.id || "");
-        const effective = resolveEffectiveChannelPermissionsForUser({
-          serverId: sid,
-          channelId,
-          userId: state.user?.id || "",
-          reason: "debug-authoritative-channel-load",
-        });
-        return {
-          channelId,
-          conversationId: normId(channel?.conversationId || ""),
-          isPrivate: channel?.isPrivate === true,
-          matchingOverwriteRows: getChannelPermissionOverwrites(channelId),
-          ownerBypass: effective?.isOwner === true || effective?.trace?.owner_bypass === true,
-          finalVisibility: canCurrentUserViewServerChannelSync(sid, channelId),
-        };
-      }),
+  if (commitContextCurrent) {
+    const rememberedConvId = getRememberedServerLastChannel(sid);
+    if (rememberedConvId) {
+      const stillExists = normalized.some((ch) => normId(ch?.conversationId || "") === rememberedConvId);
+      if (!stillExists) forgetServerLastChannel(sid, { persist: true });
+    }
+
+    serverChannelListByServerId.set(sid, normalized);
+    persistAltaraOfflineNavigationSnapshot();
+    if (querySource === "list_visible_server_channels_v1") {
+      serverChannelBackendVisibleIdsByServerId.set(
+        sid,
+        new Set(normalized.map((channel) => normId(channel?.id || "")).filter(Boolean))
+      );
+      serverChannelVisibilityAuthoritySnapshotByServerId.set(sid, {
+        serverId: sid,
+        userId: normId(state.user?.id || ""),
+        epoch: Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0),
+        pending: false,
+        loadedAt: Date.now(),
+      });
+    } else {
+      serverChannelBackendVisibleIdsByServerId.delete(sid);
+      serverChannelVisibilityAuthoritySnapshotByServerId.delete(sid);
+    }
+    await loadAllVisibleChannelPermissionOverwritesForServer(sid, { force: false }).catch((error) => {
+      console.warn("[channel-permissions] failed to preload channel overwrites", { serverId: sid, message: error?.message || error, error });
+      return null;
     });
+    const visibleAfterFrontendFilter = getVisibleServerChannelsForCurrentUser(sid, normalized);
+    serverChannelRawLoadDebugByServerId.set(sid, {
+      ...(serverChannelRawLoadDebugByServerId.get(sid) || {}),
+      normalizedRowsBeforePrivacyFilter: normalized.map((row) => ({ ...row })),
+      rowsAfterPrivacyFilter: visibleAfterFrontendFilter.map((row) => ({ ...row })),
+      frontendVisibleRowIds: visibleAfterFrontendFilter.map((row) => normId(row?.id || "")).filter(Boolean),
+      ownerUserId: getCanonicalServerOwnerUserIdSync(sid),
+      currentUserId: normId(state.user?.id || ""),
+    });
+    if (isChannelAccessReadDebugEnabled()) {
+      console.info("[channel-access] authoritative-channel-load", {
+        ...serverChannelRawLoadDebugByServerId.get(sid),
+        channelDecisions: normalized.map((channel) => {
+          const channelId = normId(channel?.id || "");
+          const effective = resolveEffectiveChannelPermissionsForUser({
+            serverId: sid,
+            channelId,
+            userId: state.user?.id || "",
+            reason: "debug-authoritative-channel-load",
+          });
+          return {
+            channelId,
+            conversationId: normId(channel?.conversationId || ""),
+            isPrivate: channel?.isPrivate === true,
+            matchingOverwriteRows: getChannelPermissionOverwrites(channelId),
+            ownerBypass: effective?.isOwner === true || effective?.trace?.owner_bypass === true,
+            finalVisibility: canCurrentUserViewServerChannelSync(sid, channelId),
+          };
+        }),
+      });
+    }
+    serverChannelLoadErrorByServerId.delete(sid);
+    scheduleCallRealtimeSubscriptionSync(0);
   }
-  serverChannelLoadErrorByServerId.delete(sid);
-  scheduleCallRealtimeSubscriptionSync(0);
   logSidebarRenderState("fetch_server_channels_sidebar_done", {
     mode: "server",
     serverId: sid,
@@ -70300,30 +73287,38 @@ async function fetchServerChannelsForSidebarResult(serverId, { force = false } =
     domStillLoading: isServerChannelSidebarStillLoading(sid),
   });
 
-  const matchedServerRow = (state.servers || []).find((s) => normId(s?.serverId || "") === sid) || null;
-  const serverName = normalizeConversationLabel(
-    matchedServerRow?.name || state.activeDm?.serverName || "Server",
-    "Server"
-  );
-  const serverOwnerUserId = normId(matchedServerRow?.ownerUserId || "");
-  normalized.forEach((ch) => {
-    setConversationMeta(ch.conversationId, {
-      kind: "server",
-      isGroup: true,
-      displayName: normalizeConversationLabel(ch.name, "general"),
-      serverId: sid,
-      serverName,
-      ownerUserId: serverOwnerUserId,
-      avatarUrl: String(matchedServerRow?.iconUrl || "").trim(),
-      channelId: normId(ch?.id || ""),
-      channel_id: normId(ch?.id || ""),
-      channelType: ch.channelType || "text",
-      userLimit: clampServerVoiceUserLimit(ch?.userLimit ?? 0, 0),
-      mediaMode: normalizeServerVoiceMediaMode(ch?.mediaMode || "audio_only", "audio_only"),
+  if (commitContextCurrent) {
+    const matchedServerRow = (state.servers || []).find((s) => normId(s?.serverId || "") === sid) || null;
+    const serverName = normalizeConversationLabel(
+      matchedServerRow?.name || state.activeDm?.serverName || "Server",
+      "Server"
+    );
+    const serverOwnerUserId = normId(matchedServerRow?.ownerUserId || "");
+    normalized.forEach((ch) => {
+      setConversationMeta(ch.conversationId, {
+        kind: "server",
+        isGroup: true,
+        displayName: normalizeConversationLabel(ch.name, "general"),
+        serverId: sid,
+        serverName,
+        ownerUserId: serverOwnerUserId,
+        avatarUrl: String(matchedServerRow?.iconUrl || "").trim(),
+        channelId: normId(ch?.id || ""),
+        channel_id: normId(ch?.id || ""),
+        channelType: ch.channelType || "text",
+        userLimit: clampServerVoiceUserLimit(ch?.userLimit ?? 0, 0),
+        mediaMode: normalizeServerVoiceMediaMode(ch?.mediaMode || "audio_only", "audio_only"),
+      });
     });
-  });
+  }
 
-  return { ok: true, error: null, channels: normalized };
+  return {
+    ok: true,
+    error: null,
+    channels: normalized,
+    querySource,
+    authoritativeVisibility: querySource === "list_visible_server_channels_v1",
+  };
 }
 
 async function fetchServerChannelsForSidebar(serverId, { force = false } = {}) {
@@ -70379,6 +73374,12 @@ async function fetchServerChannelCategoriesForSidebar(serverId, { force = false 
   ));
 
   serverChannelCategoryListByServerId.set(sid, normalized);
+  if (myEffectiveServerChannelPermissionsSqlAvailable !== false) {
+    await loadAllVisibleChannelPermissionOverwritesForServer(sid, { force: false }).catch((error) => {
+      console.warn("[channel-permissions] failed to preload effective channel permissions", { serverId: sid, message: error?.message || error });
+      return null;
+    });
+  }
   return normalized;
 }
 
@@ -70490,20 +73491,25 @@ async function fetchServerMemberDisplayProfilesByIds(userIds = []) {
   }
 }
 
-async function fetchServerBotsForSidebar(serverId, { force = false } = {}) {
+async function fetchServerBotsForSidebar(serverId, { force = false, includeDisabled = false } = {}) {
   const sid = normId(serverId);
   if (!sid || !isAltaraBotVisibilityEnabled()) return [];
   const previousSnapshot = serverBotInstallListByServerId.get(sid) || [];
+  const previousManagementSnapshot = serverBotManagementInstallListByServerId.get(sid) || previousSnapshot;
   if (isBotPermissionUpdateBootDisabled() && !altaraBootDebugState.bootCompleted && !isServerSettingsBotsPanelActive()) {
     logBotPermissionUpdateEvent("skipped_not_in_settings", { phase: "skipped_not_in_settings", serverId: sid, reason: "ALTARA_DISABLE_BOT_PERMISSION_UPDATE_BOOT", non_blocking: true });
-    return serverBotInstallListByServerId.get(sid) || [];
+    return includeDisabled
+      ? (serverBotManagementInstallListByServerId.get(sid) || serverBotInstallListByServerId.get(sid) || [])
+      : (serverBotInstallListByServerId.get(sid) || []);
   }
-  if (!force && serverBotInstallListByServerId.has(sid)) {
+  if (!force && serverBotInstallListByServerId.has(sid) && (!includeDisabled || serverBotManagementInstallListByServerId.has(sid))) {
     const cachedBots = applyServerBotPresenceToRows(sid, serverBotInstallListByServerId.get(sid) || []);
     serverBotInstallListByServerId.set(sid, cachedBots);
     scheduleServerBotPresenceRefresh(sid, { force: false });
     updateAltaraBotVisibilityDebug({ currentServerId: sid, serverBotsCount: cachedBots.length });
-    return cachedBots;
+    return includeDisabled
+      ? (serverBotManagementInstallListByServerId.get(sid) || cachedBots)
+      : cachedBots;
   }
 
   const requestVersion = Number(serverAppInstallFetchVersionByServerId.get(sid) || 0) + 1;
@@ -70533,18 +73539,21 @@ async function fetchServerBotsForSidebar(serverId, { force = false } = {}) {
   }
 
   if (serverAppInstallFetchVersionByServerId.get(sid) !== requestVersion) {
-    return serverBotInstallListByServerId.get(sid) || previousSnapshot;
+    return includeDisabled
+      ? (serverBotManagementInstallListByServerId.get(sid) || previousManagementSnapshot)
+      : (serverBotInstallListByServerId.get(sid) || previousSnapshot);
   }
-  if (fetchError && previousSnapshot.length) {
+  if (fetchError && (previousSnapshot.length || (includeDisabled && previousManagementSnapshot.length))) {
     const preserved = applyServerBotPresenceToRows(sid, previousSnapshot);
     serverBotInstallListByServerId.set(sid, preserved);
     updateAltaraBotVisibilityDebug({ currentServerId: sid, serverBotsCount: preserved.length });
-    return preserved;
+    return includeDisabled ? previousManagementSnapshot : preserved;
   }
 
-  const bots = rows.map((row) => {
+  const managementBots = rows.map((row) => {
     const botId = normId(row?.bot_id || "");
     if (!botId) return null;
+    const installStatus = String(row?.status || "active").trim().toLowerCase();
     return {
       userId: botId,
       botId,
@@ -70573,18 +73582,27 @@ async function fetchServerBotsForSidebar(serverId, { force = false } = {}) {
       defaultInstallPermissions: normalizeBotPermissionList(row?.default_install_permissions || row?.defaultInstallPermissions || []),
       permissions: Array.isArray(row?.permissions) ? row.permissions : [],
       botPermissions: Array.isArray(row?.permissions) ? row.permissions : [],
+      installStatus,
+      active: installStatus === "active",
     };
   }).filter(Boolean);
 
   await refreshServerBotPresenceForSidebar(sid, { force }).catch(() => getCachedServerBotPresenceForServer(sid));
-  const botsWithPresence = applyServerBotPresenceToRows(sid, bots);
+  const botsWithPresence = applyServerBotPresenceToRows(sid, managementBots.filter((bot) => bot.active));
+  const activeByBotId = new Map(botsWithPresence.map((bot) => [normId(bot?.botId || bot?.userId || ""), bot]));
+  const managementWithPresence = managementBots.map((bot) => (
+    bot.active
+      ? (activeByBotId.get(normId(bot?.botId || bot?.userId || "")) || bot)
+      : { ...bot, presenceStatus: "offline", voiceChannelId: "", active: false }
+  ));
   serverBotInstallListByServerId.set(sid, botsWithPresence);
+  serverBotManagementInstallListByServerId.set(sid, managementWithPresence);
   updateAltaraBotVisibilityDebug({
     currentServerId: sid,
     serverBotsCount: botsWithPresence.length,
     ...(fetchError ? {} : { lastServerBotsFetchError: null }),
   });
-  return botsWithPresence;
+  return includeDisabled ? managementWithPresence : botsWithPresence;
 }
 
 function recordBotVoiceUiEvent(event = "state", details = {}) {
@@ -71318,24 +74336,24 @@ async function fetchServerMembersForSidebar(serverId, { force = false } = {}) {
         });
       });
       const mergedMembers = Array.from(byUserId.values());
-      serverMemberListByServerId.set(sid, mergedMembers);
+      const committedMembers = commitServerMemberListSemanticSnapshot(sid, mergedMembers).members;
       serverMemberLoadStateByServerId.set(sid, {
         loaded: true,
         loading: false,
         error: null,
         finishedAt: Date.now(),
       });
-      return mergedMembers;
+      return committedMembers;
     }
 
-    serverMemberListByServerId.set(sid, members);
+    const committedMembers = commitServerMemberListSemanticSnapshot(sid, members).members;
     serverMemberLoadStateByServerId.set(sid, {
       loaded: true,
       loading: false,
       error: null,
       finishedAt: Date.now(),
     });
-    return members;
+    return committedMembers;
   })().finally(() => {
     if (serverMemberLoadInFlightByServerId.get(sid) === loadPromise) {
       serverMemberLoadInFlightByServerId.delete(sid);
@@ -71641,6 +74659,7 @@ async function fetchServerConversationMemberIds(conversationId, { force = false 
     .select("user_id")
     .eq("conversation_id", convId);
 
+  if (isGroupDmConversationRevoked(convId)) return [];
   if (error || !Array.isArray(data)) {
     if (error) console.warn("server conversation members fetch failed", error);
     return getServerConversationMemberIdsCache(convId);
@@ -71765,6 +74784,38 @@ function setRightSidebarToServerMembers({
     el.style.display = showMembersPanel ? "none" : "";
   });
   sanitizeRightSidebarForContext(showMembersPanel ? "server_members" : "home_active_now");
+}
+
+function setRightSidebarToServerNoChannelState(serverName = "Server") {
+  const titleEl = document.querySelector(".rightTitleRow .hTitle");
+  const countEl = document.getElementById("onlineCount");
+  const membersPanel = document.getElementById("serverMembersPanel");
+  const membersList = document.getElementById("serverMembersList");
+  const activeNowEl = document.getElementById("activeNow");
+  const offlineListEl = document.getElementById("offlineList");
+  const labels = Array.from(document.querySelectorAll(".rightBody .rightSectionLabel"));
+
+  if (titleEl) titleEl.textContent = normalizeConversationLabel(serverName || "Server", "Server");
+  if (countEl) {
+    countEl.textContent = "0";
+    countEl.style.display = "none";
+  }
+  if (membersPanel) {
+    membersPanel.classList.add("hidden");
+    membersPanel.setAttribute("aria-hidden", "true");
+    membersPanel.dataset.rightSidebarContext = "server_no_channel";
+  }
+  if (membersList) membersList.replaceChildren();
+  [activeNowEl, offlineListEl].forEach((el) => {
+    if (!el) return;
+    el.replaceChildren();
+    el.style.display = "none";
+    el.setAttribute("aria-hidden", "true");
+  });
+  labels.forEach((el) => { el.style.display = "none"; });
+  const shell = getSidebarShellEl();
+  shell?.classList?.add?.("right-no-peek");
+  setRightSidebarCollapsed(true, { persist: false });
 }
 
 function getPresenceStatusForServerMember(userId) {
@@ -72396,7 +75447,7 @@ function setServerVoiceSelfDeafened(conversationId, deafenedValue, { source = "u
 function blockServerDeafenedSelfUndeafen(source = "ui_toggle") {
   const convId = getCurrentCallConversationId();
   if (!isServerVoiceSelfDeafened(convId)) return false;
-  void applyDeafen(deafened ? "self-deafen" : "self-undeafen");
+  void applyDeafen("server-deafened-self-undeafen-blocked");
   updateActiveServerVoiceTransportLocalControls(convId);
   refreshCallUI();
   setCallStatus("Server deafened.", true);
@@ -75538,7 +78589,7 @@ function getUncategorizedServerChannels(serverId = "", channelType = "") {
   return getOrderedServerChannelsForCategory(serverId, "", channelType);
 }
 
-function renderServerChannelsPanel(serverCtx, channels = [], members = [], categories = []) {
+function renderServerChannelsPanel(serverCtx, channels = [], members = [], categories = [], options = {}) {
   const panel = document.getElementById("serverChannelsPanel");
   const body = document.querySelector("#dmMain .dmMainBody");
   if (!panel || !body) return;
@@ -75568,10 +78619,34 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
     return;
   }
 
+  if (
+    serverChannelVisibilityAuthorityResolvingByServerId.has(sid)
+    && previousPanelServerId === sid
+    && options?.allowDuringResolving !== true
+  ) {
+    // Authority is mid-resolution for this server: getVisibleServerChannelsForCurrentUser
+    // fails every channel closed while resolving (by design, for security), so any render
+    // here -- even with a fully correct, freshly-committed channels array -- would compute
+    // and paint a spurious empty state. This is not limited to "there is existing content
+    // to protect": a caller can reach this render right after a real successful fetch, only
+    // for a newer invalidation (e.g. a realtime reconnect) to flip resolving back to true in
+    // the gap before the render actually runs, silently downgrading a real result into a
+    // fabricated "zero channels" one that then gets treated as final/ready. Deferring
+    // whenever resolving is true for this exact server -- regardless of what is currently
+    // painted -- means a race can only ever cost one skipped frame, never a wrong commit.
+    // The reconciliation pipeline that owns this refresh re-renders once it settles cleanly.
+    logSidebarRenderState("render_server_channels_panel_deferred_resolving", {
+      mode: "server",
+      serverId: sid,
+      selectedChannelId: normId(activeDmId || state.activeDm?.conversationId || ""),
+    });
+    return;
+  }
+
   const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
   const serverName = normalizeConversationLabel(serverCtx?.name || "Server", "Server");
   const dmList = document.getElementById("dmList");
-  if (dmList) dmList.replaceChildren();
+  if (dmList && previousPanelServerId !== sid) dmList.replaceChildren();
   setDmListPanelTitle(serverName, { serverMode: true });
   const channelLoadErrorRaw = serverChannelLoadErrorByServerId.get(sid) || null;
   logSidebarRenderState("render_server_channels_panel_start", {
@@ -75607,6 +78682,15 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
     .filter((ch) => !!ch.conversationId)
     .sort(compareOrderedServerRows);
   const permissionVisibleChannels = getVisibleServerChannelsForCurrentUser(sid, allChannels);
+  panel.setAttribute(
+    "data-server-visible-channel-authority-signature",
+    getServerRoleReconciliationSignature(permissionVisibleChannels.map((channel) => ({
+      id: normId(channel?.id || channel?.channelId || channel?.channel_id || ""),
+      conversationId: normId(channel?.conversationId || channel?.conversation_id || ""),
+      categoryId: normId(channel?.categoryId || channel?.category_id || ""),
+      type: normalizeConversationChannelType(channel?.channelType || channel?.channel_type || "text"),
+    })))
+  );
   const visibleChannels = hideMutedChannels
     ? permissionVisibleChannels.filter((ch) => !isDmConversationMuted(ch?.conversationId || ""))
     : permissionVisibleChannels.slice();
@@ -75844,10 +78928,18 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
       ${channelSectionsHtml}
     </div>
   `;
-  const nextRenderSignature = nextPanelHtml.replace(
-    /(<span class="serverVoiceRoom__elapsed"[^>]*>)[\s\S]*?(<\/span>)/g,
-    "$1$2"
-  );
+  const nextRenderSignature = nextPanelHtml
+    .replace(
+      /(<span class="serverVoiceRoom__elapsed"[^>]*>)[\s\S]*?(<\/span>)/g,
+      "$1$2"
+    )
+    // has-unread is volatile (any message in any channel of this server
+    // flips it) and is already kept live on the unchanged-signature path via
+    // applyServerChannelUnreadDecorations(), which patches has-unread /
+    // data-unread-count on the real DOM nodes directly. Excluding it here
+    // stops an unread-count-only change from forcing a full panel
+    // innerHTML rebuild.
+    .replace(/ has-unread/g, "");
   const previousRenderSignature = serverChannelSidebarRenderSignatureByServerId.get(sid) || "";
   const panelHasRenderedShell = !!(
     panel.querySelector(".serverChannelsPanel__top")
@@ -75869,7 +78961,7 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
     updateServerChannelActiveState(activeConversationId, { reason: "render-server-channels-panel-unchanged", serverId: sid });
     bindServerChannelSidebarScrollPersistence(sid);
     applyServerChannelUnreadDecorations();
-    refreshServerVoiceChannelBadges();
+    if (options?.skipVoiceRefresh !== true) refreshServerVoiceChannelBadges();
     return;
   }
   panel.innerHTML = nextPanelHtml;
@@ -76155,8 +79247,12 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
         channel_id: channelId,
         channelType: "text",
       };
-      commitServerChannelSelectionForUi(convId, meta, { reason: "channel-click", userInitiated: true });
-      await openConversationById(convId, meta);
+      const selection = commitServerChannelSelectionForUi(convId, meta, { reason: "channel-click", userInitiated: true });
+      await openConversationById(convId, meta, {
+        openIntentSeq: Number(selection?.openIntentSeq || 0),
+        navigationVersion: Number(selection?.navigationVersion || 0),
+        reason: "channel-click",
+      });
     });
   });
 
@@ -76208,8 +79304,12 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
         avatarUrl: String(serverCtx?.iconUrl || "").trim(),
         channelType: "voice",
       };
-      commitServerChannelSelectionForUi(convId, meta, { reason: "voice-channel-click", userInitiated: true });
-      await openConversationById(convId, meta);
+      const selection = commitServerChannelSelectionForUi(convId, meta, { reason: "voice-channel-click", userInitiated: true });
+      await openConversationById(convId, meta, {
+        openIntentSeq: Number(selection?.openIntentSeq || 0),
+        navigationVersion: Number(selection?.navigationVersion || 0),
+        reason: "voice-channel-click",
+      });
       await requestServerVoiceJoinFromUi({
         serverId: sid,
         channelId: voiceChannelId,
@@ -76358,6 +79458,10 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
       const dragId = normId(dragCategoryId || "");
       const targetId = normId(targetCategoryId || "");
       if (!dragId || !targetId || dragId === targetId) return;
+      if (!currentUserCanManageChannels(sid)) {
+        await requestAppAlert("You don't have permission to manage channels.", { title: "Server Channels" }).catch(() => {});
+        return false;
+      }
 
       const orderedIds = categoryRows.map((cat) => normId(cat?.id || "")).filter(Boolean);
       const fromIdx = orderedIds.indexOf(dragId);
@@ -76428,6 +79532,10 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
       const targetId = normId(targetChannelId || "");
       if (!dragId) return;
       if (!dropOnCategory && (!targetId || targetId === dragId)) return;
+      if (!currentUserCanManageChannels(sid)) {
+        await requestAppAlert("You don't have permission to manage channels.", { title: "Server Channels" }).catch(() => {});
+        return false;
+      }
       const sourceChannel = getChannelRowForDrag(dragId);
       if (!sourceChannel) return;
       if (!dropOnCategory && targetId) {
@@ -76533,6 +79641,12 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
     panel.querySelectorAll("[data-server-drag-type][draggable='true']").forEach((sourceEl) => {
       sourceEl.addEventListener("dragstart", (e) => {
         const target = eventTargetElement(e);
+        if (!currentUserCanManageChannels(sid)) {
+          e.preventDefault();
+          e.stopPropagation();
+          void requestAppAlert("You don't have permission to manage channels.", { title: "Server Channels" }).catch(() => {});
+          return;
+        }
         if (getServerVoiceMemberDragSourceFromTarget(target)) {
           e.preventDefault();
           e.stopPropagation();
@@ -76700,7 +79814,7 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
   }
 
   applyServerChannelUnreadDecorations();
-  refreshServerVoiceChannelBadges();
+  if (options?.skipVoiceRefresh !== true) refreshServerVoiceChannelBadges();
 }
 
 function getServerMembersPanelContextKey(serverId = "", conversationId = "", isPrivate = false, search = "") {
@@ -76737,7 +79851,11 @@ function buildServerMembersPanelSnapshot(serverId = "", groups = []) {
       displayName: String(member?.displayName || ""),
       avatarUrl: String(member?.avatarUrl || ""),
       nameColor: String(member?.nameColor || member?.roleNameColor || ""),
-      presence: String(member?.presenceStatus || "offline"),
+      // presence intentionally excluded: it is volatile and already patched
+      // live via applyPresenceStatusDots()/setStatusDotsForUser() against
+      // [data-status-dot] elements, independent of this snapshot. Including
+      // it here would force a full member-list innerHTML rebuild on every
+      // online/idle/dnd transition instead of a targeted dot update.
       timeout: !!getServerMemberTimeout(sid, normId(member?.userId || "")),
       isMe: !!member?.isMe,
       isBot: !!member?.isBot,
@@ -77179,7 +80297,7 @@ async function refreshServerConversationUi({
 } = {}) {
   const refreshReason = String(reason || "server-refresh").trim() || "server-refresh";
   const shouldRefreshChannels = refreshChannels === true;
-  const shouldRefreshMembers = refreshMembers !== false;
+  const requestedMemberRefresh = refreshMembers !== false;
   const dmMain = document.getElementById("dmMain");
   const body = document.querySelector("#dmMain .dmMainBody");
   const panel = document.getElementById("serverChannelsPanel");
@@ -77216,6 +80334,12 @@ async function refreshServerConversationUi({
   const sid = normId(activeSidebarServerId || serverCtx.serverId || "");
   if (shouldSkipRemovedServerRender(sid, `refreshServerConversationUi:${refreshReason}`)) return;
   const conversationIdAtStart = normId(serverCtx.conversationId || "");
+  if (!conversationIdAtStart && isServerChannelAuthorityShellState(sid)) {
+    preserveServerChannelAuthorityShell(serverCtx, `refresh:${refreshReason}:server_visibility`);
+    return;
+  }
+  const noAccessibleServerChannels = isNoAccessibleServerChannelsState(sid) && !conversationIdAtStart;
+  const shouldRefreshMembers = requestedMemberRefresh && !noAccessibleServerChannels;
   const channelToken = shouldRefreshChannels ? ++serverChannelsRenderToken : serverChannelsRenderToken;
   const memberToken = shouldRefreshMembers ? ++serverMembersRefreshToken : serverMembersRefreshToken;
   const realCachedChannelsAtStart = Array.isArray(serverChannelListByServerId.get(sid))
@@ -77227,11 +80351,15 @@ async function refreshServerConversationUi({
 
   claimServerSidebarContext(serverCtx, { reason: `refresh_server_sidebar_start:${refreshReason}` });
   setupActiveServerChannelsRealtime(sid);
-  reprojectServerVoiceOccupancy(sid, `server_ui:${refreshReason}:cached`);
-  const occupancyHydrationPromise = ensureServerVoiceV2ControlPlaneSubscription(sid, {
-    hydrate: true,
-    reason: `server_ui:${refreshReason}`,
-  }).catch(() => false);
+  if (!noAccessibleServerChannels) {
+    reprojectServerVoiceOccupancy(sid, `server_ui:${refreshReason}:cached`);
+  }
+  const occupancyHydrationPromise = noAccessibleServerChannels
+    ? Promise.resolve(false)
+    : ensureServerVoiceV2ControlPlaneSubscription(sid, {
+      hydrate: true,
+      reason: `server_ui:${refreshReason}`,
+    }).catch(() => false);
   startActiveServerBotInstallRealtime(sid);
   startActiveServerBotPresencePolling(sid);
   logSidebarRenderState("refresh_server_sidebar_start", {
@@ -77400,6 +80528,9 @@ async function refreshServerConversationUi({
       void requestServerVoicePresenceSnapshotsForServer(sid, snapshotChannels || [], membersForSnapshots || []);
     }
   }
+  if (noAccessibleServerChannels && isNoAccessibleServerChannelsState(sid)) {
+    preserveNoAccessibleServerChannelsShell(serverCtx, `refresh:${refreshReason}:server_no_access`);
+  }
 }
 function getFriendsMessagesTitle() {
   return t("sidebar.friends_messages", "Friends / Messages");
@@ -77538,8 +80669,11 @@ function commitServerChannelSelectionForUi(conversationId = "", meta = {}, { rea
   );
   const channelType = normalizeConversationChannelType(meta?.channelType || meta?.channel_type || serverCtx?.channel?.channelType || "text");
   const serverChannelId = normId(meta?.channelId || meta?.channel_id || serverCtx?.channel?.id || "");
+  const navigationIntent = userInitiated
+    ? beginMainContentNavigationIntent({ reason, serverId: sid, conversationId: convId })
+    : null;
   const navigationVersion = userInitiated
-    ? markServerChannelUserNavigation({ reason, serverId: sid, conversationId: convId })
+    ? navigationIntent.navigationVersion
     : Number(serverChannelUserNavigationVersion || 0);
 
   clearActiveConversationMessageRestoreWatchdog?.();
@@ -77600,7 +80734,12 @@ function commitServerChannelSelectionForUi(conversationId = "", meta = {}, { rea
     userNavigationVersion: navigationVersion,
     userInitiated: !!userInitiated,
   });
-  return { conversationId: convId, serverId: sid, navigationVersion };
+  return {
+    conversationId: convId,
+    serverId: sid,
+    navigationVersion,
+    openIntentSeq: Number(navigationIntent?.openIntentSeq || 0),
+  };
 }
 function getActiveServerSidebarContext() {
   const dmMain = document.getElementById("dmMain");
@@ -77608,7 +80747,10 @@ function getActiveServerSidebarContext() {
   const sid = getActiveServerIdForSidebar();
   if (!sid) return null;
   const conversationId = normId(activeDmId || state.activeDm?.conversationId || "");
-  if (!conversationId) return null;
+  const noAccessibleServerChannels = isNoAccessibleServerChannelsState(sid);
+  const serverVisibilityResolving = isServerChannelVisibilityResolvingState(sid);
+  const serverVisibilityError = isServerChannelVisibilityErrorState(sid);
+  if (!conversationId && !noAccessibleServerChannels && !serverVisibilityResolving && !serverVisibilityError) return null;
   const serverCtx = getActiveServerContext?.() || null;
   const row = serverCtx?.serverId ? null : (getServerRowById?.(sid) || null);
   return {
@@ -77620,6 +80762,9 @@ function getActiveServerSidebarContext() {
     defaultConversationId: normId(serverCtx?.defaultConversationId || row?.defaultConversationId || conversationId),
     memberCount: Number(serverCtx?.memberCount || row?.memberCount || state.activeDm?.memberCount || 0),
     conversationId,
+    noAccessibleServerChannels,
+    serverVisibilityResolving,
+    serverVisibilityError,
   };
 }
 
@@ -77671,6 +80816,7 @@ function renderServerSidebarShell(serverCtx = null, { reason = "server-sidebar-s
   const body = document.querySelector("#dmMain .dmMainBody");
   if (!sid || !panel || !body) return false;
   if (shouldSkipRemovedServerRender(sid, `renderServerSidebarShell:${reason}`)) return false;
+  const previousPanelServerId = normId(panel.getAttribute("data-server-panel-server-id") || "");
 
   const ctx = buildServerChannelFallbackContext(sid, serverCtx) || serverCtx || { serverId: sid, name: "Server" };
   const serverName = normalizeConversationLabel(ctx?.name || "Server", "Server");
@@ -77678,6 +80824,8 @@ function renderServerSidebarShell(serverCtx = null, { reason = "server-sidebar-s
   const serverInitial = getGroupOrbFallbackChar(serverName, "S");
   const knownChannels = getKnownServerChannelsForSidebar(sid, { activeConversationId: normId(ctx?.conversationId || activeDmId || state.activeDm?.conversationId || "") });
   const realCachedChannels = Array.isArray(serverChannelListByServerId.get(sid)) ? (serverChannelListByServerId.get(sid) || []) : [];
+  const visibilityAuthorityResolved = hasCurrentServerChannelVisibilityAuthority(sid)
+    && !isServerChannelAuthorityShellState(sid);
   const dmList = document.getElementById("dmList");
   if (dmList) dmList.replaceChildren();
   setDmListPanelTitle(serverName, { serverMode: true });
@@ -77698,7 +80846,7 @@ function renderServerSidebarShell(serverCtx = null, { reason = "server-sidebar-s
     domStillLoading: isServerChannelSidebarStillLoading(sid),
   });
 
-  if (knownChannels.length) {
+  if (visibilityAuthorityResolved && knownChannels.length) {
     renderServerChannelsPanel(ctx, knownChannels, serverMemberListByServerId.get(sid) || [], serverChannelCategoryListByServerId.get(sid) || []);
     if (!realCachedChannels.length && forceHydration) {
       const token = ++serverChannelsRenderToken;
@@ -77717,7 +80865,63 @@ function renderServerSidebarShell(serverCtx = null, { reason = "server-sidebar-s
     return true;
   }
 
+  if (visibilityAuthorityResolved) {
+    renderServerChannelsPanel(
+      ctx,
+      realCachedChannels,
+      serverMemberListByServerId.get(sid) || [],
+      serverChannelCategoryListByServerId.get(sid) || [],
+      { skipVoiceRefresh: true }
+    );
+    if (!realCachedChannels.length) {
+      // Authority is resolved but no channel rows are cached yet (e.g. first
+      // navigation into this server this session). "No channels yet" must
+      // not become a permanent state: always pursue the authoritative
+      // snapshot rather than leaving the sidebar stuck on an empty render.
+      const token = ++serverChannelsRenderToken;
+      setServerChannelLoadState(sid, "loading", { reason: `${reason}:hydrate`, token });
+      scheduleServerChannelLoadWatchdog(sid, ctx, { token, reason: `${reason}:hydrate` });
+      queueServerChannelBackgroundHydration(sid, ctx, `${reason}:background-hydration`);
+    }
+    return true;
+  }
+
+  if (
+    previousPanelServerId === sid
+    && panel.querySelector("[data-server-channel-id]")
+  ) {
+    // Authority is unresolved/invalidated for this server, but the panel already
+    // shows valid, previously-accepted content for this exact server (e.g. a
+    // channel switch collided with an in-flight role-authority refresh). Wiping
+    // to the raw "Loading channels..." placeholder here would destroy still-valid
+    // content for no reason -- preserve it and let the pending hydration below
+    // repaint once the authoritative result actually resolves.
+    scheduleServerChannelLoadWatchdog(sid, ctx, { token: serverChannelsRenderToken, reason });
+    queueServerChannelBackgroundHydration(sid, ctx, `${reason}:background-hydration`);
+    logSidebarRenderState("render_server_sidebar_shell_deferred_preserve_dom", {
+      mode: "server",
+      reason,
+      serverId: sid,
+      domStillLoading: isServerChannelSidebarStillLoading(sid),
+    });
+    return true;
+  }
+
   setServerChannelLoadState(sid, "loading", { reason, token: serverChannelsRenderToken });
+  // The DOM is about to stop reflecting whatever channel list these two signatures
+  // were captured against (either it belonged to a different server, or there was
+  // never real content to begin with). Leaving either stale would let a later
+  // repaint attempt believe the current (now-wiped) DOM still matches an old
+  // accepted snapshot and skip repainting it once real data arrives:
+  // - data-server-visible-channel-authority-signature backs getRenderedServerChannelAuthoritySignature,
+  //   which the role-reconciliation pipeline reads to decide whether to request a repaint.
+  // - serverChannelSidebarRenderSignatureByServerId backs the redundant-write skip
+  //   inside renderServerChannelsPanel: it compares the *next* HTML signature against this cached one,
+  //   not against what is actually in the DOM, so if this raw wipe writes here without
+  //   invalidating it, a later render whose channel data happens to match the last real
+  //   render will conclude "unchanged" and skip writing over this raw placeholder forever.
+  panel.removeAttribute("data-server-visible-channel-authority-signature");
+  serverChannelSidebarRenderSignatureByServerId.delete(sid);
   panel.innerHTML = `
     <div class="serverChannelsPanel__top">
       <button class="serverChannelsPanel__identity serverChannelsPanel__identityBtn" type="button" data-server-panel-menu-open="1" title="Server menu" aria-label="Open server menu for ${escAttr(serverName)}">
@@ -77749,10 +80953,14 @@ function renderServerSidebarShell(serverCtx = null, { reason = "server-sidebar-s
   `;
   panel.setAttribute("data-server-channel-load-state", "loading");
   panel.setAttribute("data-server-channel-load-reason", reason);
-  if (forceHydration) {
-    scheduleServerChannelLoadWatchdog(sid, ctx, { token: serverChannelsRenderToken, reason });
-    queueServerChannelBackgroundHydration(sid, ctx, `${reason}:background-hydration`);
-  }
+  // Visibility authority is not resolved yet (or was invalidated after a
+  // caller opted out of eager hydration, e.g. showDm's forceHydration:false
+  // shell-priming call). Without this, the sidebar could commit to this
+  // loading shell and never recover. Always pursue the authoritative
+  // snapshot; queueServerChannelBackgroundHydration already dedupes against
+  // an in-flight resolution.
+  scheduleServerChannelLoadWatchdog(sid, ctx, { token: serverChannelsRenderToken, reason });
+  queueServerChannelBackgroundHydration(sid, ctx, `${reason}:background-hydration`);
   logSidebarRenderState("render_server_sidebar_shell_end", {
     mode: "server",
     reason,
@@ -77949,6 +81157,10 @@ function renderFriends({ skipPresenceRefresh = false, skipGroupsRail = false } =
       });
     });
 
+    // Rebuilding the friend rows creates their dots with an offline default.
+    // Always repaint from the current Presence snapshot, even when the caller
+    // intentionally skips the heavier right-panel Presence render.
+    applyPresenceStatusDots(presenceList);
     if (!skipPresenceRefresh) updatePresenceRender();
   } finally {
     relationshipTracePhaseEnd(trace, traceLabel, {
@@ -78661,14 +81873,14 @@ async function uploadGroupAvatarFile(file, { conversationId = "" } = {}) {
   });
   const ext = (String(uploadFile.name || file.name || "").split(".").pop() || "png").toLowerCase();
   const { ext: safeExt, mime } = resolveAvatarMimeAndExt(ext, uploadFile.type || file.type || "");
-  const convTag = normId(conversationId) || "draft";
-  const path = `${state.user.id}/group_${convTag}_${Date.now()}.${safeExt}`;
+  const convTag = normId(conversationId);
+  if (!convTag) throw new Error("Grupo invalido para o upload da foto.");
   const upload = await uploadFileViaAltaraStorage(uploadFile, {
     fileName: uploadFile.name || file.name || ("group_avatar." + safeExt),
-    path,
     contentType: mime,
-    cacheControl: "31536000",
+    cacheControl: "60",
     uploadContext: "group_avatar",
+    conversationId: convTag,
   });
   const publicUrl = String(upload?.publicUrl || "").trim();
   if (!publicUrl) throw new Error("Nao consegui gerar URL publica para a foto do grupo.");
@@ -81097,32 +84309,33 @@ async function blockUserRpc(targetUserId) {
 async function checkCanCallUserRpc(fromUserId, toUserId) {
   const from = normId(fromUserId || "");
   const to = normId(toUserId || "");
-  if (!from || !to || from === to) return true; // let the call proceed if IDs are invalid
+  const me = normId(state.user?.id || "");
+  if (!me || from !== me || !to || from === to) return false;
   try {
-    const { data, error } = await supabase.rpc("can_call_user", {
-      p_from_user_id: from,
+    const { data, error } = await supabase.rpc("altara_current_user_can_call_user_v1", {
       p_to_user_id: to,
     });
-    if (error) return true; // non-fatal: don't block calls if RPC missing
+    if (error) return false;
     return data === true;
   } catch (_) {
-    return true;
+    return false;
   }
 }
 
 async function checkIsBlockedPairRpc(userA, userB) {
   const a = normId(userA || "");
   const b = normId(userB || "");
-  if (!a || !b || a === b) return false;
+  const me = normId(state.user?.id || "");
+  const other = a === me ? b : (b === me ? a : "");
+  if (!me || !other || a === b) return true;
   try {
-    const { data, error } = await supabase.rpc("is_blocked_pair", {
-      p_user_a: a,
-      p_user_b: b,
+    const { data, error } = await supabase.rpc("altara_current_user_is_blocked_with_v1", {
+      p_other_user_id: other,
     });
-    if (error) return false; // non-fatal
+    if (error) return true;
     return data === true;
   } catch (_) {
-    return false;
+    return true;
   }
 }
 
@@ -81148,7 +84361,7 @@ function normalizeReportUserModalMode(value = "") {
 }
 
 function extractMessageTextForReportEvidence(messageInput = {}) {
-  const parsed = safeParseMessageContent(messageInput?.content);
+  const parsed = getAuthoritativeMessageContent(messageInput);
   if (parsed.type === "text") return String(parsed.text || "");
   return getMessagePreviewText(messageInput);
 }
@@ -81160,7 +84373,7 @@ function serializeDmReportEvidenceMessage(messageInput = {}) {
   const authorName = String(getMessageAuthorName(messageInput) || "").trim();
   const authorUsername = String(getMessageAuthorUsername(messageInput) || "").trim();
   const createdAt = String(messageInput?.created_at || "").trim();
-  const parsed = safeParseMessageContent(messageInput?.content);
+  const parsed = getAuthoritativeMessageContent(messageInput);
   const text = String(extractMessageTextForReportEvidence(messageInput) || "").trim();
   if (!id && !text && !authorName && !createdAt) return null;
   return {
@@ -84245,41 +87458,16 @@ async function resolveServerConversationForEntry(serverId, fallbackConversationI
   const fallbackConvId = normId(fallbackConversationId || "");
   if (sid && isServerDeletedLocally(sid)) return "";
   if (!sid) return fallbackConvId;
+  if (!isAltaraDefinitivelyOffline() && !hasCurrentServerChannelVisibilityAuthority(sid)) {
+    const visibilityAuthority = await ensureServerChannelVisibilityAuthorityReadyForNavigation(sid, "server-entry");
+    if (visibilityAuthority?.ok !== true || !hasCurrentServerChannelVisibilityAuthority(sid)) return "";
+  }
   if (isAltaraDefinitivelyOffline()) {
-    const cachedChannels = Array.isArray(serverChannelListByServerId.get(sid))
-      ? serverChannelListByServerId.get(sid)
-      : [];
-    const cachedIds = new Set(
-      cachedChannels.map((row) => normId(row?.conversationId || "")).filter(Boolean)
-    );
-    const remembered = getRememberedServerLastChannel(sid);
-    if (remembered && (!cachedIds.size || cachedIds.has(remembered))) return remembered;
-    if (fallbackConvId && (!cachedIds.size || cachedIds.has(fallbackConvId))) return fallbackConvId;
-    return normId(cachedChannels?.[0]?.conversationId || "") || fallbackConvId;
+    if (!hasCurrentServerChannelVisibilityAuthority(sid)) return "";
+    return normId(getPreferredVisibleServerChannel(sid, fallbackConvId)?.conversationId || "");
   }
-
-  let channels = [];
-  try {
-    channels = await fetchServerChannelsForSidebar(sid, { force: false });
-  } catch (_) {
-    channels = [];
-  }
-  const channelIds = new Set(
-    (Array.isArray(channels) ? channels : [])
-      .map((row) => normId(row?.conversationId || ""))
-      .filter(Boolean)
-  );
-
-  const rememberedConvId = getRememberedServerLastChannel(sid);
-  if (rememberedConvId) {
-    if (!channelIds.size || channelIds.has(rememberedConvId)) return rememberedConvId;
-    forgetServerLastChannel(sid, { persist: true });
-  }
-
-  if (fallbackConvId && (!channelIds.size || channelIds.has(fallbackConvId))) return fallbackConvId;
-
-  const firstConvId = normId((channels?.[0]?.conversationId) || "");
-  return firstConvId || fallbackConvId;
+  if (!hasCurrentServerChannelVisibilityAuthority(sid)) return "";
+  return normId(getPreferredVisibleServerChannel(sid, fallbackConvId)?.conversationId || "");
 }
 
 function normalizeDmSidePanelMode(value) {
@@ -85668,9 +88856,9 @@ function getGroupMembershipActionMeta(conversationId) {
     || ""
   );
   const isOwner = !!(meId && ownerUserId && meId === ownerUserId);
-  const action = isOwner ? "delete" : "leave";
-  const actionLabel = isOwner ? "Apagar grupo" : "Sair do grupo";
-  const actionShort = isOwner ? "Apagar" : "Sair";
+  const action = "leave";
+  const actionLabel = "Sair do grupo";
+  const actionShort = "Sair";
   return { action, actionLabel, actionShort, isOwner, ownerUserId };
 }
 
@@ -85699,89 +88887,46 @@ async function callGroupDmRpcCompat(rpcName, conversationId) {
 }
 
 async function handleGroupDmMembershipAction(conversationId, {
-  requestedAction = "leave",
   groupName = "Group DM",
 } = {}) {
   const convId = normId(conversationId);
   if (!convId) return;
   closeDmListMenus();
 
-  const action = requestedAction === "delete" ? "delete" : "leave";
-  let shouldShowGroupDeleteScheduledNotice = false;
-  const askMsg = action === "delete"
-    ? `Agendar a eliminacao do grupo "${groupName}" para todos? O grupo desaparece agora e fica retido durante 7 dias antes da eliminacao permanente.`
-    : `Queres sair do grupo "${groupName}"?`;
-  if (!(await requestAppConfirm(askMsg, {
+  if (!(await requestAppConfirm(`Queres sair do grupo "${groupName}"?`, {
     title: "Group DM",
     okText: t("dialog.confirm.ok", "Confirm"),
     cancelText: t("dialog.confirm.cancel", "Cancel"),
-    danger: action === "delete",
+    danger: false,
   }))) return;
 
-  const rpcName = action === "delete" ? "delete_group_dm" : "leave_group_dm";
-  let { error } = await callGroupDmRpcCompat(rpcName, convId);
-  if (!error && action === "delete") shouldShowGroupDeleteScheduledNotice = true;
+  // Ownership transfer and last-member deletion are authoritative backend
+  // behavior. Every member, including the owner, uses the same leave RPC.
+  let { error } = await callGroupDmRpcCompat("leave_group_dm", convId);
   if (error) {
     if (isMissingRpcError(error)) {
       const detail = String(error?.message || "").trim();
-      alert(`Falta SQL no Supabase (proj: tbbgwjmmaiclkhssimhf).\nExecuta o patch de leave/delete e atualiza a pagina.\n\nDetalhe: ${detail || "RPC nao encontrada"}`);
+      alert(`Falta SQL no Supabase (proj: tbbgwjmmaiclkhssimhf).\nExecuta o patch de leave e atualiza a pagina.\n\nDetalhe: ${detail || "RPC nao encontrada"}`);
       return;
     }
 
     const msg = String(error?.message || "").toLowerCase();
     const alreadyResolved = msg.includes("nao es membro deste group dm")
       || msg.includes("group dm nao encontrado");
-    const ownerNeedsDelete = msg.includes("owner_must_delete_group")
-      || (msg.includes("owner") && msg.includes("delete"))
-      || (msg.includes("dono") && msg.includes("apagar"));
-    const notOwnerDelete = msg.includes("so o dono pode apagar")
-      || (msg.includes("not owner") && msg.includes("delete"))
-      || (msg.includes("owner") && msg.includes("apagar"));
 
     if (alreadyResolved) {
       error = null;
     }
 
-    if (error && action === "leave" && ownerNeedsDelete) {
-      if (!(await requestAppConfirm(`Es o dono de "${groupName}". Queres agendar a eliminacao do grupo para todos?`, {
-        title: "Group DM",
-        okText: t("dialog.confirm.ok", "Confirm"),
-        cancelText: t("dialog.confirm.cancel", "Cancel"),
-        danger: true,
-      }))) return;
-      const { error: delErr } = await callGroupDmRpcCompat("delete_group_dm", convId);
-      if (delErr) {
-        if (isMissingRpcError(delErr)) {
-          const detail = String(delErr?.message || "").trim();
-          alert(`Falta SQL no Supabase (proj: tbbgwjmmaiclkhssimhf).\nExecuta o patch de leave/delete e atualiza a pagina.\n\nDetalhe: ${detail || "RPC nao encontrada"}`);
-        } else {
-          alert(`Erro ao apagar grupo: ${delErr.message}`);
-        }
-        return;
-      }
-      shouldShowGroupDeleteScheduledNotice = true;
-      error = null;
-    } else if (error && action === "delete" && notOwnerDelete) {
-      const failMsg = String(error?.message || "").trim();
-      alert(`So o dono pode apagar este grupo.\n\nDetalhe: ${failMsg || "Sem detalhe"}`);
-      return;
-    } else if (error) {
+    if (error) {
       alert(`Erro no grupo: ${error.message}`);
       return;
     }
   }
-  setDmGroupPinned(convId, false, { persist: true });
-  setDmConversationMuted(convId, false, { persist: true });
-  if (normId(activeDmId) === convId) {
-    const backBtn = document.getElementById("btnBackToFriends");
-    if (backBtn) {
-      try { backBtn.click(); } catch (_) {}
-    } else {
-      activeDmId = null;
-      state.activeDm = null;
-      setMidMode("friends");
-    }
-  }
+  await purgeRevokedGroupDmClientState(convId, {
+    reason: "group_self_leave",
+    navigate: true,
+  });
 
   try {
     invalidateGroupAndServerCollectionsCache();
@@ -85795,12 +88940,6 @@ async function handleGroupDmMembershipAction(conversationId, {
     updatePresenceRender();
   }
 
-  if (shouldShowGroupDeleteScheduledNotice) {
-    await requestAppAlert("Group scheduled for deletion.", {
-      title: "Group DM",
-      okText: t("dialog.alert.ok", "OK"),
-    });
-  }
 }
 
 
@@ -86097,6 +89236,12 @@ async function loadDmList(options = {}) {
   const renderToken = ++dmSidebarRenderToken;
   const serverSidebarAtStart = getActiveServerSidebarContext();
   if (serverSidebarAtStart) {
+    if (
+      preserveNoAccessibleServerChannelsShell(serverSidebarAtStart, "load_dm_list_server_no_access_guard_start")
+      || preserveServerChannelAuthorityShell(serverSidebarAtStart, "load_dm_list_server_visibility_guard_start")
+    ) {
+      return;
+    }
     claimServerSidebarContext(serverSidebarAtStart, { reason: "load_dm_list_server_guard_start" });
     queueServerChannelHydrationFromSidebarGuard(serverSidebarAtStart, "load-dm-list-server-guard-channel-hydration");
     void refreshServerConversationUi({ reason: "sidebar-members", refreshChannels: false, refreshMembers: true }).catch(() => {});
@@ -86106,6 +89251,10 @@ async function loadDmList(options = {}) {
     if (renderToken !== dmSidebarRenderToken) return true;
     const serverCtx = getActiveServerSidebarContext();
     if (!serverCtx) return false;
+    if (
+      preserveNoAccessibleServerChannelsShell(serverCtx, `${reason}:server_no_access`)
+      || preserveServerChannelAuthorityShell(serverCtx, `${reason}:server_visibility`)
+    ) return true;
     claimServerSidebarContext(serverCtx, { reason });
     queueServerChannelHydrationFromSidebarGuard(serverCtx, `${reason}:channel-hydration`);
     void refreshServerConversationUi({ reason: "sidebar-members", refreshChannels: false, refreshMembers: true }).catch(() => {});
@@ -86778,7 +89927,11 @@ async function loadDmList(options = {}) {
   }
 }
 
-function primeDmOpeningShell(conversationId = "", meta = {}, { reason = "conversation-open", pending = false } = {}) {
+function primeDmOpeningShell(conversationId = "", meta = {}, {
+  reason = "conversation-open",
+  pending = false,
+  skipBroadServerRefresh = false,
+} = {}) {
   const convId = normId(conversationId || meta?.conversationId || meta?.conversation_id || "");
   const rawKind = String(meta?.kind || "dm").trim().toLowerCase() || "dm";
   const isGroup = !!meta?.isGroup || rawKind === "group" || rawKind === "server";
@@ -86807,7 +89960,11 @@ function primeDmOpeningShell(conversationId = "", meta = {}, { reason = "convers
     pendingOpen: !!pending,
   };
 
-  try { setMidMode("dm"); } catch (_) {}
+  try {
+    setMidMode("dm", rawKind === "server" && skipBroadServerRefresh
+      ? { skipServerConversationRefresh: true, skipBroadUiRefresh: true }
+      : {});
+  } catch (_) {}
   try { setRightSidebarInteractionModeForConversation({ serverMode: rawKind === "server", forceHidden: rawKind !== "server", applyCollapsed: true }); } catch (_) {}
   const titleEl = document.getElementById("dmTitle");
   if (titleEl) setElementTextIfChanged(titleEl, displayName);
@@ -86832,7 +89989,8 @@ function primeDmOpeningShell(conversationId = "", meta = {}, { reason = "convers
 }
 
 async function openDm(username) {
-  const openIntentSeq = ++dmOpenIntentSeq;
+  const navigationIntent = beginMainContentNavigationIntent({ reason: "open-dm" });
+  const openIntentSeq = navigationIntent.openIntentSeq;
   markPerfStart("dm_row_click_to_shell", { source: "openDm" });
   markPerfStart("dm-open-click-to-shell", { source: "openDm" });
   markPerfStart("dm_open_total", { source: "openDm" });
@@ -86862,7 +90020,7 @@ async function openDm(username) {
 
     const { data, error } = await dedupeRequest(`create_dm:${String(username || "").trim().toLowerCase()}`, () => supabase.rpc("create_dm", { target_username: username }));
     if (error) throw error;
-    if (openIntentSeq !== dmOpenIntentSeq) return null;
+    if (openIntentSeq !== dmOpenIntentSeq || !isMainContentNavigationIntentCurrent(navigationIntent)) return null;
 
     const convId = data;
     rememberDmConversationPeer(convId, knownUid, "open-dm-create");
@@ -86888,8 +90046,11 @@ async function openDm(username) {
   }
 }
 
-async function startDmWith(username, displayName, avatarUrl, otherUserId) {
-  const openIntentSeq = ++dmOpenIntentSeq;
+async function startDmWith(username, displayName, avatarUrl, otherUserId, suppliedNavigationIntent = null) {
+  const navigationIntent = isMainContentNavigationIntentCurrent(suppliedNavigationIntent)
+    ? suppliedNavigationIntent
+    : beginMainContentNavigationIntent({ reason: "start-dm" });
+  const openIntentSeq = navigationIntent.openIntentSeq;
   markPerfStart("dm_row_click_to_shell", { source: "startDmWith" });
   markPerfStart("dm-open-click-to-shell", { source: "startDmWith" });
   markPerfStart("dm_open_total", { source: "startDmWith" });
@@ -86930,7 +90091,7 @@ async function startDmWith(username, displayName, avatarUrl, otherUserId) {
     showDmComposerNotice("Could not open this conversation. Error code: dm_open_failed", { title: "Messages" });
     return null;
   }
-  if (openIntentSeq !== dmOpenIntentSeq) return null;
+  if (openIntentSeq !== dmOpenIntentSeq || !isMainContentNavigationIntentCurrent(navigationIntent)) return null;
 
   rememberDmConversationPeer(conversationId, resolvedOtherUserId || otherUserId || "", "start-dm-with");
   setConversationMeta(conversationId, {
@@ -86961,8 +90122,12 @@ let activeDmId = null;
 let dmOpenIntentSeq = 0;
 let dmChannel = null;
 let dmReactionsChannel = null;
+let dmReactionsChannelStatus = "";
+let dmReactionsRestartTimer = null;
 let globalDmMessageChannel = null;
+let globalDmMessageChannelStatus = "";
 let globalDmMessageRestartTimer = null;
+let globalDmMessageNeedsCatchup = false;
 const dmMessageConversationAccessCacheByConversation = new Map();
 const dmMessageConversationAccessLookupInFlightByConversation = new Map();
 const DM_MESSAGE_CONVERSATION_ACCESS_CACHE_MS = 60 * 1000;
@@ -87008,6 +90173,9 @@ const dmConversationIdByUserId = new Map();
 let typingInboxChannel = null;
 let typingInboxUserId = "";
 let typingInboxChannelKey = "";
+let typingInboxChannelStatus = "";
+let typingInboxSubscribeInFlight = null;
+let typingInboxSubscriptionGeneration = 0;
 let typingInboxRestartTimer = 0;
 const typingInboxOutboundChannelsByRecipientUserId = new Map();
 
@@ -87777,7 +90945,7 @@ function getOrCreateTypingInboxOutboundChannel(recipientUserId = "") {
   const channelName = getTypingInboxChannelName(uid);
   if (!channelName) return null;
   const entry = { channel: null, status: "created", readyPromise: null, readyResolved: false, readyTimer: 0 };
-  const channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
+  const channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
   entry.channel = channel;
   entry.readyPromise = new Promise((resolve) => {
     const finish = () => {
@@ -87831,19 +90999,23 @@ async function sendTypingInboxBroadcasts(type = "typing_start", context = typing
   const ctx = context || typingActiveContext;
   const contextType = String(ctx?.contextType || "").trim().toLowerCase();
   if (contextType !== "dm" && contextType !== "group_dm") return false;
-  const payload = getTypingInboxSenderPayload(type, ctx, basePayload);
-  if (!payload) return false;
-  const recipients = await resolveTypingInboxRecipientsForContext(ctx);
-  if (!recipients.length) {
-    logTypingInboxDebug("send_skipped_no_recipients", { senderUserId: payload.senderUserId, conversationId: payload.conversationId, contextType });
+  // Group typing is carried only by the membership-authorized private group
+  // topic. Fan-out through user-ID inbox topics can outlive membership caches.
+  if (contextType === "group_dm") return false;
+  const conversationId = normId(ctx?.conversationId || "");
+  if (!conversationId) return false;
+  const { error } = await supabase.rpc("altara_emit_direct_dm_typing_v1", {
+    p_conversation_id: conversationId,
+    p_is_typing: type !== "typing_stop",
+  });
+  if (error) {
+    logTypingInboxDebug("send_error", {
+      conversationId,
+      message: String(error?.message || error || "unknown_error"),
+    });
     return false;
   }
-  const groupName = contextType === "group_dm" ? getTypingInboxGroupName(ctx) : "";
-  const results = await Promise.allSettled(recipients.map((recipientUserId) => sendTypingInboxPayload(recipientUserId, {
-    ...payload,
-    groupName,
-  })));
-  return results.some((result) => result.status === "fulfilled" && result.value === true);
+  return true;
 }
 
 function normalizeIncomingTypingInboxPayload(payload = {}) {
@@ -87904,11 +91076,14 @@ function scheduleTypingInboxResubscribe(reason = "restart") {
   if (typingInboxRestartTimer || !state.user?.id) return;
   typingInboxRestartTimer = setTimeout(() => {
     typingInboxRestartTimer = 0;
-    subscribeTypingInboxForCurrentUser(reason);
+    if (["JOINING", "SUBSCRIBED"].includes(typingInboxChannelStatus)) return;
+    void subscribeTypingInboxForCurrentUser(reason, { force: true });
   }, 1200);
 }
 
 function unsubscribeTypingInboxForCurrentUser({ reason = "unsubscribe", clearState = false, clearOutbound = false } = {}) {
+  typingInboxSubscriptionGeneration += 1;
+  typingInboxSubscribeInFlight = null;
   if (typingInboxRestartTimer) {
     clearTimeout(typingInboxRestartTimer);
     typingInboxRestartTimer = 0;
@@ -87918,6 +91093,7 @@ function unsubscribeTypingInboxForCurrentUser({ reason = "unsubscribe", clearSta
   typingInboxChannel = null;
   typingInboxUserId = "";
   typingInboxChannelKey = "";
+  typingInboxChannelStatus = "";
   if (oldChannel) {
     try { supabase.removeChannel(oldChannel); } catch (_) {}
     logTypingInboxDebug("unsubscribe", { reason, contextKey: oldKey });
@@ -87931,38 +91107,95 @@ function unsubscribeTypingInboxForCurrentUser({ reason = "unsubscribe", clearSta
   }
 }
 
-function subscribeTypingInboxForCurrentUser(reason = "subscribe") {
-  const userId = normId(state.user?.id || "");
-  if (!userId) {
-    unsubscribeTypingInboxForCurrentUser({ reason: `${reason}:no-user`, clearState: true, clearOutbound: true });
-    return null;
-  }
-  const channelName = getTypingInboxChannelName(userId);
-  if (!channelName) return null;
-  if (typingInboxChannel && typingInboxUserId === userId && typingInboxChannelKey === channelName) return typingInboxChannel;
-  unsubscribeTypingInboxForCurrentUser({ reason: `${reason}:switch-user`, clearState: true, clearOutbound: true });
-  const channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
-  typingInboxChannel = channel;
-  typingInboxUserId = userId;
-  typingInboxChannelKey = channelName;
-  channel
-    .on("broadcast", { event: "typing_inbox" }, (payload) => {
-      handleIncomingTypingInboxBroadcast(payload?.payload || payload || {});
-    })
-    .subscribe((status) => {
-      logTypingInboxDebug("subscribe", { status, reason, userId, channelName });
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        if (typingInboxUserId === userId) scheduleTypingInboxResubscribe(`restart:${String(status || "")}`);
-      }
-    });
-  exposeAltaraTypingDebugHelper();
-  return channel;
+function subscribeTypingInboxForCurrentUser(reason = "subscribe", { force = false } = {}) {
+  if (typingInboxSubscribeInFlight && !force) return typingInboxSubscribeInFlight;
+  const requestGeneration = typingInboxSubscriptionGeneration;
+  const subscribeTask = (async () => {
+    const authReady = await refreshAltaraRealtimeAuthForReconnect(`typing-inbox:${reason}`);
+    if (requestGeneration !== typingInboxSubscriptionGeneration) return null;
+    const userId = normId(state.user?.id || "");
+    if (!authReady || !userId) {
+      unsubscribeTypingInboxForCurrentUser({ reason: `${reason}:no-auth`, clearState: true, clearOutbound: true });
+      return null;
+    }
+    const channelName = getTypingInboxChannelName(userId);
+    if (!channelName) return null;
+    if (
+      !force
+      && typingInboxChannel
+      && typingInboxUserId === userId
+      && typingInboxChannelKey === channelName
+      && ["JOINING", "SUBSCRIBED"].includes(typingInboxChannelStatus)
+    ) return typingInboxChannel;
+
+    unsubscribeTypingInboxForCurrentUser({ reason: `${reason}:replace`, clearState: false, clearOutbound: false });
+    const channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
+    typingInboxChannel = channel;
+    typingInboxUserId = userId;
+    typingInboxChannelKey = channelName;
+    typingInboxChannelStatus = "JOINING";
+    channel
+      .on("broadcast", { event: "typing_inbox" }, (payload) => {
+        handleIncomingTypingInboxBroadcast(payload?.payload || payload || {});
+      })
+      .subscribe((status, error) => {
+        if (typingInboxChannel !== channel) return;
+        typingInboxChannelStatus = String(status || "");
+        logTypingInboxDebug("subscribe", {
+          status,
+          reason,
+          userId,
+          channelName,
+          error: String(error?.message || error || ""),
+        });
+        if (status === "SUBSCRIBED") {
+          if (typingInboxRestartTimer) {
+            clearTimeout(typingInboxRestartTimer);
+            typingInboxRestartTimer = 0;
+          }
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          if (status !== "CLOSED") return;
+          scheduleTypingInboxResubscribe(`restart:${String(status || "")}`);
+        }
+      });
+    exposeAltaraTypingDebugHelper();
+    return channel;
+  })();
+  typingInboxSubscribeInFlight = subscribeTask;
+  void subscribeTask.finally(() => {
+    if (typingInboxSubscribeInFlight === subscribeTask) typingInboxSubscribeInFlight = null;
+  });
+  return subscribeTask;
 }
 
 async function sendTypingBroadcast(type = "typing_start", context = typingActiveContext, channel = typingRealtimeChannel) {
   if (!context?.key) return false;
   const payload = getCurrentTypingUserPayload(context, type);
   if (!payload) return false;
+  if (context.contextType === "group_dm") {
+    const conversationId = normId(context.conversationId || "");
+    if (!conversationId || isGroupDmConversationRevoked(conversationId)) return false;
+    try {
+      const { error } = await supabase.rpc("altara_emit_group_dm_typing_v1", {
+        p_conversation_id: conversationId,
+        p_is_typing: type === "typing_start",
+      });
+      if (error) throw new Error("group_dm_typing_rejected");
+      const now = Date.now();
+      if (type === "typing_start") typingLastSentStartAtByContextKey.set(context.key, now);
+      else typingLastSentStopAtByContextKey.set(context.key, now);
+      return true;
+    } catch (error) {
+      logTypingDebug("send_error", {
+        contextKey: context.key,
+        type,
+        message: String(error?.message || "group_dm_typing_rejected"),
+      });
+      return false;
+    }
+  }
   void sendTypingInboxBroadcasts(type, context, payload).catch((error) => {
     logTypingInboxDebug("send_error", { contextKey: context.key, message: String(error?.message || error || "unknown_error") });
   });
@@ -88039,6 +91272,8 @@ function normalizeIncomingTypingPayload(payload = {}) {
 function handleIncomingTypingBroadcast(rawPayload = {}, options = {}) {
   const entry = normalizeIncomingTypingPayload(rawPayload);
   if (!entry) return;
+  const parsedContext = parseTypingContextKey(entry.contextKey);
+  if (parsedContext.contextType === "group_dm" && isGroupDmConversationRevoked(parsedContext.conversationId)) return;
   const selfId = normId(state.user?.id || "");
   if (entry.userId === selfId && !isSelfTypingStatusDebugEnabled()) {
     logTypingDebug("skipped_self", { contextKey: entry.contextKey, userId: entry.userId, source: options?.source || "active" });
@@ -88064,7 +91299,9 @@ function handleIncomingTypingBroadcast(rawPayload = {}, options = {}) {
 function unsubscribeTypingContext({ sendStop = true, reason = "unsubscribe" } = {}) {
   const oldContext = typingActiveContext;
   const oldChannel = typingRealtimeChannel;
-  if (sendStop && oldContext?.key && oldChannel) sendTypingStop({ force: true, reason, context: oldContext, channel: oldChannel });
+  if (sendStop && oldContext?.key && (oldChannel || oldContext.contextType === "group_dm")) {
+    sendTypingStop({ force: true, reason, context: oldContext, channel: oldChannel });
+  }
   clearTypingBlurStopTimer();
   typingIsLocalTyping = false;
   typingActiveContext = null;
@@ -88103,11 +91340,21 @@ function unsubscribeTypingSidebarSubscriptions(reason = "sidebar_unsubscribe_all
 
 function subscribeTypingSidebarContext(context, reason = "sidebar_subscribe") {
   if (!context?.key || !context?.channelName || context.key === typingActiveContextKey) return false;
+  if (context.contextType === "group_dm" && isGroupDmConversationRevoked(context.conversationId)) return false;
+  if (context.contextType === "group_dm") {
+    startGroupDmRevocationBroadcastListener();
+    return true;
+  }
   if (typingSidebarSubscriptionsByContextKey.has(context.key)) {
     typingSidebarContextMetaByKey.set(context.key, context);
     return true;
   }
-  const channel = supabase.channel(context.channelName, { config: { broadcast: { self: false } } });
+  const channel = supabase.channel(context.channelName, {
+    config: {
+      private: true,
+      broadcast: { self: false },
+    },
+  });
   typingSidebarSubscriptionsByContextKey.set(context.key, channel);
   typingSidebarContextMetaByKey.set(context.key, context);
   channel
@@ -88163,7 +91410,11 @@ function subscribeTypingForCurrentContext(reason = "subscribe") {
     subscribeTypingInboxForCurrentUser(`${reason}:inbox-only`);
     return null;
   }
-  if (typingRealtimeChannel && typingActiveContextKey === context.key) {
+  if (context.contextType === "group_dm" && isGroupDmConversationRevoked(context.conversationId)) {
+    unsubscribeTypingContext({ sendStop: false, reason: `${reason}:group-membership-revoked` });
+    return null;
+  }
+  if ((typingRealtimeChannel || context.contextType === "group_dm") && typingActiveContextKey === context.key) {
     typingActiveContext = context;
     subscribeTypingInboxForCurrentUser(`${reason}:active-existing`);
     renderTypingIndicator(context.key);
@@ -88171,7 +91422,26 @@ function subscribeTypingForCurrentContext(reason = "subscribe") {
     return context;
   }
   unsubscribeTypingContext({ sendStop: true, reason: `${reason}:switch` });
-  const channel = supabase.channel(context.channelName, { config: { broadcast: { self: false } } });
+  if (context.contextType === "group_dm") {
+    typingActiveContext = context;
+    typingActiveContextKey = context.key;
+    typingActiveChannelName = "";
+    typingRealtimeChannel = null;
+    startGroupDmRevocationBroadcastListener();
+    scheduleTypingExpirySweep();
+    subscribeTypingInboxForCurrentUser(`${reason}:active-context`);
+    ensureTypingIndicatorElement();
+    renderTypingIndicator(context.key);
+    syncTypingSidebarSubscriptionsFromVisibleRows(`${reason}:active-context`);
+    exposeAltaraTypingDebugHelper();
+    return context;
+  }
+  const channel = supabase.channel(context.channelName, {
+    config: {
+      private: true,
+      broadcast: { self: false },
+    },
+  });
   typingRealtimeChannel = channel;
   typingActiveContext = context;
   typingActiveContextKey = context.key;
@@ -88419,6 +91689,8 @@ const messageReactionMutationInFlight = new Set();
 let activeServerPermissionsRealtimeChannel = null;
 let activeServerPermissionsRealtimeKey = "";
 let activeServerPermissionsRealtimeRefreshTimer = 0;
+const serverRoleAuthorityRefreshStateByServerId = new Map();
+const serverRoleAuthorityVisualDebugByServerId = new Map();
 const activeServerPermissionsRealtimeWarned = new Set();
 let msgMenuOpenFor = null;
 let dmPinsBound = false;
@@ -89093,10 +92365,6 @@ let serverChannelCreateDeferredPermissionsRefresh = false;
 const serverChannelCreateSaveInFlightByChannel = new Map();
 const serverChannelAccessClientId = globalThis.crypto?.randomUUID?.() || `channel-access-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let serverChannelManagementSqlAvailable = null;
-// Phase 4A: tri-state (null = unknown/assume available, true/false = confirmed at runtime),
-// mirrors channelPermissionOverwritesSqlAvailable's discovery pattern, for the new
-// set_server_channel_privacy_v1 RPC used to persist server_channels.is_private.
-let serverChannelPrivacyRpcSqlAvailable = null;
 let serverChannelPrivateAccessAtomicRpcAvailable = null;
 // Phase 4A hotfix: timer for the inline "Saved." status shown after an edit-mode save
 // (modal now stays open instead of closing -- see submitServerChannelCreateModal).
@@ -89146,7 +92414,6 @@ function installAltaraServerInviteDebugHelpers() {
         create_server_invite_link: "checked on generate",
         preview_server_invite: "checked by invite card hydration",
         join_server_by_invite_code_safe: "checked on join",
-        invite_server_members: "legacy/direct fallback only",
       },
       candidatesCount: getInvitableServerFriends(sid).length,
       pendingInvitesCount: pendingExternalServerInviteCode ? 1 : 0,
@@ -89573,6 +92840,7 @@ let serverNicknameLastMutation = null;
 let serverNicknameLastRealtimeEvent = null;
 let serverSettingsRolesMutating = false;
 let serverSettingsRolePermissionsMutating = false;
+let serverSettingsLastRolePermissionSaveTrace = null;
 let serverSettingsRoleCreatePreset = "custom";
 let serverSettingsRolePermissionSearch = "";
 let serverSettingsRolesMetaMessage = "";
@@ -89593,6 +92861,7 @@ let serverSettingsRoleLoadSequence = 0;
 let serverSettingsRoleStaleRefreshCount = 0;
 let serverSettingsPendingRoleOrderUpdates = [];
 let serverSettingsPendingRolePermissionUpdates = new Map();
+const serverSettingsOriginalRolePermissionsByRoleId = new Map();
 const serverSettingsConfirmedRolePermissions = new Map();
 let activeServerCapabilityState = { key: "", loading: false, canManageServer: false, canManageRoles: false, canManageChannels: false, canViewChannels: true, canSendMessages: true, canReadMessageHistory: true, isOwner: false, trace: null };
 let serverSettingsRolePermissionsDirty = false;
@@ -89638,6 +92907,12 @@ const serverChannelSidebarRenderSignatureByServerId = new Map();
 let lastServerChannelSidebarScrollDebug = null;
 let serverChannelVisibleReadRpcAvailable = null;
 const serverChannelBackendVisibleIdsByServerId = new Map();
+const serverChannelVisibilityAuthoritySnapshotByServerId = new Map();
+const serverChannelVisibilityAuthorityResolvingByServerId = new Set();
+const serverChannelVisibilityAuthorityEpochByServerId = new Map();
+const serverChannelVisibilityAuthorityResultByServerId = new Map();
+const serverChannelVisibilityNavigationRecoveryByServerId = new Map();
+const serverChannelVisibilityAuthorityWaitersByServerId = new Map();
 const serverChannelRawLoadDebugByServerId = new Map();
 const serverChannelCategoryListByServerId = new Map();
 const serverBanListByServerId = new Map();
@@ -89719,6 +92994,7 @@ const serverHideMutedChannelsByServerId = new Map();
 const serverMutedByServerId = new Map();
 const serverMemberListByServerId = new Map();
 const serverBotInstallListByServerId = new Map();
+const serverBotManagementInstallListByServerId = new Map();
 const serverMembersSearchByServerId = new Map();
 const serverMemberLoadInFlightByServerId = new Map();
 const serverMemberLoadStateByServerId = new Map();
@@ -89752,9 +93028,16 @@ let deletedServerStateLoaded = false;
 const serverRoleListByServerId = new Map();
 const serverRoleMemberMapByServerId = new Map();
 const serverRolePermissionCacheFetchedAtByServerId = new Map();
-const channelPermissionOverwritesByChannel = new Map();
-const channelPermissionOverwritesLoadedAtByChannel = new Map();
-let channelPermissionOverwritesSqlAvailable = null;
+  const myEffectiveServerChannelPermissionsByChannel = new Map();
+  const myEffectiveServerChannelPermissionsLoadedAtByServerId = new Map();
+  const myEffectiveServerChannelPermissionsInFlightByServerId = new Map();
+  let myEffectiveServerChannelPermissionsSqlAvailable = null;
+  const channelPermissionOverwritesByChannel = new Map();
+  const channelPermissionOverwritesLoadedAtByChannel = new Map();
+  const categoryPermissionOverwritesByCategory = new Map();
+  const categoryPermissionOverwritesLoadedAtByCategory = new Map();
+  let channelPermissionOverwritesSqlAvailable = null;
+  let batch7aPermissionOverridesSqlAvailable = null;
 let activeChannelSettingsModalState = null;
 let activeChannelSettingsTab = "overview";
 let activeChannelSettingsSaving = false;
@@ -89800,7 +93083,11 @@ let serverVoiceModerationStateRealtimeChannel = null;
 let serverVoiceModerationStateRealtimeStatus = "";
 let serverVoiceModerationFetchPendingCount = 0;
 let serverVoiceModerationLastError = null;
-let serverVoiceModerationRetryTimer = 0;
+const serverVoiceModerationRetryTimersByConversation = new Map();
+const serverVoiceModerationRetryAttemptsByConversation = new Map();
+const serverVoiceModerationFetchInFlightByConversation = new Set();
+let serverVoiceModerationRealtimeRestartTimer = 0;
+let serverVoiceModerationRealtimeRestartAttempts = 0;
 let serverVoiceModerationStateApplying = false;
 let serverVoiceModerationStateUiRefreshTimer = 0;
 const SERVER_VOICE_MUTE_EVENT_HISTORY_LIMIT = 80;
@@ -89836,6 +93123,7 @@ const dmFeatureCaps = {
   checked: false,
   advancedMessages: false,
   humanEmbedSnapshots: false,
+  trustedServerEvents: false,
   botMessages: false,
   messageReactions: false,
   e2eeMessages: false,
@@ -92983,16 +96271,18 @@ function renderDmMessageLoadError(conversationId = "", error = null, { reason = 
 }
 
 function dmMessageSelectColumns({ minimal = false } = {}) {
-  const profileJoin = ", profiles:profiles!messages_user_id_fkey(username, display_name, avatar_url)";
   const embedSnapshotColumn = dmFeatureCaps.humanEmbedSnapshots ? ", suppress_embeds" : "";
-  if (minimal) return `id, conversation_id, user_id, content, created_at${embedSnapshotColumn}${profileJoin}`;
+  const trustedEventColumn = dmFeatureCaps.trustedServerEvents
+    ? ", trusted_event_type, trusted_event_source_id"
+    : "";
+  if (minimal) return `id, conversation_id, user_id, content, created_at${embedSnapshotColumn}${trustedEventColumn}`;
   const e2eeColumns = dmFeatureCaps.e2eeMessages
     ? `, message_mode, ciphertext, cipher_iv, cipher_alg, cipher_version, sender_key_id, recipient_key_id${dmFeatureCaps.dmPrivacyEpoch ? ", dm_privacy_epoch" : ""}`
     : "";
   if (dmFeatureCaps.advancedMessages) {
-    return `id, conversation_id, user_id, content, created_at, edited_at, reply_to_id, is_pinned, pinned_by, pinned_at${embedSnapshotColumn}${e2eeColumns}${profileJoin}`;
+    return `id, conversation_id, user_id, content, created_at, edited_at, reply_to_id, is_pinned, pinned_by, pinned_at${embedSnapshotColumn}${trustedEventColumn}${e2eeColumns}`;
   }
-  return `id, conversation_id, user_id, content, created_at${embedSnapshotColumn}${e2eeColumns}${profileJoin}`;
+  return `id, conversation_id, user_id, content, created_at${embedSnapshotColumn}${trustedEventColumn}${e2eeColumns}`;
 }
 
 function disableDmMessageColumnsFromError(error = null) {
@@ -93004,6 +96294,10 @@ function disableDmMessageColumnsFromError(error = null) {
   }
   if (isMissingColumnError(error, "suppress_embeds")) {
     dmFeatureCaps.humanEmbedSnapshots = false;
+    changed = true;
+  }
+  if (isMissingColumnError(error, "trusted_event_type") || isMissingColumnError(error, "trusted_event_source_id")) {
+    dmFeatureCaps.trustedServerEvents = false;
     changed = true;
   }
   if (isMissingColumnError(error, "message_mode") || isMissingColumnError(error, "ciphertext") || isMissingColumnError(error, "cipher_iv") || isMissingColumnError(error, "cipher_alg") || isMissingColumnError(error, "cipher_version") || isMissingColumnError(error, "sender_key_id") || isMissingColumnError(error, "recipient_key_id")) {
@@ -93045,6 +96339,7 @@ async function runDmMessageSelectWithSchemaFallback(buildQuery, { reason = "mess
     logMessageLoadState("human_query_retry", { reason, conversationId: convId, token, selectMode: "minimal" });
     dmFeatureCaps.advancedMessages = false;
     dmFeatureCaps.humanEmbedSnapshots = false;
+    dmFeatureCaps.trustedServerEvents = false;
     dmFeatureCaps.e2eeMessages = false;
     dmFeatureCaps.dmPrivacyEpoch = false;
     dmFeatureCaps.botMessages = false;
@@ -93068,6 +96363,7 @@ async function ensureDmFeatureCaps(force = false) {
   dmFeatureCaps.checked = true;
   dmFeatureCaps.advancedMessages = false;
   dmFeatureCaps.humanEmbedSnapshots = false;
+  dmFeatureCaps.trustedServerEvents = false;
   dmFeatureCaps.botMessages = false;
   dmFeatureCaps.messageReactions = false;
   dmFeatureCaps.e2eeMessages = false;
@@ -93095,6 +96391,17 @@ async function ensureDmFeatureCaps(force = false) {
     else console.warn("human embed snapshot column unavailable:", error?.message || error);
   } catch (e) {
     console.warn("human embed snapshot column check failed:", e?.message || e);
+  }
+
+  try {
+    const { error } = await supabase
+      .from("messages")
+      .select("id, trusted_event_type, trusted_event_source_id")
+      .limit(1);
+    if (!error) dmFeatureCaps.trustedServerEvents = true;
+    else console.warn("trusted server event column unavailable:", error?.message || error);
+  } catch (e) {
+    console.warn("trusted server event column check failed:", e?.message || e);
   }
 
   // Bot-authored replies live in public.bot_channel_messages, not public.messages.
@@ -93260,7 +96567,7 @@ async function buildConversationMessageInsertPayload({
 } = {}) {
   await ensureDmFeatureCaps();
   const convId = normId(conversationId);
-  const serializedContent = String(content ?? "");
+  const serializedContent = persistedTrustedMessageContent(content);
   if (!convId || !state.user?.id) {
     throw new Error("Invalid conversation for DM message send.");
   }
@@ -93381,7 +96688,7 @@ async function buildConversationMessageUpdatePayload({
 } = {}) {
   await ensureDmFeatureCaps();
   const convId = normId(conversationId);
-  const serializedContent = String(content ?? "");
+  const serializedContent = persistedTrustedMessageContent(content);
   if (!convId || !state.user?.id) {
     throw new Error("Invalid conversation for DM message update.");
   }
@@ -93465,12 +96772,18 @@ async function buildConversationMessageUpdatePayload({
 async function hydrateDmRowsForDisplay(rows, { conversationId = "" } = {}) {
   // Persisted legacy rows and schema-compatible fallback rows predate Batch
   // 6A, so a missing snapshot deliberately preserves the historical card.
-  const list = (Array.isArray(rows) ? rows : []).map((row) => (
+  let list = (Array.isArray(rows) ? rows : []).map((row) => (
     row && typeof row === "object"
-      ? { ...row, suppress_embeds: row.suppress_embeds === true }
+      ? {
+          ...row,
+          suppress_embeds: row.suppress_embeds === true,
+          trusted_event_type: normalizeTrustedServerEventType(row.trusted_event_type),
+          trusted_event_source_id: normalizeTrustedServerEventSourceId(row.trusted_event_source_id),
+        }
       : row
   ));
   if (!list.length || !state.user?.id) return list;
+  list = await hydrateTrustedAttachmentRows({ supabase, rows: list });
   const caps = await ensureDmFeatureCaps();
   if (!caps?.e2eeMessages) return list;
   if (!isDirectDmE2eeEnabled()) {
@@ -93683,6 +96996,8 @@ function createOptimisticOutgoingMessage({
     pinned_by: null,
     pinned_at: null,
     suppress_embeds: safeSuppressEmbeds,
+    trusted_event_type: null,
+    trusted_event_source_id: null,
     profiles: {
       username: profile.username,
       display_name: profile.display_name,
@@ -94528,7 +97843,7 @@ function getServerMessageHistoryContext(conversationId = activeDmId) {
       || meta?.channel_type
       || "text"
   );
-  if (channelType !== "text") return null;
+  if (channelType !== "text" && channelType !== "voice") return null;
   return {
     serverId,
     channelId,
@@ -94790,6 +98105,7 @@ function getKnownServerHistoryConversationIds(serverId = "") {
 
 function invalidateServerMessageHistoryForServer(serverId = "", reason = "history_permissions_realtime", {
   preserveValidSnapshot = true,
+  renderActive = true,
 } = {}) {
   const sid = normId(serverId || "");
   if (!sid) return 0;
@@ -94799,7 +98115,7 @@ function invalidateServerMessageHistoryForServer(serverId = "", reason = "histor
   conversationIds.forEach((conversationId) => {
     invalidateServerMessageHistoryConversation(conversationId, reason, {
       clearCaches: true,
-      render: normId(activeDmId || state.activeDm?.conversationId || "") === conversationId,
+      render: renderActive && normId(activeDmId || state.activeDm?.conversationId || "") === conversationId,
       preserveValidSnapshot,
     });
   });
@@ -94929,12 +98245,18 @@ async function prepareServerMessageHistoryForConversation(conversationId = "", {
     }
     if (error) {
       const safeError = getServerMessageHistorySafeError(error);
+      const preserveFailedSnapshot = preserveSnapshot && safeError.category !== "channel_access_denied";
       const failedState = {
         ...checkingState,
-        status: preserveSnapshot ? "refresh_error" : "error",
-        ready: preserveSnapshot,
+        status: preserveFailedSnapshot ? "refresh_error" : "error",
+        ready: preserveFailedSnapshot,
+        fullHistory: preserveFailedSnapshot ? checkingState.fullHistory === true : false,
+        visibleSince: preserveFailedSnapshot ? String(checkingState.visibleSince || "") : "",
+        serverPermissionEpoch: preserveFailedSnapshot ? checkingState.serverPermissionEpoch : null,
+        channelAccessEpoch: preserveFailedSnapshot ? checkingState.channelAccessEpoch : null,
+        boundaryPrepared: preserveFailedSnapshot ? checkingState.boundaryPrepared === true : false,
         verificationRequired: true,
-        previousValidSnapshotPreserved: preserveSnapshot,
+        previousValidSnapshotPreserved: preserveFailedSnapshot,
         prepareFinishedAt: Date.now(),
         error: safeError,
       };
@@ -94944,11 +98266,11 @@ async function prepareServerMessageHistoryForConversation(conversationId = "", {
         phase: "error",
         finishedAt: Date.now(),
         outerRpcAvailable: safeError.outerRpcAvailable,
-        previousValidSnapshotPreserved: preserveSnapshot,
+        previousValidSnapshotPreserved: preserveFailedSnapshot,
         error: safeError,
       };
       serverMessageHistoryDebugState.lastVerification = serverMessageHistoryDebugState.lastPrepare;
-      return { ok: false, preserved: preserveSnapshot, ...failedState };
+      return { ok: false, preserved: preserveFailedSnapshot, ...failedState };
     }
     const normalized = normalizePreparedServerMessageHistoryResponse(data, context);
     if (!normalized) {
@@ -95260,6 +98582,8 @@ function cloneMessageForConversationCache(row = {}, { persistent = false } = {})
   const next = { ...row };
   if (!isBotMessageRow(next) && !isPersistedBotChannelMessageRow(next)) {
     next.suppress_embeds = next.suppress_embeds === true;
+    next.trusted_event_type = normalizeTrustedServerEventType(next.trusted_event_type);
+    next.trusted_event_source_id = normalizeTrustedServerEventSourceId(next.trusted_event_source_id);
   }
   if (next.profiles && typeof next.profiles === "object") next.profiles = { ...next.profiles };
   if (persistent) {
@@ -95364,7 +98688,9 @@ function getConversationMessageCacheStats() {
 function canRenderCachedConversationBeforeAccessCheck(conversationId = "") {
   const convId = getMessageCacheConversationId(conversationId);
   if (!convId) return false;
+  if (isGroupDmConversationRevoked(convId)) return false;
   const historyContext = getServerMessageHistoryContext(convId);
+  if (historyContext && !canCurrentUserRenderServerChannelConversation(convId)) return false;
   if (historyContext && getServerMessageHistoryState(convId)?.ready !== true) return false;
   if (hasLocalDmMessageConversationAccessHint(convId)) return true;
   const cached = dmMessageConversationAccessCacheByConversation.get(convId) || null;
@@ -95382,8 +98708,10 @@ function getConversationMessageCacheKind(conversationId = "") {
 function canPersistConversationMessageCache(conversationId = "", rows = []) {
   const convId = getMessageCacheConversationId(conversationId);
   if (!convId || !getMessageCacheUserId()) return false;
+  if (isGroupDmConversationRevoked(convId)) return false;
   if (typeof indexedDB === "undefined") return false;
   const historyContext = getServerMessageHistoryContext(convId);
+  if (historyContext && !canCurrentUserRenderServerChannelConversation(convId)) return false;
   if (historyContext && getServerMessageHistoryState(convId)?.ready !== true) return false;
   const list = Array.isArray(rows) ? rows : [];
   if (list.some((row) => isEncryptedDmMessageRow(row))) return false;
@@ -95616,7 +98944,7 @@ function schedulePersistentConversationMessageCacheWrite(conversationId = "", ro
 
 function updateConversationMessageCacheFromRows(conversationId = "", rows = [], meta = {}) {
   const convId = getMessageCacheConversationId(conversationId);
-  if (!convId) return null;
+  if (!convId || isGroupDmConversationRevoked(convId)) return null;
   const entry = setConversationMessageMemoryCache(convId, rows, meta);
   if (meta?.persist !== false) {
     schedulePersistentConversationMessageCacheWrite(convId, entry?.messages || rows, {
@@ -95658,6 +98986,7 @@ function mergeConversationMessageRows(existingRows = [], freshRows = [], { prese
 function upsertConversationMessageCacheRow(conversationId = "", row = null, { persist = true, source = "row-upsert" } = {}) {
   const convId = getMessageCacheConversationId(conversationId || row?.conversation_id || "");
   if (!convId || !row || typeof row !== "object") return null;
+  if (!canCurrentUserRenderServerChannelConversation(convId)) return null;
   const existing = getConversationMessageMemoryCache(convId);
   const baseRows = existing?.messages || [];
   const rows = mergeConversationMessageRows(baseRows, [row], { preserveOptimistic: true });
@@ -95689,6 +99018,7 @@ function applyConversationMessageCacheEntry(conversationId = "", entry = null, {
   const convId = getMessageCacheConversationId(conversationId);
   if (!convId || !entry || !Array.isArray(entry.messages) || !entry.messages.length) return false;
   if (normId(activeDmId || state.activeDm?.conversationId || "") !== convId) return false;
+  if (!canCurrentUserRenderServerChannelConversation(convId)) return false;
   dmMessagesCache = normalizeConversationMessageRowsForCache(
     filterRowsForServerMessageHistory(convId, entry.messages),
     {
@@ -95728,6 +99058,10 @@ async function tryRenderPersistentCachedConversationMessages(conversationId = ""
   }
   markPerfStart("dm-open-cache-render", { conversationId: convId, source });
   const entry = await readPersistentConversationMessageCache(convId);
+  if (isGroupDmConversationRevoked(convId) || !canCurrentUserRenderServerChannelConversation(convId)) {
+    void deletePersistentConversationMessageCache(convId).catch(() => false);
+    return false;
+  }
   if (!entry?.messages?.length) {
     markPerfEnd("dm-open-cache-render", { conversationId: convId, source, count: 0 });
     return false;
@@ -95747,7 +99081,7 @@ async function tryRenderPersistentCachedConversationMessages(conversationId = ""
 async function loadFreshConversationMessagesForCache(conversationId = "", { reason = "fresh", forceAccess = true, token = 0 } = {}) {
   const convId = getMessageCacheConversationId(conversationId);
   const optionsToken = Number(token || 0) || 0;
-  if (!convId) return { ok: false, denied: true, rows: [], hasMoreBefore: false, error: null };
+  if (!convId || isGroupDmConversationRevoked(convId)) return { ok: false, denied: true, rows: [], hasMoreBefore: false, error: null };
   const historyContext = getServerMessageHistoryContext(convId);
   if (isAltaraDefinitivelyOffline()) {
     const cached = getConversationMessageMemoryCache(convId);
@@ -95786,7 +99120,7 @@ async function loadFreshConversationMessagesForCache(conversationId = "", { reas
     const serverChannelContext = findServerChannelContextByConversationId(convId) || null;
     const isPrivateServerChannel = serverChannelContext?.channel?.isPrivate === true;
     const canAccessConversation = await canCurrentUserAccessMessageConversation(convId, { force: !!forceAccess });
-    if (!canAccessConversation) {
+    if (isGroupDmConversationRevoked(convId) || !canAccessConversation) {
       if (isPrivateServerChannel) {
         privateChannelTimelineDebugByConversationId.set(convId, {
           ...(privateChannelTimelineDebugByConversationId.get(convId) || {}),
@@ -95820,6 +99154,10 @@ async function loadFreshConversationMessagesForCache(conversationId = "", { reas
         conversationId: convId,
         token: optionsToken,
       });
+
+    if (isGroupDmConversationRevoked(convId)) {
+      return { ok: false, denied: true, rows: [], hasMoreBefore: false, historyGeneration, error: null };
+    }
 
     if (isPrivateServerChannel) {
       privateChannelTimelineDebugByConversationId.set(convId, {
@@ -95877,6 +99215,9 @@ async function loadFreshConversationMessagesForCache(conversationId = "", { reas
     }
 
     const hydratedRows = await hydrateDmRowsForDisplay(Array.isArray(data) ? data : [], { conversationId: convId });
+    if (isGroupDmConversationRevoked(convId)) {
+      return { ok: false, denied: true, rows: [], hasMoreBefore: false, historyGeneration, error: null };
+    }
     const rows = filterRowsForServerMessageHistory(convId, hydratedRows.slice().reverse());
     const oldestRow = rows[0] || null;
     const hasMoreBefore = (
@@ -98622,10 +101963,10 @@ function isBotMessageRow(m) {
   return String(m?.sender_type || "").trim().toLowerCase() === "bot" || !!normId(m?.bot_id || "");
 }
 
-function getMessageMetadataAttachments(m = {}) {
-  const metadata = m?.metadata && typeof m.metadata === "object" ? m.metadata : {};
-  const attachments = sanitizeAttachmentCollectionPayload({ items: metadata.attachments });
-  return attachments && Array.isArray(attachments.items) && attachments.items.length ? attachments : null;
+function getMessageMetadataAttachments(_m = {}) {
+  // Final legacy cutoff: attachments are authoritative only when they are
+  // verified private-upload references in messages.content.
+  return null;
 }
 
 function shouldAllowMessageRichEmbeds(m = {}) {
@@ -98714,7 +102055,7 @@ function getMessageAuthorNameColor(m) {
 
 function getMessagePreviewText(m) {
   if (!m) return t("msg.deleted", "Deleted message");
-  const parsed = safeParseMessageContent(m.content);
+  const parsed = getAuthoritativeMessageContent(m);
   if (parsed.type === "gif") return "[GIF]";
   if (parsed.type === "attachment" || parsed.type === "attachments") {
     const attachments = extractParsedAttachments(parsed);
@@ -98883,9 +102224,72 @@ function getCallEventDisplayText(message, parsed) {
   return `${author} iniciou uma chamada.`;
 }
 
-function isSystemChipMessage(parsed) {
+function isParsedSystemChipMessage(parsed) {
   const t = String(parsed?.type || "").trim().toLowerCase();
   return t === "call_event" || t === "system_event";
+}
+
+function normalizeTrustedServerEventType(value = "") {
+  const type = String(value || "").trim().toLowerCase();
+  return type === "call_event" || type === "system_event" || type === "system"
+    ? type
+    : null;
+}
+
+function normalizeTrustedServerEventSourceId(value = "") {
+  const sourceId = String(value || "").trim();
+  if (!sourceId || sourceId.length > 160) return null;
+  return /^(?:server_voice_session|server_membership_event):/.test(sourceId)
+    ? sourceId
+    : null;
+}
+
+function isTrustedServerProtectedMessage(message = null) {
+  return !!normalizeTrustedServerEventType(message?.trusted_event_type);
+}
+
+function getAuthoritativeMessageContent(message = null, parsedInput = null) {
+  const parsed = parsedInput || safeParseMessageContent(message?.content);
+  if (!isParsedSystemChipMessage(parsed)) return parsed;
+  if (isBotMessageRow(message) || isPersistedBotChannelMessageRow(message)) return parsed;
+
+  const trustedType = normalizeTrustedServerEventType(message?.trusted_event_type);
+  if (trustedType && trustedType === String(parsed?.type || "").trim().toLowerCase()) {
+    return parsed;
+  }
+
+  const conversationId = normId(message?.conversation_id || activeDmId || state.activeDm?.conversationId || "");
+  const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
+  const cachedMeta = conversationId ? (getConversationMeta(conversationId) || {}) : {};
+  const activeMeta = conversationId && conversationId === activeConversationId
+    ? (state.activeDm || {})
+    : {};
+  const kind = String(activeMeta?.kind || cachedMeta?.kind || "").trim().toLowerCase();
+  const serverContext = conversationId
+    ? getServerPermissionContextForConversation(conversationId)
+    : null;
+  const isServerTimeline = kind === "server" || !!serverContext?.serverId;
+  const isExplicitDmOrGroup = kind === "dm" || kind === "group" || (
+    (activeMeta?.isGroup === true || cachedMeta?.isGroup === true)
+    && kind !== "server"
+  );
+
+  if (!isServerTimeline && isExplicitDmOrGroup) return parsed;
+
+  // Unknown context fails closed too: forged server-looking JSON must never gain
+  // special UI merely because conversation metadata has not hydrated yet.
+  return {
+    type: "text",
+    text: String(message?.content ?? ""),
+    untrustedEventLikeContent: true,
+  };
+}
+
+function isSystemChipMessage(parsed, message = null) {
+  const authoritative = message
+    ? getAuthoritativeMessageContent(message, parsed)
+    : parsed;
+  return isParsedSystemChipMessage(authoritative);
 }
 
 function getSystemEventDisplayText(message, parsed) {
@@ -98922,7 +102326,7 @@ function getLatestCallEventForConversationFromCache(conversationId = null) {
   for (let i = dmMessagesCache.length - 1; i >= 0; i -= 1) {
     const msg = dmMessagesCache[i];
     if (normId(msg?.conversation_id) !== convId) continue;
-    const parsed = safeParseMessageContent(msg?.content);
+    const parsed = getAuthoritativeMessageContent(msg);
     if (parsed?.type !== "call_event") continue;
     return { message: msg, parsed };
   }
@@ -98983,6 +102387,10 @@ function clearSuppressedGroupDmConnectedUsers(conversationId = null) {
 function setCachedGroupDmCallState(conversationId, state = null) {
   const convId = normId(conversationId || "");
   if (!convId) return;
+  if (isGroupDmConversationRevoked(convId)) {
+    clearCachedGroupDmCallState(convId);
+    return;
+  }
   const prev = groupDmCallStateByConversation.get(convId) || null;
   if (!state || typeof state !== "object") {
     groupDmCallStateByConversation.delete(convId);
@@ -99077,7 +102485,7 @@ function extractStartOrJoinGroupDmCallResult(data) {
 
 async function fetchGroupDmCallState(conversationId) {
   const convId = normId(conversationId || "");
-  if (!convId) return null;
+  if (!convId || isGroupDmConversationRevoked(convId)) return null;
   if (!shouldUseGroupCallSessionBackendForConversation(convId)) return null;
   const backendReady = await ensureGroupDmCallBackendAvailability();
   if (!backendReady) return null;
@@ -99088,6 +102496,8 @@ async function fetchGroupDmCallState(conversationId) {
     .eq("conversation_id", convId)
     .order("started_at", { ascending: false })
     .limit(6);
+
+  if (isGroupDmConversationRevoked(convId)) return null;
 
   if (sessionErr) {
     if (String(sessionErr?.code || "").trim().toUpperCase() === "42P01") {
@@ -99143,6 +102553,8 @@ async function fetchGroupDmCallState(conversationId) {
     .from("group_dm_call_participants")
     .select("user_id, join_state, joined_at, left_at, updated_at")
     .eq("call_id", callId);
+
+  if (isGroupDmConversationRevoked(convId)) return null;
 
   if (participantErr) {
     if (String(participantErr?.code || "").trim().toUpperCase() === "42P01") {
@@ -99228,13 +102640,17 @@ async function fetchGroupDmCallState(conversationId) {
 
 async function refreshGroupDmCallState(conversationId, { rerender = true } = {}) {
   const convId = normId(conversationId || "");
-  if (!convId) return null;
+  if (!convId || isGroupDmConversationRevoked(convId)) return null;
   if (groupDmCallStateRefreshInFlightByConversation.has(convId)) {
     return getCachedGroupDmCallState(convId);
   }
   groupDmCallStateRefreshInFlightByConversation.add(convId);
   try {
     const nextState = await fetchGroupDmCallState(convId);
+    if (isGroupDmConversationRevoked(convId)) {
+      clearCachedGroupDmCallState(convId);
+      return null;
+    }
     if (nextState) {
       setCachedGroupDmCallState(convId, nextState);
     } else {
@@ -99794,7 +103210,7 @@ async function fetchReactionsForMessages(conversationId, { force = false } = {})
   const convId = normId(conversationId || "");
   const ids = getReactionEligibleHumanMessageIds(dmMessagesCache);
   const botIds = getReactionEligibleBotMessageIds(dmMessagesCache);
-  if (!convId || (!ids.length && !botIds.length)) {
+  if (!convId || isGroupDmConversationRevoked(convId) || (!ids.length && !botIds.length)) {
     clearReactionCaches();
     return true;
   }
@@ -99872,6 +103288,8 @@ async function fetchReactionsForMessages(conversationId, { force = false } = {})
         }
       }
     }
+
+    if (isGroupDmConversationRevoked(convId)) return false;
 
     dmReactionsByMessage.clear();
     dmMineReactionKeys.clear();
@@ -100090,6 +103508,19 @@ function renderMessagesFromCache({ keepBottom = true, reason = "unknown", force 
   if (!msgsBox) return;
   const renderReason = normalizeRenderReason(reason || "unknown");
   const convId = normId(activeDmId || state.activeDm?.conversationId || "");
+  const visibilityContext = getCurrentServerChannelVisibilityContextForConversation(convId);
+  if (visibilityContext && serverChannelVisibilityAuthorityResolvingByServerId.has(visibilityContext.serverId)) {
+    return;
+  }
+  if (visibilityContext && !canCurrentUserRenderServerChannelConversation(convId)) {
+    void purgeInaccessibleServerChannelConversationState(convId, {
+      serverId: visibilityContext.serverId,
+      channelId: visibilityContext.channelId,
+      reason: `channel_visibility:${renderReason}`,
+      renderDenied: true,
+    });
+    return;
+  }
   const historyVisibleRows = filterRowsForServerMessageHistory(convId, dmMessagesCache);
   if (historyVisibleRows.length !== dmMessagesCache.length) {
     dmMessagesCache = historyVisibleRows;
@@ -100240,8 +103671,8 @@ function isEditableOwnTextDmMessage(messageInput, { ignoreTimeLimit = false } = 
   if (!isOwnMessage(message)) return false;
   if (isOptimisticDmMessage(message)) return false;
   if (isEncryptedDmPlaceholderMessage(message)) return false;
-  const parsed = safeParseMessageContent(message.content);
-  if (isSystemChipMessage(parsed)) return false;
+  const parsed = getAuthoritativeMessageContent(message);
+  if (isSystemChipMessage(parsed, message)) return false;
   if (parsed.type !== "text") return false;
   if (ignoreTimeLimit) return true;
   return !isDmMessageEditWindowExpired(message);
@@ -100300,6 +103731,23 @@ function restoreDmComposerFocusSnapshot(snapshot = {}) {
 function getActiveMessageComposerPermissionContext() {
   const convId = normId(activeDmId || state.activeDm?.conversationId || "");
   const userId = normId(state.user?.id || "");
+  const serverVisibilityUnresolved = !!(
+    state.activeDm?.serverId
+    && isServerChannelAuthorityShellState(state.activeDm.serverId)
+  );
+  if (serverVisibilityUnresolved) {
+    const serverId = normId(state.activeDm?.serverId || "");
+    return {
+      conversationId: "",
+      serverId,
+      channelId: "visibility-unresolved",
+      userId,
+      channelType: "text",
+      isServerTextChannel: true,
+      serverVisibilityUnresolved: true,
+      key: `server-visibility:${serverId}:${userId || ""}`,
+    };
+  }
   const noAccessibleServerChannels = !!(state.activeDm?.noAccessibleServerChannels && state.activeDm?.serverId);
   if (noAccessibleServerChannels) {
     const serverId = normId(state.activeDm?.serverId || "");
@@ -100318,7 +103766,11 @@ function getActiveMessageComposerPermissionContext() {
   const serverId = normId(context?.serverId || "");
   const channelId = normId(context?.channelId || context?.conversationId || convId || "");
   const channelType = normalizeConversationChannelType(context?.channelType || state.activeDm?.channelType || "");
-  const isServerTextChannel = !!(serverId && channelId && channelType !== "voice");
+  const isServerTextChannel = !!(
+    serverId
+    && channelId
+    && (channelType === "text" || channelType === "voice")
+  );
   return {
     conversationId: convId,
     serverId,
@@ -100498,12 +103950,106 @@ function showServerMessageCapabilityNotice(capability = "") {
   return true;
 }
 
-function renderMessageComposer(reason = "composer-permission") {
-  try { applyDmComposerEditUi({ reason }); } catch (_) {}
+function renderMessageComposer(reason = "composer-permission", options = {}) {
+  try { applyDmComposerEditUi({ reason, ...(options || {}) }); } catch (_) {}
 }
 
-function renderActiveServerMessageCapabilitySurfaces(reason = "message-capabilities") {
-  renderMessageComposer(reason);
+function patchActiveMessageTimelineCapabilityControls(reason = "message-capabilities") {
+  const root = document.getElementById("dmMessages");
+  if (!root) return false;
+  const canReact = canAddReactionInCurrentContext();
+  root.querySelectorAll("[data-msg-react],[data-msg-react-picker]").forEach((control) => {
+    control.hidden = !canReact;
+    control.disabled = !canReact;
+    control.setAttribute("aria-hidden", canReact ? "false" : "true");
+  });
+  const activeContext = getActiveMessageComposerPermissionContext();
+  root.querySelectorAll(".msg[data-msg-id]").forEach((messageNode) => {
+    const messageId = normId(messageNode.getAttribute("data-msg-id") || "");
+    const message = getMessageById(messageId);
+    if (!message) return;
+    const moderation = getServerMessageModerationContext(message);
+    if (
+      !moderation.isServerTextChannel
+      || moderation.serverId !== activeContext.serverId
+    ) return;
+    const actionRow = messageNode.querySelector(".msg__actionsRow--shift");
+    if (!actionRow) return;
+    const isCommandInvocation = isBotCommandInvocationMessage(message);
+    const isOptimistic = !!getOptimisticDmMessageState(message);
+    const canPin = !isBotMessageRow(message)
+      && !isCommandInvocation
+      && dmFeatureCaps.advancedMessages
+      && !isOptimistic
+      && moderation.canPin;
+    const canDelete = !isCommandInvocation
+      && !isOptimistic
+      && moderation.canDelete;
+
+    let pinControl = actionRow.querySelector("[data-msg-pin]");
+    if (!canPin) {
+      pinControl?.remove();
+    } else {
+      if (!pinControl) {
+        pinControl = document.createElement("button");
+        pinControl.className = "msgActionBtn";
+        pinControl.type = "button";
+        pinControl.setAttribute("data-msg-pin", messageId);
+        pinControl.textContent = "📌";
+        actionRow.insertBefore(
+          pinControl,
+          actionRow.querySelector("[data-msg-del],[data-msg-more]") || null
+        );
+      }
+      pinControl.hidden = false;
+      pinControl.disabled = false;
+      pinControl.setAttribute("aria-hidden", "false");
+      pinControl.classList.toggle("is-on", message.is_pinned === true);
+      pinControl.title = message.is_pinned === true ? "Unpin" : "Pin";
+    }
+
+    let deleteControl = actionRow.querySelector("[data-msg-del]");
+    if (!canDelete) {
+      deleteControl?.remove();
+    } else {
+      if (!deleteControl) {
+        deleteControl = document.createElement("button");
+        deleteControl.className = "msgActionBtn msgActionBtn--danger";
+        deleteControl.type = "button";
+        deleteControl.setAttribute("data-msg-del", messageId);
+        deleteControl.textContent = "🗑";
+        actionRow.insertBefore(deleteControl, actionRow.querySelector("[data-msg-more]") || null);
+      }
+      deleteControl.hidden = false;
+      deleteControl.disabled = false;
+      deleteControl.setAttribute("aria-hidden", "false");
+      deleteControl.title = "Delete Message";
+      deleteControl.setAttribute(
+        "aria-label",
+        `Delete this message by ${getMessageAuthorName(message) || "message author"}`
+      );
+    }
+  });
+  const openMessage = msgMenuOpenFor ? getMessageById(msgMenuOpenFor) : null;
+  const openModeration = openMessage ? getServerMessageModerationContext(openMessage) : null;
+  if (
+    !canReact
+    || (
+      document.getElementById("msgActionMenu")?.classList.contains("is-open")
+      && (
+        !openMessage
+        || (
+          openModeration?.isServerTextChannel
+          && openModeration.serverId === activeContext.serverId
+        )
+      )
+    )
+  ) closeMessageMenu(`message_capability:${reason}`);
+  return true;
+}
+
+function renderActiveServerMessageCapabilitySurfaces(reason = "message-capabilities", options = {}) {
+  renderMessageComposer(reason, { preserveLayout: options?.preserveLayout === true });
   const context = getActiveMessageComposerPermissionContext();
   const snapshot = activeMessageComposerPermissionState || {};
   const attachmentCapability = getActiveServerMessageCapability("attach_files");
@@ -100531,7 +104077,9 @@ function renderActiveServerMessageCapabilitySurfaces(reason = "message-capabilit
       messageOverride: MESSAGE_ATTACHMENT_QUEUE_REVOKED_TEXT,
     });
   }
-  if (context.isServerTextChannel && Array.isArray(dmMessagesCache) && dmMessagesCache.length > 0) {
+  if (options?.preserveTimeline === true) {
+    patchActiveMessageTimelineCapabilityControls(reason);
+  } else if (context.isServerTextChannel && Array.isArray(dmMessagesCache) && dmMessagesCache.length > 0) {
     renderMessagesFromCache({ keepBottom: false, reason });
   }
 }
@@ -100548,7 +104096,7 @@ function scheduleComposerPermissionAutoRefresh(context = null, reason = "key-cha
   }, 0);
 }
 
-function applyMessageComposerPermissionUi() {
+function applyMessageComposerPermissionUi(options = {}) {
   ensureAttachmentPermissionFeedbackStyles();
   const stateSnapshot = activeMessageComposerPermissionState || {};
   const context = getActiveMessageComposerPermissionContext();
@@ -100558,6 +104106,8 @@ function applyMessageComposerPermissionUi() {
   const hasFreshState = !!(context.isServerTextChannel && stateSnapshot.key === context.key);
   const staleServerPermission = !!(context.isServerTextChannel && !hasFreshState);
   const loading = staleServerPermission || (hasFreshState && stateSnapshot.loading === true);
+  const preserveLayout = options?.preserveLayout === true && loading;
+  const visualLoading = loading && !preserveLayout;
   const blocked = hasFreshState && !loading && stateSnapshot.canSend === false;
   const attachmentsBlocked = context.isServerTextChannel
     && (loading || stateSnapshot.canSend === false || stateSnapshot.canAttach !== true);
@@ -100586,13 +104136,13 @@ function applyMessageComposerPermissionUi() {
   [composer, inputWrap, input].forEach((el) => {
     if (!el?.classList) return;
     el.classList.toggle("is-permission-blocked", blocked);
-    el.classList.toggle("is-permission-loading", loading);
+    el.classList.toggle("is-permission-loading", visualLoading);
     el.classList.toggle("is-disabled", blocked || loading);
   });
 
   if (inputWrap) {
     let permissionText = inputWrap.querySelector(".message-composer__permission-text");
-    if (blocked || loading) {
+    if ((blocked || loading) && !preserveLayout) {
       if (!permissionText) {
         permissionText = document.createElement("div");
         permissionText.className = "message-composer__permission-text";
@@ -100600,7 +104150,7 @@ function applyMessageComposerPermissionUi() {
       }
       permissionText.textContent = placeholder;
       permissionText.title = placeholder;
-    } else if (permissionText) {
+    } else if (!blocked && !loading && permissionText) {
       permissionText.remove();
     }
   }
@@ -100609,8 +104159,10 @@ function applyMessageComposerPermissionUi() {
     input.disabled = true;
     input.readOnly = true;
     input.setAttribute("aria-disabled", "true");
-    input.setAttribute("aria-label", placeholder);
-    if (input.placeholder !== placeholder) input.placeholder = placeholder;
+    if (!preserveLayout) {
+      input.setAttribute("aria-label", placeholder);
+      if (input.placeholder !== placeholder) input.placeholder = placeholder;
+    }
   } else if (input) {
     input.readOnly = false;
     input.removeAttribute("aria-disabled");
@@ -100619,7 +104171,7 @@ function applyMessageComposerPermissionUi() {
 
   [sendBtn, emojiBtn].forEach((btn) => {
     if (!btn) return;
-    if (blocked || loading) {
+    if (blocked || visualLoading) {
       if (!btn.disabled) btn.dataset.permissionDisabled = "1";
       else if (btn.dataset.permissionDisabled === "1") btn.dataset.permissionDisabled = "1";
       btn.disabled = true;
@@ -100666,8 +104218,28 @@ function applyMessageComposerPermissionUi() {
 async function refreshActiveMessageComposerPermission(options = {}) {
   const context = getActiveMessageComposerPermissionContext();
   const reason = String(options?.reason || "composer-render");
+  const renderPermissionSurfaces = () => {
+    if (options?.deferRender === true) return;
+    renderActiveServerMessageCapabilitySurfaces(reason, {
+      preserveTimeline: options?.preserveTimeline === true,
+      preserveLayout: options?.preserveLayout === true,
+    });
+  };
   const seq = ++activeMessageComposerPermissionRefreshSeq;
   activeMessageComposerPermissionAutoRefreshKey = context.key || "";
+  if (context.serverVisibilityUnresolved) {
+    setActiveMessageComposerPermissionState({
+      key: context.key,
+      loading: isServerChannelVisibilityResolvingState(context.serverId),
+      canSend: false,
+      canReact: false,
+      canAttach: false,
+      reason: isServerChannelVisibilityErrorState(context.serverId) ? "visibility_unresolved" : "checking",
+      trace: { reason, serverId: context.serverId, visibilityUnresolved: true },
+    });
+    renderPermissionSurfaces();
+    return activeMessageComposerPermissionState;
+  }
   if (context.noAccessibleServerChannels) {
     setActiveMessageComposerPermissionState({
       key: context.key,
@@ -100678,7 +104250,7 @@ async function refreshActiveMessageComposerPermission(options = {}) {
       reason: "missing_send_messages",
       trace: { reason, serverId: context.serverId, noVisibleChannels: true },
     });
-    renderActiveServerMessageCapabilitySurfaces(reason);
+    renderPermissionSurfaces();
     return activeMessageComposerPermissionState;
   }
   if (!context.isServerTextChannel) {
@@ -100692,7 +104264,7 @@ async function refreshActiveMessageComposerPermission(options = {}) {
       reason: "",
       trace: null,
     });
-    renderActiveServerMessageCapabilitySurfaces(reason);
+    renderPermissionSurfaces();
     return activeMessageComposerPermissionState;
   }
 
@@ -100702,7 +104274,20 @@ async function refreshActiveMessageComposerPermission(options = {}) {
   const activeTimeout = getCurrentUserServerTimeout(context.serverId);
   if (activeTimeout) {
     setupActiveServerPermissionsRealtime(context.serverId);
-    markActiveComposerTimeoutBlocked(context.serverId, activeTimeout);
+    if (options?.deferRender === true) {
+      lastServerTimeoutComposerBlockedReason = "server_member_timed_out";
+      setActiveMessageComposerPermissionState({
+        key: context.key,
+        loading: false,
+        canSend: false,
+        canReact: false,
+        canAttach: false,
+        reason: "server_member_timed_out",
+        trace: { serverId: context.serverId, timeout: activeTimeout },
+      });
+    } else {
+      markActiveComposerTimeoutBlocked(context.serverId, activeTimeout);
+    }
     return activeMessageComposerPermissionState;
   }
 
@@ -100716,7 +104301,9 @@ async function refreshActiveMessageComposerPermission(options = {}) {
     reason: "checking",
     trace: null,
   });
-  renderMessageComposer(reason);
+  if (options?.deferRender !== true) {
+    renderMessageComposer(reason, { preserveLayout: options?.preserveLayout === true });
+  }
 
   try {
     const result = await resolveCurrentUserMessagePermission({
@@ -100756,7 +104343,7 @@ async function refreshActiveMessageComposerPermission(options = {}) {
     });
   }
 
-  renderActiveServerMessageCapabilitySurfaces(reason);
+  renderPermissionSurfaces();
   return activeMessageComposerPermissionState;
 }
 
@@ -101170,6 +104757,142 @@ function teardownActiveServerPermissionsRealtime() {
   activeServerPermissionsRealtimeKey = "";
 }
 
+function settleServerRoleAuthorityRefreshWaiters(entry = null, result = null) {
+  if (!(entry?.waiters instanceof Set) || !entry.waiters.size) return;
+  const waiters = Array.from(entry.waiters);
+  entry.waiters.clear();
+  waiters.forEach((resolve) => {
+    try { resolve(result); } catch (_) {}
+  });
+}
+
+function expireServerChannelVisibilityAuthorityResolution(serverId = "", expectedEpoch = 0, reason = "visibility_authority_timeout") {
+  const sid = normId(serverId || "");
+  const currentEpoch = Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0);
+  if (!sid || currentEpoch !== Number(expectedEpoch || 0)) return null;
+  const nextEpoch = currentEpoch + 1;
+  const error = Object.assign(new Error("Server channel visibility request timed out."), {
+    code: "visibility_authority_timeout",
+  });
+  const failure = {
+    ok: false,
+    timedOut: true,
+    authoritativeVisibility: false,
+    reason,
+    epoch: nextEpoch,
+    error,
+  };
+  serverChannelVisibilityAuthorityEpochByServerId.set(sid, nextEpoch);
+  serverChannelVisibilityAuthorityResolvingByServerId.delete(sid);
+  serverChannelVisibilityNavigationRecoveryByServerId.delete(sid);
+  serverChannelBackendVisibleIdsByServerId.delete(sid);
+  serverChannelVisibilityAuthoritySnapshotByServerId.delete(sid);
+  serverChannelLoadErrorByServerId.set(sid, error);
+  settleServerChannelVisibilityAuthorityWaiters(sid, failure);
+  return failure;
+}
+
+function waitForServerChannelVisibilityAuthorityResolution(
+  serverId = "",
+  { timeoutMs = ALTARA_SERVER_VISIBILITY_REST_TIMEOUT_MS + 1000 } = {}
+) {
+  const sid = normId(serverId || "");
+  if (!sid || !serverChannelVisibilityAuthorityResolvingByServerId.has(sid)) {
+    return Promise.resolve({ ok: !!sid, alreadyResolved: !!sid });
+  }
+  const epoch = Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0);
+  const latestResult = serverChannelVisibilityAuthorityResultByServerId.get(sid) || null;
+  if (latestResult && Number(latestResult.epoch || 0) === epoch && latestResult.pending !== true) {
+    return Promise.resolve(latestResult);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer = 0;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
+    let waiters = serverChannelVisibilityAuthorityWaitersByServerId.get(sid);
+    if (!(waiters instanceof Set)) {
+      waiters = new Set();
+      serverChannelVisibilityAuthorityWaitersByServerId.set(sid, waiters);
+    }
+    waiters.add(finish);
+    timer = setTimeout(() => {
+      const expired = expireServerChannelVisibilityAuthorityResolution(sid, epoch);
+      if (!expired) {
+        const currentWaiters = serverChannelVisibilityAuthorityWaitersByServerId.get(sid);
+        currentWaiters?.delete?.(finish);
+        if (currentWaiters instanceof Set && !currentWaiters.size) {
+          serverChannelVisibilityAuthorityWaitersByServerId.delete(sid);
+        }
+        finish(serverChannelVisibilityAuthorityResultByServerId.get(sid) || {
+          ok: false,
+          authoritativeVisibility: false,
+          reason: "visibility_authority_superseded",
+          epoch: Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0),
+        });
+      }
+    }, Math.max(1000, Number(timeoutMs) || (ALTARA_SERVER_VISIBILITY_REST_TIMEOUT_MS + 1000)));
+  });
+}
+
+function settleServerChannelVisibilityAuthorityWaiters(serverId = "", result = null) {
+  const sid = normId(serverId || "");
+  if (sid && result && typeof result === "object") {
+    serverChannelVisibilityAuthorityResultByServerId.set(sid, result);
+  }
+  const waiters = sid ? serverChannelVisibilityAuthorityWaitersByServerId.get(sid) : null;
+  if (!(waiters instanceof Set)) return;
+  serverChannelVisibilityAuthorityWaitersByServerId.delete(sid);
+  Array.from(waiters).forEach((resolve) => {
+    try { resolve(result); } catch (_) {}
+  });
+}
+
+function cancelServerRoleAuthorityRefreshForServer(serverId = "", reason = "server_unavailable") {
+  const sid = normId(serverId || "");
+  if (!sid) return false;
+  const entry = serverRoleAuthorityRefreshStateByServerId.get(sid) || null;
+  if (entry?.timer) clearTimeout(entry.timer);
+  if (entry) {
+    entry.timer = 0;
+    entry.cancelled = true;
+    entry.pending = null;
+    settleServerRoleAuthorityRefreshWaiters(entry, { ok: false, cancelled: true, reason });
+  }
+  serverRoleAuthorityRefreshStateByServerId.delete(sid);
+  const cancelledEpoch = Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0) + 1;
+  serverChannelVisibilityAuthorityEpochByServerId.set(sid, cancelledEpoch);
+  serverChannelVisibilityAuthorityResolvingByServerId.delete(sid);
+  settleServerChannelVisibilityAuthorityWaiters(sid, {
+    ok: false,
+    cancelled: true,
+    authoritativeVisibility: false,
+    reason,
+    epoch: cancelledEpoch,
+  });
+  serverChannelVisibilityNavigationRecoveryByServerId.delete(sid);
+  serverChannelBackendVisibleIdsByServerId.delete(sid);
+  serverChannelVisibilityAuthoritySnapshotByServerId.delete(sid);
+  return !!entry;
+}
+
+function cancelAllServerRoleAuthorityRefreshes(reason = "user_context_changed") {
+  const serverIds = new Set([
+    ...serverRoleAuthorityRefreshStateByServerId.keys(),
+    ...serverChannelVisibilityAuthorityResolvingByServerId.values(),
+    ...serverChannelVisibilityNavigationRecoveryByServerId.keys(),
+    ...serverChannelVisibilityAuthorityWaitersByServerId.keys(),
+  ]);
+  serverIds.forEach((serverId) => {
+    cancelServerRoleAuthorityRefreshForServer(serverId, reason);
+  });
+  return serverIds.size;
+}
+
 function setupActiveServerPermissionsRealtime(serverId = "") {
   const sid = normId(serverId || "");
   const key = getServerPermissionsRealtimeChannelName(sid);
@@ -101189,6 +104912,8 @@ function setupActiveServerPermissionsRealtime(serverId = "") {
       eventPayload?.channelId
       || payload?.new?.channel_id
       || payload?.old?.channel_id
+      || payload?.new?.category_id
+      || payload?.old?.category_id
       || ""
     );
     const editChannelId = normId(serverChannelCreateEditChannelId || "");
@@ -101202,7 +104927,7 @@ function setupActiveServerPermissionsRealtime(serverId = "") {
     if (
       serverChannelCreateSaving
       && normId(serverChannelCreateServerId || "") === sid
-      && ["server_channel_permission_overwrites_change", "permissions_broadcast"].includes(reason)
+      && ["server_channel_permission_change_event", "permissions_broadcast"].includes(reason)
       && (!eventChannelId || !editChannelId || eventChannelId === editChannelId)
     ) {
       serverChannelCreateDeferredPermissionsRefresh = true;
@@ -101241,19 +104966,7 @@ function setupActiveServerPermissionsRealtime(serverId = "") {
     scheduleActivePermissionsRefresh(reason, payload);
   };
   const channel = supabase
-    .channel(key, { config: { broadcast: { self: false } } })
-    .on("postgres_changes", {
-      event: "*",
-      schema: "public",
-      table: "server_roles",
-      filter: `server_id=eq.${sid}`,
-    }, onChange("server_roles_change"))
-    .on("postgres_changes", {
-      event: "*",
-      schema: "public",
-      table: "server_role_members",
-      filter: `server_id=eq.${sid}`,
-    }, onChange("server_role_members_change"))
+    .channel(key, { config: { private: true, broadcast: { self: false } } })
     .on("postgres_changes", {
       event: "*",
       schema: "public",
@@ -101263,9 +104976,9 @@ function setupActiveServerPermissionsRealtime(serverId = "") {
     .on("postgres_changes", {
       event: "*",
       schema: "public",
-      table: "server_channel_permission_overwrites",
+      table: "server_channel_permission_change_events",
       filter: `server_id=eq.${sid}`,
-    }, onChange("server_channel_permission_overwrites_change"))
+    }, onChange("server_channel_permission_change_event"))
     .on("broadcast", { event: "server-permissions-changed-batch0a-v2" }, onChange("permissions_broadcast"))
     .subscribe((status, error) => {
       if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(String(status || ""))) return;
@@ -101286,13 +104999,1057 @@ function setupActiveServerPermissionsRealtime(serverId = "") {
   return channel;
 }
 
+const ROLE_RECONCILIATION_MESSAGE_PERMISSION_KEYS = Object.freeze([
+  "send_messages",
+  "read_message_history",
+  "add_reactions",
+  "attach_files",
+  "embed_links",
+  "manage_messages",
+  "pin_messages",
+]);
+const ROLE_RECONCILIATION_VOICE_PERMISSION_KEYS = Object.freeze([
+  "connect",
+  "speak",
+  "video",
+  "stream",
+  "voice_bypass_user_limit",
+  "mute_members",
+  "deafen_members",
+  "move_members",
+]);
+
+function getServerRoleAuthoritySignalDetails(reason = "", payload = null) {
+  const candidates = [payload, payload?.payload, payload?.payload?.payload]
+    .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry));
+  const reasons = [reason];
+  const entities = [];
+  const changedRoleIds = new Set();
+  const changedPermissionKeys = new Set();
+  let changedUserId = "";
+  let currentUserAffected = false;
+  candidates.forEach((entry) => {
+    reasons.push(entry?.reason || "");
+    entities.push(entry?.entity || "");
+    (Array.isArray(entry?.changedRoleIds) ? entry.changedRoleIds : []).forEach((roleId) => {
+      const rid = normId(roleId || "");
+      if (rid) changedRoleIds.add(rid);
+    });
+    (Array.isArray(entry?.changedPermissionKeys) ? entry.changedPermissionKeys : []).forEach((key) => {
+      const normalized = normalizeServerPermissionKey(key || "");
+      if (getImplementedServerPermissionKeys().includes(normalized)) changedPermissionKeys.add(normalized);
+    });
+    changedUserId = changedUserId || normId(entry?.changedUserId || entry?.userId || "");
+    currentUserAffected = currentUserAffected || entry?.currentUserAffected === true;
+  });
+  const signalText = [...reasons, ...entities].map((value) => String(value || "").trim().toLowerCase()).join(" ");
+  const roleSignal = entities.some((entity) => SERVER_ROLE_INVALIDATION_ENTITIES.has(String(entity || "").trim().toLowerCase()))
+    || /(?:^|[_:\s])(?:server_)?roles?(?:_|$|\s)|server_role_members|member_roles|role_membership/.test(signalText);
+  return {
+    roleSignal,
+    signalText,
+    changedRoleIds: Array.from(changedRoleIds),
+    changedPermissionKeys: Array.from(changedPermissionKeys),
+    changedUserId,
+    currentUserAffected,
+    permissionMutation: /role_permissions|permissions_saved/.test(signalText),
+    assignmentMutation: /server_role_members|member_roles|role_membership/.test(signalText),
+    presentationMutation: /role_(?:created|deleted|order|updated)|server_roles/.test(signalText),
+  };
+}
+
+function getCurrentUserRoleReconciliationPermissions(serverId = "") {
+  const sid = normId(serverId || "");
+  const uid = normId(state.user?.id || "");
+  if (!sid || !uid) return normalizeServerRolePermissions({});
+  return getServerRolePermissionsForUser(sid, uid, {
+    members: serverMemberListByServerId.get(sid) || [],
+    roles: serverRoleListByServerId.get(sid) || [],
+    roleMemberMap: serverRoleMemberMapByServerId.get(sid) || new Map(),
+  });
+}
+
+function beginServerChannelVisibilityAuthorityRefresh(serverId = "", reason = "server_role_authority") {
+  const sid = normId(serverId || "");
+  if (!sid) return 0;
+  const epoch = Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0) + 1;
+  serverChannelVisibilityAuthorityEpochByServerId.set(sid, epoch);
+  serverChannelVisibilityAuthorityResolvingByServerId.add(sid);
+  serverChannelVisibilityAuthorityResultByServerId.set(sid, {
+    ok: false,
+    pending: true,
+    authoritativeVisibility: false,
+    reason,
+    epoch,
+  });
+  serverChannelBackendVisibleIdsByServerId.delete(sid);
+  serverChannelVisibilityAuthoritySnapshotByServerId.delete(sid);
+  (serverChannelListByServerId.get(sid) || []).forEach((channel) => {
+    const conversationId = normId(channel?.conversationId || channel?.conversation_id || "");
+    if (conversationId) clearDmMessageConversationAccessCache(conversationId);
+  });
+  logAltaraPerfDebug("server-channel-visibility-unresolved", { serverId: sid, reason, epoch });
+  return epoch;
+}
+
+async function refreshServerChannelVisibilityAuthorityAfterRoleChange(serverId = "", reason = "server_role_authority") {
+  const sid = normId(serverId || "");
+  if (!sid) return { ok: false, changed: false, reason: "missing_server" };
+  if (!serverChannelVisibilityAuthorityResolvingByServerId.has(sid)) {
+    beginServerChannelVisibilityAuthorityRefresh(sid, reason);
+  }
+  const epoch = Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0);
+  const previousChannels = serverChannelListByServerId.get(sid) || [];
+  let result = null;
+  // Categories are a separate cache (serverChannelCategoryListByServerId) that
+  // this function does not otherwise touch. The only other place that fetches
+  // them (queueServerChannelBackgroundHydration) intentionally bails out while
+  // this exact function owns "resolving" for the server -- so under frequent
+  // invalidation (e.g. a flaky realtime reconnect re-triggering role-authority
+  // refreshes faster than that background timer ever gets a clean window),
+  // categories could otherwise never get fetched at all even though channels
+  // keep refreshing successfully here, leaving every channel "uncategorized"
+  // relative to a server that has real categories and none of them able to
+  // render. force:false is a synchronous cache hit once categories are known,
+  // so this adds no network cost on the common, already-cached path.
+  const categoriesPromise = fetchServerChannelCategoriesForSidebar(sid, { force: false })
+    .catch(() => serverChannelCategoryListByServerId.get(sid) || []);
+  try {
+    result = await fetchServerChannelsForSidebarResult(sid, { force: true, commit: false });
+  } catch (error) {
+    result = { ok: false, error, channels: [], authoritativeVisibility: false };
+  }
+  await categoriesPromise;
+
+  if (epoch !== Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0)) {
+    return { ok: false, stale: true, changed: false, reason: "superseded_visibility_epoch" };
+  }
+  if (isServerDeletedLocally(sid)) {
+    cancelServerRoleAuthorityRefreshForServer(sid, "server_deleted_during_refresh");
+    return { ok: false, stale: true, changed: false, reason: "server_deleted" };
+  }
+  try {
+    const authoritativeVisibility = result?.ok === true && result?.authoritativeVisibility === true;
+    if (!authoritativeVisibility) {
+      const failure = {
+        ok: false,
+        changed: false,
+        authoritativeVisibility: false,
+        channels: previousChannels,
+        removedChannels: [],
+        epoch,
+        error: result?.error || null,
+        reason: "visibility_unresolved",
+      };
+      logAltaraPerfDebug("server-channel-visibility-failed-closed", {
+        serverId: sid,
+        reason,
+        epoch,
+        message: String(result?.error?.message || result?.error || "visibility_unresolved").slice(0, 220),
+      });
+      if (epoch === Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0)) {
+        serverChannelVisibilityAuthorityResolvingByServerId.delete(sid);
+      }
+      settleServerChannelVisibilityAuthorityWaiters(sid, failure);
+      return failure;
+    }
+    const fetchedChannels = Array.isArray(result?.channels) ? result.channels : [];
+    const semanticallyEqual = areServerChannelSnapshotsEqual(previousChannels, fetchedChannels, [], []);
+    const stableChannels = semanticallyEqual
+      ? previousChannels
+      : mergeStableServerChannelRows(previousChannels, fetchedChannels);
+    serverChannelListByServerId.set(sid, stableChannels);
+    serverChannelBackendVisibleIdsByServerId.set(
+      sid,
+      new Set(stableChannels.map((channel) => normId(channel?.id || "")).filter(Boolean))
+    );
+    serverChannelVisibilityAuthoritySnapshotByServerId.set(sid, {
+      serverId: sid,
+      userId: normId(state.user?.id || ""),
+      epoch,
+      pending: false,
+      loadedAt: Date.now(),
+    });
+    const rememberedConversationId = getRememberedServerLastChannel(sid);
+    if (
+      rememberedConversationId
+      && !stableChannels.some((channel) => normId(channel?.conversationId || "") === rememberedConversationId)
+    ) {
+      forgetServerLastChannel(sid, { persist: true });
+    }
+    const serverRow = getServerRowById(sid) || null;
+    const serverName = normalizeConversationLabel(serverRow?.name || state.activeDm?.serverName || "Server", "Server");
+    stableChannels.forEach((channel) => {
+      const conversationId = normId(channel?.conversationId || channel?.conversation_id || "");
+      if (!conversationId) return;
+      setConversationMeta(conversationId, {
+        kind: "server",
+        isGroup: true,
+        displayName: normalizeConversationLabel(channel?.name || "general", "general"),
+        serverId: sid,
+        serverName,
+        ownerUserId: normId(serverRow?.ownerUserId || ""),
+        avatarUrl: String(serverRow?.iconUrl || "").trim(),
+        channelId: normId(channel?.id || ""),
+        channel_id: normId(channel?.id || ""),
+        channelType: normalizeConversationChannelType(channel?.channelType || "text"),
+        userLimit: clampServerVoiceUserLimit(channel?.userLimit ?? 0, 0),
+        mediaMode: normalizeServerVoiceMediaMode(channel?.mediaMode || "audio_only", "audio_only"),
+      });
+    });
+    persistAltaraOfflineNavigationSnapshot();
+
+    const nextConversationIds = new Set(
+      stableChannels.map((channel) => normId(channel?.conversationId || channel?.conversation_id || "")).filter(Boolean)
+    );
+    const removedChannels = previousChannels.filter((channel) => {
+      const conversationId = normId(channel?.conversationId || channel?.conversation_id || "");
+      return !!conversationId && !nextConversationIds.has(conversationId);
+    });
+    const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
+    for (const channel of removedChannels) {
+      if (epoch !== Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0)) {
+        return { ok: false, stale: true, changed: false, reason: "superseded_visibility_epoch" };
+      }
+      const conversationId = normId(channel?.conversationId || channel?.conversation_id || "");
+      if (!conversationId || conversationId === activeConversationId) continue;
+      await purgeInaccessibleServerChannelConversationState(conversationId, {
+        serverId: sid,
+        channelId: normId(channel?.id || channel?.channelId || channel?.channel_id || ""),
+        reason: `${reason}:removed_channel_cache`,
+        renderDenied: false,
+      });
+    }
+    if (epoch !== Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0)) {
+      return { ok: false, stale: true, changed: false, reason: "superseded_visibility_epoch" };
+    }
+    [...previousChannels, ...stableChannels].forEach((channel) => {
+      const conversationId = normId(channel?.conversationId || channel?.conversation_id || "");
+      if (conversationId) clearDmMessageConversationAccessCache(conversationId);
+    });
+    serverChannelVisibilityAuthorityResolvingByServerId.delete(sid);
+    const visibilityResult = {
+      ok: authoritativeVisibility,
+      changed: !semanticallyEqual,
+      authoritativeVisibility,
+      channels: stableChannels,
+      removedChannels,
+      epoch,
+      error: result?.error || null,
+    };
+    settleServerChannelVisibilityAuthorityWaiters(sid, visibilityResult);
+    return visibilityResult;
+  } catch (error) {
+    if (epoch !== Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0)) {
+      return { ok: false, stale: true, changed: false, reason: "superseded_visibility_epoch", error };
+    }
+    const failure = {
+      ok: false,
+      changed: false,
+      authoritativeVisibility: false,
+      channels: previousChannels,
+      removedChannels: [],
+      epoch,
+      error,
+      reason: "visibility_unresolved",
+    };
+    if (epoch === Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0)) {
+      serverChannelVisibilityAuthorityResolvingByServerId.delete(sid);
+    }
+    settleServerChannelVisibilityAuthorityWaiters(sid, failure);
+    return failure;
+  }
+}
+
+function getVisibleServerChannelAuthoritySignature(serverId = "") {
+  const sid = normId(serverId || "");
+  if (!sid) return "";
+  return getServerRoleReconciliationSignature(
+    getVisibleServerChannelsForCurrentUser(sid, serverChannelListByServerId.get(sid) || [])
+      .map((channel) => ({
+        id: normId(channel?.id || channel?.channelId || channel?.channel_id || ""),
+        conversationId: normId(channel?.conversationId || channel?.conversation_id || ""),
+        categoryId: normId(channel?.categoryId || channel?.category_id || ""),
+        type: normalizeConversationChannelType(channel?.channelType || channel?.channel_type || "text"),
+      }))
+  );
+}
+
+function getChangedRoleReconciliationPermissionKeys(before = {}, after = {}) {
+  return getImplementedServerPermissionKeys().filter((key) => Boolean(before?.[key]) !== Boolean(after?.[key]));
+}
+
+function changedRoleIdsCanAffectCurrentUser(serverId = "", changedRoleIds = [], changedUserId = "") {
+  const sid = normId(serverId || "");
+  const uid = normId(state.user?.id || "");
+  const targetUserId = normId(changedUserId || "");
+  if (!sid || !uid) return false;
+  if (targetUserId && targetUserId !== uid) return false;
+  if (isServerActualOwner(sid)) return false;
+  const ids = new Set((changedRoleIds || []).map((roleId) => normId(roleId || "")).filter(Boolean));
+  if (!ids.size) return true;
+  const roles = serverRoleListByServerId.get(sid) || [];
+  const roleMap = serverRoleMemberMapByServerId.get(sid) || new Map();
+  return roles.some((role) => {
+    const rid = normId(role?.id || "");
+    return ids.has(rid) && (isDefaultServerRole(role) || roleMap.get(rid)?.has(uid));
+  }) || Array.from(ids).some((rid) => roleMap.get(rid)?.has(uid));
+}
+
+function captureServerRoleReconciliationVisualSnapshot(serverId = "") {
+  const sid = normId(serverId || "");
+  const timelineRoot = document.getElementById("dmMessages");
+  const composerInput = document.getElementById("dmInput");
+  const composerRoot = composerInput?.closest?.(".dmComposer,.dm__composer") || null;
+  const channelPanel = document.getElementById("serverChannelsPanel");
+  const channelList = channelPanel?.querySelector?.(".serverChannelsPanel__body") || channelPanel || null;
+  const memberList = document.getElementById("serverMembersList");
+  const settingsModal = document.getElementById("serverSettingsModal");
+  const roleList = document.getElementById("serverSettingsRolesList");
+  return {
+    serverId: sid,
+    userId: normId(state.user?.id || ""),
+    activeConversationId: normId(activeDmId || state.activeDm?.conversationId || ""),
+    activeChannelId: normId(state.activeDm?.channelId || state.activeDm?.channel_id || ""),
+    selectedRoleId: String(serverSettingsRoleSelectedId || ""),
+    timelineRoot,
+    timelineChildren: timelineRoot ? Array.from(timelineRoot.children) : [],
+    composerRoot,
+    channelList,
+    memberList,
+    settingsModal,
+    roleList,
+    scrolls: {
+      chat: Number(timelineRoot?.scrollTop || 0),
+      channelList: Number(channelList?.scrollTop || 0),
+      memberList: Number(memberList?.scrollTop || 0),
+      settings: Number(settingsModal?.scrollTop || 0),
+      roleList: Number(roleList?.scrollTop || 0),
+    },
+  };
+}
+
+function verifyServerRoleReconciliationVisualStability(snapshot = null, {
+  selectedChannelStayedVisible = true,
+  historyChanged = false,
+} = {}) {
+  if (!snapshot?.serverId) return null;
+  const timelineRoot = document.getElementById("dmMessages");
+  const composerInput = document.getElementById("dmInput");
+  const composerRoot = composerInput?.closest?.(".dmComposer,.dm__composer") || null;
+  const channelPanel = document.getElementById("serverChannelsPanel");
+  const channelList = channelPanel?.querySelector?.(".serverChannelsPanel__body") || channelPanel || null;
+  const memberList = document.getElementById("serverMembersList");
+  const settingsModal = document.getElementById("serverSettingsModal");
+  const roleList = document.getElementById("serverSettingsRolesList");
+  const requireTimelineStability = selectedChannelStayedVisible && !historyChanged;
+  const timelineChildren = timelineRoot ? Array.from(timelineRoot.children) : [];
+  const result = {
+    serverId: snapshot.serverId,
+    selectedChannelStayedVisible,
+    historyChanged,
+    activeServerPreserved: normId(state.activeDm?.serverId || getActiveServerIdForSidebar?.() || "") === snapshot.serverId,
+    activeConversationPreserved: !selectedChannelStayedVisible
+      || normId(activeDmId || state.activeDm?.conversationId || "") === snapshot.activeConversationId,
+    timelineRootPreserved: !requireTimelineStability || timelineRoot === snapshot.timelineRoot,
+    timelineChildrenPreserved: !requireTimelineStability || (
+      timelineChildren.length === snapshot.timelineChildren.length
+      && timelineChildren.every((node, index) => node === snapshot.timelineChildren[index])
+    ),
+    composerRootPreserved: !requireTimelineStability || composerRoot === snapshot.composerRoot,
+    channelListRootPreserved: channelList === snapshot.channelList,
+    memberListRootPreserved: memberList === snapshot.memberList,
+    selectedRolePreserved: String(serverSettingsRoleSelectedId || "") === snapshot.selectedRoleId,
+    chatScrollPreserved: !requireTimelineStability || Number(timelineRoot?.scrollTop || 0) === Number(snapshot.scrolls?.chat || 0),
+    channelListScrollPreserved: Number(channelList?.scrollTop || 0) === Number(snapshot.scrolls?.channelList || 0),
+    memberListScrollPreserved: Number(memberList?.scrollTop || 0) === Number(snapshot.scrolls?.memberList || 0),
+    settingsScrollPreserved: Number(settingsModal?.scrollTop || 0) === Number(snapshot.scrolls?.settings || 0),
+    roleListScrollPreserved: Number(roleList?.scrollTop || 0) === Number(snapshot.scrolls?.roleList || 0),
+    scrolls: {
+      chat: Number(timelineRoot?.scrollTop || 0),
+      channelList: Number(channelList?.scrollTop || 0),
+      memberList: Number(memberList?.scrollTop || 0),
+      settings: Number(settingsModal?.scrollTop || 0),
+      roleList: Number(roleList?.scrollTop || 0),
+    },
+  };
+  serverRoleAuthorityVisualDebugByServerId.set(snapshot.serverId, result);
+  logAltaraPerfDebug("server-role-zero-flicker", result);
+  return result;
+}
+
+function getRenderedServerChannelAuthoritySignature(serverId = "") {
+  const sid = normId(serverId || "");
+  const panel = document.getElementById("serverChannelsPanel");
+  if (!sid || !panel || normId(panel.getAttribute("data-server-panel-server-id") || "") !== sid) return "";
+  const storedSignature = String(panel.getAttribute("data-server-visible-channel-authority-signature") || "");
+  if (storedSignature) return storedSignature;
+  const rows = new Map();
+  panel.querySelectorAll("[data-server-channel-id]").forEach((element) => {
+    const channelId = normId(element.getAttribute("data-server-channel-id") || "");
+    if (!channelId || rows.has(channelId)) return;
+    rows.set(channelId, {
+      id: channelId,
+      conversationId: normId(
+        element.getAttribute("data-server-voice-conversation-id")
+        || element.getAttribute("data-server-voice-channel")
+        || element.getAttribute("data-server-channel-open")
+        || ""
+      ),
+      categoryId: normId(element.getAttribute("data-server-category-id") || ""),
+      type: normalizeConversationChannelType(element.getAttribute("data-server-channel-type") || "text"),
+    });
+  });
+  return getServerRoleReconciliationSignature(Array.from(rows.values()));
+}
+
+function setServerRoleAuthorityMutationControlsResolving(serverId = "", resolving = false) {
+  const sid = normId(serverId || "");
+  if (!sid) return;
+  const roleControls = document.querySelectorAll([
+    "[data-server-settings-role-perm-toggle]",
+    "[data-server-settings-role-perm-preset]",
+    "[data-server-settings-role-member-toggle]",
+  ].join(","));
+  const channelSettingsModal = normId(activeChannelSettingsModalState?.serverId || "") === sid
+    ? document.getElementById("channelSettingsModal")
+    : null;
+  const channelControls = channelSettingsModal?.querySelectorAll?.([
+    "[data-channel-settings-name]",
+    "[data-channel-settings-category]",
+    "[data-channel-settings-save-overview]",
+    "[data-channel-permissions-sync-category]",
+    "[data-channel-permissions-role-select]",
+    "[data-channel-permissions-add-role]",
+    "[data-channel-permissions-member-select]",
+    "[data-channel-permissions-add-member]",
+    "[data-channel-permissions-save-target]",
+    "[data-channel-permission-state]",
+  ].join(",")) || [];
+  [...roleControls, ...channelControls].forEach((control) => {
+    if (!("disabled" in control)) return;
+    if (resolving) {
+      if (!Object.prototype.hasOwnProperty.call(control.dataset, "roleAuthorityPreviousDisabled")) {
+        control.dataset.roleAuthorityPreviousDisabled = control.disabled ? "1" : "0";
+      }
+      control.disabled = true;
+      control.dataset.roleAuthorityResolving = "1";
+      return;
+    }
+    if (control.dataset.roleAuthorityResolving !== "1") return;
+    const wasDisabled = control.dataset.roleAuthorityPreviousDisabled === "1";
+    const isRoleControl = control.matches?.("[data-server-settings-role-perm-toggle],[data-server-settings-role-perm-preset],[data-server-settings-role-member-toggle]");
+    const allowed = isRoleControl ? currentUserCanManageRoles(sid) : currentUserCanManageChannels(sid);
+    control.disabled = wasDisabled || !allowed;
+    delete control.dataset.roleAuthorityResolving;
+    delete control.dataset.roleAuthorityPreviousDisabled;
+  });
+}
+
+function patchActiveServerChannelManagementCapabilityUi(serverId = "") {
+  const sid = normId(serverId || "");
+  const panel = document.getElementById("serverChannelsPanel");
+  if (!sid || !panel || normId(panel.getAttribute("data-server-panel-server-id") || "") !== sid) return false;
+  const allowed = currentUserCanManageChannels(sid);
+  panel.querySelectorAll("[data-server-create-channel]").forEach((button) => {
+    button.disabled = !allowed;
+    button.setAttribute("aria-disabled", allowed ? "false" : "true");
+  });
+  panel.querySelectorAll("[data-server-drag-type]").forEach((row) => {
+    row.setAttribute("draggable", allowed ? "true" : "false");
+    row.classList.toggle("is-drag-disabled", !allowed);
+  });
+  return true;
+}
+
+function patchActiveServerVoicePermissionCapabilityUi(serverId = "") {
+  const sid = normId(serverId || "");
+  const panel = document.getElementById("serverChannelsPanel");
+  if (!sid || !panel || normId(panel.getAttribute("data-server-panel-server-id") || "") !== sid) return false;
+  panel.querySelectorAll("[data-server-voice-channel]").forEach((button) => {
+    const channelId = normId(button.getAttribute("data-server-channel-id") || button.getAttribute("data-server-voice-channel-id") || "");
+    if (!channelId) return;
+    const decision = resolveLocalServerVoicePermissionDecision(sid, channelId, "role_reconciliation");
+    const resolved = decision?.ok === true;
+    const denied = !resolved || decision?.connect !== true;
+    const wrap = button.closest(".serverVoiceRoomWrap");
+    button.classList.toggle("is-voice-permission-denied", denied);
+    button.setAttribute("aria-disabled", denied ? "true" : "false");
+    button.setAttribute("data-voice-connect-permission", resolved ? (decision.connect ? "allowed" : "denied") : "loading");
+    if (wrap) wrap.classList.toggle("is-connect-denied", denied);
+    const lock = button.querySelector(".serverVoiceRoom__permissionLock");
+    if (lock) lock.hidden = !denied;
+  });
+  return true;
+}
+
+function captureServerRoleAuthorityReconciliationBaseline(serverId = "") {
+  const sid = normId(serverId || "");
+  const activeUiServerId = normId(getActiveServerIdForSidebar?.() || state.activeDm?.serverId || "");
+  return {
+    serverId: sid,
+    rolesRef: serverRoleListByServerId.get(sid) || null,
+    roleMemberMapRef: serverRoleMemberMapByServerId.get(sid) || null,
+    membersRef: serverMemberListByServerId.get(sid) || null,
+    rolesSignature: getServerRoleListSemanticSignature(serverRoleListByServerId.get(sid) || []),
+    rolePresentationSignature: getServerRoleListSemanticSignature(serverRoleListByServerId.get(sid) || [], { includePermissions: false }),
+    assignmentsSignature: getServerRoleMemberMapSemanticSignature(serverRoleMemberMapByServerId.get(sid) || new Map()),
+    effectivePermissions: getCurrentUserRoleReconciliationPermissions(sid),
+    visibleChannelSignature: getVisibleServerChannelAuthoritySignature(sid),
+    renderedChannelSignature: getRenderedServerChannelAuthoritySignature(sid),
+    manageChannelsAllowed: currentUserCanManageChannels(sid),
+    composerState: { ...(activeMessageComposerPermissionState || {}) },
+    visual: activeUiServerId === sid ? captureServerRoleReconciliationVisualSnapshot(sid) : null,
+  };
+}
+
+function createServerRoleAuthorityPendingBatch(serverId = "") {
+  return {
+    serverId: normId(serverId || ""),
+    baseline: captureServerRoleAuthorityReconciliationBaseline(serverId),
+    reasons: new Set(),
+    changedRoleIds: new Set(),
+    changedPermissionKeys: new Set(),
+    changedUserIds: new Set(),
+    signalCount: 0,
+    permissionMutation: false,
+    assignmentMutation: false,
+    presentationMutation: false,
+    currentUserAffected: false,
+    failClosedApplied: false,
+  };
+}
+
+function mergeServerRoleAuthorityPendingSignal(batch, reason = "", details = {}) {
+  batch.reasons.add(String(reason || "role_authority"));
+  (details.changedRoleIds || []).forEach((roleId) => batch.changedRoleIds.add(normId(roleId || "")));
+  (details.changedPermissionKeys || []).forEach((key) => batch.changedPermissionKeys.add(normalizeServerPermissionKey(key || "")));
+  if (details.changedUserId) batch.changedUserIds.add(normId(details.changedUserId));
+  batch.permissionMutation = batch.permissionMutation || details.permissionMutation === true;
+  batch.assignmentMutation = batch.assignmentMutation || details.assignmentMutation === true;
+  batch.presentationMutation = batch.presentationMutation || details.presentationMutation === true;
+  batch.currentUserAffected = batch.currentUserAffected || details.currentUserAffected === true;
+  batch.signalCount += 1;
+  return batch;
+}
+
+function roleReconciliationTouchesAnyPermission(changedKeys = [], keys = []) {
+  const changed = new Set((changedKeys || []).map((key) => normalizeServerPermissionKey(key || "")).filter(Boolean));
+  return (keys || []).some((key) => changed.has(normalizeServerPermissionKey(key || "")));
+}
+
+function clearServerRoleDerivedVoicePermissionDecisions(serverId = "") {
+  const sid = normId(serverId || "");
+  let removed = 0;
+  Array.from(serverVoicePermissionDecisionByChannel.keys()).forEach((key) => {
+    if (!String(key || "").startsWith(`${sid}:`)) return;
+    serverVoicePermissionDecisionByChannel.delete(key);
+    removed += 1;
+  });
+  return removed;
+}
+
+function applyServerRoleAuthorityUiPatchFrame(serverId = "", changes = {}) {
+  const sid = normId(serverId || "");
+  if (!sid) return Promise.resolve({ ok: false, reason: "missing_server" });
+  return new Promise((resolve) => {
+    const scheduleFrame = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame
+      : (callback) => setTimeout(callback, 0);
+    scheduleFrame(() => {
+      let channelPanelRendered = false;
+      let memberPanelRendered = false;
+      if (changes.renderChannelPanel === true) {
+        const { serverCtx } = getActiveServerChannelsRuntimeContext();
+        if (serverCtx && normId(serverCtx.serverId || "") === sid) {
+          renderServerChannelsPanel(
+            serverCtx,
+            serverChannelListByServerId.get(sid) || [],
+            serverMemberListByServerId.get(sid) || [],
+            serverChannelCategoryListByServerId.get(sid) || [],
+            { skipVoiceRefresh: changes.voicePermissionsChanged !== true }
+          );
+          channelPanelRendered = true;
+          recordServerRolePermissionSaveTiming("channel_panel_render", { serverId: sid });
+        }
+      }
+
+      if (changes.messagePermissionsChanged === true) {
+        renderActiveServerMessageCapabilitySurfaces("server_role_reconciled", {
+          preserveTimeline: true,
+          preserveLayout: true,
+        });
+      }
+      if (changes.manageChannelsChanged === true) {
+        patchActiveServerChannelManagementCapabilityUi(sid);
+        revalidateOpenManageChannelsControls(sid, { showDeniedMessage: true });
+      }
+      if (changes.voicePermissionsChanged === true) {
+        patchActiveServerVoicePermissionCapabilityUi(sid);
+      }
+
+      const settingsModal = document.getElementById("serverSettingsModal");
+      const settingsOpen = !!(settingsModal && !settingsModal.classList.contains("hidden"));
+      if (settingsOpen && normId(serverSettingsServerId || "") === sid) {
+        const activeSettingsPanel = getServerSettingsActivePanelName();
+        if (activeSettingsPanel === "roles" && (changes.rolesChanged || changes.assignmentsChanged)) {
+          renderServerSettingsRolesUiPreservingVisualState();
+        } else if (activeSettingsPanel === "members" && changes.memberPresentationChanged) {
+          renderServerSettingsMembersPanel({ force: false });
+        } else if (activeSettingsPanel === "moderation" && changes.moderationPermissionsChanged) {
+          renderServerSettingsModerationPanel({ force: false });
+        }
+      }
+
+      if (changes.memberPresentationChanged === true) {
+        const activeCtx = getActiveServerContext?.() || null;
+        if (normId(activeCtx?.serverId || "") === sid) {
+          void renderServerMembersRightPanel(activeCtx, serverMemberListByServerId.get(sid) || [], {
+            forceChannelMembers: false,
+            reason: "server_role_reconciled",
+          }).catch(() => {});
+          memberPanelRendered = true;
+          recordServerRolePermissionSaveTiming("member_panel_render", { serverId: sid });
+        }
+        refreshOpenServerMiniProfileContext("server_role_presentation_reconciled");
+      }
+      if (changes.invitePermissionsChanged === true) {
+        const inviteModal = document.getElementById("serverInviteModal");
+        if (normId(serverInviteServerId || "") === sid && inviteModal && !inviteModal.classList.contains("hidden")) {
+          renderServerInviteModalState({
+            busy: !!serverInviteCreatePromise,
+            statusText: currentUserCanCreateInvites(sid) ? "" : "You do not have permission to create invites.",
+          });
+        }
+      }
+      if (changes.nicknamePermissionsChanged === true && serverNicknameModalState && normId(serverNicknameModalState.serverId || "") === sid) {
+        const nicknameAction = getServerNicknameActionState(sid, serverNicknameModalState.targetUserId);
+        if (!nicknameAction.allowed && !serverNicknameModalState.saving) {
+          serverNicknameModalState.error = "You do not have permission to change this server nickname.";
+          serverNicknameModalState.status = "";
+        } else if (
+          nicknameAction.allowed
+          && serverNicknameModalState.error === "You do not have permission to change this server nickname."
+        ) {
+          serverNicknameModalState.error = "";
+        }
+        renderServerNicknameModal();
+      }
+      refreshServerSettingsRoleControlAvailability(sid);
+      recordServerRolePermissionSaveTiming("ui_patch_frame", {
+        serverId: sid,
+        channelPanelRendered,
+        memberPanelRendered,
+      });
+      resolve({ ok: true, channelPanelRendered, memberPanelRendered });
+    });
+  });
+}
+
+async function reconcileServerRoleAuthorityVisuallyStable(serverId = "", batch = null) {
+  const sid = normId(serverId || batch?.serverId || "");
+  if (!sid || !batch) return { ok: false, reason: "missing_context" };
+  const baseline = batch.baseline || captureServerRoleAuthorityReconciliationBaseline(sid);
+  const activeServerUiOpen = isServerConversationUiOpen();
+  const activeContext = activeServerUiOpen
+    ? (getServerPermissionContextForConversation(activeDmId || state.activeDm?.conversationId || "") || null)
+    : null;
+  const reason = Array.from(batch.reasons || []).join("+") || "server_role_authority";
+  recordServerRolePermissionSaveTiming("reconcile_start", {
+    serverId: sid,
+    reason,
+    signalCount: Number(batch.signalCount || 0),
+  });
+  const visibilityRefreshPromise = refreshServerChannelVisibilityAuthorityAfterRoleChange(sid, `roles:${reason}`);
+  const roleSnapshotPromise = ensureServerRolePermissionCache(sid, { force: true }).catch((error) => ({
+    ok: false,
+    error,
+  }));
+  const visibilityRefresh = await visibilityRefreshPromise;
+  if (visibilityRefresh?.stale) {
+    recordServerRolePermissionSaveTiming("reconcile_done", {
+      serverId: sid,
+      reason,
+      staleVisibilityEpoch: true,
+    });
+    return { ok: false, stale: true, reason: "visibility_refresh_superseded" };
+  }
+  const visibleChannelSignature = getVisibleServerChannelAuthoritySignature(sid);
+  const renderedChannelSignature = baseline.renderedChannelSignature || baseline.visibleChannelSignature || "";
+  const channelVisibilityChanged = visibilityRefresh?.changed === true
+    || visibleChannelSignature !== renderedChannelSignature;
+  const activeNoChannelState = isNoAccessibleServerChannelsState(sid);
+  const selectedChannelStayedVisible = !activeNoChannelState && (
+    !activeContext?.channelId
+    || activeContext.serverId !== sid
+    || canCurrentUserViewServerChannelSync(sid, activeContext.channelId)
+  );
+  let channelTransition = { ok: true, action: "still_visible", sidebarRendered: false };
+  if (
+    (!selectedChannelStayedVisible && activeContext?.serverId === sid)
+    || activeNoChannelState
+  ) {
+    channelTransition = await reconcileActiveServerChannelAfterPermissionChange(`roles:${reason}`, {
+      renderSidebar: true,
+      refreshComposer: false,
+      preserveVisibleTimeline: true,
+      expectedServerId: sid,
+    });
+  }
+  let visibilitySidebarPatched = channelTransition?.sidebarRendered === true;
+  const channelSelectionChanged = channelTransition?.action === "switched"
+    || channelTransition?.action === "restored";
+  if (channelVisibilityChanged && !visibilitySidebarPatched && !channelSelectionChanged) {
+    await applyServerRoleAuthorityUiPatchFrame(sid, { renderChannelPanel: true });
+    visibilitySidebarPatched = true;
+  }
+
+  const roleSnapshot = await roleSnapshotPromise;
+  recordServerRolePermissionSaveTiming("role_authority_snapshot", {
+    serverId: sid,
+    rolesChanged: roleSnapshot?.rolesChanged === true,
+    assignmentsChanged: roleSnapshot?.assignmentsChanged === true,
+  });
+  if (!roleSnapshot?.ok) {
+    if (!currentUserCanViewAuditLog(sid)) {
+      clearServerAuditLogProtectedState(sid, {
+        render: true,
+        reason: `roles:${reason}:snapshot_unresolved`,
+      });
+    }
+    await applyServerRoleAuthorityUiPatchFrame(sid, {
+      renderChannelPanel: channelVisibilityChanged && !visibilitySidebarPatched,
+      manageChannelsChanged: true,
+      messagePermissionsChanged: false,
+      nicknamePermissionsChanged: true,
+    });
+    recordServerRolePermissionSaveTiming("reconcile_done", { serverId: sid, reason, error: true });
+    return { ok: false, reason: "role_snapshot_failed", error: roleSnapshot?.error || null };
+  }
+
+  const activeUiServerId = activeServerUiOpen
+    ? normId(getActiveServerIdForSidebar?.() || state.activeDm?.serverId || "")
+    : "";
+  const settingsModal = document.getElementById("serverSettingsModal");
+  const settingsOwnsServer = !!(
+    settingsModal
+    && !settingsModal.classList.contains("hidden")
+    && normId(serverSettingsServerId || "") === sid
+  );
+  if (activeUiServerId === sid || settingsOwnsServer) {
+    await refreshActiveServerCapabilityState({ serverId: sid, reason, force: false }).catch(() => null);
+  }
+  const afterPermissions = getCurrentUserRoleReconciliationPermissions(sid);
+  const changedPermissionKeys = new Set(
+    getChangedRoleReconciliationPermissionKeys(baseline.effectivePermissions || {}, afterPermissions)
+  );
+  const explicitRoleIds = Array.from(batch.changedRoleIds || []).filter(Boolean);
+  const explicitUsers = Array.from(batch.changedUserIds || []).filter(Boolean);
+  const explicitTargetUserId = explicitUsers.length === 1 ? explicitUsers[0] : "";
+  if (batch.currentUserAffected === true || changedRoleIdsCanAffectCurrentUser(sid, explicitRoleIds, explicitTargetUserId)) {
+    Array.from(batch.changedPermissionKeys || []).forEach((key) => {
+      const normalized = normalizeServerPermissionKey(key || "");
+      if (getImplementedServerPermissionKeys().includes(normalized)) changedPermissionKeys.add(normalized);
+    });
+  }
+  const changedKeys = Array.from(changedPermissionKeys);
+  const messagePermissionsChanged = roleReconciliationTouchesAnyPermission(
+    changedKeys,
+    ROLE_RECONCILIATION_MESSAGE_PERMISSION_KEYS
+  );
+  const viewChannelsChanged = changedKeys.includes("view_channels");
+  const historyChanged = changedKeys.includes("read_message_history");
+  const voicePermissionsChanged = roleReconciliationTouchesAnyPermission(
+    changedKeys,
+    ROLE_RECONCILIATION_VOICE_PERMISSION_KEYS
+  );
+  const manageChannelsChanged = changedKeys.includes("manage_channels")
+    || Boolean(baseline.manageChannelsAllowed) !== currentUserCanManageChannels(sid);
+  const moderationPermissionsChanged = roleReconciliationTouchesAnyPermission(changedKeys, [
+    "kick_members",
+    "ban_members",
+    "timeout_members",
+    "manage_nicknames",
+    "mute_members",
+    "deafen_members",
+    "move_members",
+  ]);
+  const invitePermissionsChanged = roleReconciliationTouchesAnyPermission(changedKeys, [
+    "create_invites",
+    "manage_invites",
+  ]);
+  const nicknamePermissionsChanged = roleReconciliationTouchesAnyPermission(changedKeys, [
+    "change_nickname",
+    "manage_nicknames",
+  ]);
+
+  if (messagePermissionsChanged && activeContext?.serverId === sid && selectedChannelStayedVisible) {
+    await refreshActiveMessageComposerPermission({
+      reason: `roles:${reason}`,
+      deferRender: true,
+      preserveTimeline: true,
+      preserveLayout: true,
+    }).catch(() => null);
+  }
+  if (historyChanged && selectedChannelStayedVisible && activeContext?.serverId === sid) {
+    invalidateServerMessageHistoryForServer(sid, `roles:${reason}`, {
+      preserveValidSnapshot: afterPermissions.read_message_history === true,
+      renderActive: false,
+    });
+    recordServerRolePermissionSaveTiming("message_history_reload", { serverId: sid });
+    await reconcileActiveServerMessageHistory(`roles:${reason}`).catch((error) => {
+      console.warn("[message-history] role authority reconciliation failed", {
+        serverId: sid,
+        reason,
+        message: error?.message || error,
+      });
+    });
+  }
+
+  if (voicePermissionsChanged) {
+    clearServerRoleDerivedVoicePermissionDecisions(sid);
+    const activeVoiceServerId = normId(currentServerVoiceV2Session?.serverId || "");
+    if (activeVoiceServerId === sid && serverVoiceTransportController) {
+      recordServerRolePermissionSaveTiming("voice_reconciliation", { serverId: sid });
+      await refreshAndReconcileCurrentServerVoicePermissions(`roles:${reason}`, { force: true }).catch((error) => {
+        console.warn("[server-voice-permissions] role authority reconciliation failed", {
+          serverId: sid,
+          reason,
+          message: error?.message || error,
+        });
+      });
+    }
+  }
+
+  if (changedKeys.includes("manage_apps") && !currentUserCanManageApps(sid)) {
+    serverAppBanSnapshotByServerId.delete(sid);
+    serverBotManagementInstallListByServerId.delete(sid);
+  }
+  if (changedKeys.includes("view_audit_log")) {
+    if (!currentUserCanViewAuditLog(sid)) {
+      clearServerAuditLogProtectedState(sid, { render: true, reason: `roles:${reason}` });
+    } else {
+      refreshOpenServerAuditLogAfterAuthorityGrant(sid, `roles:${reason}`);
+    }
+  }
+  if (changedKeys.includes("use_application_commands")) {
+    if (!currentUserCanUseApplicationCommands(sid)) {
+      hideBotSlashCommandPicker();
+    } else {
+      await fetchServerSlashCommandsForComposer(sid, { force: true }).catch(() => []);
+      void updateBotSlashCommandPicker(document.getElementById("dmInput"));
+    }
+  }
+
+  const memberPresentationChanged = roleSnapshot.rolePresentationChanged === true
+    || roleSnapshot.assignmentsChanged === true;
+  await applyServerRoleAuthorityUiPatchFrame(sid, {
+    renderChannelPanel: channelVisibilityChanged
+      && !visibilitySidebarPatched
+      && !channelSelectionChanged,
+    messagePermissionsChanged: messagePermissionsChanged && activeContext?.serverId === sid && selectedChannelStayedVisible,
+    voicePermissionsChanged,
+    manageChannelsChanged,
+    moderationPermissionsChanged,
+    invitePermissionsChanged,
+    nicknamePermissionsChanged,
+    rolesChanged: roleSnapshot.rolesChanged === true,
+    assignmentsChanged: roleSnapshot.assignmentsChanged === true,
+    memberPresentationChanged,
+  });
+  verifyServerRoleReconciliationVisualStability(baseline.visual, {
+    selectedChannelStayedVisible,
+    historyChanged,
+  });
+  recordServerRolePermissionSaveTiming("reconcile_done", {
+    serverId: sid,
+    reason,
+    signalCount: Number(batch.signalCount || 0),
+    changedPermissionKeys: changedKeys,
+    viewChannelsChanged,
+    rolesChanged: roleSnapshot.rolesChanged === true,
+    assignmentsChanged: roleSnapshot.assignmentsChanged === true,
+    channelVisibilityChanged,
+    selectedChannelStayedVisible,
+    channelTransition: channelTransition?.action || "",
+  });
+  return {
+    ok: true,
+    changedPermissionKeys: changedKeys,
+    viewChannelsChanged,
+    channelVisibilityChanged,
+    selectedChannelStayedVisible,
+    channelTransition,
+    ...roleSnapshot,
+  };
+}
+
+async function runServerRoleAuthorityRefreshEntry(serverId = "", entry = null) {
+  const sid = normId(serverId || "");
+  if (!sid || !entry || entry.cancelled) {
+    settleServerRoleAuthorityRefreshWaiters(entry, { ok: false, cancelled: true, reason: "refresh_cancelled" });
+    return entry?.lastResult || null;
+  }
+  if (entry.inFlight) return entry.inFlightPromise || null;
+  if (!entry.pending) {
+    settleServerRoleAuthorityRefreshWaiters(entry, entry.lastResult || { ok: true, unchanged: true });
+    return entry.lastResult || null;
+  }
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.timer = 0;
+  const batch = entry.pending;
+  entry.pending = null;
+  entry.inFlight = true;
+  const inFlightPromise = reconcileServerRoleAuthorityVisuallyStable(sid, batch);
+  entry.inFlightPromise = inFlightPromise;
+  try {
+    entry.lastResult = await inFlightPromise;
+    return entry.lastResult;
+  } catch (error) {
+    entry.lastResult = { ok: false, error, reason: "role_authority_refresh_failed" };
+    return entry.lastResult;
+  } finally {
+    if (entry.inFlightPromise === inFlightPromise) entry.inFlightPromise = null;
+    entry.inFlight = false;
+    if (!entry.cancelled && entry.pending) {
+      entry.timer = setTimeout(() => {
+        void runServerRoleAuthorityRefreshEntry(sid, entry);
+      }, 280);
+    } else {
+      settleServerRoleAuthorityRefreshWaiters(entry, entry.lastResult || { ok: !entry.cancelled });
+    }
+  }
+}
+
+async function ensureServerChannelVisibilityAuthorityReadyForNavigation(serverId = "", reason = "server-navigation") {
+  const sid = normId(serverId || "");
+  if (!sid) return { ok: false, reason: "missing_server" };
+  if (hasCurrentServerChannelVisibilityAuthority(sid)) {
+    return { ok: true, alreadyResolved: true };
+  }
+  if (isAltaraDefinitivelyOffline()) {
+    return {
+      ok: false,
+      authoritativeVisibility: false,
+      reason: "visibility_authority_offline",
+      error: serverChannelLoadErrorByServerId.get(sid) || null,
+    };
+  }
+
+  const queuedEntry = serverRoleAuthorityRefreshStateByServerId.get(sid) || null;
+  if (
+    queuedEntry
+    && !queuedEntry.cancelled
+    && (queuedEntry.pending || (queuedEntry.inFlight && queuedEntry.inFlightPromise))
+  ) {
+    const visibilitySettled = waitForServerChannelVisibilityAuthorityResolution(sid);
+    if (queuedEntry.pending) {
+      void runServerRoleAuthorityRefreshEntry(sid, queuedEntry);
+    }
+    const queuedResult = await visibilitySettled;
+    const queuedAuthorityResolved = queuedResult?.ok === true
+      && queuedResult?.authoritativeVisibility === true
+      && hasCurrentServerChannelVisibilityAuthority(sid);
+    if (!queuedAuthorityResolved) {
+      return {
+        ...(queuedResult || {}),
+        ok: false,
+        authoritativeVisibility: false,
+        recoveredFromQueuedRefresh: true,
+      };
+    }
+    return { ...queuedResult, ok: true, recoveredFromQueuedRefresh: true };
+  }
+
+  let recovery = serverChannelVisibilityNavigationRecoveryByServerId.get(sid) || null;
+  if (!recovery) {
+    beginServerChannelVisibilityAuthorityRefresh(sid, `${reason}:entry-recovery`);
+    recovery = refreshServerChannelVisibilityAuthorityAfterRoleChange(sid, `${reason}:entry-recovery`)
+      .catch((error) => {
+        const epoch = Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0);
+        const failure = {
+          ok: false,
+          changed: false,
+          authoritativeVisibility: false,
+          channels: serverChannelListByServerId.get(sid) || [],
+          removedChannels: [],
+          epoch,
+          error,
+          reason: "visibility_unresolved",
+        };
+        settleServerChannelVisibilityAuthorityWaiters(sid, failure);
+        return failure;
+      })
+      .finally(() => {
+        if (serverChannelVisibilityNavigationRecoveryByServerId.get(sid) === recovery) {
+          serverChannelVisibilityNavigationRecoveryByServerId.delete(sid);
+        }
+      });
+    serverChannelVisibilityNavigationRecoveryByServerId.set(sid, recovery);
+  }
+  const result = await waitForServerChannelVisibilityAuthorityResolution(sid);
+  const authorityResolved = result?.ok === true
+    && result?.authoritativeVisibility === true
+    && hasCurrentServerChannelVisibilityAuthority(sid);
+  return {
+    ...(result || {}),
+    ok: authorityResolved,
+    recoveredFromStrandedState: true,
+  };
+}
+
+function scheduleServerRoleAuthorityRefresh(serverId = "", reason = "server_role_authority", details = {}) {
+  const sid = normId(serverId || "");
+  if (!sid) return false;
+  let entry = serverRoleAuthorityRefreshStateByServerId.get(sid);
+  if (!entry) {
+    entry = {
+      timer: 0,
+      inFlight: false,
+      inFlightPromise: null,
+      pending: null,
+      cancelled: false,
+      lastResult: null,
+      waiters: new Set(),
+    };
+    serverRoleAuthorityRefreshStateByServerId.set(sid, entry);
+  }
+  entry.cancelled = false;
+  if (!entry.pending) entry.pending = createServerRoleAuthorityPendingBatch(sid);
+  mergeServerRoleAuthorityPendingSignal(entry.pending, reason, details);
+  beginServerChannelVisibilityAuthorityRefresh(sid, reason);
+  serverRolePermissionCacheFetchedAtByServerId.delete(sid);
+  const activeMessageContext = getActiveMessageComposerPermissionContext();
+  if (activeMessageContext.serverId === sid && msgMenuOpenFor) {
+    closeMessageMenu("role_authority_unresolved");
+  }
+  if (entry.timer) clearTimeout(entry.timer);
+  if (entry.inFlight) return true;
+  entry.timer = setTimeout(() => {
+    void runServerRoleAuthorityRefreshEntry(sid, entry);
+  }, 280);
+  return true;
+}
+
 function scheduleActivePermissionsRefresh(reason = "permissions_realtime", payload = null) {
   const context = getActiveMessageComposerPermissionContext();
   const payloadServerId = getServerIdFromPermissionsRealtimePayload(payload);
   const sid = normId(payloadServerId || context.serverId || "");
-  if (!sid || (context.serverId && sid !== context.serverId)) return;
+  if (!sid) return;
+  const roleSignalDetails = getServerRoleAuthoritySignalDetails(reason, payload);
+  if (roleSignalDetails.roleSignal) {
+    recordServerRolePermissionSaveTiming("reconcile_signal", { serverId: sid, reason });
+    scheduleServerRoleAuthorityRefresh(sid, reason, roleSignalDetails);
+    return;
+  }
+  if (context.serverId && sid !== context.serverId) return;
+  recordServerRolePermissionSaveTiming("reconcile_signal", { serverId: sid, reason });
   const normalizedReason = String(reason || "").toLowerCase();
-  const channelAccessMayHaveChanged = normalizedReason.includes("server_channel_permission_overwrites")
+  const channelAccessMayHaveChanged = normalizedReason.includes("server_channel_permission_change_event")
+    || normalizedReason.includes("server_channel_permission_overwrites")
+    || normalizedReason.includes("server_category_permission_overwrites")
+    || normalizedReason.includes("category_permission_overwrite")
+    || normalizedReason.includes("channel_permissions_synced")
     || normalizedReason.includes("private_channel")
     || normalizedReason.includes("channel_access");
   invalidateServerMessageHistoryForServer(sid, `permissions:${reason}`, {
@@ -101318,6 +106075,7 @@ function scheduleActivePermissionsRefresh(reason = "permissions_realtime", paylo
     activeServerPermissionsRealtimeRefreshTimer = 0;
     const latest = getActiveMessageComposerPermissionContext();
     if (latest.serverId && latest.serverId !== sid) return;
+    recordServerRolePermissionSaveTiming("reconcile_start", { serverId: sid, reason });
 
     serverRoleListByServerId.delete(sid);
     serverRoleMemberMapByServerId.delete(sid);
@@ -101329,14 +106087,30 @@ function scheduleActivePermissionsRefresh(reason = "permissions_realtime", paylo
       }
     });
 
-    await fetchServerMembersForSidebar(sid, { force: true }).catch((error) => {
-      console.warn("[permissions] failed to refresh members after permissions change", { serverId: sid, reason, message: error?.message || error, error });
-      return [];
-    });
-    await ensureServerRolePermissionCache(sid, { force: true }).catch((error) => {
-      console.warn("[permissions] failed to refresh roles after permissions change", { serverId: sid, reason, message: error?.message || error, error });
-      return null;
-    });
+    await Promise.all([
+      fetchServerMembersForSidebar(sid, { force: true }).catch((error) => {
+        console.warn("[permissions] failed to refresh members after permissions change", { serverId: sid, reason, message: error?.message || error, error });
+        return [];
+      }),
+      ensureServerRolePermissionCache(sid, { force: true }).catch((error) => {
+        console.warn("[permissions] failed to refresh roles after permissions change", { serverId: sid, reason, message: error?.message || error, error });
+        return null;
+      }),
+    ]);
+    await refreshActiveServerCapabilityState({ serverId: sid, reason, force: false }).catch(() => null);
+    if (!currentUserCanManageApps(sid)) {
+      serverAppBanSnapshotByServerId.delete(sid);
+      serverBotManagementInstallListByServerId.delete(sid);
+    }
+    if (!currentUserCanViewAuditLog(sid)) {
+      clearServerAuditLogProtectedState(sid, { reason: `permissions:${reason}` });
+    }
+    if (!currentUserCanUseApplicationCommands(sid)) {
+      hideBotSlashCommandPicker();
+    } else {
+      await fetchServerSlashCommandsForComposer(sid, { force: true }).catch(() => []);
+      void updateBotSlashCommandPicker(document.getElementById("dmInput"));
+    }
     await loadAllVisibleChannelPermissionOverwritesForServer(sid, { force: true }).catch((error) => {
       console.warn("[channel-permissions] failed to refresh overwrites", { serverId: sid, reason, message: error?.message || error, error });
       return null;
@@ -101372,21 +106146,74 @@ function scheduleActivePermissionsRefresh(reason = "permissions_realtime", paylo
         message: error?.message || error,
       });
     });
+    refreshVoiceModerationOptimisticUi();
 
     const settingsModal = document.getElementById("serverSettingsModal");
     const settingsOpen = !!(settingsModal && !settingsModal.classList.contains("hidden"));
     if (settingsOpen && normId(serverSettingsServerId || "") === sid) {
-      await loadServerSettingsRolesForModal(sid, { force: true }).catch(() => {});
+      const activeSettingsPanel = getServerSettingsActivePanelName();
+      renderServerSettingsRolesUiPreservingVisualState();
+      if (!currentUserCanViewAuditLog(sid)) {
+        clearServerAuditLogProtectedState(sid, { reason: `settings_permissions:${reason}` });
+      }
+      setServerSettingsActivePanel(activeSettingsPanel);
       renderServerSettingsMembersPanel();
+      renderServerSettingsModerationPanel({ force: false });
       if (getServerSettingsActivePanelName() === "channels") {
         await loadServerSettingsChannels(sid, { force: true, reason: `permissions:${reason}` }).catch(() => false);
       }
+      if (getServerSettingsActivePanelName() === "invites") {
+        renderServerSettingsInvitesPanel({ force: true });
+        if (currentUserCanManageInvites(sid)) {
+          ensureServerSettingsInvitesRealtime(sid);
+          await loadServerSettingsInvites(sid, {
+            force: true,
+            reason: `permissions:${reason}`,
+          }).catch(() => false);
+        } else {
+          const invitesRealtime = serverSettingsInvitesRealtimeByServerId.get(sid);
+          if (invitesRealtime?.restartTimer) clearTimeout(invitesRealtime.restartTimer);
+          if (invitesRealtime?.channel) {
+            try { supabase.removeChannel(invitesRealtime.channel); } catch (_) {}
+          }
+          serverSettingsInvitesRealtimeByServerId.delete(sid);
+        }
+      }
+      if (getServerSettingsActivePanelName() === "bots") {
+        renderServerSettingsBotsPanel({ force: true });
+      }
+    }
+    const inviteModal = document.getElementById("serverInviteModal");
+    if (normId(serverInviteServerId || "") === sid && inviteModal && !inviteModal.classList.contains("hidden")) {
+      renderServerInviteModalState({
+        busy: !!serverInviteCreatePromise,
+        statusText: currentUserCanCreateInvites(sid) ? "" : "You do not have permission to create invites.",
+      });
+    }
+    if (serverNicknameModalState && normId(serverNicknameModalState.serverId || "") === sid) {
+      const nicknameAction = getServerNicknameActionState(
+        sid,
+        serverNicknameModalState.targetUserId
+      );
+      if (!nicknameAction.allowed && !serverNicknameModalState.saving) {
+        serverNicknameModalState.error = "You do not have permission to change this server nickname.";
+        serverNicknameModalState.status = "";
+      } else if (
+        nicknameAction.allowed
+        && serverNicknameModalState.error === "You do not have permission to change this server nickname."
+      ) {
+        serverNicknameModalState.error = "";
+      }
+      renderServerNicknameModal();
     }
     if (activeChannelSettingsModalState && normId(activeChannelSettingsModalState.serverId || "") === sid) {
       await loadChannelPermissionOverwrites(sid, activeChannelSettingsModalState.channelId || "", { force: true }).catch(() => {});
       renderChannelSettingsModal();
     }
-  }, 160);
+    revalidateOpenManageChannelsControls(sid, { showDeniedMessage: true });
+    refreshOpenServerMiniProfileContext("server_role_permissions_reconciled");
+    recordServerRolePermissionSaveTiming("reconcile_done", { serverId: sid, reason });
+  }, 280);
 }
 
 async function emitServerPermissionsChangedBroadcast(serverId = "", payload = {}) {
@@ -101404,7 +106231,7 @@ async function emitServerPermissionsChangedBroadcast(serverId = "", payload = {}
   try {
     if (!channel) {
       temporaryChannel = true;
-      channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
+      channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
       await new Promise((resolve) => {
         let done = false;
         const finish = () => {
@@ -101458,7 +106285,7 @@ function applyDmComposerEditUi(options = {}) {
     setElementTextIfChanged(send, isEditing ? "Save" : "Send");
   }
   applyDmComposerCapabilityUi();
-  applyMessageComposerPermissionUi();
+  applyMessageComposerPermissionUi({ preserveLayout: options?.preserveLayout === true });
   updateDmComposerPreview();
   refreshDmComposerFormatToolbar(input);
   restoreDmComposerFocusSnapshot(focusSnapshot);
@@ -103235,7 +108062,7 @@ function startDmMessageEdit(messageId, { focusInput = true } = {}) {
   if (!message) return false;
   const input = document.getElementById("dmInput");
   if (!input) return false;
-  const parsed = safeParseMessageContent(message.content);
+  const parsed = getAuthoritativeMessageContent(message);
   const parsedFormatting = parseComposerTextWithFormattingRanges(String(parsed.text || ""));
   dmReplyTarget = null;
   dmEditTarget = {
@@ -103376,6 +108203,7 @@ function getGroupConversationMembersCache(conversationId) {
 async function fetchGroupConversationMembers(conversationId, { force = false } = {}) {
   const convId = normId(conversationId);
   if (!convId) return [];
+  if (isGroupDmConversationRevoked(convId)) return [];
   if (!force) {
     const cached = getGroupConversationMembersCache(convId);
     if (cached.length) return cached;
@@ -103388,7 +108216,7 @@ async function fetchGroupConversationMembers(conversationId, { force = false } =
 
   if (error || !Array.isArray(data)) {
     if (error) console.warn("group members fetch failed", error);
-    return getGroupConversationMembersCache(convId);
+    return [];
   }
 
   const uniqueMemberIds = Array.from(new Set(
@@ -103397,6 +108225,7 @@ async function fetchGroupConversationMembers(conversationId, { force = false } =
       .filter(Boolean)
   ));
   await fetchProfilesByIds(uniqueMemberIds, { includeBio: false, maxAgeMs: PROFILE_CACHE_TTL_MS }).catch(() => []);
+  if (isGroupDmConversationRevoked(convId)) return [];
 
   const members = uniqueMemberIds
     .map((uid) => {
@@ -104322,10 +109151,9 @@ function ensureGroupDmListMenu() {
       await copyTextWithPromptFallback(convId, "Channel ID");
       return;
     }
-    if (action === "delete" || action === "leave") {
+    if (action === "leave") {
       closeDmListMenus();
       await handleGroupDmMembershipAction(convId, {
-        requestedAction: action,
         groupName,
       });
     }
@@ -104377,8 +109205,8 @@ function openGroupDmListMenuAt(conversationId, point, { groupName = "Group DM", 
   const canEditGroup = !!membership?.isOwner;
   const pinAction = isPinned ? "unpin" : "pin";
   const pinLabel = isPinned ? "Desafixar grupo" : "Fixar grupo no topo";
-  const manageAction = membership?.action === "delete" ? "delete" : "leave";
-  const manageLabel = manageAction === "delete" ? "Apagar grupo" : "Sair do grupo";
+  const manageAction = "leave";
+  const manageLabel = membership?.actionLabel || "Sair do grupo";
 
   menu.innerHTML = [
     `<button class="msgMenu__item" data-group-list-act="mark_read" data-group-list-conversation="${escAttr(convId)}" data-group-list-name="${escAttr(groupName)}"><span>Mark As Read</span></button>`,
@@ -104391,7 +109219,7 @@ function openGroupDmListMenuAt(conversationId, point, { groupName = "Group DM", 
     `<button class="msgMenu__item" data-group-list-act="mute_open" data-group-list-conversation="${escAttr(convId)}" data-group-list-name="${escAttr(groupName)}"><span class="msgMenu__itemMain"><span>Mute Conversation</span>${isMuted ? '<span class="msgMenu__itemHint">Mute ativo</span>' : ''}</span><span>&#x203A;</span></button>`,
     `<div class="msgMenu__divider"></div>`,
     `<button class="msgMenu__item" data-group-list-act="${escAttr(pinAction)}" data-group-list-conversation="${escAttr(convId)}" data-group-list-name="${escAttr(groupName)}"><span>${esc(pinLabel)}</span><span>&#x1F4CC;</span></button>`,
-    `<button class="msgMenu__item${manageAction === "delete" ? " msgMenu__item--danger" : ""}" data-group-list-act="${escAttr(manageAction)}" data-group-list-conversation="${escAttr(convId)}" data-group-list-name="${escAttr(groupName)}"><span>${esc(manageLabel)}</span></button>`,
+    `<button class="msgMenu__item" data-group-list-act="${escAttr(manageAction)}" data-group-list-conversation="${escAttr(convId)}" data-group-list-name="${escAttr(groupName)}"><span>${esc(manageLabel)}</span></button>`,
     `<div class="msgMenu__divider"></div>`,
     `<button class="msgMenu__item" data-group-list-act="copy_channel_id" data-group-list-conversation="${escAttr(convId)}" data-group-list-name="${escAttr(groupName)}"><span>Copy Channel ID</span><span class="msgMenu__kbd">ID</span></button>`,
   ].join("");
@@ -105265,9 +110093,9 @@ function ensureDmUserListMenu() {
       hierarchyAllowed,
       hierarchyReason,
       canKick: !!(permissionResolved && hierarchyAllowed && context.canKick),
-      canBan: !!(permissionResolved && hierarchyAllowed && context.canBan),
-      canTimeout: !!(permissionResolved && hierarchyAllowed && context.canTimeout),
-      timeoutActive: !!getServerMemberTimeout(sid, uid),
+      canBan: !!(permissionResolved && hierarchyAllowed && canCurrentUserBanServerMember(sid, uid)),
+      canTimeout: !!(permissionResolved && hierarchyAllowed && canCurrentUserTimeoutServerMember(sid, uid)),
+      timeoutActive: !!(permissionResolved && canCurrentUserTimeoutServerMember(sid, uid) && getServerMemberTimeout(sid, uid)),
       canChangeNickname: !!(permissionResolved && !context.isSelf && nickname.allowed),
       nicknameReason: nickname.reason,
     };
@@ -107557,7 +112385,7 @@ function dmPinFilePreviewHtml({
 }
 
 function dmPinPreviewHtml(m) {
-  const parsed = safeParseMessageContent(m?.content);
+  const parsed = getAuthoritativeMessageContent(m);
 
   if (parsed.type === "gif") {
     const url = String(parsed.url || "").trim();
@@ -107653,7 +112481,7 @@ function renderDmPinsList(items) {
     if (!mid) return "";
     const name = getMessageAuthorName(m);
     const stamp = getMessageStamp(m?.pinned_at || m?.created_at || new Date().toISOString());
-    const parsed = safeParseMessageContent(m?.content);
+    const parsed = getAuthoritativeMessageContent(m);
     const parsedAttachments = (parsed.type === "attachment" || parsed.type === "attachments")
       ? extractParsedAttachments(parsed)
       : [];
@@ -114097,14 +118925,24 @@ function getServerMessageModerationContext(message = null) {
   const conversationId = normId(m?.conversation_id || activeDmId || "");
   const channelContext = getServerPermissionContextForConversation(conversationId);
   const serverId = normId(channelContext?.serverId || "");
-  const isServerTextChannel = !!(serverId && channelContext?.channelType !== "voice");
+  const channelType = normalizeConversationChannelType(channelContext?.channelType || "");
+  const isServerTextChannel = !!(
+    serverId
+    && (channelType === "text" || channelType === "voice")
+  );
   const authorId = normId(getMessageAuthorUserId(m) || "");
   const actorId = normId(state.user?.id || "");
   const ownMessage = !!(authorId && actorId && authorId === actorId);
+  const isProtectedSystemMessage = !!(
+    m
+    && !isPersistedBotMessage
+    && isTrustedServerProtectedMessage(m)
+  );
   const activeContext = getActiveMessageComposerPermissionContext();
   const permissionState = activeMessageComposerPermissionState || {};
   const permissionsResolved = !isServerTextChannel || (
-    permissionState.key === activeContext.key
+    isCurrentServerPermissionSnapshotResolved(serverId)
+    && permissionState.key === activeContext.key
     && activeContext.conversationId === conversationId
     && permissionState.loading !== true
     && permissionState.trace?.ok === true
@@ -114132,6 +118970,7 @@ function getServerMessageModerationContext(message = null) {
     authorId,
     ownMessage,
     isServerTextChannel,
+    isProtectedSystemMessage,
     isBotMessage: isBotMessageRow(m),
     permissionsResolved,
     manageMessages,
@@ -114143,7 +118982,7 @@ function getServerMessageModerationContext(message = null) {
     authorMemberPresent: null,
     hierarchyAllowed: true,
     hierarchyReason: "not_applicable_content_moderation",
-    canDelete: !m?.deleted_at && (
+    canDelete: !isProtectedSystemMessage && !m?.deleted_at && (
       ownMessage || (
         isServerTextChannel
         && permissionsResolved
@@ -114151,7 +118990,11 @@ function getServerMessageModerationContext(message = null) {
         && (!isBotMessageRow(m) || isPersistedBotMessage)
       )
     ),
-    canPin: isServerTextChannel && permissionsResolved && pinMessages && !isBotMessageRow(m),
+    canPin: !isProtectedSystemMessage
+      && isServerTextChannel
+      && permissionsResolved
+      && pinMessages
+      && !isBotMessageRow(m),
   };
 }
 
@@ -114163,6 +119006,7 @@ function safeServerMessageModerationError(error, action = "update") {
   if (message.includes("channel_access_denied")) return "You no longer have access to this channel.";
   if (message.includes("message_not_found")) return "This message is no longer available.";
   if (message.includes("message_deleted")) return "Deleted messages cannot be pinned.";
+  if (message.includes("protected_server_message")) return "System and call events cannot be modified.";
   if (code === "PGRST202" || code === "42883") return "Server message moderation is not available yet.";
   if (action === "delete") return "Could not delete the message. Try again.";
   return "Could not update the pinned message. Try again.";
@@ -114176,27 +119020,6 @@ function recordServerMessageModerationMutation(kind, value = {}) {
   if (kind === "delete") serverMessageModerationDebugState.lastDelete = next;
   else serverMessageModerationDebugState.lastPinMutation = next;
   return next;
-}
-
-async function broadcastServerBotMessageDeleted(context = {}) {
-  if (!dmChannel || typeof dmChannel.send !== "function") return false;
-  const payload = {
-    serverId: normId(context.serverId || ""),
-    channelId: normId(context.channelId || ""),
-    conversationId: normId(context.conversationId || ""),
-    botMessageId: normId(context.sourceMessageId || ""),
-  };
-  if (!payload.serverId || !payload.channelId || !payload.conversationId || !payload.botMessageId) return false;
-  try {
-    const result = await dmChannel.send({
-      type: "broadcast",
-      event: "server-bot-message-deleted-v1",
-      payload,
-    });
-    return result === "ok" || result?.status === "ok";
-  } catch (_) {
-    return false;
-  }
 }
 
 async function deleteServerMessageAsModerator(message, moderationContext, { initiatedFrom = "message-menu" } = {}) {
@@ -114299,7 +119122,6 @@ async function deleteServerMessageAsModerator(message, moderationContext, { init
         render: true,
         source: "bot-message-delete-local",
       });
-      void broadcastServerBotMessageDeleted(context);
     } else {
       removeMessageFromCacheAndUi(context.messageId);
     }
@@ -114478,7 +119300,7 @@ function openMessageMenu(messageId, anchorEl, point = null) {
   closeBotContextMenu("open_other_menu");
 
   const menu = ensureMessageMenu();
-  const parsed = safeParseMessageContent(m.content);
+  const parsed = getAuthoritativeMessageContent(m);
   const isBotMsg = isBotMessageRow(m);
   const isCommandInvocation = isBotCommandInvocationMessage(m);
   if (isSystemChipMessage(parsed) || isCommandInvocation) {
@@ -114601,8 +119423,8 @@ function canStackMessageWithPrevious(prevMessage, nextMessage) {
   const nextAuthorId = getMessageSenderIdentityKey(nextMessage);
   if (!prevAuthorId || !nextAuthorId || prevAuthorId !== nextAuthorId) return false;
   if (isBotCommandInvocationMessage(prevMessage) || isBotCommandInvocationMessage(nextMessage)) return false;
-  const prevParsed = safeParseMessageContent(prevMessage.content);
-  const nextParsed = safeParseMessageContent(nextMessage.content);
+  const prevParsed = getAuthoritativeMessageContent(prevMessage);
+  const nextParsed = getAuthoritativeMessageContent(nextMessage);
   if (isSystemChipMessage(prevParsed) || isSystemChipMessage(nextParsed)) return false;
   if (String(nextMessage?.reply_to_id || "").trim()) return false;
   const prevDay = dayKey(prevMessage.created_at);
@@ -115975,10 +120797,10 @@ function messageHtml(m, opts = {}) {
 
   const stamp = getMessageStamp(m.created_at);
 
-  const parsed = safeParseMessageContent(m.content);
+  const parsed = getAuthoritativeMessageContent(m);
   const metadataAttachments = getMessageMetadataAttachments(m);
   const allowRichEmbeds = shouldAllowMessageRichEmbeds(m);
-  const isSystemEventMessage = isSystemChipMessage(parsed);
+  const isSystemEventMessage = isSystemChipMessage(parsed, m);
   const isEncryptedUnavailable = isEncryptedDmPlaceholderMessage(m);
   const moderation = getServerMessageModerationContext(m);
   const canReact = !isBotMsg && !isCommandInvocation && dmFeatureCaps.messageReactions && canAddReactionInCurrentContext() && !isSystemEventMessage && !isOptimistic;
@@ -116196,10 +121018,50 @@ function isDmConversationActivelyViewed(conversationId) {
   return dmVisible && sameConversation && pageVisible && winFocused;
 }
 
+function hydrateMessageAuthorProfiles(rows = [], {
+  conversationId = activeDmId,
+  reason = "message-author-profiles",
+  keepBottom = true,
+} = {}) {
+  const convId = normId(conversationId || "");
+  const authorIds = Array.from(new Set((Array.isArray(rows) ? rows : [])
+    .map((row) => normId(row?.user_id || ""))
+    .filter(Boolean)));
+  if (!convId || !authorIds.length) return Promise.resolve([]);
+  return fetchProfilesByIds(authorIds, { includeBio: false }).then((profiles) => {
+    if (normId(activeDmId || state.activeDm?.conversationId || "") === convId) {
+      renderMessagesFromCache({ keepBottom, reason, force: true });
+    }
+    return profiles;
+  });
+}
+
+const incomingMessageCueDedupeUntilByKey = new Map();
+const INCOMING_MESSAGE_CUE_DEDUPE_TTL_MS = 2 * 60 * 1000;
+
+function playIncomingMessageCueOnce(message = null, cueName = "msg", notification = null) {
+  const cue = String(cueName || "msg").trim().toLowerCase() || "msg";
+  if (shouldSuppressNotificationSoundForStatus("ui", cue, notification)) return false;
+  const messageId = normId(message?.id || "") || String(message?.id || "").trim();
+  const conversationId = normId(message?.conversation_id || message?.conversationId || "");
+  const dedupeKey = messageId ? `${conversationId || "conversation"}:${messageId}:${cue}` : "";
+  const now = Date.now();
+  if (dedupeKey) {
+    const seenUntil = Number(incomingMessageCueDedupeUntilByKey.get(dedupeKey) || 0);
+    if (Number.isFinite(seenUntil) && seenUntil > now) return false;
+    incomingMessageCueDedupeUntilByKey.set(dedupeKey, now + INCOMING_MESSAGE_CUE_DEDUPE_TTL_MS);
+    for (const [key, until] of incomingMessageCueDedupeUntilByKey.entries()) {
+      if (!Number.isFinite(until) || until <= now) incomingMessageCueDedupeUntilByKey.delete(key);
+    }
+  }
+  playUiCue(cue, notification);
+  return true;
+}
+
 function shouldPlayIncomingMessageCue(m) {
   if (!m || !state.user?.id) return false;
-  const parsed = safeParseMessageContent(m.content);
-  if (isSystemChipMessage(parsed)) return false;
+  const parsed = getAuthoritativeMessageContent(m);
+  if (isSystemChipMessage(parsed, m)) return false;
   const convId = normId(m.conversation_id);
   if (convId && isDmConversationMuted(convId)) return false;
   const fromId = normId(m.user_id);
@@ -116299,6 +121161,8 @@ function normalizeTimelineMessage(row = {}, { conversationId = "", source = "" }
     channelId: normId(row?.channelId || row?.channel_id || ""),
     channel_id: normId(row?.channel_id || row?.channelId || ""),
     suppress_embeds: row?.suppress_embeds === true,
+    trusted_event_type: normalizeTrustedServerEventType(row?.trusted_event_type),
+    trusted_event_source_id: normalizeTrustedServerEventSourceId(row?.trusted_event_source_id),
   };
 }
 
@@ -116313,8 +121177,14 @@ function appendTimelineMessage(conversationId = "", messageInput = null, options
   const convId = getMessageCacheConversationId(conversationId || messageInput?.conversation_id || messageInput?.conversationId || activeDmId || state.activeDm?.conversationId || "");
   const timelineMessage = normalizeTimelineMessage(messageInput, { conversationId: convId, source: options?.source || "" });
   if (!convId || !timelineMessage) return { changed: false, rendered: false, skippedReason: "missing_conversation_or_message" };
+  if (isGroupDmConversationRevoked(convId)) {
+    return { changed: false, rendered: false, skippedReason: "group_membership_revoked" };
+  }
   const messageConvId = getMessageCacheConversationId(timelineMessage.conversation_id || timelineMessage.conversationId || convId);
   if (messageConvId && messageConvId !== convId) return { changed: false, rendered: false, skippedReason: "conversation_mismatch" };
+  if (!canCurrentUserRenderServerChannelConversation(convId)) {
+    return { changed: false, rendered: false, skippedReason: "server_channel_not_visible" };
+  }
   const historySnapshot = getServerMessageHistoryState(convId);
   if (
     getServerMessageHistoryContext(convId)
@@ -116451,7 +121321,9 @@ function appendMessage(m) {
   if (dmMessagesAfter) updateDmJumpLatestButton(dmMessagesAfter);
   if (shouldCue) {
     const notificationMeta = { type: isGroupConversation ? "group_dm" : "direct_dm", sender_user_id: m?.user_id };
-    if (shouldNotifyInFocus(notificationMeta)) playUiCue(isGroupConversation ? "group_dm" : "msg", notificationMeta);
+    if (shouldNotifyInFocus(notificationMeta)) {
+      playIncomingMessageCueOnce(m, isGroupConversation ? "group_dm" : "msg", notificationMeta);
+    }
   }
   applyDmTitleNameStyle();
 }
@@ -116609,8 +121481,8 @@ async function editDmMessage(messageId) {
   if (!m) return;
   if (!isOwnMessage(m)) return alert("Só podes editar mensagens tuas.");
 
-  const parsed = safeParseMessageContent(m.content);
-  if (isSystemChipMessage(parsed) || parsed.type !== "text") return alert("Só dá para editar mensagens de texto.");
+  const parsed = getAuthoritativeMessageContent(m);
+  if (isSystemChipMessage(parsed, m) || parsed.type !== "text") return alert("Só dá para editar mensagens de texto.");
   if (isDmMessageEditWindowExpired(m)) {
     return alert("Nos canais de servidor so podes editar mensagens durante 30 minutos.");
   }
@@ -116621,7 +121493,7 @@ async function copyMessageText(messageId) {
   const m = getMessageById(messageId);
   if (!m) return;
   if (isEncryptedDmPlaceholderMessage(m)) return;
-  const parsed = safeParseMessageContent(m.content);
+  const parsed = getAuthoritativeMessageContent(m);
   const text = String(parsed.text || "");
   if (!text) return;
 
@@ -117118,7 +121990,7 @@ function bindDmMessageActions() {
     if (!msgId) return;
     const message = getMessageById(msgId);
     if (!message) return;
-    const parsed = safeParseMessageContent(message.content);
+    const parsed = getAuthoritativeMessageContent(message);
     if (parsed.type !== "text") return;
     const rawFormattedText = String(parsed.text || "");
     if (!rawFormattedText) return;
@@ -117158,8 +122030,8 @@ function bindDmMessageActions() {
     }
     if (!msg) return;
     if (isOptimisticDmMessage(msg)) return;
-    const parsed = safeParseMessageContent(msg.content);
-    if (isSystemChipMessage(parsed)) return;
+    const parsed = getAuthoritativeMessageContent(msg);
+    if (isSystemChipMessage(parsed, msg)) return;
 
     e.preventDefault();
     openMessageMenu(msgId, msgNode, {
@@ -117173,6 +122045,7 @@ async function fetchMessages(conversationId, { initialLatest = false, reason = "
   const msgsBox = document.getElementById("dmMessages");
   const renderReason = normalizeRenderReason(reason);
   const convId = normId(conversationId || "");
+  const initialVisibilityContext = getCurrentServerChannelVisibilityContextForConversation(convId);
   const loadToken = ++dmMessageLoadToken;
   const serverContext = getBotCommandServerTextContext(convId);
   const activeServerContextForLog = (typeof getActiveServerContext === "function") ? (getActiveServerContext() || null) : null;
@@ -117188,6 +122061,23 @@ async function fetchMessages(conversationId, { initialLatest = false, reason = "
   });
   markPerfStart("dm-open-fresh-loaded", { conversationId: convId, reason: renderReason });
   markPerfStart("dm_messages_load", { conversationId: convId, reason: renderReason });
+  if (initialVisibilityContext) {
+    const visibilityResolving = serverChannelVisibilityAuthorityResolvingByServerId.has(initialVisibilityContext.serverId);
+    if (visibilityResolving || !canCurrentUserRenderServerChannelConversation(convId)) {
+      if (!visibilityResolving) {
+        await purgeInaccessibleServerChannelConversationState(convId, {
+          serverId: initialVisibilityContext.serverId,
+          channelId: initialVisibilityContext.channelId,
+          reason: `${renderReason}-visibility-denied`,
+          renderDenied: true,
+        });
+      }
+      clearMessageLoadingFailOpen(convId);
+      markPerfEnd("dm_messages_load", { conversationId: convId, visibilityDenied: !visibilityResolving, visibilityResolving });
+      markPerfEnd("dm-open-fresh-loaded", { conversationId: convId, visibilityDenied: !visibilityResolving, visibilityResolving });
+      return;
+    }
+  }
   if (isAltaraDefinitivelyOffline()) {
     let renderedOfflineCache = false;
     try {
@@ -117228,6 +122118,21 @@ async function fetchMessages(conversationId, { initialLatest = false, reason = "
     })
     : { ok: true, nonServer: true, generation: 0, fullHistory: true };
   const historyGeneration = Number(preparedHistory?.generation || 0);
+  if (historyContext && !canCurrentUserRenderServerChannelConversation(convId)) {
+    const visibilityResolving = serverChannelVisibilityAuthorityResolvingByServerId.has(historyContext.serverId);
+    if (!visibilityResolving) {
+      await purgeInaccessibleServerChannelConversationState(convId, {
+        serverId: historyContext.serverId,
+        channelId: historyContext.channelId,
+        reason: `${renderReason}-visibility-revoked-after-history`,
+        renderDenied: true,
+      });
+    }
+    clearMessageLoadingFailOpen(convId);
+    markPerfEnd("dm_messages_load", { conversationId: convId, staleVisibility: true });
+    markPerfEnd("dm-open-fresh-loaded", { conversationId: convId, staleVisibility: true });
+    return;
+  }
   if (historyContext && !preparedHistory?.ok) {
     const historySnapshot = getServerMessageHistoryState(convId);
     const preservePreviousSnapshot = preparedHistory?.preserved === true
@@ -117302,8 +122207,15 @@ async function fetchMessages(conversationId, { initialLatest = false, reason = "
 
   let result;
   try {
-    result = await loadFreshConversationMessagesForCache(convId, { reason: renderReason, forceAccess: true, token: loadToken });
+    result = await altaraWithTimeout(
+      loadFreshConversationMessagesForCache(convId, { reason: renderReason, forceAccess: true, token: loadToken }),
+      ALTARA_SERVER_MESSAGE_REST_TIMEOUT_MS,
+      "conversation message REST read"
+    );
+    if (result?.error) recordAltaraAuthenticatedRestFailure(result.error, "message-rest-response");
+    else recordAltaraAuthenticatedRestSuccess("message-rest-success");
   } catch (error) {
+    recordAltaraAuthenticatedRestFailure(error, "message-rest-error");
     logMessageLoadState("human_query_unhandled_error", {
       reason: renderReason,
       conversationId: convId,
@@ -117331,12 +122243,26 @@ async function fetchMessages(conversationId, { initialLatest = false, reason = "
     }
     result = { ok: false, denied: false, rows: [], hasMoreBefore: false, error };
   }
+  const visibilityStillAllowsFresh = !historyContext || canCurrentUserRenderServerChannelConversation(convId);
   const isStillActiveAfterFresh = (
     normId(activeDmId || state.activeDm?.conversationId || "") === convId
     && loadToken === dmMessageLoadToken
     && (!historyContext || isServerMessageHistoryGenerationCurrent(convId, historyGeneration))
+    && visibilityStillAllowsFresh
   );
   if (!isStillActiveAfterFresh) {
+    if (
+      historyContext
+      && !visibilityStillAllowsFresh
+      && !serverChannelVisibilityAuthorityResolvingByServerId.has(historyContext.serverId)
+    ) {
+      await purgeInaccessibleServerChannelConversationState(convId, {
+        serverId: historyContext.serverId,
+        channelId: historyContext.channelId,
+        reason: `${renderReason}-visibility-revoked-after-fetch`,
+        renderDenied: true,
+      });
+    }
     if (historyContext) serverMessageHistoryDebugState.staleFetchDiscardedCount += 1;
     logMessageLoadState("stale", { reason: renderReason, conversationId: convId, token: loadToken, activeToken: dmMessageLoadToken });
     markPerfEnd("dm_messages_load", { conversationId: convId, stale: true });
@@ -117345,9 +122271,16 @@ async function fetchMessages(conversationId, { initialLatest = false, reason = "
   }
 
   if (result?.denied) {
-    if (msgsBox) {
-      setElementHtmlIfChanged(msgsBox, `<div class="hint">${esc(t("dm.access_denied", "You do not have access to this conversation."))}</div>`);
-      setDmJumpLatestVisible(false);
+    if (historyContext) {
+      await purgeInaccessibleServerChannelConversationState(convId, {
+        serverId: historyContext.serverId,
+        channelId: historyContext.channelId,
+        reason: `${renderReason}-authoritative-denial`,
+        renderDenied: true,
+      });
+    } else if (msgsBox) {
+        setElementHtmlIfChanged(msgsBox, `<div class="hint">${esc(t("dm.access_denied", "You do not have access to this conversation."))}</div>`);
+        setDmJumpLatestVisible(false);
     }
     clearMessageLoadingFailOpen(convId);
     logMessageLoadState("render_denied", { reason: renderReason, conversationId: convId, token: loadToken });
@@ -117358,9 +122291,6 @@ async function fetchMessages(conversationId, { initialLatest = false, reason = "
 
   if (!result?.ok) {
     const error = result?.error || null;
-    if (isConnectivityError(error, { navigatorOnline: getNavigatorOnlineSignal() })) {
-      markAltaraConnectionOffline("message-load-network");
-    }
     if (result?.boundaryDenied && historyContext) {
       const historySnapshot = getServerMessageHistoryState(convId);
       const preservePreviousSnapshot = result?.previousValidSnapshotPreserved === true
@@ -117408,7 +122338,20 @@ async function fetchMessages(conversationId, { initialLatest = false, reason = "
     normId(activeDmId || state.activeDm?.conversationId || "") !== convId
     || loadToken !== dmMessageLoadToken
     || (historyContext && !isServerMessageHistoryGenerationCurrent(convId, historyGeneration))
+    || (historyContext && !canCurrentUserRenderServerChannelConversation(convId))
   ) {
+    if (
+      historyContext
+      && !canCurrentUserRenderServerChannelConversation(convId)
+      && !serverChannelVisibilityAuthorityResolvingByServerId.has(historyContext.serverId)
+    ) {
+      await purgeInaccessibleServerChannelConversationState(convId, {
+        serverId: historyContext.serverId,
+        channelId: historyContext.channelId,
+        reason: `${renderReason}-visibility-revoked-before-merge`,
+        renderDenied: true,
+      });
+    }
     if (historyContext) serverMessageHistoryDebugState.staleFetchDiscardedCount += 1;
     logMessageLoadState("stale_after_rows", { reason: renderReason, conversationId: convId, token: loadToken, activeToken: dmMessageLoadToken, humanCount: freshRows.length });
     markPerfEnd("dm_messages_load", { conversationId: convId, count: freshRows.length, stale: true });
@@ -117427,7 +122370,11 @@ async function fetchMessages(conversationId, { initialLatest = false, reason = "
   dmHistoryLoadingOlder = false;
   refreshDmHistoryCursorFromCache();
   updateActiveConversationMessageCache({ persist: true, source: "fresh-loaded" });
-  void fetchProfilesByIds(dmMessagesCache.map((m) => m?.user_id).filter(Boolean), { includeBio: false }).catch(() => {});
+  void hydrateMessageAuthorProfiles(dmMessagesCache, {
+    conversationId: convId,
+    reason: `${renderReason}-author-profiles`,
+    keepBottom: false,
+  }).catch(() => {});
   const humanLoadStats = getTimelineRowStats(dmMessagesCache);
   logMessageLoadState("cache_after_human_load", {
     reason: renderReason,
@@ -118872,12 +123819,28 @@ function normalizeBotRowMetadata(row = {}) {
   return {};
 }
 
+function normalizeBotTextOnlyContent(value = "") {
+  const content = String(value || "").slice(0, 2000);
+  let parsed;
+  try { parsed = JSON.parse(content); } catch (_) { return content; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return content;
+  const type = String(parsed.type || "").trim().toLowerCase();
+  if (type === "attachment" || type === "attachments" || type === "gif"
+      || Object.prototype.hasOwnProperty.call(parsed, "attachment")
+      || Object.prototype.hasOwnProperty.call(parsed, "attachments")
+      || Object.prototype.hasOwnProperty.call(parsed, "items")) {
+    return "[Unsupported bot attachment]";
+  }
+  return content;
+}
+
 function normalizeBuiltinBotResponseRow(row = {}, context = {}) {
   if (!row || typeof row !== "object") return null;
   if (row?.deleted_at || row?.deletedAt) return null;
-  const metadata = normalizeBotRowMetadata(row);
-  const content = String(row?.content || row?.message_content || row?.messageContent || metadata.content || "").slice(0, 2000);
-  const metadataAttachments = sanitizeAttachmentCollectionPayload({ items: metadata.attachments });
+  const metadata = { ...normalizeBotRowMetadata(row) };
+  delete metadata.attachments;
+  const content = normalizeBotTextOnlyContent(row?.content || row?.message_content || row?.messageContent || metadata.content || "");
+  const metadataAttachments = null;
   const rawId = getBotChannelMessageRawId(row);
   const id = getBotRuntimeStableId(BOT_CHANNEL_MESSAGE_ID_PREFIX, rawId);
   const resolvedContext = resolveServerChannelTimelineContext({
@@ -119460,6 +124423,9 @@ function isBotConnectionModeContextActive(context = {}) {
   const resolvedContext = resolveServerChannelTimelineContext(context);
   const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
   if (normId(resolvedContext?.conversationId || context?.conversationId || "") !== activeConversationId) return false;
+  const serverId = normId(resolvedContext?.serverId || context?.serverId || "");
+  const channelId = normId(resolvedContext?.channelId || context?.channelId || "");
+  if (!serverId || !channelId || !canCurrentUserViewServerChannelSync(serverId, channelId)) return false;
   const current = getBotCommandServerTextContext(activeConversationId);
   return !!current
     && normId(current.serverId || "") === normId(resolvedContext?.serverId || context?.serverId || "")
@@ -119550,8 +124516,11 @@ function syncBotPendingFromInteractionRows(rows = [], context = {}, registered =
         removeBotConnectionPendingMessage(eventId, { render: false, reason: "bot-interaction-responded" });
         logBotPendingCleanupDebug(eventId, "bot-interaction-responded");
       } else {
-        startBotInteractionResponsePolling(eventId, context, registered, { source: "bot-interaction-responded-fast-fetch", responseMessageId, delaysMs: responseMessageId ? BOT_RESPONSE_ID_RETRY_DELAYS_MS : BOT_FAST_RESPONSE_FETCH_DELAYS_MS });
-        logBotLiveState("interaction_responded_waiting_for_message", { interaction_event_id: eventId, response_message_id: responseMessageId || null, command_name: row?.command_name || "", serverId: normId(context?.serverId || ""), channelId: normId(context?.channelId || ""), conversationId: getTimelineCacheKeyForServerChannel(context), source: "bot-interaction-sync" });
+        // Full interaction snapshots are paired with one channel-level response
+        // snapshot. Starting one fallback poll for every historical row here
+        // creates a request storm. Exact local-command and Realtime response
+        // paths own the bounded per-event fallback poll instead.
+        logBotLiveState("interaction_responded_waiting_for_snapshot", { interaction_event_id: eventId, response_message_id: responseMessageId || null, command_name: row?.command_name || "", serverId: normId(context?.serverId || ""), channelId: normId(context?.channelId || ""), conversationId: getTimelineCacheKeyForServerChannel(context), source: "bot-interaction-sync" });
       }
       return;
     }
@@ -119580,7 +124549,7 @@ function syncBotPendingFromInteractionRows(rows = [], context = {}, registered =
           botId: row?.bot_id || registered?.botId || registered?.bot_id || "",
           botName: row?.bot_name || registered?.botName || registered?.bot_name || "",
           botAvatarUrl: row?.bot_avatar_url || registered?.botAvatarUrl || registered?.bot_avatar_url || "",
-        }, { render });
+        }, { render, startResponsePolling: false });
       }
     }
   });
@@ -119607,11 +124576,15 @@ async function fetchActiveBotChannelInteractions(context = {}, limit = 100, opti
   });
   if (!preparedHistory?.ok) return [];
   const historyGeneration = Number(preparedHistory?.generation || 0);
-  const data = await settingsDeveloperRpc("bots_list_channel_interactions", {
-    p_server_id: normId(context.serverId || ""),
-    p_channel_id: normId(context.channelId || ""),
-    p_limit: Math.min(Math.max(Number(limit) || 100, 1), 100),
-  });
+  const requestLimit = Math.min(Math.max(Number(limit) || 100, 1), 100);
+  const data = await dedupeRequest(
+    `bot-channel-interactions:${normId(context.serverId || "")}:${normId(context.channelId || "")}:${historyGeneration}:${requestLimit}`,
+    () => settingsDeveloperRpc("bots_list_channel_interactions", {
+      p_server_id: normId(context.serverId || ""),
+      p_channel_id: normId(context.channelId || ""),
+      p_limit: requestLimit,
+    })
+  );
   if (!isServerMessageHistoryGenerationCurrent(targetConversationId, historyGeneration)) {
     serverMessageHistoryDebugState.staleFetchDiscardedCount += 1;
     return [];
@@ -119691,11 +124664,15 @@ async function fetchActiveBotChannelResponses(context = {}, limit = 50, options 
   });
   let data;
   try {
-    data = await settingsDeveloperRpc("bots_list_channel_bot_messages", {
-      p_server_id: normId(resolvedContext.serverId || ""),
-      p_channel_id: normId(resolvedContext.channelId || ""),
-      p_limit: Math.min(Math.max(Number(limit) || 50, 1), 100),
-    });
+    const requestLimit = Math.min(Math.max(Number(limit) || 50, 1), 100);
+    data = await dedupeRequest(
+      `bot-channel-messages:${normId(resolvedContext.serverId || "")}:${normId(resolvedContext.channelId || "")}:${historyGeneration}:${requestLimit}`,
+      () => settingsDeveloperRpc("bots_list_channel_bot_messages", {
+        p_server_id: normId(resolvedContext.serverId || ""),
+        p_channel_id: normId(resolvedContext.channelId || ""),
+        p_limit: requestLimit,
+      })
+    );
   } catch (error) {
     serverMessageHistoryDebugState.lastBotFetch = {
       ...debugBase,
@@ -120093,6 +125070,11 @@ function clearBotThinkingForPersistedRow(row = {}, context = {}, reason = "bot-r
 }
 
 async function mergeAndRenderBotChannelRows(rows = [], context = {}, { source = "bot-live", keepBottom = true } = {}) {
+  const conversationKey = getTimelineCacheKeyForServerChannel(context)
+    || normId(context?.conversationId || context?.conversation_id || "");
+  if (!conversationKey || !canCurrentUserRenderServerChannelConversation(conversationKey)) {
+    return { merged: false, rendered: false, normalizedCount: 0, thinkingCleared: false, skippedReason: "server_channel_not_visible" };
+  }
   const list = Array.isArray(rows) ? rows : [rows];
   const normalizedRows = list.map((row) => normalizeBuiltinBotResponseRow(row, context)).filter(Boolean);
   if (!normalizedRows.length) {
@@ -120175,6 +125157,15 @@ async function handleBotChannelMessageRealtimePayload(conversationId = "", paylo
     logBotLiveState("realtime_skipped", { table: "bot_channel_messages", eventType: payload?.eventType || payload?.event || "", rowId, skippedReason: "unresolved_context" });
     return false;
   }
+  if (!canCurrentUserRenderServerChannelConversation(getTimelineCacheKeyForServerChannel(context))) {
+    logBotLiveState("realtime_skipped", {
+      table: "bot_channel_messages",
+      eventType: payload?.eventType || payload?.event || "",
+      rowId,
+      skippedReason: "server_channel_not_visible",
+    });
+    return false;
+  }
   if (!isBotConnectionModeContextActive(context)) {
     logBotLiveState("realtime_skipped", {
       table: "bot_channel_messages",
@@ -120189,6 +125180,7 @@ async function handleBotChannelMessageRealtimePayload(conversationId = "", paylo
     return false;
   }
   const result = await mergeAndRenderBotChannelRows([row], context, { source, keepBottom: true });
+  if (!canCurrentUserRenderServerChannelConversation(getTimelineCacheKeyForServerChannel(context))) return false;
   logBotLiveState("realtime_row", {
     table: "bot_channel_messages",
     eventType: payload?.eventType || payload?.event || "",
@@ -120250,6 +125242,15 @@ async function handleBotInteractionRealtimePayload(conversationId = "", payload 
     return false;
   }
   const conversationKey = getTimelineCacheKeyForServerChannel(context);
+  if (!conversationKey || !canCurrentUserRenderServerChannelConversation(conversationKey)) {
+    logBotLiveState("realtime_skipped", {
+      table: "bot_interaction_events",
+      eventType: payload?.eventType || payload?.event || "",
+      interaction_event_id: eventId,
+      skippedReason: "server_channel_not_visible",
+    });
+    return false;
+  }
   if (!isMessageRowVisibleForServerHistory(conversationKey, row)) {
     logBotLiveState("realtime_skipped", {
       table: "bot_interaction_events",
@@ -120937,7 +125938,13 @@ function scheduleBotConnectionPendingTimeout(eventId = "", context = {}, registe
   return true;
 }
 
-function appendBotConnectionPendingMessage(eventId = "", commandName = "", context = {}, registered = {}, { render = true } = {}) {
+function appendBotConnectionPendingMessage(
+  eventId = "",
+  commandName = "",
+  context = {},
+  registered = {},
+  { render = true, startResponsePolling = true } = {}
+) {
   const eid = normId(eventId || "");
   if (!eid || !isBotConnectionModeContextActive(context)) return false;
   const pendingId = botConnectionPendingMessageIdsByEventId.get(eid) || getBotRuntimeStableId(BOT_PENDING_MESSAGE_ID_PREFIX, eid);
@@ -121005,7 +126012,9 @@ function appendBotConnectionPendingMessage(eventId = "", commandName = "", conte
     thinkingStartedAt: Date.now(),
     source: "pending-placeholder",
   });
-  startBotInteractionResponsePolling(eid, context, registered, { source: "bot-fast-response-fetch", delaysMs: BOT_FAST_RESPONSE_FETCH_DELAYS_MS });
+  if (startResponsePolling) {
+    startBotInteractionResponsePolling(eid, context, registered, { source: "bot-fast-response-fetch", delaysMs: BOT_FAST_RESPONSE_FETCH_DELAYS_MS });
+  }
   if (render) renderMessagesFromCache({ keepBottom: true, reason: "bot-pending", force: true });
   return true;
 }
@@ -121720,7 +126729,7 @@ function wireDmComposer() {
           throw new Error("A mensagem ja nao esta disponivel para edicao.");
         }
         if (!text) throw new Error("A mensagem nao pode ficar vazia.");
-        const currentText = String(safeParseMessageContent(editingMessage.content).text || "").trim();
+        const currentText = String(getAuthoritativeMessageContent(editingMessage).text || "").trim();
         if (text === currentText) {
           clearDmEditTarget({ clearInput: true, focusInput: true, render: true });
           return;
@@ -123251,39 +128260,21 @@ function extractClipboardFilesForDmPaste(clipboardData = null) {
   return out.map((file, idx) => normalizeClipboardFileForDmQueue(file, idx)).filter(Boolean);
 }
 
-function buildDmUploadPath(userId, conversationId, fileName) {
-  const cleanName = sanitizeStorageFileName(fileName, "file.bin");
-  const stamp = Date.now();
-  const rnd = Math.random().toString(36).slice(2, 10);
-  return String(userId || "u") + "/dm/" + String(conversationId || "conv") + "/" + stamp + "_" + rnd + "_" + cleanName;
-}
-
-function buildDmUploadPreviewPath(userId, conversationId, fileName) {
-  const cleanName = sanitizeStorageFileName(fileName, "preview.webp");
-  const stamp = Date.now();
-  const rnd = Math.random().toString(36).slice(2, 10);
-  return String(userId || "u") + "/dm/" + String(conversationId || "conv") + "/previews/" + stamp + "_" + rnd + "_" + cleanName;
-}
-
 async function uploadDmAttachmentPreviewFile(previewFile, {
-  bucket = "",
   conversationId = activeDmId,
 } = {}) {
   const targetConversationId = normId(conversationId);
-  const bucketName = String(bucket || "").trim();
-  if (!previewFile || !bucketName || !state.user?.id || !targetConversationId) return "";
+  if (!previewFile || !state.user?.id || !targetConversationId) return null;
   const previewName = sanitizeStorageFileName(previewFile.name || "preview.webp", "preview.webp");
   const previewType = String(previewFile.type || "").trim() || "image/webp";
-  const previewPath = buildDmUploadPreviewPath(state.user.id, targetConversationId, previewName);
   const upload = await uploadFileViaAltaraStorage(previewFile, {
-    bucket: bucketName,
     fileName: previewName,
-    path: previewPath,
     contentType: previewType,
-    cacheControl: "31536000",
+    cacheControl: "60",
     uploadContext: "dm_attachment_preview",
+    conversationId: targetConversationId,
   });
-  return String(upload?.publicUrl || "").trim();
+  return upload || null;
 }
 
 async function uploadDmAttachmentFile(file, {
@@ -123301,7 +128292,6 @@ async function uploadDmAttachmentFile(file, {
   const storageFileName = sanitizeStorageFileName(fileName, "file.bin");
   const contentType = String(file.type || "").trim() || "application/octet-stream";
   const attachmentKind = getAttachmentKindFromMime(contentType, fileName);
-  const path = buildDmUploadPath(state.user.id, targetConversationId, storageFileName);
   const previewSource = previewSourceFile || file;
   const previewCandidate = attachmentKind === "image"
     ? await createDmImagePreviewFileForUpload(previewSource).catch((err) => {
@@ -123310,60 +128300,51 @@ async function uploadDmAttachmentFile(file, {
     })
     : null;
 
-  let lastError = null;
-  for (const bucket of DM_UPLOAD_BUCKET_CANDIDATES) {
-    let upload = null;
+  const upload = await uploadFileViaAltaraStorage(file, {
+    fileName,
+    contentType,
+    cacheControl: "60",
+    uploadContext: "dm_attachment",
+    conversationId: targetConversationId,
+  });
+  const url = String(upload?.displayUrl || "").trim();
+  if (!url || !upload?.uploadId) throw new Error("Nao consegui verificar o anexo.");
+
+  let previewUpload = null;
+  if (previewCandidate?.file) {
     try {
-      upload = await uploadFileViaAltaraStorage(file, {
-        bucket,
-        fileName,
-        path,
-        contentType,
-        cacheControl: "31536000",
-        uploadContext: "dm_attachment",
+      previewUpload = await uploadDmAttachmentPreviewFile(previewCandidate.file, {
+        conversationId: targetConversationId,
       });
-    } catch (uploadErr) {
-      lastError = uploadErr;
-      if (isSupabaseStorageMissingBucketError(uploadErr)) continue;
-      throw uploadErr;
+    } catch (previewErr) {
+      console.warn("dm attachment preview upload failed:", previewErr?.code || previewErr?.message || "preview_failed");
+      previewUpload = null;
     }
-
-    const url = String(upload?.publicUrl || "").trim();
-    if (!url) throw new Error("Nao consegui obter URL publica do anexo.");
-
-    let previewUrl = "";
-    if (previewCandidate?.file) {
-      try {
-        previewUrl = await uploadDmAttachmentPreviewFile(previewCandidate.file, {
-          bucket: upload.bucket,
-          conversationId: targetConversationId,
-        });
-      } catch (previewErr) {
-        console.warn("dm attachment preview upload failed:", previewErr);
-        previewUrl = "";
-      }
-    }
-
-    return sanitizeAttachmentPayload({
-      type: "attachment",
-      url,
-      originalUrl: url,
-      previewUrl,
-      name: fileName,
-      original_file_name: fileName,
-      storage_file_name: storageFileName,
-      mime: contentType,
-      size: Number(file.size || 0),
-      kind: attachmentKind,
-      width: previewCandidate?.sourceWidth || previewCandidate?.width || null,
-      height: previewCandidate?.sourceHeight || previewCandidate?.height || null,
-      previewSize: previewCandidate?.file ? Number(previewCandidate.file.size || 0) : null,
-      isAnimated: !!(previewCandidate?.isAnimated || fileLooksGifLike(file) || fileLooksGifLike(previewSource)),
-      spoiler: !!spoiler && canAttachmentUseSpoiler(attachmentKind),
-    });
   }
 
-  throw lastError || new Error("Falhou o upload do anexo.");
+  return sanitizeAttachmentPayload({
+    type: "attachment",
+    url,
+    originalUrl: url,
+    referenceUrl: upload.referenceUrl,
+    uploadId: upload.uploadId,
+    storageBucket: upload.bucket,
+    storagePath: upload.path,
+    previewUrl: String(previewUpload?.displayUrl || "").trim(),
+    previewReferenceUrl: previewUpload?.referenceUrl || "",
+    previewUploadId: previewUpload?.uploadId || "",
+    name: fileName,
+    original_file_name: fileName,
+    storage_file_name: storageFileName,
+    mime: upload.detectedMime || contentType,
+    size: Number(upload.actualSize || file.size || 0),
+    kind: attachmentKind,
+    width: previewCandidate?.sourceWidth || previewCandidate?.width || null,
+    height: previewCandidate?.sourceHeight || previewCandidate?.height || null,
+    previewSize: previewCandidate?.file ? Number(previewUpload?.actualSize || previewCandidate.file.size || 0) : null,
+    isAnimated: !!(previewCandidate?.isAnimated || fileLooksGifLike(file) || fileLooksGifLike(previewSource)),
+    spoiler: !!spoiler && canAttachmentUseSpoiler(attachmentKind),
+  });
 }
 async function sendAttachmentBatchMessage(attachments = [], {
   conversationId = activeDmId,
@@ -123383,19 +128364,28 @@ async function sendAttachmentBatchMessage(attachments = [], {
     : [];
   if (!safeItems.length) throw new Error("Anexo invalido.");
 
-  const payload = safeItems.length === 1
+  const displayPayload = safeItems.length === 1
     ? (
       !safeItems[0]?.spoiler && isGifLikeAttachment(safeItems[0])
         ? { type: "gif", url: safeItems[0].url, attachment: safeItems[0] }
         : safeItems[0]
     )
     : { type: "attachments", items: safeItems };
-  const payloadText = JSON.stringify(payload);
+  const persistedItems = safeItems.map((item) => persistedTrustedAttachment(item));
+  const persistedPayload = persistedItems.length === 1
+    ? (
+      !persistedItems[0]?.spoiler && isGifLikeAttachment(safeItems[0])
+        ? { type: "gif", url: persistedItems[0].url, attachment: persistedItems[0] }
+        : persistedItems[0]
+    )
+    : { type: "attachments", items: persistedItems };
+  const displayPayloadText = JSON.stringify(displayPayload);
+  const payloadText = JSON.stringify(persistedPayload);
   const optimisticMessage = optimisticMessageId
     ? getMessageById(optimisticMessageId)
     : createOptimisticOutgoingMessage({
       conversationId: targetConversationId,
-      content: payloadText,
+      content: displayPayloadText,
       replyToId,
       retryPayload: null,
     });
@@ -123474,6 +128464,77 @@ async function sendAttachmentMessage(file, { conversationId = activeDmId, spoile
   });
 }
 
+const TRUSTED_REMOTE_GIF_HOSTS = new Set([
+  "media.tenor.com",
+  "c.tenor.com",
+  "media.giphy.com",
+]);
+
+function normalizeTrustedRemoteGifUrl(value = "") {
+  try {
+    const parsed = new URL(String(value || "").trim());
+    const host = String(parsed.hostname || "").trim().toLowerCase();
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password
+        || (parsed.port && parsed.port !== "443") || !TRUSTED_REMOTE_GIF_HOSTS.has(host)) return "";
+    parsed.hash = "";
+    return parsed.href;
+  } catch (_) {
+    return "";
+  }
+}
+
+async function readBoundedRemoteGifBytes(response, maxBytes) {
+  const declaredLength = Number(response?.headers?.get?.("content-length") || 0);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) throw new Error("GIF remoto demasiado grande.");
+  if (!response?.body?.getReader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!bytes.byteLength || bytes.byteLength > maxBytes) throw new Error("GIF remoto demasiado grande.");
+    return bytes;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = value instanceof Uint8Array ? value : new Uint8Array(value || []);
+    total += chunk.byteLength;
+    if (total > maxBytes) {
+      try { await reader.cancel(); } catch (_) {}
+      throw new Error("GIF remoto demasiado grande.");
+    }
+    chunks.push(chunk);
+  }
+  if (!total) throw new Error("GIF remoto vazio.");
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function downloadTrustedRemoteGifFile(gifUrl, title = "") {
+  const trustedUrl = normalizeTrustedRemoteGifUrl(gifUrl);
+  if (!trustedUrl) throw new Error("Fornecedor de GIF nao autorizado.");
+  const response = await fetch(trustedUrl, {
+    method: "GET",
+    credentials: "omit",
+    referrerPolicy: "no-referrer",
+    cache: "no-store",
+  });
+  if (!response.ok || !normalizeTrustedRemoteGifUrl(response.url || trustedUrl)) {
+    throw new Error("Nao foi possivel obter o GIF de forma segura.");
+  }
+  const bytes = await readBoundedRemoteGifBytes(response, getCurrentAltaraPlusUploadLimitBytes());
+  const signature = String.fromCharCode(...bytes.slice(0, 6));
+  if (signature !== "GIF87a" && signature !== "GIF89a") throw new Error("O ficheiro remoto nao e um GIF valido.");
+  const baseName = sanitizeStorageFileName(String(title || "").trim() || `gif-${Date.now()}`, `gif-${Date.now()}`)
+    .replace(/\.[a-z0-9]{1,10}$/i, "") || `gif-${Date.now()}`;
+  return new File([bytes], `${baseName}.gif`, { type: "image/gif", lastModified: Date.now() });
+}
+
 async function sendGifMessage(gifUrl, {
   conversationId = activeDmId,
   replyToId = null,
@@ -123507,33 +128568,10 @@ async function sendGifMessage(gifUrl, {
     && targetConversationId === normId(activeDmId || "")
     && dmReplyTarget?.id
   ) ? dmReplyTarget.id : null;
-  const previewUrl = resolveGifStaticPreviewUrl(preview, gifUrl) || String(preview || "").trim();
-  const payloadObj = {
-    type: "gif",
-    url: gifUrl,
-    ...(previewUrl ? { preview: previewUrl } : {}),
-    ...(String(title || "").trim() ? { title: String(title || "").trim() } : {}),
-  };
-  const payloadText = JSON.stringify(payloadObj);
-  const optimisticMessage = createOptimisticOutgoingMessage({
-    conversationId: targetConversationId,
-    content: payloadText,
-    replyToId: effectiveReplyToId,
-    retryPayload: {
-      kind: "gif",
-      conversationId: targetConversationId,
-      gifUrl,
-      preview: previewUrl || "",
-      title: String(title || "").trim(),
-      replyToId: effectiveReplyToId || null,
-    },
-  });
-  if (optimisticMessage) finalizeLocalOutgoingEcho();
 
   try {
     await ensureConversationMessageRateLimit(targetConversationId);
   } catch (error) {
-    if (optimisticMessage) markOptimisticOutgoingMessageFailed(optimisticMessage.id, error);
     if (isMessageSendRateLimitError(error)) {
       showDmComposerNotice(
         buildMessageSendRateLimitWarning(getMessageSendRateLimitRetryAfterSeconds(error)),
@@ -123543,25 +128581,18 @@ async function sendGifMessage(gifUrl, {
     }
     throw error;
   }
-
-  const insertPayload = await buildConversationMessageInsertPayload({
+  const gifFile = await downloadTrustedRemoteGifFile(gifUrl, title);
+  const attachment = await uploadDmAttachmentFile(gifFile, {
     conversationId: targetConversationId,
-    content: payloadText,
-    replyToId: effectiveReplyToId || null,
+    spoiler: false,
+    previewSourceFile: gifFile,
   });
-
-  const { row, error } = await insertMessageRowAndHydrate(insertPayload, targetConversationId);
-  if (error) {
-    if (optimisticMessage) markOptimisticOutgoingMessageFailed(optimisticMessage.id, error);
-    alert("Erro a enviar GIF: " + error.message);
-    return null;
-  }
-  if (optimisticMessage && row) {
-    reconcileOptimisticOutgoingMessage(optimisticMessage.id, row, { keepBottom: true });
-  } else if (optimisticMessage) {
-    markOptimisticOutgoingMessageSentLocally(optimisticMessage.id, { keepBottom: true });
-  }
-  return row || null;
+  if (!attachment || !isGifLikeAttachment(attachment)) throw new Error("Nao consegui verificar o GIF.");
+  return sendAttachmentBatchMessage([attachment], {
+    conversationId: targetConversationId,
+    replyToId: effectiveReplyToId || null,
+    skipRateLimit: true,
+  });
 }
 /* ========================= CALLS (WebRTC + Signals) ========================= */
 let callPc = null;
@@ -124073,7 +129104,11 @@ const SERVER_VOICE_TRANSPORT_KIND = "livekit";
 const SERVER_VOICE_LIVEKIT_JOIN_ENABLED = true;
 const PRIVATE_CALL_LIVEKIT_ENABLED = true;
 const PRIVATE_CALL_LIVEKIT_ROOM_PREFIX = "private_";
-const GROUP_DM_CALL_LIVEKIT_ENABLED = true;
+// Security Batch 3C: keep Group DM calls server-disabled until every legacy
+// six-hour token has expired and the final trusted room drain has completed.
+// Direct DM calls and server voice are intentionally unaffected.
+const GROUP_DM_CALLS_TEMPORARILY_DISABLED = true;
+const GROUP_DM_CALL_LIVEKIT_ENABLED = !GROUP_DM_CALLS_TEMPORARILY_DISABLED;
 const GROUP_DM_CALL_LIVEKIT_ROOM_PREFIX = "groupdm_";
 const GROUP_DM_LIVEKIT_JOIN_TIMEOUT_MS = 16000;
 const GROUP_DM_CALL_FULL_STATUS_TEXT = "This group call is full. Limit: 10 people.";
@@ -124977,7 +130012,11 @@ async function unlockAudioOnce() {
   audioUnlockInFlight = true;
   resumeUiAudioCtx();
   let anySuccess = false;
-  for (const a of Object.values(SFX)) {
+  const unlockCandidates = Array.from(new Set([
+    ...Object.values(SFX),
+    ...(UI_SFX.msg || []).filter((audio) => String(audio?.__sfxPath || "").endsWith("/dm_notify.mp3")),
+  ]));
+  for (const a of unlockCandidates) {
     const prevVolume = Number.isFinite(a?.volume) ? a.volume : 1;
     const prevMuted = !!a?.muted;
     try {
@@ -125081,6 +130120,21 @@ async function insertCallEventMessage({
   );
   if (!conversationId) return false;
 
+  if (isServerVoiceConversationById(conversationId)) {
+    if (String(event || "started").trim().toLowerCase() !== "started") return false;
+    const { data, error } = await supabase.rpc("altara_create_server_call_event_v1", {
+      p_conversation_id: conversationId,
+    });
+    if (error) {
+      console.warn("trusted server call event insert failed", error?.message || error);
+      return false;
+    }
+    const result = Array.isArray(data) ? (data[0] || {}) : (data || {});
+    const resolvedId = normId(result?.message_id || result?.messageId || "");
+    if (resolvedId) callEventMessageId = resolvedId;
+    return !!resolvedId;
+  }
+
   const payload = {
     type: "call_event",
     event: String(event || "started") === "ended" ? "ended" : "started",
@@ -125134,7 +130188,7 @@ async function resolveLatestOpenCallEventMessageId(conversationId) {
   const isDirectDm = await isDirectDmConversationId(convId);
   const { data, error } = await supabase
     .from("messages")
-    .select(isDirectDm ? dmMessageSelectColumns() : "id, content, created_at")
+    .select(isDirectDm ? dmMessageSelectColumns() : "id, content, created_at, trusted_event_type, trusted_event_source_id")
     .eq("conversation_id", convId)
     .eq("user_id", state.user.id)
     .order("created_at", { ascending: false })
@@ -125150,7 +130204,7 @@ async function resolveLatestOpenCallEventMessageId(conversationId) {
     : (Array.isArray(data) ? data : []);
 
   for (const row of rows) {
-    const parsed = safeParseMessageContent(row?.content);
+    const parsed = getAuthoritativeMessageContent(row);
     if (parsed.type !== "call_event") continue;
     if (parsed.event === "ended") continue;
     const id = normId(row?.id);
@@ -125176,6 +130230,19 @@ async function updateCallEventMessage(messageId, {
     pendingCallInfo?.conversationId
   );
   if (!conversationId) return false;
+
+  if (isServerVoiceConversationById(conversationId)) {
+    if (String(event || "ended").trim().toLowerCase() !== "ended") return false;
+    const { data, error } = await supabase.rpc("altara_finish_server_call_event_v1", {
+      p_message_id: mid,
+    });
+    if (error) {
+      console.warn("trusted server call event update failed", error?.message || error);
+      return false;
+    }
+    const result = Array.isArray(data) ? (data[0] || {}) : (data || {});
+    return normId(result?.message_id || result?.messageId || "") === mid;
+  }
 
   const payload = {
     type: "call_event",
@@ -125230,6 +130297,16 @@ function tryLogCallStartEvent(phase = "ringing") {
   const initiator = normId(callEventInitiatorUserId || meId);
   if (initiator !== meId) return;
   if (callEventStartLogged) return;
+
+  const conversationId = normId(
+    callEventConversationId ||
+    callConversationId ||
+    activeDmId ||
+    pendingCallInfo?.conversationId
+  );
+  if (conversationId && isServerVoiceConversationById(conversationId) && phase !== "in_call") {
+    return;
+  }
 
   if (!callEventStartAtMs) callEventStartAtMs = Date.now();
   callEventStartLogged = true;
@@ -128793,13 +133870,39 @@ function logVoiceModerationStateDebug(eventName = "event", details = {}, { level
   return entry;
 }
 
-function scheduleServerVoiceModerationStateRetry(conversationId = "", reason = "retry") {
+function clearServerVoiceModerationStateRetry(conversationId = "") {
   const convId = normId(conversationId || "");
-  if (!convId || serverVoiceModerationRetryTimer) return;
-  serverVoiceModerationRetryTimer = setTimeout(() => {
-    serverVoiceModerationRetryTimer = 0;
+  if (!convId) return;
+  const timer = serverVoiceModerationRetryTimersByConversation.get(convId);
+  if (timer) clearTimeout(timer);
+  serverVoiceModerationRetryTimersByConversation.delete(convId);
+  serverVoiceModerationRetryAttemptsByConversation.delete(convId);
+}
+
+function scheduleServerVoiceModerationStateRetry(conversationId = "", reason = "retry", error = null) {
+  const convId = normId(conversationId || "");
+  if (!convId || !isTransientServerVoiceSnapshotReadError(error)) return false;
+  if (serverVoiceModerationRetryTimersByConversation.has(convId)) return false;
+  const attempts = Number(serverVoiceModerationRetryAttemptsByConversation.get(convId) || 0);
+  if (attempts >= 2) return false;
+  const expectedUserId = normId(state.user?.id || "");
+  const expectedContext = findServerChannelContextByConversationId(convId) || null;
+  const expectedServerId = normId(expectedContext?.serverId || "");
+  const expectedChannelId = normId(expectedContext?.channel?.id || expectedContext?.channel?.channelId || "");
+  if (!expectedUserId || !expectedServerId || !expectedChannelId) return false;
+  serverVoiceModerationRetryAttemptsByConversation.set(convId, attempts + 1);
+  const timer = setTimeout(() => {
+    serverVoiceModerationRetryTimersByConversation.delete(convId);
+    const currentContext = findServerChannelContextByConversationId(convId) || null;
+    if (
+      normId(state.user?.id || "") !== expectedUserId
+      || normId(currentContext?.serverId || "") !== expectedServerId
+      || normId(currentContext?.channel?.id || currentContext?.channel?.channelId || "") !== expectedChannelId
+    ) return;
     void fetchServerVoiceModerationStatesForConversation(convId, { force: true, reason: `retry:${reason}` }).catch(() => {});
-  }, 3000);
+  }, 1500 * (attempts + 1));
+  serverVoiceModerationRetryTimersByConversation.set(convId, timer);
+  return true;
 }
 
 function scheduleServerVoiceModerationUiRefresh(reason = "authoritative-state") {
@@ -128929,6 +134032,26 @@ function applyAuthoritativeServerVoiceModerationState(row = {}, { source = "auth
   return true;
 }
 
+function scheduleServerVoiceModerationStateRealtimeRestart(reason = "reconnect", error = null) {
+  if (!state.user?.id || isServerVoiceSnapshotAuthorizationError(error)) return false;
+  if (serverVoiceModerationRealtimeRestartTimer) return false;
+  if (serverVoiceModerationRealtimeRestartAttempts >= 3) return false;
+  const expectedUserId = normId(state.user.id || "");
+  serverVoiceModerationRealtimeRestartAttempts += 1;
+  const delayMs = Math.min(6000, 1200 * serverVoiceModerationRealtimeRestartAttempts);
+  serverVoiceModerationRealtimeRestartTimer = setTimeout(() => {
+    serverVoiceModerationRealtimeRestartTimer = 0;
+    if (!expectedUserId || normId(state.user?.id || "") !== expectedUserId) return;
+    startServerVoiceModerationStateRealtime();
+  }, delayMs);
+  logVoiceModerationStateDebug("subscribe_restart_scheduled", {
+    reason,
+    attempt: serverVoiceModerationRealtimeRestartAttempts,
+    delayMs,
+  });
+  return true;
+}
+
 function startServerVoiceModerationStateRealtime() {
   if (!state.user?.id) {
     logVoiceModerationStateDebug("subscribe_skipped_no_context", { reason: "missing_user" });
@@ -128937,8 +134060,9 @@ function startServerVoiceModerationStateRealtime() {
   if (serverVoiceModerationStateRealtimeChannel) return;
   try {
     logVoiceModerationStateDebug("subscribe_start", { userId: normId(state.user.id || "") });
-    serverVoiceModerationStateRealtimeChannel = supabase
-      .channel("server-voice-moderation-states:" + state.user.id)
+    let channel = null;
+    channel = supabase
+      .channel("server-voice-moderation-states:" + state.user.id, { config: { private: true } })
       .on("postgres_changes", {
         event: "*",
         schema: "public",
@@ -128959,19 +134083,28 @@ function startServerVoiceModerationStateRealtime() {
         });
       })
       .subscribe((status, error) => {
+        if (serverVoiceModerationStateRealtimeChannel !== channel) return;
         serverVoiceModerationStateRealtimeStatus = String(status || "");
         altaraVoiceModerationBootState.lastSubscribeStatus = serverVoiceModerationStateRealtimeStatus;
         logVoiceModerationStateDebug(status === "SUBSCRIBED" ? "subscribe_ready" : "subscribe_status", {
           status: serverVoiceModerationStateRealtimeStatus,
           error: error?.message || "",
         }, { level: error ? "warn" : "debug" });
+        if (status === "SUBSCRIBED") {
+          serverVoiceModerationRealtimeRestartAttempts = 0;
+          if (serverVoiceModerationRealtimeRestartTimer) clearTimeout(serverVoiceModerationRealtimeRestartTimer);
+          serverVoiceModerationRealtimeRestartTimer = 0;
+          return;
+        }
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          if (status !== "CLOSED") return;
           const old = serverVoiceModerationStateRealtimeChannel;
           serverVoiceModerationStateRealtimeChannel = null;
           try { if (old) supabase.removeChannel(old); } catch (_) {}
-          setTimeout(() => startServerVoiceModerationStateRealtime(), 2500);
+          scheduleServerVoiceModerationStateRealtimeRestart(`status:${status}`, error);
         }
       });
+    serverVoiceModerationStateRealtimeChannel = channel;
   } catch (error) {
     serverVoiceModerationStateRealtimeChannel = null;
     serverVoiceModerationLastError = getSafeAltaraBootError(error);
@@ -128979,7 +134112,7 @@ function startServerVoiceModerationStateRealtime() {
     logVoiceModerationStateDebug("subscribe_error", {
       message: error?.message || error || "unknown",
     }, { level: "warn" });
-    setTimeout(() => startServerVoiceModerationStateRealtime(), 3000);
+    scheduleServerVoiceModerationStateRealtimeRestart("subscribe_exception", error);
   }
 }
 
@@ -129006,11 +134139,14 @@ async function fetchServerVoiceModerationStatesForConversation(conversationId, {
   const now = Date.now();
   const last = Number(serverVoiceModerationStateLoadedAtByConversation.get(convId) || 0);
   if (!force && last && (now - last) < 5000) return true;
+  if (serverVoiceModerationFetchInFlightByConversation.has(convId)) return true;
+  serverVoiceModerationFetchInFlightByConversation.add(convId);
   serverVoiceModerationStateLoadedAtByConversation.set(convId, now);
   serverVoiceModerationFetchPendingCount += 1;
   altaraVoiceModerationBootState.fetchPending = true;
   altaraVoiceModerationBootState.lastFetchAt = now;
   logVoiceModerationStateDebug("fetch_start", { reason, serverId, channelId, conversationId: convId });
+  recordServerRolePermissionSaveTiming("moderation_snapshot_request", { serverId, channelId, conversationId: convId, reason });
 
   try {
     const previous = new Map(serverVoiceModerationStateByConversation.get(convId) || []);
@@ -129038,7 +134174,7 @@ async function fetchServerVoiceModerationStatesForConversation(conversationId, {
         code: error?.code || error?.name || "",
         details: error?.details || "",
       }, { level: "warn" });
-      scheduleServerVoiceModerationStateRetry(convId, "fetch_error");
+      scheduleServerVoiceModerationStateRetry(convId, "fetch_error", error);
       return false;
     }
 
@@ -129066,6 +134202,7 @@ async function fetchServerVoiceModerationStatesForConversation(conversationId, {
       serverVoiceModerationStateApplying = previousApplying;
     }
     logVoiceModerationStateDebug("fetch_done", { reason, serverId, channelId, conversationId: convId, rowCount: rows.length });
+    clearServerVoiceModerationStateRetry(convId);
     return true;
   } catch (error) {
     serverVoiceModerationLastError = getSafeAltaraBootError(error);
@@ -129079,9 +134216,10 @@ async function fetchServerVoiceModerationStatesForConversation(conversationId, {
       message: error?.message || error || "unknown",
       code: error?.code || error?.name || "",
     }, { level: "warn" });
-    scheduleServerVoiceModerationStateRetry(convId, "exception");
+    scheduleServerVoiceModerationStateRetry(convId, "exception", error);
     return false;
   } finally {
+    serverVoiceModerationFetchInFlightByConversation.delete(convId);
     serverVoiceModerationFetchPendingCount = Math.max(0, serverVoiceModerationFetchPendingCount - 1);
     altaraVoiceModerationBootState.fetchPending = serverVoiceModerationFetchPendingCount > 0;
   }
@@ -152493,7 +157631,7 @@ function handleCallRealtimeChannelStatus(conversationId, status, context = null)
     });
   }
   if (
-    (normalizedStatus === "CHANNEL_ERROR" || normalizedStatus === "TIMED_OUT" || normalizedStatus === "CLOSED")
+    normalizedStatus === "CLOSED"
     && shouldRecoverRealtime
   ) {
     void recoverServerVoiceRealtimeChannel(convId, context, {
@@ -153339,7 +158477,9 @@ function collectTrackedCallRealtimeConversationDescriptors() {
   const push = (conversationId, conversationType = null) => {
     const convId = normId(conversationId || "");
     if (!convId) return;
-    descriptors.set(convId, conversationType || resolveCallRealtimeConversationType(convId));
+    const resolvedType = conversationType || resolveCallRealtimeConversationType(convId);
+    if (resolvedType === "group" && isGroupDmConversationRevoked(convId)) return;
+    descriptors.set(convId, resolvedType);
   };
 
   push(callConversationId || "", resolveCallRealtimeConversationType(callConversationId || ""));
@@ -153465,12 +158605,40 @@ async function fetchCallRealtimeMembershipDescriptorsFromServer({ force = false 
 async function handleRealtimeCallSignal(signal) {
   const legacyRow = convertRealtimeSignalToLegacyRow(signal);
   if (!legacyRow.conversation_id) return;
+  if (isGroupDmConversationRevoked(legacyRow.conversation_id)) return;
   await onCallSignal(legacyRow);
+}
+
+async function sendGroupDmCallSignalViaAuthorizedFanout(signal = {}) {
+  const conversationId = normId(signal?.conversationId || "");
+  const signalType = String(signal?.type || "").trim().toLowerCase();
+  const data = signal?.data && typeof signal.data === "object" && !Array.isArray(signal.data)
+    ? { ...signal.data }
+    : {};
+  const targetUserId = normId(
+    data?.targetUserId
+    || data?.toUserId
+    || data?.recipientUserId
+    || ""
+  );
+  if (!conversationId || isGroupDmConversationRevoked(conversationId)) {
+    throw new Error("group_dm_realtime_access_denied");
+  }
+  const serializedSize = new TextEncoder().encode(JSON.stringify(data)).byteLength;
+  if (serializedSize > 65536) throw new Error("group_dm_call_signal_too_large");
+  const { error } = await supabase.rpc("altara_emit_group_dm_call_signal_v1", {
+    p_conversation_id: conversationId,
+    p_signal_type: signalType,
+    p_data: data,
+    p_target_user_id: targetUserId || null,
+  });
+  if (error) throw new Error("group_dm_call_signal_rejected");
 }
 
 async function recoverServerVoiceRealtimeChannel(conversationId, context = null, { reason = "" } = {}) {
   const convId = normId(conversationId || context?.conversationId || "");
   if (!convId || !isServerVoiceConversationById(convId)) return;
+  if (serverVoiceRealtimeRecoverInFlightByConversation.has(convId)) return;
 
   const now = Date.now();
   const lastRecoverAt = Number(serverVoiceRealtimeRecoverAtByConversation.get(convId) || 0);
@@ -153535,13 +158703,27 @@ async function ensureCallRealtimeChannelForConversation(conversationId, conversa
   const convId = normId(conversationId || "");
   const meId = normId(state.user?.id || "");
   if (!convId || !meId) return null;
+  if (isGroupDmConversationRevoked(convId)) return null;
 
   const existing = callRealtimeChannelsByConversationId.get(convId);
   if (existing && !existing.closed) return existing;
 
+  const resolvedConversationType = conversationType || resolveCallRealtimeConversationType(convId);
+  const resolvedConversationKind = String(
+    getConversationMeta(convId)?.kind
+    || (normId(state.activeDm?.conversationId || "") === convId ? state.activeDm?.kind : "")
+    || ""
+  ).trim().toLowerCase();
+  const isStandaloneGroupDm = resolvedConversationType === "group"
+    && resolvedConversationKind !== "server"
+    && !findServerChannelContextByConversationId(convId);
   const next = await createRealtimeCallChannel({
     conversationId: convId,
-    conversationType: conversationType || resolveCallRealtimeConversationType(convId),
+    conversationType: resolvedConversationType,
+    privateChannel: true,
+    serverMediatedSend: isStandaloneGroupDm
+      ? sendGroupDmCallSignalViaAuthorizedFanout
+      : null,
     currentUserId: meId,
     onSignal: handleRealtimeCallSignal,
     onPresenceSync: (members) => {
@@ -160593,6 +165775,7 @@ async function fetchServerVoiceLiveKitJoinPayload(conversationId, {
         serverId: serverId || undefined,
         voiceMode: isVoiceV2 ? "server_room_v2" : undefined,
         voiceChannelId: isVoiceV2 ? (logicalVoiceChannelId || undefined) : undefined,
+        sessionId: isVoiceV2 ? getServerVoiceV2LocalSessionId() : undefined,
       },
     });
   } catch (invokeError) {
@@ -160608,6 +165791,9 @@ async function fetchServerVoiceLiveKitJoinPayload(conversationId, {
       },
       finalPhase: "token_request_failed",
     });
+    if (isServerVoiceChannelFullError(invokeError)) {
+      throw createServerVoiceChannelFullError(invokeError);
+    }
     throw invokeError;
   }
   const { data, error } = invokeResult || {};
@@ -160626,6 +165812,9 @@ async function fetchServerVoiceLiveKitJoinPayload(conversationId, {
       finalPhase: "token_request_failed",
     });
     if (isServerTimeoutVoiceBlockError(payload || error)) throw createServerTimeoutVoiceBlockError();
+    if (isServerVoiceChannelFullError(payload || error)) {
+      throw createServerVoiceChannelFullError(payload || error);
+    }
     const reason = String(payload?.reason || payload?.error || error?.code || "").trim().toLowerCase();
     if (reason === "missing_connect" || isServerVoicePermissionDeniedError(payload || error, "connect")) {
       notifyServerVoicePermissionDenied("connect");
@@ -160648,6 +165837,7 @@ async function fetchServerVoiceLiveKitJoinPayload(conversationId, {
   });
   if (!data || data.ok === false) {
     if (isServerTimeoutVoiceBlockError(data)) throw createServerTimeoutVoiceBlockError();
+    if (isServerVoiceChannelFullError(data)) throw createServerVoiceChannelFullError(data);
     const reason = String(data?.reason || data?.error || "").trim().toLowerCase();
     if (reason === "missing_connect" || isServerVoicePermissionDeniedError(data, "connect")) {
       notifyServerVoicePermissionDenied("connect");
@@ -160924,6 +166114,23 @@ async function switchServerVoiceChannelV2({
   });
   const assignmentUpdatedAt = Date.now();
   const assignmentNonce = `local:${assignmentUpdatedAt}:${channelId}`;
+  try {
+    await upsertCurrentUserServerVoiceV2ControlPlane({
+      serverId: sid,
+      channelId,
+      conversationId: convId,
+      roomName: currentServerVoiceV2Session?.roomName || buildServerVoiceV2RoomName(sid),
+      assignmentNonce,
+      assignmentUpdatedAt,
+      reason: `switch:${reason}`,
+    });
+  } catch (error) {
+    const message = getServerVoiceJoinFailureNotice(error, "occupancy_write");
+    setCallStatus(message, true);
+    refreshCallUI();
+    scheduleServerVoiceOccupancyHydration(sid, `switch_denied:${reason}`, { delayMs: 0 });
+    return false;
+  }
   commitVoiceV2ChannelAssignment(normId(state.user?.id || ""), {
     serverId: sid,
     userId: normId(state.user?.id || ""),
@@ -160935,15 +166142,6 @@ async function switchServerVoiceChannelV2({
     updatedAt: assignmentUpdatedAt,
     expiresAt: Date.now() + 60000,
   }, reason);
-  await upsertCurrentUserServerVoiceV2ControlPlane({
-    serverId: sid,
-    channelId,
-    conversationId: convId,
-    roomName: currentServerVoiceV2Session?.roomName || buildServerVoiceV2RoomName(sid),
-    assignmentNonce,
-    assignmentUpdatedAt,
-    reason: `switch:${reason}`,
-  });
   try {
     await invokeServerVoicePermissionReconciliation({
       serverId: sid,
@@ -161478,7 +166676,9 @@ async function joinServerVoiceChannelV2({
       roomName: joinPayload.roomName || targetRoomName,
       voiceChannelId,
       conversationId: resolvedConvId,
-      sessionId: getServerVoiceV2LocalSessionId(),
+      sessionId: String(joinPayload?.serverVoiceAdmission?.sessionId || getServerVoiceV2LocalSessionId()).trim(),
+      assignmentNonce: String(joinPayload?.serverVoiceAdmission?.assignmentNonce || "").trim(),
+      assignmentUpdatedAt: Date.parse(String(joinPayload?.serverVoiceAdmission?.assignmentUpdatedAt || "")) || Date.now(),
       channelName: channelLabel,
       joinedAt: Date.now(),
       updatedAt: Date.now(),
@@ -161518,8 +166718,9 @@ async function joinServerVoiceChannelV2({
     console.info("[voice-v2-join] livekit_connect_done", { serverId: sid, voiceChannelId, elapsedMs: voiceV2JoinTiming.livekitConnectDone - voiceV2JoinTiming.livekitConnectStart });
     setServerVoiceTransportSnapshot(resolvedConvId, controller.getSnapshot());
     recordLocalServerVoiceParticipantPermission("voice_v2_room_connected");
-    const joinAssignmentNonce = `join:${Date.now()}:${voiceChannelId}`;
-    const joinAssignmentUpdatedAt = Date.now();
+    const joinAssignmentNonce = String(currentServerVoiceV2Session?.assignmentNonce || "").trim()
+      || `join:${Date.now()}:${voiceChannelId}`;
+    const joinAssignmentUpdatedAt = Number(currentServerVoiceV2Session?.assignmentUpdatedAt || Date.now());
     const dbRowUpsertStart = Date.now();
     updateServerVoiceJoinPipeline(pipelineId, {
       occupancyWriteStarted: true,
@@ -162519,6 +167720,14 @@ async function startGroupCall(conversationId, { joinExistingOnly = false } = {})
     setCallStatus(t("call.group_not_supported", "This chat does not support group calls."), true);
     return;
   }
+  if (!isServerVoiceCall && GROUP_DM_CALLS_TEMPORARILY_DISABLED) {
+    setCallButtons("idle");
+    setCallStatus(
+      t("call.group_dm_temporarily_unavailable", "Group DM calls are temporarily unavailable during a security upgrade."),
+      true
+    );
+    return false;
+  }
   if (isServerVoiceCall && shouldUseServerVoiceLiveKitTransport(convId)) {
     await startServerVoiceLiveKitCall(convId, { joinExistingOnly, source: "user_click" });
     return;
@@ -162864,6 +168073,19 @@ async function acceptPendingGroupRing() {
   const convId = normId(info?.conversationId || "");
   const fromUserId = normId(info?.fromUserId || "");
   if (!convId || !fromUserId) return false;
+  if (GROUP_DM_CALLS_TEMPORARILY_DISABLED && !isServerVoiceConversationById(convId)) {
+    pendingGroupRingInfo = null;
+    pendingGroupRingAutoJoin = null;
+    stopSfx("incoming");
+    clearTimers();
+    showOverlay(false);
+    setCallButtons("idle");
+    setCallStatus(
+      t("call.group_dm_temporarily_unavailable", "Group DM calls are temporarily unavailable during a security upgrade."),
+      true
+    );
+    return false;
+  }
   const useSessionBackend = shouldUseGroupCallSessionBackendForConversation(convId);
   const joinedSessionId = useSessionBackend
     ? await joinGroupDmCallSession(convId, { allowStart: false })
@@ -165394,6 +170616,24 @@ let globalGroupDmCallSessionChannel = null;
 let globalGroupDmCallParticipantChannel = null;
 let globalProfileChannel = null;
 let globalDmMembershipChannel = null;
+let groupDmRevocationBroadcastChannel = null;
+let groupDmRevocationBroadcastUserId = "";
+let groupDmRevocationBroadcastAuthToken = "";
+let groupDmRevocationBroadcastStatus = "";
+let groupDmRevocationBroadcastRestartTimer = null;
+let groupDmRevocationBroadcastGeneration = 0;
+const groupDmMembershipReconcileTasksByConversation = new Map();
+const groupDmMembershipReconcilePendingKeys = new Set();
+const groupDmUserEventTasksByEventId = new Map();
+const groupDmUserEventSeenIdsByUserId = new Map();
+const groupDmUserEventCheckpointMemoryByUserId = new Map();
+const GDM_USER_EVENT_REPLAY_LIMIT = 25;
+const GDM_USER_EVENT_REPLAY_INITIAL_LOOKBACK_MS = 5 * 60 * 1000;
+const GDM_USER_EVENT_REPLAY_MAX_LOOKBACK_MS = 72 * 60 * 60 * 1000;
+const GDM_USER_EVENT_REPLAY_OVERLAP_MS = 30 * 1000;
+const GDM_USER_EVENT_SEEN_ID_LIMIT = 256;
+const GDM_USER_EVENT_CHECKPOINT_PREFIX = "altara:gdm-user-events:checkpoint:v1:";
+const revokedGroupDmConversationIds = new Set();
 let globalConversationChannel = null;
 let globalDmPrivacyEventChannel = null;
 let globalDmPrivacyEventUserId = "";
@@ -165404,8 +170644,19 @@ let activeDmPrivacyConversationId = "";
 let globalServerChannelTableChannel = null;
 let globalBotChannelMessageChannel = null;
 let globalServerRoleTablesChannel = null;
+let serverRoleInvalidationBroadcastChannel = null;
+let serverRoleInvalidationBroadcastUserId = "";
+let serverRoleInvalidationBroadcastAuthToken = "";
+let serverRoleInvalidationBroadcastStatus = "";
+let serverRoleInvalidationBroadcastRestartTimer = null;
+let serverRoleInvalidationBroadcastNeedsCatchup = false;
+let serverRoleInvalidationAuthStateSubscription = null;
+const SERVER_ROLE_INVALIDATION_EVENT = "server-role-invalidation";
+const SERVER_ROLE_INVALIDATION_ENTITIES = new Set(["server_roles", "server_role_members"]);
+const SERVER_ROLE_INVALIDATION_OPERATIONS = new Set(["INSERT", "UPDATE", "DELETE"]);
 let globalFriendRequestChannel = null;
 let globalMessageRequestChannel = null;
+let globalMessageRequestUserId = "";
 let globalUserBlocksChannel = null;
 let globalModerationActionChannel = null;
 let globalUserBlocksRestartTimer = null;
@@ -165443,6 +170694,11 @@ let globalServerChannelRestartTimer = null;
 let globalBotChannelMessageRestartTimer = null;
 let globalServerRoleTablesRestartTimer = null;
 let globalProfileRestartTimer = null;
+let globalProfileRestartAttempt = 0;
+let globalProfileListenerGeneration = 0;
+let globalProfileListenerStartTask = null;
+let globalProfileChannelUserId = "";
+let globalProfileChannelStatus = "";
 let globalFriendRequestRestartTimer = null;
 let globalMessageRequestRestartTimer = null;
 let globalGroupDmCallRestartTimer = null;
@@ -165468,7 +170724,6 @@ let serverActiveChannelSyncFallbackTimer = null;
 let serverActiveChannelSyncFallbackInFlight = false;
 let serverActiveChannelSyncServerId = "";
 let serverActiveChannelSyncFingerprint = "";
-const serverRoleRealtimeRefreshTimersByServerId = new Map();
 const serverBotInstallRealtimeRefreshTimersByServerId = new Map();
 let activeServerBotRefreshListenersBound = false;
 let activeServerBotInstallChannel = null;
@@ -165564,19 +170819,28 @@ function startGlobalGroupDmCallStateListener() {
     globalGroupDmCallRestartTimer = null;
   }
   if (globalGroupDmCallSessionChannel) {
-    supabase.removeChannel(globalGroupDmCallSessionChannel);
+    const oldChannel = globalGroupDmCallSessionChannel;
     globalGroupDmCallSessionChannel = null;
+    supabase.removeChannel(oldChannel);
   }
   if (globalGroupDmCallParticipantChannel) {
-    supabase.removeChannel(globalGroupDmCallParticipantChannel);
+    const oldChannel = globalGroupDmCallParticipantChannel;
     globalGroupDmCallParticipantChannel = null;
+    supabase.removeChannel(oldChannel);
   }
 
+  const expectedUserId = normId(state.user.id);
   void ensureGroupDmCallBackendAvailability().then((enabled) => {
-    if (!enabled) return;
+    if (
+      !enabled
+      || normId(state.user?.id || "") !== expectedUserId
+      || globalGroupDmCallSessionChannel
+      || globalGroupDmCallParticipantChannel
+    ) return;
 
-    globalGroupDmCallSessionChannel = supabase
-      .channel("global-group-dm-call-sessions:" + state.user.id)
+    let sessionChannel = null;
+    sessionChannel = supabase
+      .channel("global-group-dm-call-sessions:" + state.user.id, { config: { private: true } })
       .on("postgres_changes", {
         event: "INSERT",
         schema: "public",
@@ -165599,7 +170863,9 @@ function startGlobalGroupDmCallStateListener() {
         onGlobalGroupDmCallSessionChanged(payload?.old || null, "delete");
       })
       .subscribe((status) => {
+        if (globalGroupDmCallSessionChannel !== sessionChannel) return;
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          if (status !== "CLOSED") return;
           if (globalGroupDmCallRestartTimer || !state.user?.id) return;
           globalGroupDmCallRestartTimer = setTimeout(() => {
             globalGroupDmCallRestartTimer = null;
@@ -165607,9 +170873,11 @@ function startGlobalGroupDmCallStateListener() {
           }, 1200);
         }
       });
+    globalGroupDmCallSessionChannel = sessionChannel;
 
-    globalGroupDmCallParticipantChannel = supabase
-      .channel("global-group-dm-call-participants:" + state.user.id)
+    let participantChannel = null;
+    participantChannel = supabase
+      .channel("global-group-dm-call-participants:" + state.user.id, { config: { private: true } })
       .on("postgres_changes", {
         event: "INSERT",
         schema: "public",
@@ -165632,7 +170900,9 @@ function startGlobalGroupDmCallStateListener() {
         onGlobalGroupDmCallParticipantChanged(payload?.old || null);
       })
       .subscribe((status) => {
+        if (globalGroupDmCallParticipantChannel !== participantChannel) return;
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          if (status !== "CLOSED") return;
           if (globalGroupDmCallRestartTimer || !state.user?.id) return;
           globalGroupDmCallRestartTimer = setTimeout(() => {
             globalGroupDmCallRestartTimer = null;
@@ -165640,6 +170910,7 @@ function startGlobalGroupDmCallStateListener() {
           }, 1200);
         }
       });
+    globalGroupDmCallParticipantChannel = participantChannel;
   });
 }
 
@@ -165964,8 +171235,9 @@ function stopGlobalFriendRequestListener({ stopPoll = false, reason = "stopped" 
     globalFriendRequestRestartTimer = null;
   }
   if (globalFriendRequestChannel) {
-    try { supabase.removeChannel(globalFriendRequestChannel); } catch (_) {}
+    const oldChannel = globalFriendRequestChannel;
     globalFriendRequestChannel = null;
+    try { supabase.removeChannel(oldChannel); } catch (_) {}
   }
   globalFriendRequestUserId = "";
   globalFriendRequestAuthToken = "";
@@ -166000,7 +171272,10 @@ async function startGlobalFriendRequestListener({ force = false, reason = "start
     }
   }
 
-  if (!force && globalFriendRequestChannel && globalFriendRequestUserId === currentUserId && globalFriendRequestAuthToken === accessToken) {
+  if (!force && globalFriendRequestChannel && globalFriendRequestUserId === currentUserId) {
+    // Supabase updates the socket JWT in place. A refreshed token does not
+    // require removing and recreating an otherwise healthy channel.
+    globalFriendRequestAuthToken = accessToken;
     return;
   }
   stopGlobalFriendRequestListener({ stopPoll: false, reason: "resubscribe:" + String(reason || "start") });
@@ -166037,12 +171312,14 @@ async function startGlobalFriendRequestListener({ force = false, reason = "start
 
   globalFriendRequestUserId = currentUserId;
   globalFriendRequestAuthToken = accessToken;
-  globalFriendRequestChannel = supabase
-    .channel(channelName)
+  let channel = null;
+  channel = supabase
+    .channel(channelName, { config: { private: true } })
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "friend_requests" }, handleFR("INSERT"))
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "friend_requests" }, handleFR("UPDATE"))
     .on("postgres_changes", { event: "DELETE", schema: "public", table: "friend_requests" }, handleFR("DELETE"))
     .subscribe((status, error) => {
+      if (globalFriendRequestChannel !== channel) return;
       logFriendsRealtimeDebug("status", {
         status: String(status || ""),
         error: String(error?.message || error || ""),
@@ -166050,6 +171327,7 @@ async function startGlobalFriendRequestListener({ force = false, reason = "start
         userId: currentUserId,
       });
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        if (status !== "CLOSED") return;
         if (globalFriendRequestRestartTimer || !state.user?.id) return;
         globalFriendRequestRestartTimer = setTimeout(() => {
           globalFriendRequestRestartTimer = null;
@@ -166057,6 +171335,7 @@ async function startGlobalFriendRequestListener({ force = false, reason = "start
         }, 1200);
       }
     });
+  globalFriendRequestChannel = channel;
 }
 
 function startFriendRequestsAuthStateListener() {
@@ -166068,12 +171347,13 @@ function startFriendRequestsAuthStateListener() {
       setAuthAccessToken(session?.access_token || getAuthTokenForKeepAlive() || "");
       if (!session?.access_token || !userId) {
         stopGlobalFriendRequestListener({ stopPoll: true, reason: "auth:" + String(event || "signed_out") });
+        stopGlobalMessageRequestListener("auth:" + String(event || "signed_out"));
         unsubscribeTypingInboxForCurrentUser({ reason: "auth:" + String(event || "signed_out"), clearState: true, clearOutbound: true });
         return;
       }
       logFriendsRealtimeDebug("session ready", { userId });
-      subscribeTypingInboxForCurrentUser("auth:" + String(event || "session"));
-      void startGlobalFriendRequestListener({ force: true, reason: "auth:" + String(event || "session") });
+      void subscribeTypingInboxForCurrentUser("auth:" + String(event || "session"));
+      void startGlobalFriendRequestListener({ force: false, reason: "auth:" + String(event || "session") });
       try { startGlobalMessageRequestListener(); } catch (_) {}
       void refreshMessageRequestsAndSidebar("auth_ready", { force: true }).catch(() => {});
       startFriendRequestsSyncFallback();
@@ -166082,18 +171362,35 @@ function startFriendRequestsAuthStateListener() {
   } catch (_) {}
 }
 
-function startGlobalMessageRequestListener() {
-  if (!state.user?.id) return;
+function stopGlobalMessageRequestListener(reason = "stopped") {
   if (globalMessageRequestRestartTimer) {
     clearTimeout(globalMessageRequestRestartTimer);
     globalMessageRequestRestartTimer = null;
   }
-  if (globalMessageRequestChannel) {
-    supabase.removeChannel(globalMessageRequestChannel);
-    globalMessageRequestChannel = null;
+  const oldChannel = globalMessageRequestChannel;
+  globalMessageRequestChannel = null;
+  globalMessageRequestUserId = "";
+  messageRequestsRealtimeStatus = String(reason || "stopped");
+  if (oldChannel) {
+    try { supabase.removeChannel(oldChannel); } catch (_) {}
   }
+}
 
-  const mrUserId = state.user.id;
+function startGlobalMessageRequestListener() {
+  if (!state.user?.id) return;
+  const mrUserId = normId(state.user.id);
+  if (
+    globalMessageRequestChannel
+    && globalMessageRequestUserId === mrUserId
+    && ["subscribing", "SUBSCRIBED"].includes(messageRequestsRealtimeStatus)
+  ) return globalMessageRequestChannel;
+  if (globalMessageRequestRestartTimer) {
+    clearTimeout(globalMessageRequestRestartTimer);
+    globalMessageRequestRestartTimer = null;
+  }
+  if (globalMessageRequestChannel) stopGlobalMessageRequestListener("resubscribe");
+
+  globalMessageRequestUserId = mrUserId;
   messageRequestsRealtimeStatus = "subscribing";
   const handleMR = (eventType) => (payload) => {
     const row = payload?.new || payload?.old || null;
@@ -166106,12 +171403,14 @@ function startGlobalMessageRequestListener() {
     });
     onGlobalMessageRequestChanged(row, eventType);
   };
-  globalMessageRequestChannel = supabase
-    .channel("global-message-requests:" + mrUserId)
+  let channel = null;
+  channel = supabase
+    .channel("global-message-requests:" + mrUserId, { config: { private: true } })
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "message_requests" }, handleMR("INSERT"))
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "message_requests" }, handleMR("UPDATE"))
     .on("postgres_changes", { event: "DELETE", schema: "public", table: "message_requests" }, handleMR("DELETE"))
     .subscribe((status) => {
+      if (globalMessageRequestChannel !== channel) return;
       messageRequestsRealtimeStatus = String(status || "");
       logMessageRequestsDebug("realtime status", { status: messageRequestsRealtimeStatus, userId: mrUserId });
       if (status === "SUBSCRIBED") {
@@ -166119,6 +171418,7 @@ function startGlobalMessageRequestListener() {
         return;
       }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        if (status !== "CLOSED") return;
         if (globalMessageRequestRestartTimer || !state.user?.id) return;
         globalMessageRequestRestartTimer = setTimeout(() => {
           globalMessageRequestRestartTimer = null;
@@ -166126,6 +171426,8 @@ function startGlobalMessageRequestListener() {
         }, 1200);
       }
     });
+  globalMessageRequestChannel = channel;
+  return channel;
 }
 
 // ─── USER BLOCKS REALTIME ────────────────────────────────────────────────────
@@ -166168,8 +171470,9 @@ function startGlobalModerationActionListener() {
     globalModerationActionRestartTimer = null;
   }
   if (globalModerationActionChannel) {
-    supabase.removeChannel(globalModerationActionChannel);
+    const oldChannel = globalModerationActionChannel;
     globalModerationActionChannel = null;
+    supabase.removeChannel(oldChannel);
   }
 
   const moderationUserId = state.user.id;
@@ -166177,17 +171480,20 @@ function startGlobalModerationActionListener() {
     const row = payload?.new || payload?.old || null;
     onGlobalModerationActionChanged(row, eventType);
   };
-  globalModerationActionChannel = supabase
-    .channel("global-moderation-actions:" + moderationUserId)
+  let channel = null;
+  channel = supabase
+    .channel("global-moderation-actions:" + moderationUserId, { config: { private: true } })
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "moderation_actions", filter: `target_user_id=eq.${moderationUserId}` }, handleModeration("INSERT"))
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "moderation_actions", filter: `target_user_id=eq.${moderationUserId}` }, handleModeration("UPDATE"))
     .on("postgres_changes", { event: "DELETE", schema: "public", table: "moderation_actions", filter: `target_user_id=eq.${moderationUserId}` }, handleModeration("DELETE"))
     .subscribe((status) => {
+      if (globalModerationActionChannel !== channel) return;
       if (status === "SUBSCRIBED") {
         scheduleModerationInboxRefresh(0, { render: true });
         return;
       }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        if (status !== "CLOSED") return;
         if (globalModerationActionRestartTimer || !state.user?.id) return;
         globalModerationActionRestartTimer = setTimeout(() => {
           globalModerationActionRestartTimer = null;
@@ -166195,6 +171501,7 @@ function startGlobalModerationActionListener() {
         }, 1200);
       }
     });
+  globalModerationActionChannel = channel;
 }
 
 function onGlobalUserBlockChanged(row, eventType) {
@@ -166245,13 +171552,15 @@ function startGlobalUserBlocksListener() {
     globalUserBlocksRestartTimer = null;
   }
   if (globalUserBlocksChannel) {
-    supabase.removeChannel(globalUserBlocksChannel);
+    const oldChannel = globalUserBlocksChannel;
     globalUserBlocksChannel = null;
+    supabase.removeChannel(oldChannel);
   }
 
   const ubUserId = state.user.id;
-  globalUserBlocksChannel = supabase
-    .channel("global-user-blocks:" + ubUserId)
+  let channel = null;
+  channel = supabase
+    .channel("global-user-blocks:" + ubUserId, { config: { private: true } })
     // Only listen for rows where I am the blocker (matches the RLS policy exactly).
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "user_blocks", filter: `blocker_user_id=eq.${ubUserId}` }, (payload) => {
       onGlobalUserBlockChanged(payload?.new || null, "INSERT");
@@ -166260,7 +171569,9 @@ function startGlobalUserBlocksListener() {
       onGlobalUserBlockChanged(payload?.old || null, "DELETE");
     })
     .subscribe((status) => {
+      if (globalUserBlocksChannel !== channel) return;
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        if (status !== "CLOSED") return;
         if (globalUserBlocksRestartTimer || !state.user?.id) return;
         globalUserBlocksRestartTimer = setTimeout(() => {
           globalUserBlocksRestartTimer = null;
@@ -166268,6 +171579,7 @@ function startGlobalUserBlocksListener() {
         }, 1200);
       }
     });
+  globalUserBlocksChannel = channel;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -166382,6 +171694,120 @@ function startFriendRequestsSyncFallback() {
   void runFriendRequestsSyncFallback();
 }
 
+async function purgeRevokedGroupDmClientState(conversationId = "", {
+  reason = "group_membership_revoked",
+  navigate = true,
+} = {}) {
+  const convId = normId(conversationId || "");
+  if (!convId) return { ok: false, reason: "missing_conversation" };
+
+  revokedGroupDmConversationIds.add(convId);
+  const wasActive = normId(activeDmId || state.activeDm?.conversationId || "") === convId;
+
+  // Stop late async completions before clearing any protected data.
+  dmMessageLoadToken += 1;
+  dmShowRequestSeq += 1;
+  dmOpenIntentSeq += 1;
+  clearDmMessageConversationAccessCache(convId);
+  dmMessageConversationAccessCacheByConversation.set(convId, {
+    allowed: false,
+    checkedAt: Date.now(),
+  });
+
+  state.groupDms = (state.groupDms || []).filter(
+    (row) => normId(row?.conversationId || row?.conversation_id || "") !== convId
+  );
+  dmConversationMetaById.delete(convId);
+  dmGroupMembersCacheByConversation.delete(convId);
+  serverConversationMemberIdsByConversationId.delete(convId);
+  messageCacheByConversationId.delete(convId);
+  const persistentWriteTimer = dmMessagePersistentWriteTimers.get(convId);
+  if (persistentWriteTimer) clearTimeout(persistentWriteTimer);
+  dmMessagePersistentWriteTimers.delete(convId);
+  await deletePersistentConversationMessageCache(convId).catch(() => false);
+  persistAltaraOfflineComposerDraft(convId, "");
+
+  dmUnreadByConversationId.delete(convId);
+  persistDmUnreadConversationsToStorage();
+  setDmGroupPinned(convId, false, { persist: true });
+  setDmConversationMuted(convId, false, { persist: true });
+
+  const typingGroupKey = `typing:group:${convId}`;
+  if (typingActiveContextKey === typingGroupKey) {
+    unsubscribeTypingContext({ sendStop: false, reason });
+  }
+  unsubscribeTypingSidebarContext(typingGroupKey, reason);
+  for (const key of Array.from(typingUsersByContextKey.keys())) {
+    if (key === typingGroupKey || key.startsWith(`inbox:group:${convId}:`)) {
+      typingUsersByContextKey.delete(key);
+    }
+  }
+  typingLastSentStartAtByContextKey.delete(typingGroupKey);
+  typingLastSentStopAtByContextKey.delete(typingGroupKey);
+  renderTypingIndicator(typingActiveContextKey);
+
+  const callStateTimer = groupDmCallStateRefreshTimersByConversation.get(convId);
+  if (callStateTimer) clearTimeout(callStateTimer);
+  groupDmCallStateRefreshTimersByConversation.delete(convId);
+  groupDmCallStateRefreshInFlightByConversation.delete(convId);
+  groupDmCallStateByConversation.delete(convId);
+  if (normId(groupDmCallStatePollConversationId || "") === convId) {
+    stopActiveGroupDmCallStatePolling();
+  }
+  if (normId(pendingGroupRingInfo?.conversationId || "") === convId) pendingGroupRingInfo = null;
+  if (normId(pendingGroupRingAutoJoin?.conversationId || "") === convId) pendingGroupRingAutoJoin = null;
+  callRealtimeMembershipDescriptorsByConversation.delete(convId);
+  callRealtimeMembershipDescriptorsLoadedAt = 0;
+  const callRealtimeContext = callRealtimeChannelsByConversationId.get(convId) || null;
+  if (callRealtimeContext) {
+    await leaveRealtimeCallChannel(callRealtimeContext, { unsubscribe: true }).catch(() => {});
+    callRealtimeChannelsByConversationId.delete(convId);
+  }
+  if (normId(callConversationId || activeCallRealtimeConversationId || "") === convId && hasActiveCallSignalContext()) {
+    await hangupCurrentCallByUser("Group membership ended.").catch(() => {});
+  }
+
+  await purgeInaccessibleServerChannelConversationState(convId, {
+    reason,
+    renderDenied: false,
+  }).catch(() => ({ ok: false }));
+
+  if (wasActive) {
+    activeDmId = null;
+    state.activeDm = null;
+    closeDmPinsModal();
+    closeDmGroupEditModal();
+    closeDmAttachmentModal();
+    clearPendingDmAttachments();
+    setMidMode("friends");
+    setRightSidebarInteractionModeForConversation({ forceHidden: true, applyCollapsed: true });
+    syncDmActiveListHighlight();
+  }
+
+  applyDmNotificationDecorations();
+  renderGroupsRail();
+  persistAltaraOfflineNavigationSnapshot({ immediate: true });
+  scheduleCallRealtimeSubscriptionSync(0);
+  return { ok: true, conversationId: convId, active: wasActive, navigated: wasActive && navigate };
+}
+
+async function reconcileRevokedGroupDmCollections(previousGroups = [], nextGroups = [], {
+  reason = "group_collection_authority_refresh",
+} = {}) {
+  const previousIds = new Set((Array.isArray(previousGroups) ? previousGroups : [])
+    .map((row) => normId(row?.conversationId || row?.conversation_id || ""))
+    .filter(Boolean));
+  const nextIds = new Set((Array.isArray(nextGroups) ? nextGroups : [])
+    .map((row) => normId(row?.conversationId || row?.conversation_id || ""))
+    .filter(Boolean));
+  for (const convId of nextIds) revokedGroupDmConversationIds.delete(convId);
+  for (const convId of previousIds) {
+    if (!nextIds.has(convId)) {
+      await purgeRevokedGroupDmClientState(convId, { reason, navigate: true });
+    }
+  }
+}
+
 async function onGlobalConversationMembershipInserted(row) {
   if (!row || !state.user?.id) return;
   const convId = normId(row.conversation_id);
@@ -166432,6 +171858,7 @@ async function onGlobalConversationMembershipInserted(row) {
   );
 
   const becameVisibleNow = nextGroupIds.has(convId) && !prevGroupIds.has(convId);
+  if (nextGroupIds.has(convId)) revokedGroupDmConversationIds.delete(convId);
   if (becameVisibleNow && !isDmConversationActivelyViewed(convId) && shouldNotifyInFocus({ type: "group_dm" })) {
     playUiCue("group_dm");
   }
@@ -166553,23 +171980,444 @@ async function onGlobalConversationMembershipDeleted(row) {
     return;
   }
 
-  dmUnreadByConversationId.delete(convId);
-  persistDmUnreadConversationsToStorage();
-  applyDmNotificationDecorations();
-
-  if (normId(activeDmId || state.activeDm?.conversationId || "") === convId) {
-    const backBtn = document.getElementById("btnBackToFriends");
-    if (backBtn) {
-      try { backBtn.click(); } catch (_) {}
-    } else {
-      activeDmId = null;
-      state.activeDm = null;
-      setMidMode("friends");
-    }
-  }
-
+  await purgeRevokedGroupDmClientState(convId, {
+    reason: "conversation_members_delete",
+    navigate: true,
+  });
   invalidateGroupAndServerCollectionsCache();
   await loadDmList();
+}
+
+function logGdmRealtimeLocal(eventName, details = {}) {
+  try {
+    if (typeof window === "undefined") return;
+    const host = String(window.location?.hostname || "").trim().toLowerCase();
+    if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1") return;
+    console.debug("[GDM-RT]", String(eventName || "EVENT"), details);
+  } catch (_) {}
+}
+
+function getGroupDmUserEventCheckpointStorageKey(userId = "") {
+  const uid = normId(userId || "");
+  return uid ? `${GDM_USER_EVENT_CHECKPOINT_PREFIX}${uid}` : "";
+}
+
+function readGroupDmUserEventCheckpoint(userId = "") {
+  const uid = normId(userId || "");
+  if (!uid) return 0;
+  const memoryValue = Number(groupDmUserEventCheckpointMemoryByUserId.get(uid) || 0);
+  if (Number.isFinite(memoryValue) && memoryValue > 0) return Math.floor(memoryValue);
+  try {
+    const storageKey = getGroupDmUserEventCheckpointStorageKey(uid);
+    const storedValue = Number(window.localStorage?.getItem(storageKey) || 0);
+    if (!Number.isFinite(storedValue) || storedValue <= 0) return 0;
+    const normalizedValue = Math.floor(storedValue);
+    groupDmUserEventCheckpointMemoryByUserId.set(uid, normalizedValue);
+    return normalizedValue;
+  } catch (_) {
+    return 0;
+  }
+}
+
+function getGroupDmUserEventReplaySince(userId = "", nowInput = Date.now()) {
+  const now = Math.max(0, Math.floor(Number(nowInput) || Date.now()));
+  const oldestAllowed = Math.max(0, now - GDM_USER_EVENT_REPLAY_MAX_LOOKBACK_MS);
+  const checkpoint = readGroupDmUserEventCheckpoint(userId);
+  const candidate = checkpoint > 0
+    ? checkpoint - GDM_USER_EVENT_REPLAY_OVERLAP_MS
+    : now - GDM_USER_EVENT_REPLAY_INITIAL_LOOKBACK_MS;
+  return Math.max(oldestAllowed, Math.min(now, Math.floor(candidate)));
+}
+
+function advanceGroupDmUserEventCheckpoint(userId = "", epochMsInput = Date.now()) {
+  const uid = normId(userId || "");
+  if (!uid) return false;
+  const now = Date.now();
+  const candidate = Math.max(0, Math.min(now, Math.floor(Number(epochMsInput) || 0)));
+  if (!candidate) return false;
+  const previous = readGroupDmUserEventCheckpoint(uid);
+  if (candidate <= previous) return true;
+  groupDmUserEventCheckpointMemoryByUserId.set(uid, candidate);
+  try {
+    window.localStorage?.setItem(getGroupDmUserEventCheckpointStorageKey(uid), String(candidate));
+  } catch (_) {}
+  return true;
+}
+
+function getGroupDmUserEventMetaId(event = null) {
+  return String(event?.meta?.id || "").trim().slice(0, 128);
+}
+
+function hasSeenGroupDmUserEvent(userId = "", eventId = "") {
+  const uid = normId(userId || "");
+  const id = String(eventId || "").trim();
+  return !!(uid && id && groupDmUserEventSeenIdsByUserId.get(uid)?.has(id));
+}
+
+function rememberGroupDmUserEvent(userId = "", eventId = "") {
+  const uid = normId(userId || "");
+  const id = String(eventId || "").trim();
+  if (!uid || !id) return false;
+  let seenIds = groupDmUserEventSeenIdsByUserId.get(uid);
+  if (!seenIds) {
+    seenIds = new Set();
+    groupDmUserEventSeenIdsByUserId.set(uid, seenIds);
+  }
+  seenIds.add(id);
+  while (seenIds.size > GDM_USER_EVENT_SEEN_ID_LIMIT) {
+    const oldestId = seenIds.values().next().value;
+    if (!oldestId) break;
+    seenIds.delete(oldestId);
+  }
+  return true;
+}
+
+function logGroupDmUserEventDelivery(eventName = "", event = null, payload = {}) {
+  const replayed = event?.meta?.replayed === true;
+  logGdmRealtimeLocal(replayed ? "REPLAY_EVENT" : "LIVE_EVENT", {
+    event: String(eventName || ""),
+    eventId: getGroupDmUserEventMetaId(event) || null,
+    conversationId: normId(payload?.conversationId || payload?.conversation_id || "") || null,
+    replayed,
+  });
+  return replayed;
+}
+
+function reconcileRemainingGroupDmMembership(
+  conversationId = "",
+  { reason = "membership_changed", checkpointUserId = "" } = {},
+) {
+  const requestedConversationId = normId(conversationId || "");
+  const activeConversationIdAtRequest = normId(activeDmId || state.activeDm?.conversationId || "");
+  const taskKey = !requestedConversationId || requestedConversationId === activeConversationIdAtRequest
+    ? "__active_group_dm__"
+    : requestedConversationId;
+  const existingTask = groupDmMembershipReconcileTasksByConversation.get(taskKey);
+  if (existingTask) {
+    // If an event arrives while a subscribe catch-up is reading, queue exactly
+    // one follow-up so a later authoritative commit cannot be hidden by the
+    // earlier single-flight promise.
+    groupDmMembershipReconcilePendingKeys.add(taskKey);
+    return existingTask.then(() => {
+      if (!groupDmMembershipReconcilePendingKeys.delete(taskKey)) return true;
+      return reconcileRemainingGroupDmMembership(conversationId, { reason, checkpointUserId });
+    });
+  }
+  const reconciliationStartedAt = Date.now();
+  logGdmRealtimeLocal("RECONCILE_START", {
+    conversationId: requestedConversationId || null,
+    reason: String(reason || "membership_changed"),
+  });
+  const finishReconciliation = (success, details = {}) => {
+    logGdmRealtimeLocal("RECONCILE_DONE", {
+      conversationId: requestedConversationId || null,
+      reason: String(reason || "membership_changed"),
+      success: success === true,
+      ...details,
+    });
+    if (success === true && checkpointUserId) {
+      // Store the reconciliation start, rather than completion, so an event
+      // committed during the fetch remains inside the next replay overlap.
+      advanceGroupDmUserEventCheckpoint(checkpointUserId, reconciliationStartedAt);
+    }
+    return success === true;
+  };
+
+  const task = (async () => {
+    if (requestedConversationId) {
+      dmGroupMembersCacheByConversation.delete(requestedConversationId);
+      serverConversationMemberIdsByConversationId.delete(requestedConversationId);
+      clearDmMessageConversationAccessCache(requestedConversationId);
+    }
+    invalidateGroupAndServerCollectionsCache();
+    await loadDmList();
+
+    const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
+    const targetConversationId = requestedConversationId || activeConversationId;
+    if (!targetConversationId || activeConversationId !== targetConversationId) {
+      return finishReconciliation(true, { scope: "group_list" });
+    }
+    if (isGroupDmConversationRevoked(targetConversationId)) {
+      return finishReconciliation(false, { scope: "revoked" });
+    }
+
+    const activeKind = String(
+      state.activeDm?.kind
+      || getConversationMeta(targetConversationId)?.kind
+      || ""
+    ).trim().toLowerCase();
+    if (activeKind !== "group") return finishReconciliation(true, { scope: "group_list" });
+
+    const refreshedGroup = (state.groupDms || []).find(
+      (row) => normId(row?.conversationId || "") === targetConversationId
+    ) || null;
+    if (refreshedGroup) {
+      const nextMeta = {
+        memberCount: Number(refreshedGroup.memberCount || 0),
+        memberIds: Array.isArray(refreshedGroup.memberIds) ? refreshedGroup.memberIds.slice() : [],
+        memberDisplayNames: Array.isArray(refreshedGroup.memberDisplayNames)
+          ? refreshedGroup.memberDisplayNames.slice()
+          : [],
+        memberUsernames: Array.isArray(refreshedGroup.memberUsernames)
+          ? refreshedGroup.memberUsernames.slice()
+          : [],
+        ownerUserId: normId(refreshedGroup.ownerUserId || ""),
+      };
+      state.activeDm = { ...(state.activeDm || {}), ...nextMeta };
+      setConversationMeta(targetConversationId, nextMeta);
+    }
+
+    const members = await fetchGroupConversationMembers(targetConversationId, { force: true });
+    if (
+      normId(activeDmId || state.activeDm?.conversationId || "") !== targetConversationId
+      || isGroupDmConversationRevoked(targetConversationId)
+    ) return finishReconciliation(false, { scope: "stale_active_group" });
+
+    if (dmProfilePanelOpen) {
+      renderDmGroupMembersPanel(members, { loading: false });
+    }
+    syncDmActiveListHighlight();
+    renderGroupsRail();
+    scheduleDmChromeRender({ decorations: true, widgets: true });
+    return finishReconciliation(true, {
+      conversationId: targetConversationId || null,
+      scope: "active_group",
+      memberCount: Number(state.activeDm?.memberCount || members.length || 0),
+    });
+  })().catch((error) => {
+    console.warn("group dm membership reconciliation failed", {
+      conversationId: requestedConversationId,
+      reason: String(reason || "membership_changed"),
+      error: String(error?.message || error || "unknown_error").slice(0, 220),
+    });
+    return false;
+  }).finally(() => {
+    if (groupDmMembershipReconcileTasksByConversation.get(taskKey) === task) {
+      groupDmMembershipReconcileTasksByConversation.delete(taskKey);
+    }
+  });
+  groupDmMembershipReconcileTasksByConversation.set(taskKey, task);
+  return task;
+}
+
+function handleGroupDmMembershipUserEvent(
+  eventName = "",
+  event = null,
+  { userId = "", channel = null, generation = 0 } = {},
+) {
+  const uid = normId(userId || "");
+  const payload = event?.payload || {};
+  const eventId = getGroupDmUserEventMetaId(event);
+  const eventTaskKey = eventId ? `${uid}:${eventId}` : "";
+  logGroupDmUserEventDelivery(eventName, event, payload);
+  if (
+    !uid
+    || channel !== groupDmRevocationBroadcastChannel
+    || generation !== groupDmRevocationBroadcastGeneration
+  ) return Promise.resolve(false);
+  if (eventId && hasSeenGroupDmUserEvent(uid, eventId)) return Promise.resolve(true);
+  if (eventTaskKey && groupDmUserEventTasksByEventId.has(eventTaskKey)) {
+    return groupDmUserEventTasksByEventId.get(eventTaskKey);
+  }
+
+  const eventHandlingStartedAt = Date.now();
+  const task = (async () => {
+    const targetUserId = normId(payload?.userId || payload?.user_id || "");
+    const conversationId = normId(payload?.conversationId || payload?.conversation_id || "");
+    if (!conversationId || (targetUserId && targetUserId !== uid)) return false;
+
+    if (eventName === "group_dm_membership_revoked") {
+      // Replay may surface an older revoke after a later legitimate lifecycle.
+      // Re-check current database authority before applying destructive local purge.
+      const stillHasAccess = await canCurrentUserAccessMessageConversation(conversationId, {
+        force: true,
+      });
+      if (stillHasAccess) {
+        await reconcileRemainingGroupDmMembership(conversationId, {
+          reason: "stale_membership_revocation_reconciled",
+          checkpointUserId: uid,
+        });
+      } else {
+        await purgeRevokedGroupDmClientState(conversationId, {
+          reason: "private_membership_revocation",
+          navigate: true,
+        });
+        invalidateGroupAndServerCollectionsCache();
+        await loadDmList();
+      }
+    } else if (eventName === "group_dm_membership_changed") {
+      await reconcileRemainingGroupDmMembership(conversationId, {
+        reason: event?.meta?.replayed === true
+          ? "private_membership_changed_replay"
+          : "private_membership_changed_live",
+        checkpointUserId: uid,
+      });
+    } else {
+      return false;
+    }
+
+    if (eventId) rememberGroupDmUserEvent(uid, eventId);
+    advanceGroupDmUserEventCheckpoint(uid, eventHandlingStartedAt);
+    return true;
+  })().catch((error) => {
+    console.warn("group dm membership event handling failed", {
+      event: String(eventName || ""),
+      error: String(error?.message || error || "unknown_error").slice(0, 220),
+    });
+    return false;
+  }).finally(() => {
+    if (eventTaskKey && groupDmUserEventTasksByEventId.get(eventTaskKey) === task) {
+      groupDmUserEventTasksByEventId.delete(eventTaskKey);
+    }
+  });
+  if (eventTaskKey) groupDmUserEventTasksByEventId.set(eventTaskKey, task);
+  return task;
+}
+
+async function startGroupDmRevocationBroadcastListener({ force = false, reason = "start" } = {}) {
+  const userId = normId(state.user?.id || "");
+  if (!userId) return null;
+  let session = null;
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    session = data?.session || null;
+  } catch (_) {
+    return null;
+  }
+  const sessionUserId = normId(session?.user?.id || "");
+  const accessToken = String(session?.access_token || "").trim();
+  if (sessionUserId !== userId || !accessToken) return null;
+  if (!force
+      && groupDmRevocationBroadcastChannel
+      && groupDmRevocationBroadcastUserId === userId
+      && groupDmRevocationBroadcastAuthToken === accessToken
+      && ["JOINING", "SUBSCRIBED"].includes(groupDmRevocationBroadcastStatus)) {
+    return groupDmRevocationBroadcastChannel;
+  }
+  try {
+    await Promise.resolve(supabase.realtime.setAuth(accessToken));
+  } catch (_) {
+    return null;
+  }
+  logGdmRealtimeLocal("AUTH_SET", { userId, reason: String(reason || "start") });
+  if (groupDmRevocationBroadcastChannel) {
+    try { supabase.removeChannel(groupDmRevocationBroadcastChannel); } catch (_) {}
+  }
+  groupDmRevocationBroadcastUserId = userId;
+  groupDmRevocationBroadcastAuthToken = accessToken;
+  groupDmRevocationBroadcastStatus = "JOINING";
+  const generation = ++groupDmRevocationBroadcastGeneration;
+  const replaySince = getGroupDmUserEventReplaySince(userId);
+  const topic = `altara:user:${userId}:gdm-events`;
+  logGdmRealtimeLocal("CHANNEL_CREATE", {
+    userId,
+    topic,
+    private: true,
+    replaySince,
+    replayLimit: GDM_USER_EVENT_REPLAY_LIMIT,
+    generation,
+  });
+  const channel = supabase
+    .channel(topic, {
+      config: {
+        private: true,
+        broadcast: {
+          self: false,
+          replay: {
+            since: replaySince,
+            limit: GDM_USER_EVENT_REPLAY_LIMIT,
+          },
+        },
+      },
+    })
+    .on("broadcast", { event: "group_dm_typing" }, (event) => {
+      const payload = event?.payload || {};
+      if (logGroupDmUserEventDelivery("group_dm_typing", event, payload)) return;
+      const conversationId = normId(payload?.conversationId || payload?.conversation_id || "");
+      const senderUserId = normId(payload?.userId || payload?.user_id || "");
+      if (!conversationId || !senderUserId || senderUserId === userId) return;
+      if (isGroupDmConversationRevoked(conversationId)) return;
+      handleIncomingTypingBroadcast({
+        type: payload?.type === "typing_stop" ? "typing_stop" : "typing_start",
+        userId: senderUserId,
+        displayName: String(payload?.displayName || payload?.display_name || "Someone"),
+        avatarUrl: String(payload?.avatarUrl || payload?.avatar_url || ""),
+        conversationId,
+        contextType: "group_dm",
+      }, { source: "group_dm_user_fanout" });
+    })
+    .on("broadcast", { event: "group_dm_call_signal" }, (event) => {
+      const payload = event?.payload || {};
+      if (logGroupDmUserEventDelivery("group_dm_call_signal", event, payload)) return;
+      const conversationId = normId(payload?.conversationId || payload?.conversation_id || "");
+      const fromUserId = normId(payload?.fromUserId || payload?.from_user_id || "");
+      const targetUserId = normId(payload?.targetUserId || payload?.target_user_id || "");
+      const data = payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+        ? { ...payload.data }
+        : {};
+      if (!conversationId || !fromUserId || fromUserId === userId) return;
+      if (targetUserId && targetUserId !== userId) return;
+      if (isGroupDmConversationRevoked(conversationId)) return;
+      void handleRealtimeCallSignal({
+        type: String(payload?.signalType || payload?.signal_type || "").trim().toLowerCase(),
+        conversationId,
+        fromUserId,
+        data: { ...data, targetUserId: targetUserId || null },
+        createdAt: String(payload?.createdAt || payload?.created_at || ""),
+      }).catch(() => {});
+    })
+    .on("broadcast", { event: "group_dm_membership_revoked" }, (event) => {
+      void handleGroupDmMembershipUserEvent("group_dm_membership_revoked", event, {
+        userId,
+        channel,
+        generation,
+      });
+    })
+    .on("broadcast", { event: "group_dm_membership_changed" }, (event) => {
+      void handleGroupDmMembershipUserEvent("group_dm_membership_changed", event, {
+        userId,
+        channel,
+        generation,
+      });
+    });
+  groupDmRevocationBroadcastChannel = channel;
+  channel.subscribe((status, error) => {
+    const isCurrentChannel = groupDmRevocationBroadcastChannel === channel
+      && groupDmRevocationBroadcastGeneration === generation;
+    logGdmRealtimeLocal("SUBSCRIBE_STATUS", {
+      status: String(status || "").trim().toUpperCase(),
+      reason: String(reason || "start"),
+      generation,
+      current: isCurrentChannel,
+      errorCode: String(error?.code || ""),
+    });
+    if (!isCurrentChannel) return;
+    groupDmRevocationBroadcastStatus = String(status || "").trim().toUpperCase();
+    if (groupDmRevocationBroadcastStatus === "SUBSCRIBED") {
+      // Reconcile on every successful initial subscribe and Phoenix rejoin.
+      // Replay is a fast signal; current database state remains authoritative.
+      void reconcileRemainingGroupDmMembership("", {
+        reason: "private_user_event_subscribed",
+        checkpointUserId: userId,
+      });
+      return;
+    }
+    if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(groupDmRevocationBroadcastStatus)) return;
+    groupDmRevocationBroadcastChannel = null;
+    logGdmRealtimeLocal("CHANNEL_REPLACE", {
+      status: groupDmRevocationBroadcastStatus,
+      reason: String(reason || "start"),
+      generation,
+    });
+    void Promise.resolve(supabase.removeChannel(channel)).catch(() => {});
+    if (groupDmRevocationBroadcastRestartTimer || !state.user?.id) return;
+    groupDmRevocationBroadcastRestartTimer = setTimeout(() => {
+      groupDmRevocationBroadcastRestartTimer = null;
+      void startGroupDmRevocationBroadcastListener({ force: true, reason: `restart:${status || reason}` });
+    }, ALTARA_REALTIME_SOURCE_RESTART_DELAY_MS);
+  });
+  return channel;
 }
 
 function startGlobalDmMembershipListener() {
@@ -166579,12 +172427,14 @@ function startGlobalDmMembershipListener() {
     globalDmMembershipRestartTimer = null;
   }
   if (globalDmMembershipChannel) {
-    supabase.removeChannel(globalDmMembershipChannel);
+    const oldChannel = globalDmMembershipChannel;
     globalDmMembershipChannel = null;
+    supabase.removeChannel(oldChannel);
   }
 
-  globalDmMembershipChannel = supabase
-    .channel("global-dm-memberships:" + state.user.id)
+  let channel = null;
+  channel = supabase
+    .channel("global-dm-memberships:" + state.user.id, { config: { private: true } })
     .on("postgres_changes", {
       event: "INSERT",
       schema: "public",
@@ -166596,19 +172446,10 @@ function startGlobalDmMembershipListener() {
         console.warn("dm membership realtime insert failed", e);
       }
     })
-    .on("postgres_changes", {
-      event: "DELETE",
-      schema: "public",
-      table: "conversation_members",
-    }, async (payload) => {
-      try {
-        await onGlobalConversationMembershipDeleted(payload?.old || null);
-      } catch (e) {
-        console.warn("dm membership realtime delete failed", e);
-      }
-    })
     .subscribe((status) => {
+      if (globalDmMembershipChannel !== channel) return;
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        if (status !== "CLOSED") return;
         if (globalDmMembershipRestartTimer || !state.user?.id) return;
         globalDmMembershipRestartTimer = setTimeout(() => {
           globalDmMembershipRestartTimer = null;
@@ -166616,6 +172457,7 @@ function startGlobalDmMembershipListener() {
         }, 1200);
       }
     });
+  globalDmMembershipChannel = channel;
 }
 
 function buildDmCollectionsFingerprint() {
@@ -166749,6 +172591,19 @@ async function moveAwayFromUnavailableActiveServerChannel(serverId, channels = [
     await hangupCurrentCallByUser("?? You no longer have access to this channel.");
   }
 
+  const lostChannelId = normId(
+    state.activeDm?.channelId
+    || state.activeDm?.channel_id
+    || getServerPermissionContextForConversation(activeConvId)?.channelId
+    || ""
+  );
+  await purgeInaccessibleServerChannelConversationState(activeConvId, {
+    serverId: sid,
+    channelId: lostChannelId,
+    reason: "active_server_channel_unavailable",
+    renderDenied: false,
+  });
+
   const nextChannel = visibleChannels.find((ch) => normalizeConversationChannelType(ch?.channelType || "") !== "voice")
     || visibleChannels[0]
     || null;
@@ -166769,6 +172624,14 @@ async function moveAwayFromUnavailableActiveServerChannel(serverId, channels = [
       serverName,
       avatarUrl: serverIcon,
       channelType: nextType,
+    });
+    return true;
+  }
+
+  if (canPreserveSelectedServerShell(sid)) {
+    renderNoAccessibleServerChannelsState(sid, "active_server_zero_visible_channels", {
+      previousConversationId: activeConvId,
+      previousChannelId: lostChannelId,
     });
     return true;
   }
@@ -167374,8 +173237,9 @@ function stopGlobalDmPrivacyEventListener() {
     globalDmPrivacyEventRestartTimer = null;
   }
   if (globalDmPrivacyEventChannel) {
-    try { supabase.removeChannel(globalDmPrivacyEventChannel); } catch (_) {}
+    const oldChannel = globalDmPrivacyEventChannel;
     globalDmPrivacyEventChannel = null;
+    try { supabase.removeChannel(oldChannel); } catch (_) {}
   }
   globalDmPrivacyEventUserId = "";
   globalDmPrivacyEventStatus = "";
@@ -167440,10 +173304,12 @@ async function startGlobalDmPrivacyEventListener(options = {}) {
     !opts.force
     && globalDmPrivacyEventChannel
     && globalDmPrivacyEventUserId === currentUserId
-    && globalDmPrivacyEventAuthToken === accessToken
     && (globalDmPrivacyEventStatus === "SUBSCRIBED" || globalDmPrivacyEventStatus === "JOINING")
   );
-  if (canReuseChannel) return;
+  if (canReuseChannel) {
+    globalDmPrivacyEventAuthToken = accessToken;
+    return globalDmPrivacyEventChannel;
+  }
   if (globalDmPrivacyEventChannel) stopGlobalDmPrivacyEventListener();
 
   const channelName = "global-dm-privacy-events:" + currentUserId;
@@ -167461,7 +173327,7 @@ async function startGlobalDmPrivacyEventListener(options = {}) {
     channelName,
   });
 
-  const channel = supabase.channel(channelName);
+  const channel = supabase.channel(channelName, { config: { private: true } });
   globalDmPrivacyEventChannel = channel;
   globalDmPrivacyEventUserId = currentUserId;
   globalDmPrivacyEventAuthToken = accessToken;
@@ -167508,6 +173374,7 @@ async function startGlobalDmPrivacyEventListener(options = {}) {
       }
     })
     .subscribe((status, error) => {
+      if (globalDmPrivacyEventChannel !== channel || globalDmPrivacyEventUserId !== currentUserId) return;
       globalDmPrivacyEventStatus = String(status || "");
       const errorText = String(error?.message || error || "");
       logDmPrivacyDebug("event subscription status", {
@@ -167530,7 +173397,7 @@ async function startGlobalDmPrivacyEventListener(options = {}) {
         publicationTablePresent: "verified",
       });
       if (status !== "CHANNEL_ERROR" && status !== "TIMED_OUT" && status !== "CLOSED") return;
-      if (globalDmPrivacyEventChannel !== channel || globalDmPrivacyEventUserId !== currentUserId) return;
+      if (status !== "CLOSED") return;
       if (globalDmPrivacyEventRestartTimer || !currentUserId) return;
       const restartStatus = globalDmPrivacyEventStatus;
       globalDmPrivacyEventRestartTimer = setTimeout(() => {
@@ -167728,7 +173595,7 @@ function startDmPrivacyAuthStateListener() {
         event: String(event || ""),
         sessionUserId: normId(session?.user?.id || ""),
       });
-      if (normId(session?.user?.id || "")) void startGlobalDmPrivacyEventListener({ session, force: true, reason: "auth:" + String(event || "") });
+      if (normId(session?.user?.id || "")) void startGlobalDmPrivacyEventListener({ session, force: false, reason: "auth:" + String(event || "") });
       else {
         stopGlobalDmPrivacyEventListener();
         stopGlobalDmPrivacyEventPolling({ resetProcessed: true });
@@ -167812,7 +173679,7 @@ function startActiveDmPrivacyListener(conversationId) {
     channelName,
     filter,
   });
-  const channel = supabase.channel(channelName);
+  const channel = supabase.channel(channelName, { config: { private: true } });
   activeDmPrivacyChannel = channel;
   channel
     .on("postgres_changes", {
@@ -167851,6 +173718,7 @@ function startActiveDmPrivacyListener(conversationId) {
       }
       if (status !== "CHANNEL_ERROR" && status !== "TIMED_OUT" && status !== "CLOSED") return;
       if (activeDmPrivacyChannel !== channel || activeDmPrivacyConversationId !== convId) return;
+      if (status !== "CLOSED") return;
       if (activeDmPrivacyRestartTimer || normId(activeDmId || state.activeDm?.conversationId || "") !== convId) return;
       activeDmPrivacyRestartTimer = setTimeout(() => {
         activeDmPrivacyRestartTimer = null;
@@ -167924,12 +173792,14 @@ function startGlobalConversationListener() {
     globalConversationRestartTimer = null;
   }
   if (globalConversationChannel) {
-    supabase.removeChannel(globalConversationChannel);
+    const oldChannel = globalConversationChannel;
     globalConversationChannel = null;
+    supabase.removeChannel(oldChannel);
   }
 
-  globalConversationChannel = supabase
-    .channel("global-conversations:" + state.user.id)
+  let channel = null;
+  channel = supabase
+    .channel("global-conversations:" + state.user.id, { config: { private: true } })
     .on("postgres_changes", {
       event: "UPDATE",
       schema: "public",
@@ -167942,7 +173812,9 @@ function startGlobalConversationListener() {
       }
     })
     .subscribe((status) => {
+      if (globalConversationChannel !== channel) return;
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        if (status !== "CLOSED") return;
         if (globalConversationRestartTimer || !state.user?.id) return;
         globalConversationRestartTimer = setTimeout(() => {
           globalConversationRestartTimer = null;
@@ -167950,6 +173822,7 @@ function startGlobalConversationListener() {
         }, 1200);
       }
     });
+  globalConversationChannel = channel;
 }
 
 function getServerChannelsRealtimeChannelName(serverId = "") {
@@ -167994,7 +173867,7 @@ function setupActiveServerChannelsRealtime(serverId = "") {
 
   const onChange = (reason) => (payload) => scheduleActiveChannelsRefresh(reason, payload);
   const channel = supabase
-    .channel(key, { config: { broadcast: { self: false } } })
+    .channel(key, { config: { private: true, broadcast: { self: false } } })
     .on("postgres_changes", {
       event: "*",
       schema: "public",
@@ -168010,10 +173883,12 @@ function setupActiveServerChannelsRealtime(serverId = "") {
     .on("broadcast", { event: "server-channels-changed" }, onChange("channels_broadcast"))
     .subscribe((status, error) => {
       if (status === "SUBSCRIBED") {
-        scheduleServerVoiceOccupancyHydration(sid, "channels_realtime_subscribed", {
-          delayMs: 0,
-          ensureSubscription: true,
-        });
+        if (!isNoAccessibleServerChannelsState(sid)) {
+          scheduleServerVoiceOccupancyHydration(sid, "channels_realtime_subscribed", {
+            delayMs: 0,
+            ensureSubscription: true,
+          });
+        }
         return;
       }
       if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(String(status || ""))) return;
@@ -168600,6 +174475,8 @@ async function refreshActiveServerChannelsFromRealtime(reason = "channels_realti
   const silent = options?.silent !== false;
   const canAffectChannelAccess = options?.historyAccessChanged === true;
   const previousActiveConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
+  const wasNoAccessibleServerChannels = isNoAccessibleServerChannelsState(sid);
+  const previousNoAccessConversationId = normId(state.activeDm?.previousConversationId || "");
   activeServerChannelsRealtimeState = {
     ...activeServerChannelsRealtimeState,
     isRefreshing: true,
@@ -168622,43 +174499,46 @@ async function refreshActiveServerChannelsFromRealtime(reason = "channels_realti
     if (categoryResult?.ok === false) {
       console.warn("[channels-realtime] categories silent refresh failed", { serverId: sid, message: categoryResult.error?.message || categoryResult.error, error: categoryResult.error });
     }
-    const nextChannels = Array.isArray(channelResult?.channels) && channelResult.channels.length
+    const nextChannels = channelResult?.ok === true && Array.isArray(channelResult?.channels)
       ? channelResult.channels
       : previousChannels;
     const nextCategories = categoryResult?.ok === true ? categoryResult.categories : previousCategories;
     serverChannelListByServerId.set(sid, previousChannels);
     serverChannelCategoryListByServerId.set(sid, previousCategories);
     const applyResult = applyServerChannelsSnapshot(sid, nextChannels, nextCategories, { reason: String(reason || "channels_realtime") });
-    reprojectServerVoiceOccupancy(sid, `channels:${reason}:cached`);
-    scheduleServerVoiceOccupancyHydration(sid, `channels:${reason}`, {
-      delayMs: 0,
-      ensureSubscription: true,
-    });
+    if (!wasNoAccessibleServerChannels) {
+      reprojectServerVoiceOccupancy(sid, `channels:${reason}:cached`);
+      scheduleServerVoiceOccupancyHydration(sid, `channels:${reason}`, {
+        delayMs: 0,
+        ensureSubscription: true,
+      });
+    }
 
     const channelsAfterApply = serverChannelListByServerId.get(sid) || nextChannels;
     const hasChannelLoadError = !!serverChannelLoadErrorByServerId.get(sid);
-    if (previousActiveConversationId && !hasChannelLoadError) {
-      const stillExists = channelsAfterApply.some((ch) => normId(ch?.conversationId || "") === previousActiveConversationId);
-      if (!stillExists && normId(state.activeDm?.serverId || serverCtx?.serverId || "") === sid) {
-        const nextChannel = channelsAfterApply.find((ch) => normalizeConversationChannelType(ch?.channelType || "") !== "voice")
-          || channelsAfterApply[0]
-          || null;
-        if (nextChannel?.conversationId) {
-          const serverRow = getServerRowById(sid) || null;
-          const nextType = normalizeConversationChannelType(nextChannel?.channelType || "text");
-          await openConversationById(nextChannel.conversationId, {
-            kind: "server",
-            isGroup: true,
-            displayName: normalizeConversationLabel(
-              nextChannel.name || (nextType === "voice" ? "voice-lounge" : "general"),
-              nextType === "voice" ? "voice-lounge" : "general"
-            ),
+    if ((previousActiveConversationId || wasNoAccessibleServerChannels) && !hasChannelLoadError) {
+      const stillExists = !!previousActiveConversationId
+        && channelsAfterApply.some((ch) => normId(ch?.conversationId || "") === previousActiveConversationId);
+      if ((!stillExists || wasNoAccessibleServerChannels) && normId(state.activeDm?.serverId || serverCtx?.serverId || "") === sid) {
+        const lostChannelId = normId(state.activeDm?.channelId || state.activeDm?.channel_id || "");
+        if (previousActiveConversationId && !stillExists) {
+          await purgeInaccessibleServerChannelConversationState(previousActiveConversationId, {
             serverId: sid,
-            serverName: normalizeConversationLabel(serverRow?.name || serverCtx?.name || state.activeDm?.serverName || "Server", "Server"),
-            avatarUrl: String(serverRow?.iconUrl || serverCtx?.iconUrl || state.activeDm?.avatarUrl || "").trim(),
-            channelType: nextType,
-            userLimit: nextType === "voice" ? clampServerVoiceUserLimit(nextChannel?.userLimit ?? 0, 0) : 0,
-            mediaMode: nextType === "voice" ? normalizeServerVoiceMediaMode(nextChannel?.mediaMode || "audio_only", "audio_only") : "audio_only",
+            channelId: lostChannelId,
+            reason: `channels:${reason}:active_channel_removed`,
+            renderDenied: false,
+          });
+        }
+        const nextChannel = getPreferredVisibleServerChannel(
+          sid,
+          wasNoAccessibleServerChannels ? previousNoAccessConversationId : ""
+        );
+        if (nextChannel?.conversationId) {
+          await openVisibleServerChannelAfterPermissionChange(sid, nextChannel, `channels:${reason}`);
+        } else if (canPreserveSelectedServerShell(sid)) {
+          renderNoAccessibleServerChannelsState(sid, `channels:${reason}:no_visible_channels`, {
+            previousConversationId: previousActiveConversationId || previousNoAccessConversationId,
+            previousChannelId: lostChannelId,
           });
         } else {
           activeDmId = null;
@@ -168719,7 +174599,7 @@ async function emitServerChannelsChangedBroadcast(serverId = "", payload = {}) {
   try {
     if (!channel) {
       temporaryChannel = true;
-      channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
+      channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
       await new Promise((resolve) => {
         let done = false;
         const finish = () => {
@@ -168887,63 +174767,209 @@ async function onGlobalServerChannelTableChanged(row) {
 
   scheduleActiveChannelsRefresh("server_channel_global_change", { serverId });
 }
-async function flushServerRoleRealtimeRefresh(serverId) {
-  const sid = normId(serverId || "");
-  if (!sid || !state.user?.id) return;
-  const isTrackedServer = (state.servers || []).some((s) => normId(s?.serverId || "") === sid);
-  if (!isTrackedServer) return;
+function getServerRoleInvalidationPrivateTopic(userId = "") {
+  const uid = normId(userId || "");
+  return isValidAltaraUuid(uid) ? `altara:user:${uid}:server-role-invalidation` : "";
+}
 
-  serverRoleListByServerId.delete(sid);
-  serverRoleMemberMapByServerId.delete(sid);
-  serverRolePermissionCacheFetchedAtByServerId.delete(sid);
-  serverSettingsMembersLastRealtimeEvent = {
-    type: "server_role_tables_changed",
-    serverId: sid,
-    at: Date.now(),
-  };
-  serverAppsPermissionsDebugState.realtime = {
-    ...serverAppsPermissionsDebugState.realtime,
-    rolePermissionEventAt: Date.now(),
-    lastServerId: sid,
-  };
+function normalizeServerRoleInvalidationPayload(rawPayload = null) {
+  const candidate = rawPayload?.payload && typeof rawPayload.payload === "object"
+    ? rawPayload.payload
+    : rawPayload;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
+  const allowedKeys = new Set(["serverId", "entity", "operation", "id"]);
+  if (Object.keys(candidate).some((key) => !allowedKeys.has(key))) return null;
+  const serverId = normId(candidate.serverId || "");
+  const entity = String(candidate.entity || "").trim().toLowerCase();
+  const operation = String(candidate.operation || "").trim().toUpperCase();
+  const eventId = normId(candidate.id || "");
+  if (!isValidAltaraUuid(serverId)) return null;
+  if (!SERVER_ROLE_INVALIDATION_ENTITIES.has(entity)) return null;
+  if (!SERVER_ROLE_INVALIDATION_OPERATIONS.has(operation)) return null;
+  if (eventId && !isValidAltaraUuid(eventId)) return null;
+  return { serverId, entity, operation, eventId };
+}
 
-  const activeCtx = getActiveServerContext();
-  const activeServerId = normId(activeCtx?.serverId || "");
-  if (activeServerId && activeServerId === sid) {
-    await refreshServerConversationUi({ force: true, reason: "server-role-realtime", refreshChannels: false, refreshMembers: true }).catch(() => {});
-    await ensureServerRolePermissionCache(sid, { force: true }).catch(() => null);
-    if (!currentUserCanUseApplicationCommands(sid)) {
-      hideBotSlashCommandPicker();
-    } else {
-      await fetchServerSlashCommandsForComposer(sid, { force: true }).catch(() => []);
-      void updateBotSlashCommandPicker(document.getElementById("dmInput"));
-    }
-    scheduleServerVoiceOccupancyHydration(sid, "server_role_realtime", {
-      delayMs: 0,
-      ensureSubscription: true,
-    });
+function handleServerRoleAuthorityInvalidation(rawPayload = null, { source = "private_broadcast" } = {}) {
+  const event = normalizeServerRoleInvalidationPayload(rawPayload);
+  if (!event || !state.user?.id) return false;
+  const sid = event.serverId;
+  const hasLocalMembership = (state.servers || []).some(
+    (serverRow) => normId(serverRow?.serverId || "") === sid && !isServerDeletedLocally(sid)
+  );
+  if (!hasLocalMembership) return false;
+
+  const reason = `server_role_${source}`;
+  scheduleActivePermissionsRefresh(reason, { serverId: sid, payload: event });
+  // Keep the last valid presentation snapshot mounted while the authoritative
+  // role rows are refreshed. Open mutation surfaces still fail closed because
+  // the scheduler invalidates cache freshness before any Save handler can run.
+  closeDmListMenus("role_authority_invalidated");
+  if (serverSettingsMemberRolesModalState && normId(serverSettingsMemberRolesModalState.serverId || "") === sid) {
+    closeServerSettingsMemberRolesModal();
   }
+  hideBotSlashCommandPicker();
+  return true;
+}
 
-  const settingsModal = document.getElementById("serverSettingsModal");
-  const settingsOpen = !!(settingsModal && !settingsModal.classList.contains("hidden"));
-  if (settingsOpen && normId(serverSettingsServerId || "") === sid) {
-    await loadServerSettingsRolesForModal(sid, { force: true }).catch(() => {});
-    await loadServerSettingsMembersBestEffort(sid, { force: true }).catch(() => {});
-    renderServerSettingsMembersPanel({ force: true });
-    renderServerSettingsBotsPanel({ force: true });
+function stopServerRoleInvalidationPrivateBroadcast(reason = "stopped") {
+  if (serverRoleInvalidationBroadcastRestartTimer) {
+    clearTimeout(serverRoleInvalidationBroadcastRestartTimer);
+    serverRoleInvalidationBroadcastRestartTimer = null;
+  }
+  if (serverRoleInvalidationBroadcastChannel) {
+    const oldChannel = serverRoleInvalidationBroadcastChannel;
+    serverRoleInvalidationBroadcastChannel = null;
+    try { supabase.removeChannel(oldChannel); } catch (_) {}
+  }
+  serverRoleInvalidationBroadcastUserId = "";
+  serverRoleInvalidationBroadcastAuthToken = "";
+  serverRoleInvalidationBroadcastStatus = String(reason || "stopped");
+  if (/auth_unavailable|session_error|signed_out/i.test(String(reason || ""))) {
+    serverRoleInvalidationBroadcastNeedsCatchup = false;
   }
 }
 
-function queueServerRoleRealtimeRefresh(serverId) {
-  const sid = normId(serverId || "");
-  if (!sid) return;
+function schedulePrivateRoleBroadcastReconnectCatchup() {
+  if (altaraConnectionRecoveryInFlight || altaraRealtimeGlobalResetPending) return false;
+  const activeServerId = normId(
+    getActiveServerContext?.()?.serverId
+    || getActiveServerIdForSidebar?.()
+    || state.activeDm?.serverId
+    || ""
+  );
+  const hasLocalMembership = activeServerId && (state.servers || []).some(
+    (serverRow) => normId(serverRow?.serverId || "") === activeServerId
+      && !isServerDeletedLocally(activeServerId)
+  );
+  if (!hasLocalMembership) return false;
+  scheduleActivePermissionsRefresh("server_role_private_broadcast_reconnected", {
+    serverId: activeServerId,
+  });
+  return true;
+}
 
-  if (serverRoleRealtimeRefreshTimersByServerId.has(sid)) return;
-  const timer = setTimeout(async () => {
-    serverRoleRealtimeRefreshTimersByServerId.delete(sid);
-    await flushServerRoleRealtimeRefresh(sid);
-  }, 120);
-  serverRoleRealtimeRefreshTimersByServerId.set(sid, timer);
+async function startServerRoleInvalidationPrivateBroadcast(options = {}) {
+  const opts = options && typeof options === "object" ? options : {};
+  const reason = String(opts.reason || "start");
+  let session = opts.session || null;
+  if (!session) {
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      session = data?.session || null;
+    } catch (error) {
+      stopServerRoleInvalidationPrivateBroadcast("session_error");
+      console.warn("[roles-realtime] private Broadcast session unavailable", {
+        reason,
+        message: error?.message || error,
+      });
+      return null;
+    }
+  }
+
+  const currentUserId = normId(state.user?.id || "");
+  const sessionUserId = normId(session?.user?.id || "");
+  const accessToken = String(session?.access_token || "").trim();
+  const topic = getServerRoleInvalidationPrivateTopic(sessionUserId);
+  if (!currentUserId || sessionUserId !== currentUserId || !accessToken || !topic) {
+    stopServerRoleInvalidationPrivateBroadcast("auth_unavailable");
+    return null;
+  }
+
+  if (
+    !opts.force
+    && serverRoleInvalidationBroadcastChannel
+    && serverRoleInvalidationBroadcastUserId === sessionUserId
+    && ["JOINING", "SUBSCRIBED"].includes(serverRoleInvalidationBroadcastStatus)
+  ) {
+    serverRoleInvalidationBroadcastAuthToken = accessToken;
+    return serverRoleInvalidationBroadcastChannel;
+  }
+
+  if (
+    serverRoleInvalidationBroadcastChannel
+    && serverRoleInvalidationBroadcastStatus === "SUBSCRIBED"
+    && reason !== "init"
+  ) {
+    serverRoleInvalidationBroadcastNeedsCatchup = true;
+  }
+
+  try {
+    if (!supabase?.realtime || typeof supabase.realtime.setAuth !== "function") {
+      throw new Error("realtime_auth_unavailable");
+    }
+    await Promise.resolve(supabase.realtime.setAuth(accessToken));
+  } catch (error) {
+    stopServerRoleInvalidationPrivateBroadcast("realtime_auth_error");
+    console.warn("[roles-realtime] private Broadcast authentication failed", {
+      reason,
+      message: error?.message || error,
+    });
+    return null;
+  }
+
+  stopServerRoleInvalidationPrivateBroadcast("resubscribe");
+  serverRoleInvalidationBroadcastUserId = sessionUserId;
+  serverRoleInvalidationBroadcastAuthToken = accessToken;
+  serverRoleInvalidationBroadcastStatus = "JOINING";
+
+  const channel = supabase
+    .channel(topic, { config: { private: true, broadcast: { self: false } } })
+    .on("broadcast", { event: SERVER_ROLE_INVALIDATION_EVENT }, (payload) => {
+      handleServerRoleAuthorityInvalidation(payload, { source: "private_broadcast" });
+    })
+    .subscribe((status, error) => {
+      if (serverRoleInvalidationBroadcastChannel !== channel) return;
+      serverRoleInvalidationBroadcastStatus = String(status || "");
+      if (serverRoleInvalidationBroadcastStatus === "SUBSCRIBED") {
+        if (
+          serverRoleInvalidationBroadcastNeedsCatchup
+          && schedulePrivateRoleBroadcastReconnectCatchup()
+        ) {
+          serverRoleInvalidationBroadcastNeedsCatchup = false;
+        }
+        return;
+      }
+      if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(serverRoleInvalidationBroadcastStatus)) return;
+      serverRoleInvalidationBroadcastNeedsCatchup = true;
+      console.warn("[roles-realtime] private Broadcast subscription issue", {
+        status: serverRoleInvalidationBroadcastStatus,
+        reason,
+        message: error?.message || error || "",
+        error: error || null,
+      });
+      if (serverRoleInvalidationBroadcastStatus !== "CLOSED") return;
+      if (serverRoleInvalidationBroadcastRestartTimer || !state.user?.id) return;
+      serverRoleInvalidationBroadcastRestartTimer = setTimeout(() => {
+        serverRoleInvalidationBroadcastRestartTimer = null;
+        void startServerRoleInvalidationPrivateBroadcast({ force: true, reason: `restart:${status}` });
+      }, ALTARA_REALTIME_SOURCE_RESTART_DELAY_MS);
+    });
+
+  serverRoleInvalidationBroadcastChannel = channel;
+  return channel;
+}
+
+function startServerRoleInvalidationAuthStateListener() {
+  if (serverRoleInvalidationAuthStateSubscription) return;
+  if (!supabase?.auth || typeof supabase.auth.onAuthStateChange !== "function") return;
+  try {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      const userId = normId(session?.user?.id || "");
+      const accessToken = String(session?.access_token || "").trim();
+      if (!userId || !accessToken) {
+        stopServerRoleInvalidationPrivateBroadcast(`auth:${event || "signed_out"}`);
+        return;
+      }
+      void startServerRoleInvalidationPrivateBroadcast({
+        session,
+        force: false,
+        reason: `auth:${event || "session"}`,
+      });
+    });
+    serverRoleInvalidationAuthStateSubscription = data?.subscription || data || true;
+  } catch (_) {}
 }
 
 async function flushServerBotInstallRealtimeRefresh(serverId) {
@@ -169027,8 +175053,9 @@ function stopActiveServerBotInstallRealtime() {
     activeServerBotInstallRealtimeRestartTimer = null;
   }
   if (activeServerBotInstallChannel) {
-    try { supabase.removeChannel(activeServerBotInstallChannel); } catch (_) {}
+    const oldChannel = activeServerBotInstallChannel;
     activeServerBotInstallChannel = null;
+    try { supabase.removeChannel(oldChannel); } catch (_) {}
   }
   activeServerBotInstallRealtimeServerId = "";
 }
@@ -169043,7 +175070,7 @@ function startActiveServerBotInstallRealtime(serverId = "") {
   stopActiveServerBotInstallRealtime();
   activeServerBotInstallRealtimeServerId = sid;
   const channel = supabase
-    .channel("active-server-bots:" + state.user.id + ":" + sid)
+    .channel("active-server-bots:" + state.user.id + ":" + sid, { config: { private: true } })
     .on("postgres_changes", {
       event: "*",
       schema: "public",
@@ -169057,12 +175084,28 @@ function startActiveServerBotInstallRealtime(serverId = "") {
         console.warn("active server_bot_installs realtime update failed", e);
       }
     })
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "server_bot_bans",
+      filter: "server_id=eq." + sid,
+    }, async (payload) => {
+      try {
+        serverAppBanSnapshotByServerId.delete(sid);
+        const row = payload?.new || payload?.old || { server_id: sid };
+        await onGlobalServerBotInstallTableChanged(row);
+      } catch (e) {
+        console.warn("active server_bot_bans realtime update failed", e);
+      }
+    })
     .subscribe((status) => {
+      if (activeServerBotInstallChannel !== channel) return;
       if (status === "SUBSCRIBED") {
         queueServerBotInstallRealtimeRefresh(sid);
         return;
       }
       if (status !== "CHANNEL_ERROR" && status !== "TIMED_OUT" && status !== "CLOSED") return;
+      if (status !== "CLOSED") return;
       if (activeServerBotInstallRealtimeRestartTimer || activeServerBotInstallRealtimeServerId !== sid || !state.user?.id) return;
       activeServerBotInstallRealtimeRestartTimer = setTimeout(() => {
         activeServerBotInstallRealtimeRestartTimer = null;
@@ -169078,12 +175121,14 @@ function startGlobalServerChannelTableListener() {
     globalServerChannelRestartTimer = null;
   }
   if (globalServerChannelTableChannel) {
-    supabase.removeChannel(globalServerChannelTableChannel);
+    const oldChannel = globalServerChannelTableChannel;
     globalServerChannelTableChannel = null;
+    supabase.removeChannel(oldChannel);
   }
 
-  globalServerChannelTableChannel = supabase
-    .channel("global-server-channels:" + state.user.id)
+  let channel = null;
+  channel = supabase
+    .channel("global-server-channels:" + state.user.id, { config: { private: true } })
     .on("postgres_changes", {
       event: "*",
       schema: "public",
@@ -169109,7 +175154,9 @@ function startGlobalServerChannelTableListener() {
       }
     })
     .subscribe((status) => {
+      if (globalServerChannelTableChannel !== channel) return;
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        if (status !== "CLOSED") return;
         if (globalServerChannelRestartTimer || !state.user?.id) return;
         globalServerChannelRestartTimer = setTimeout(() => {
           globalServerChannelRestartTimer = null;
@@ -169117,6 +175164,7 @@ function startGlobalServerChannelTableListener() {
         }, 1200);
       }
     });
+  globalServerChannelTableChannel = channel;
 }
 
 async function onGlobalServerTableChanged(row) {
@@ -169136,13 +175184,6 @@ async function onGlobalServerTableChanged(row) {
   renderGroupsRail();
 }
 
-async function onGlobalServerRoleTableChanged(row) {
-  if (!row || !state.user?.id) return;
-  const serverId = normId(row?.server_id || "");
-  if (!serverId) return;
-  queueServerRoleRealtimeRefresh(serverId);
-}
-
 function startGlobalServerRoleTablesListener() {
   bindActiveServerBotRefreshListeners();
   if (!state.user?.id) return;
@@ -169151,12 +175192,14 @@ function startGlobalServerRoleTablesListener() {
     globalServerRoleTablesRestartTimer = null;
   }
   if (globalServerRoleTablesChannel) {
-    supabase.removeChannel(globalServerRoleTablesChannel);
+    const oldChannel = globalServerRoleTablesChannel;
     globalServerRoleTablesChannel = null;
+    supabase.removeChannel(oldChannel);
   }
 
-  globalServerRoleTablesChannel = supabase
-    .channel("global-server-roles:" + state.user.id)
+  let channel = null;
+  channel = supabase
+    .channel("global-server-roles:" + state.user.id, { config: { private: true } })
     .on("postgres_changes", {
       event: "*",
       schema: "public",
@@ -169167,30 +175210,6 @@ function startGlobalServerRoleTablesListener() {
         await onGlobalServerTableChanged(row);
       } catch (e) {
         console.warn("servers realtime update failed", e);
-      }
-    })
-    .on("postgres_changes", {
-      event: "*",
-      schema: "public",
-      table: "server_roles",
-    }, async (payload) => {
-      try {
-        const row = payload?.new || payload?.old || null;
-        await onGlobalServerRoleTableChanged(row);
-      } catch (e) {
-        console.warn("server_roles realtime update failed", e);
-      }
-    })
-    .on("postgres_changes", {
-      event: "*",
-      schema: "public",
-      table: "server_role_members",
-    }, async (payload) => {
-      try {
-        const row = payload?.new || payload?.old || null;
-        await onGlobalServerRoleTableChanged(row);
-      } catch (e) {
-        console.warn("server_role_members realtime update failed", e);
       }
     })
     .on("postgres_changes", {
@@ -169238,7 +175257,7 @@ function startGlobalServerRoleTablesListener() {
           });
           return;
         }
-        await onGlobalServerRoleTableChanged(row);
+        queueServerRoleRealtimeRefresh(row?.server_id || "");
       } catch (e) {
         console.warn("server_members realtime update failed", e);
       }
@@ -169286,6 +175305,7 @@ function startGlobalServerRoleTablesListener() {
       }
     })
     .subscribe((status) => {
+      if (globalServerRoleTablesChannel !== channel) return;
       serverSettingsMembersLastRealtimeEvent = {
         type: "subscription_status",
         status,
@@ -169295,6 +175315,7 @@ function startGlobalServerRoleTablesListener() {
         void loadServerSettingsMembersBestEffort(serverSettingsServerId, { force: true });
       }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        if (status !== "CLOSED") return;
         if (globalServerRoleTablesRestartTimer || !state.user?.id) return;
         globalServerRoleTablesRestartTimer = setTimeout(() => {
           globalServerRoleTablesRestartTimer = null;
@@ -169302,6 +175323,7 @@ function startGlobalServerRoleTablesListener() {
         }, 1200);
       }
     });
+  globalServerRoleTablesChannel = channel;
 }
 
 function buildProfileRealtimeFingerprint(profilePatch) {
@@ -169315,6 +175337,14 @@ function buildProfileRealtimeFingerprint(profilePatch) {
   const status = readPresenceStatusValue(profilePatch?.status)
     || readPresenceStatusValue(profilePatch?.theme_settings?.presence_status)
     || "";
+  const avatarCrop = normalizeMediaCropSnapshot(
+    profilePatch?.avatar_crop ?? profilePatch?.theme_settings?.avatar_crop,
+    "avatar"
+  );
+  const bannerCrop = normalizeMediaCropSnapshot(
+    profilePatch?.banner_crop ?? profilePatch?.theme_settings?.banner_crop,
+    "banner"
+  );
   const payload = [
     uid,
     String(profilePatch?.username || "").trim(),
@@ -169325,6 +175355,8 @@ function buildProfileRealtimeFingerprint(profilePatch) {
     normalizeNameColor(profilePatch?.name_color || ""),
     normalizeCallTileColor(profilePatch?.call_tile_color || ""),
     banner,
+    JSON.stringify(avatarCrop),
+    JSON.stringify(bannerCrop),
     status,
   ];
   return payload.join("|");
@@ -169366,6 +175398,7 @@ function isProfileRealtimeRelevant(userId) {
   if (getIncomingMessageRequestRows().some((r) => getIncomingMessageRequestPeerId(r) === uid)) return true;
   if (getOutgoingMessageRequestRows().some((r) => getOutgoingMessageRequestPeerId(r) === uid)) return true;
   if ((state.dmContacts || []).some((r) => normId(r?.other_user_id || r?.id) === uid)) return true;
+  if (publicProfileRealtimeInterestIds.has(uid)) return true;
   return false;
 }
 
@@ -169379,14 +175412,16 @@ function mergeRealtimeProfileIntoRow(row, profilePatch) {
   if (typeof profilePatch.status !== "undefined") next.status = normalizePresenceStatus(profilePatch.status);
   if (typeof profilePatch.name_color !== "undefined") next.name_color = normalizeNameColor(profilePatch.name_color);
   if (typeof profilePatch.call_tile_color !== "undefined") next.call_tile_color = normalizeCallTileColor(profilePatch.call_tile_color);
-  if (typeof profilePatch.banner_url !== "undefined" || typeof profilePatch.theme_settings !== "undefined") {
-    const nextBanner = normalizeBannerUrl(
-      profilePatch.banner_url ||
-      profilePatch.theme_settings?.banner_url ||
-      next.banner_url ||
-      ""
-    );
-    next.banner_url = nextBanner;
+  if (typeof profilePatch.avatar_crop !== "undefined") {
+    next.avatar_crop = normalizeMediaCropSnapshot(profilePatch.avatar_crop, "avatar");
+  }
+  if (typeof profilePatch.banner_crop !== "undefined") {
+    next.banner_crop = normalizeMediaCropSnapshot(profilePatch.banner_crop, "banner");
+  }
+  if (typeof profilePatch.banner_url !== "undefined") {
+    next.banner_url = normalizeBannerUrl(profilePatch.banner_url);
+  } else if (typeof profilePatch.theme_settings !== "undefined") {
+    next.banner_url = normalizeBannerUrl(profilePatch.theme_settings?.banner_url || next.banner_url || "");
   }
   return next;
 }
@@ -169427,6 +175462,8 @@ function applyRealtimeProfileUpdate(profileRow) {
     name_color: profileRow?.name_color,
     call_tile_color: profileRow?.call_tile_color,
     banner_url: profileRow?.banner_url,
+    avatar_crop: profileRow?.avatar_crop,
+    banner_crop: profileRow?.banner_crop,
     theme_settings: profileRow?.theme_settings,
     ...(patchedStatus ? { status: patchedStatus } : {}),
   };
@@ -169523,7 +175560,17 @@ function applyRealtimeProfileUpdate(profileRow) {
         ? { call_tile_color: normalizeCallTileColor(profilePatch.call_tile_color) }
         : {}),
       ...(typeof profilePatch.banner_url !== "undefined" || typeof profilePatch.theme_settings !== "undefined"
-        ? { banner_url: normalizeBannerUrl(profilePatch.banner_url || profilePatch.theme_settings?.banner_url || state.activeDm?.banner_url || "") }
+        ? { banner_url: normalizeBannerUrl(
+          typeof profilePatch.banner_url !== "undefined"
+            ? profilePatch.banner_url
+            : (profilePatch.theme_settings?.banner_url || state.activeDm?.banner_url || "")
+        ) }
+        : {}),
+      ...(typeof profilePatch.avatar_crop !== "undefined"
+        ? { avatar_crop: normalizeMediaCropSnapshot(profilePatch.avatar_crop, "avatar") }
+        : {}),
+      ...(typeof profilePatch.banner_crop !== "undefined"
+        ? { banner_crop: normalizeMediaCropSnapshot(profilePatch.banner_crop, "banner") }
         : {}),
     };
   }
@@ -169578,35 +175625,312 @@ function startProfileSyncFallback() {
   void runProfileSyncFallback();
 }
 
-function startGlobalProfileListener() {
-  if (!state.user?.id) return;
+function schedulePublicProfileInvalidationRetry(profileId, userId) {
+  if (publicProfileInvalidationRetryTimersById.has(profileId)) return;
+  const attempt = Number(publicProfileInvalidationRetryAttemptById.get(profileId) || 0);
+  const delays = [1500, 5000, 15000, 30000];
+  const delay = delays[Math.min(attempt, delays.length - 1)];
+  publicProfileInvalidationRetryAttemptById.set(profileId, attempt + 1);
+  const timer = setTimeout(() => {
+    publicProfileInvalidationRetryTimersById.delete(profileId);
+    if (normId(state.user?.id || "") !== userId) return;
+    void refreshPublicProfileFromInvalidation(profileId, userId);
+  }, delay);
+  publicProfileInvalidationRetryTimersById.set(profileId, timer);
+}
+
+async function refreshPublicProfileFromInvalidation(profileIdInput, userIdInput) {
+  const profileId = normId(profileIdInput || "");
+  const userId = normId(userIdInput || "");
+  if (!profileId || !userId || normId(state.user?.id || "") !== userId) return false;
+  if (publicProfileInvalidationRefreshTasksById.has(profileId)) {
+    return publicProfileInvalidationRefreshTasksById.get(profileId);
+  }
+
+  const run = (async () => {
+    const targetEpoch = Number(publicProfileInvalidationPendingEpochById.get(profileId) || 0);
+    const beforeVersion = Number(profileSafeFetchVersionById.get(profileId) || 0);
+    const previousDisplayName = String(getCachedProfile(profileId)?.display_name || "").trim();
+    const rows = await fetchProfilesByIds([profileId], { includeBio: true, force: true });
+    if (normId(state.user?.id || "") !== userId) return false;
+
+    const afterVersion = Number(profileSafeFetchVersionById.get(profileId) || 0);
+    const row = (rows || []).find((candidate) => normId(candidate?.id || "") === profileId) || null;
+    tracePublicProfileInvalidation("SAFE_REFETCH", {
+      targetProfileId: profileId,
+      changeEpoch: targetEpoch,
+      ok: !!row && afterVersion > beforeVersion,
+      displayName: String(row?.display_name || "").trim(),
+    });
+    if (!row || afterVersion <= beforeVersion) {
+      schedulePublicProfileInvalidationRetry(profileId, userId);
+      return false;
+    }
+
+    const retryTimer = publicProfileInvalidationRetryTimersById.get(profileId);
+    if (retryTimer) clearTimeout(retryTimer);
+    publicProfileInvalidationRetryTimersById.delete(profileId);
+    publicProfileInvalidationRetryAttemptById.delete(profileId);
+    publicProfileInvalidationAppliedEpochById.set(profileId, targetEpoch);
+    applyRealtimeProfileUpdate(row);
+    tracePublicProfileInvalidation("CACHE_APPLIED", {
+      targetProfileId: profileId,
+      changeEpoch: targetEpoch,
+      previousDisplayName,
+      nextDisplayName: String(getCachedProfile(profileId)?.display_name || "").trim(),
+    });
+
+    // Message author presentation reads the same canonical profile cache.
+    // Re-rendering the active cache is local-only and does not reload history.
+    try { renderMessagesFromCache({ keepBottom: true, reason: "public-profile-invalidation", force: true }); } catch (_) {}
+    tracePublicProfileInvalidation("UI_PATCHED", {
+      targetProfileId: profileId,
+      surfaces: ["friends", "pending", "dm-list", "dm-header", "messages", "profile-preview"],
+    });
+    return true;
+  })();
+
+  publicProfileInvalidationRefreshTasksById.set(profileId, run);
+  try {
+    return await run;
+  } finally {
+    if (publicProfileInvalidationRefreshTasksById.get(profileId) === run) {
+      publicProfileInvalidationRefreshTasksById.delete(profileId);
+    }
+    const pendingEpoch = Number(publicProfileInvalidationPendingEpochById.get(profileId) || 0);
+    const appliedEpoch = Number(publicProfileInvalidationAppliedEpochById.get(profileId) || 0);
+    if (pendingEpoch > appliedEpoch
+        && !publicProfileInvalidationRetryTimersById.has(profileId)
+        && normId(state.user?.id || "") === userId) {
+      void refreshPublicProfileFromInvalidation(profileId, userId);
+    }
+  }
+}
+
+function handlePublicProfileInvalidation(payload, expectedUserId) {
+  const row = payload?.new || payload?.old || null;
+  const recipientUserId = normId(row?.recipient_user_id || "");
+  const profileId = normId(row?.profile_id || "");
+  const changeEpoch = Number(row?.change_epoch || 0);
+  tracePublicProfileInvalidation("EVENT_RECEIVED", {
+    recipientUserId,
+    profileId,
+    changeEpoch,
+    eventType: String(payload?.eventType || "").toUpperCase(),
+  });
+  if (!recipientUserId || recipientUserId !== expectedUserId) return false;
+  if (!profileId || !Number.isSafeInteger(changeEpoch) || changeEpoch < 1) return false;
+
+  const pendingEpoch = Number(publicProfileInvalidationPendingEpochById.get(profileId) || 0);
+  const appliedEpoch = Number(publicProfileInvalidationAppliedEpochById.get(profileId) || 0);
+  if (changeEpoch <= Math.max(pendingEpoch, appliedEpoch)) return false;
+  publicProfileInvalidationPendingEpochById.set(profileId, changeEpoch);
+  return refreshPublicProfileFromInvalidation(profileId, expectedUserId);
+}
+
+async function reconcilePublicProfilesAfterSubscription(userIdInput) {
+  const userId = normId(userIdInput || "");
+  if (!userId || normId(state.user?.id || "") !== userId) return false;
+  if (publicProfileSubscriptionReconcileTask) return publicProfileSubscriptionReconcileTask;
+  const profileIds = Array.from(publicProfileRealtimeInterestIds);
+  if (!profileIds.length) return true;
+
+  const run = (async () => {
+    queuePublicProfileRealtimeInterests(profileIds, { force: true });
+    await flushPublicProfileRealtimeInterests().catch(() => false);
+    const rows = await fetchProfilesByIds(profileIds, { includeBio: false, force: true });
+    if (normId(state.user?.id || "") !== userId) return false;
+    (rows || []).forEach((row) => applyRealtimeProfileUpdate(row));
+    return true;
+  })();
+  publicProfileSubscriptionReconcileTask = run;
+  try {
+    return await run;
+  } finally {
+    if (publicProfileSubscriptionReconcileTask === run) {
+      publicProfileSubscriptionReconcileTask = null;
+    }
+  }
+}
+
+function scheduleGlobalProfileListenerRestart(channel, userId, status) {
+  const normalizedUserId = normId(userId || "");
+  if (!normalizedUserId || normId(state.user?.id || "") !== normalizedUserId) return false;
+  if (channel && globalProfileChannel !== channel) return false;
+
+  if (channel) {
+    globalProfileChannel = null;
+    globalProfileChannelUserId = "";
+    globalProfileChannelStatus = "";
+    globalProfileListenerGeneration += 1;
+    void Promise.resolve(supabase.removeChannel(channel)).catch(() => false);
+  }
+  if (globalProfileRestartTimer) return true;
+
+  const delays = [1200, 3000, 10000, 30000];
+  const attempt = globalProfileRestartAttempt;
+  const delay = delays[Math.min(attempt, delays.length - 1)];
+  globalProfileRestartAttempt = attempt + 1;
+  globalProfileRestartTimer = setTimeout(() => {
+    globalProfileRestartTimer = null;
+    if (normId(state.user?.id || "") !== normalizedUserId) return;
+    void startGlobalProfileListener({ force: true, reason: `restart:${String(status || "unknown")}` });
+  }, delay);
+  return true;
+}
+
+async function startGlobalProfileListener(options = {}) {
+  const opts = options && typeof options === "object" ? options : {};
+  const reason = String(opts.reason || "start");
+  const userId = ensurePublicProfileRealtimeInterestScope();
+  if (!userId) return null;
+  if (
+    !opts.force
+    && globalProfileChannel
+    && globalProfileChannelUserId === userId
+    && ["JOINING", "SUBSCRIBED"].includes(globalProfileChannelStatus)
+  ) {
+    return globalProfileChannel;
+  }
+  if (globalProfileListenerStartTask) return globalProfileListenerStartTask;
   if (globalProfileRestartTimer) {
     clearTimeout(globalProfileRestartTimer);
     globalProfileRestartTimer = null;
   }
-  if (globalProfileChannel) {
-    supabase.removeChannel(globalProfileChannel);
-    globalProfileChannel = null;
-  }
 
-  globalProfileChannel = supabase
-    .channel("global-profiles:" + state.user.id)
-    .on("postgres_changes", {
-      event: "UPDATE",
-      schema: "public",
-      table: "profiles",
-    }, async (payload) => {
-      applyRealtimeProfileUpdate(payload?.new || null);
-    })
-    .subscribe((status) => {
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        if (globalProfileRestartTimer || !state.user?.id) return;
-        globalProfileRestartTimer = setTimeout(() => {
-          globalProfileRestartTimer = null;
-          startGlobalProfileListener();
-        }, 1200);
+  const generation = ++globalProfileListenerGeneration;
+  const run = (async () => {
+    let session = null;
+    try {
+      const result = await awaitWithTimeout(
+        supabase.auth.getSession(),
+        PROFILES_FETCH_TIMEOUT_MS,
+        "profile invalidation auth",
+      );
+      session = result?.data?.session || null;
+    } catch (error) {
+      tracePublicProfileInvalidation("SUBSCRIBE_STATUS", {
+        channel: "public-profile-events:" + userId,
+        currentUserId: userId,
+        status: "AUTH_ERROR",
+        errorCode: String(error?.code || "profile_invalidation_auth_failed"),
+      });
+      scheduleGlobalProfileListenerRestart(null, userId, "AUTH_ERROR");
+      return null;
+    }
+
+    const sessionUserId = normId(session?.user?.id || "");
+    const accessToken = String(session?.access_token || "").trim();
+    if (sessionUserId !== userId || !accessToken) {
+      tracePublicProfileInvalidation("SUBSCRIBE_STATUS", {
+        channel: "public-profile-events:" + userId,
+        currentUserId: userId,
+        status: "AUTH_UNAVAILABLE",
+        errorCode: "profile_invalidation_auth_unavailable",
+      });
+      scheduleGlobalProfileListenerRestart(null, userId, "AUTH_UNAVAILABLE");
+      return null;
+    }
+
+    try {
+      if (!supabase?.realtime || typeof supabase.realtime.setAuth !== "function") {
+        throw new Error("realtime_auth_unavailable");
+      }
+      await Promise.resolve(supabase.realtime.setAuth(accessToken));
+    } catch (error) {
+      tracePublicProfileInvalidation("SUBSCRIBE_STATUS", {
+        channel: "public-profile-events:" + userId,
+        currentUserId: userId,
+        status: "AUTH_ERROR",
+        errorCode: String(error?.code || error?.message || "realtime_auth_failed"),
+      });
+      scheduleGlobalProfileListenerRestart(null, userId, "AUTH_ERROR");
+      return null;
+    }
+
+    if (generation !== globalProfileListenerGeneration || normId(state.user?.id || "") !== userId) return null;
+    if (globalProfileChannel) {
+      const oldChannel = globalProfileChannel;
+      globalProfileChannel = null;
+      globalProfileChannelUserId = "";
+      globalProfileChannelStatus = "";
+      void Promise.resolve(supabase.removeChannel(oldChannel)).catch(() => false);
+    }
+
+    queuePublicProfileRealtimeInterests([
+      userId,
+      ...collectProfileSyncTargetIds(),
+    ], { force: true });
+    void flushPublicProfileRealtimeInterests().catch(() => false);
+
+    const channelName = "public-profile-events:" + userId;
+    const onInvalidation = (payload) => {
+      void handlePublicProfileInvalidation(payload, userId);
+    };
+    const channel = supabase
+      .channel(channelName, { config: { private: true } })
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "public_profile_change_events",
+        filter: `recipient_user_id=eq.${userId}`,
+      }, onInvalidation)
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "public_profile_change_events",
+        filter: `recipient_user_id=eq.${userId}`,
+      }, onInvalidation);
+
+    globalProfileChannel = channel;
+    globalProfileChannelUserId = userId;
+    globalProfileChannelStatus = "JOINING";
+    tracePublicProfileInvalidation("SUBSCRIBE_START", {
+      channel: channelName,
+      currentUserId: userId,
+      private: true,
+      generation,
+      reason,
+    });
+    channel.subscribe((status, error) => {
+      if (globalProfileChannel !== channel || generation !== globalProfileListenerGeneration) return;
+      globalProfileChannelStatus = String(status || "");
+      tracePublicProfileInvalidation("SUBSCRIBE_STATUS", {
+        channel: channelName,
+        currentUserId: userId,
+        status: globalProfileChannelStatus,
+        errorCode: String(error?.code || ""),
+        generation,
+      });
+      if (globalProfileChannelStatus === "SUBSCRIBED") {
+        globalProfileRestartAttempt = 0;
+        void reconcilePublicProfilesAfterSubscription(userId);
+        return;
+      }
+      if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(globalProfileChannelStatus)) {
+        scheduleGlobalProfileListenerRestart(channel, userId, globalProfileChannelStatus);
       }
     });
+    return channel;
+  })();
+
+  globalProfileListenerStartTask = run;
+  try {
+    return await run;
+  } catch (error) {
+    tracePublicProfileInvalidation("SUBSCRIBE_STATUS", {
+      channel: "public-profile-events:" + userId,
+      currentUserId: userId,
+      status: "START_ERROR",
+      errorCode: String(error?.code || error?.message || "profile_listener_start_failed"),
+      generation,
+    });
+    const failedChannel = generation === globalProfileListenerGeneration ? globalProfileChannel : null;
+    scheduleGlobalProfileListenerRestart(failedChannel, userId, "START_ERROR");
+    return null;
+  } finally {
+    if (globalProfileListenerStartTask === run) globalProfileListenerStartTask = null;
+  }
 }
 
 async function getConversationKindForNotificationRouting(conversationId) {
@@ -169667,10 +175991,22 @@ function clearDmMessageConversationAccessCache(conversationId = null) {
   dmMessageConversationAccessLookupInFlightByConversation.delete(convId);
 }
 
+function isGroupDmConversationRevoked(conversationId = "") {
+  const convId = normId(conversationId || "");
+  return !!convId && revokedGroupDmConversationIds.has(convId);
+}
+
 function hasLocalDmMessageConversationAccessHint(conversationId) {
   const convId = normId(conversationId || "");
   const meId = normId(state.user?.id || "");
   if (!convId || !meId) return false;
+  if (isGroupDmConversationRevoked(convId)) return false;
+
+  const serverChannelContext = getCurrentServerChannelVisibilityContextForConversation(convId);
+  if (serverChannelContext) {
+    return !serverChannelContext.unresolved
+      && canCurrentUserViewServerChannelSync(serverChannelContext.serverId, serverChannelContext.channelId);
+  }
 
   if (normId(activeDmId || state.activeDm?.conversationId || "") === convId) return true;
   if ((state.dmContacts || []).some((row) => normId(row?.conversation_id || row?.conversationId || "") === convId)) return true;
@@ -169680,36 +176016,25 @@ function hasLocalDmMessageConversationAccessHint(conversationId) {
   const metaMemberIds = normalizeUuidArray(meta?.memberIds);
   if (metaMemberIds.includes(meId)) return true;
 
-  const serverCtx = findServerChannelContextByConversationId(convId);
-  const serverId = normId(serverCtx?.serverId || meta?.serverId || "");
-  if (!serverId) return false;
-  const isPrivateServerChannel = !!serverCtx?.channel?.isPrivate;
-  if (isPrivateServerChannel) {
-    const channelId = normId(serverCtx?.channel?.id || "");
-    return !!(
-      channelId
-      && canCurrentUserViewServerChannelSync(serverId, channelId)
-    );
-  }
-  const serverMembers = Array.isArray(serverMemberListByServerId.get(serverId))
-    ? (serverMemberListByServerId.get(serverId) || [])
-    : [];
-  return serverMembers.some((row) => normId(row?.userId || row?.id || "") === meId);
+  return false;
 }
 
 async function canCurrentUserAccessMessageConversation(conversationId, { force = false } = {}) {
   const convId = normId(conversationId || "");
   const meId = normId(state.user?.id || "");
   if (!convId || !meId) return false;
+  if (isGroupDmConversationRevoked(convId)) return false;
 
-  const localServerChannelContext = findServerChannelContextByConversationId(convId) || null;
-  const requiresAuthoritativePrivateAccess = localServerChannelContext?.channel?.isPrivate === true;
-  if (!requiresAuthoritativePrivateAccess && hasLocalDmMessageConversationAccessHint(convId)) {
+  const localServerChannelContext = getCurrentServerChannelVisibilityContextForConversation(convId);
+  if (localServerChannelContext) {
+    const allowed = !localServerChannelContext.unresolved
+      && canCurrentUserViewServerChannelSync(localServerChannelContext.serverId, localServerChannelContext.channelId);
     dmMessageConversationAccessCacheByConversation.set(convId, {
-      allowed: true,
+      allowed,
       checkedAt: Date.now(),
+      visibilityEpoch: Number(serverChannelVisibilityAuthorityEpochByServerId.get(localServerChannelContext.serverId) || 0),
     });
-    return true;
+    return allowed;
   }
 
   if (!force) {
@@ -169723,17 +176048,30 @@ async function canCurrentUserAccessMessageConversation(conversationId, { force =
   }
 
   const inFlight = dmMessageConversationAccessLookupInFlightByConversation.get(convId);
-  if (inFlight) return inFlight;
+  if (!force && inFlight) return inFlight;
 
   const lookupPromise = (async () => {
     let allowed = false;
 
     try {
-      if (privateChannelDependentReadSqlAvailable !== false) {
+      const { data: serverChannelRow, error: serverChannelError } = await supabase
+        .from("server_channels")
+        .select("server_id, is_private")
+        .eq("conversation_id", convId)
+        .maybeSingle();
+      if (isGroupDmConversationRevoked(convId)) return false;
+
+      const serverId = serverChannelError ? "" : normId(serverChannelRow?.server_id || "");
+      const isConfirmedServerChannel = !!serverId;
+      const isPrivateServerChannel = serverChannelRow?.is_private === true
+        || String(serverChannelRow?.is_private || "").trim().toLowerCase() === "true";
+
+      if (isConfirmedServerChannel && privateChannelDependentReadSqlAvailable !== false) {
         const accessRpc = await supabase.rpc("explain_server_channel_conversation_access_v1", {
           p_conversation_id: convId,
           p_user_id: null,
         });
+        if (isGroupDmConversationRevoked(convId)) return false;
         if (!accessRpc?.error) {
           privateChannelDependentReadSqlAvailable = true;
           allowed = accessRpc?.data?.newResolverResult === true
@@ -169768,33 +176106,45 @@ async function canCurrentUserAccessMessageConversation(conversationId, { force =
         return true;
       }
 
-      const { data: membershipRow, error: membershipError } = await supabase
-        .from("conversation_members")
-        .select("user_id")
-        .eq("conversation_id", convId)
-        .eq("user_id", meId)
-        .maybeSingle();
+      const [membershipResult, conversationResult] = await Promise.all([
+        supabase
+          .from("conversation_members")
+          .select("user_id")
+          .eq("conversation_id", convId)
+          .eq("user_id", meId)
+          .maybeSingle(),
+        // A self membership row is not sufficient authority. Historical
+        // server-channel rows can survive channel deletion, while the
+        // conversations SELECT policy is bound to can_access_conversation.
+        supabase
+          .from("conversations")
+          .select("id")
+          .eq("id", convId)
+          .maybeSingle(),
+      ]);
+      const { data: membershipRow, error: membershipError } = membershipResult || {};
+      const { data: conversationRow, error: conversationError } = conversationResult || {};
 
-      if (!membershipError && normId(membershipRow?.user_id || "") === meId) {
+      if (isGroupDmConversationRevoked(convId)) return false;
+
+      if (!membershipError
+          && !conversationError
+          && normId(membershipRow?.user_id || "") === meId
+          && normId(conversationRow?.id || "") === convId) {
         allowed = true;
       }
 
-      if (!allowed) {
-        const { data: serverChannelRow, error: serverChannelError } = await supabase
-          .from("server_channels")
-          .select("server_id, is_private")
-          .eq("conversation_id", convId)
-          .maybeSingle();
+      if (!allowed && isConfirmedServerChannel) {
+        if (isGroupDmConversationRevoked(convId)) return false;
 
-        const serverId = serverChannelError ? "" : normId(serverChannelRow?.server_id || "");
-        const isPrivateServerChannel = serverChannelRow?.is_private === true || String(serverChannelRow?.is_private || "").trim().toLowerCase() === "true";
-        if (serverId && !isPrivateServerChannel) {
+        if (!isPrivateServerChannel) {
           const { data: serverMemberRow, error: serverMemberError } = await supabase
             .from("server_members")
             .select("user_id")
             .eq("server_id", serverId)
             .eq("user_id", meId)
             .maybeSingle();
+          if (isGroupDmConversationRevoked(convId)) return false;
           if (!serverMemberError && normId(serverMemberRow?.user_id || "") === meId) {
             allowed = true;
           }
@@ -169804,6 +176154,7 @@ async function canCurrentUserAccessMessageConversation(conversationId, { force =
       allowed = false;
     }
 
+    if (isGroupDmConversationRevoked(convId)) return false;
     dmMessageConversationAccessCacheByConversation.set(convId, {
       allowed: !!allowed,
       checkedAt: Date.now(),
@@ -169815,7 +176166,9 @@ async function canCurrentUserAccessMessageConversation(conversationId, { force =
   try {
     return await lookupPromise;
   } finally {
-    dmMessageConversationAccessLookupInFlightByConversation.delete(convId);
+    if (dmMessageConversationAccessLookupInFlightByConversation.get(convId) === lookupPromise) {
+      dmMessageConversationAccessLookupInFlightByConversation.delete(convId);
+    }
   }
 }
 
@@ -170161,18 +176514,40 @@ async function onGlobalDmMessageInserted(row) {
 
   const convId = normId(row.conversation_id);
   if (!convId) return;
-  const hasConversationAccess = await canCurrentUserAccessMessageConversation(convId);
+  const knownKind = String(getConversationMeta(convId)?.kind || "").trim().toLowerCase();
+  const isKnownGroupDm = knownKind === "group"
+    || (state.groupDms || []).some((group) => normId(group?.conversationId || "") === convId);
+  const hasConversationAccess = await canCurrentUserAccessMessageConversation(convId, {
+    force: isKnownGroupDm,
+  });
   if (!hasConversationAccess) {
+    if (isKnownGroupDm) {
+      await purgeRevokedGroupDmClientState(convId, {
+        reason: "group_message_access_denied",
+        navigate: true,
+      });
+    }
     return;
   }
   upsertConversationMessageCacheRow(convId, row, { persist: true, source: "message-insert-global" });
 
-  const parsed = safeParseMessageContent(row?.content);
-  const isSystemEvent = isSystemChipMessage(parsed);
+  const parsed = getAuthoritativeMessageContent(row);
+  const isSystemEvent = isSystemChipMessage(parsed, row);
   const atMs = Date.parse(String(row?.created_at || "")) || Date.now();
   const messageContext = await getIncomingMessageContext(row, { sourceTable: "messages" });
   const myId = normId(state.user.id);
   const fromId = normId(row.user_id || messageContext.senderUserId || "");
+  const activeConversationFallback = (
+    convId === normId(activeDmId || state.activeDm?.conversationId || "")
+    && !isAltaraActiveConversationRealtimeSubscribed(convId)
+  );
+  if (activeConversationFallback) {
+    const [resolvedRow] = await hydrateDmRowsForDisplay([row], { conversationId: convId });
+    if (convId === normId(activeDmId || state.activeDm?.conversationId || "")) {
+      appendMessage(resolvedRow || row);
+    }
+    return;
+  }
 
   if (messageContext.type === "server_channel") {
     if (fromId && fromId === myId) {
@@ -170180,7 +176555,7 @@ async function onGlobalDmMessageInserted(row) {
       return;
     }
     // Active server-channel updates are handled by the dedicated channel subscription.
-    if (convId === normId(activeDmId) && dmChannel) return;
+    if (isAltaraActiveConversationRealtimeSubscribed(convId)) return;
     applyIncomingServerChannelUnread(messageContext, { row, sourceTable: "messages", isSystemEvent });
     return;
   }
@@ -170195,17 +176570,20 @@ async function onGlobalDmMessageInserted(row) {
 
   // Active DM updates are usually handled by the dedicated dmChannel.
   // Keep this only when the channel exists; otherwise allow global fallback.
-  if (convId === normId(activeDmId) && dmChannel) return;
+  if (isAltaraActiveConversationRealtimeSubscribed(convId)) return;
 
   if (messageContext.type === "group_dm") {
     const activeViewed = isDmConversationActivelyViewed(convId);
+    let soundPlayed = false;
     if (!activeViewed && !isSystemEvent) {
       const count = Number(dmUnreadByConversationId.get(convId) || 0);
       dmUnreadByConversationId.set(convId, Math.min(99, count + 1));
       persistDmUnreadConversationsToStorage();
       if (!isDmConversationMuted(convId)) {
         const notificationMeta = { type: "group_dm", sender_user_id: fromId };
-        if (shouldNotifyInFocus(notificationMeta)) playUiCue("group_dm", notificationMeta);
+        if (shouldNotifyInFocus(notificationMeta)) {
+          soundPlayed = playIncomingMessageCueOnce(row, "group_dm", notificationMeta);
+        }
       }
     }
 
@@ -170224,7 +176602,7 @@ async function onGlobalDmMessageInserted(row) {
       decorations: true,
       widgets: true,
     });
-    logNotificationDebug("incoming_group_dm_message", { sourceTable: "messages", messageId: row?.id, context: "group_dm", conversationId: convId, senderUserId: fromId, isOwnMessage: false, activeMatch: activeViewed, unreadApplied: !activeViewed && !isSystemEvent, appliedDmUnread: !activeViewed && !isSystemEvent, appliedServerUnread: false, soundPlayed: false });
+    logNotificationDebug("incoming_group_dm_message", { sourceTable: "messages", messageId: row?.id, context: "group_dm", conversationId: convId, senderUserId: fromId, isOwnMessage: false, activeMatch: activeViewed, unreadApplied: !activeViewed && !isSystemEvent, appliedDmUnread: !activeViewed && !isSystemEvent, appliedServerUnread: false, soundPlayed });
     return;
   }
 
@@ -170232,6 +176610,7 @@ async function onGlobalDmMessageInserted(row) {
   if (!peerUserId) return;
 
   const activeViewed = isDmConversationActivelyViewed(convId);
+  let soundPlayed = false;
   touchDmActivity(peerUserId, { at: atMs, unread: !activeViewed && !isSystemEvent });
   void fetchProfilesByIds([peerUserId], { includeBio: false, force: false })
     .then(() => {
@@ -170242,9 +176621,11 @@ async function onGlobalDmMessageInserted(row) {
     .catch(() => {});
   if (!activeViewed && !isSystemEvent && !isDmUserMuted(peerUserId)) {
     const notificationMeta = { type: "direct_dm", sender_user_id: peerUserId };
-    if (shouldNotifyInFocus(notificationMeta)) playUiCue("msg", notificationMeta);
+    if (shouldNotifyInFocus(notificationMeta)) {
+      soundPlayed = playIncomingMessageCueOnce(row, "msg", notificationMeta);
+    }
   }
-  logNotificationDebug("incoming_dm_message", { sourceTable: "messages", messageId: row?.id, context: "dm", conversationId: convId, senderUserId: peerUserId, isOwnMessage: false, activeMatch: activeViewed, unreadApplied: !activeViewed && !isSystemEvent, appliedDmUnread: !activeViewed && !isSystemEvent, appliedServerUnread: false, soundPlayed: !activeViewed && !isSystemEvent });
+  logNotificationDebug("incoming_dm_message", { sourceTable: "messages", messageId: row?.id, context: "dm", conversationId: convId, senderUserId: peerUserId, isOwnMessage: false, activeMatch: activeViewed, unreadApplied: !activeViewed && !isSystemEvent, appliedDmUnread: !activeViewed && !isSystemEvent, appliedServerUnread: false, soundPlayed });
 
   // If item is missing for some reason, refresh DM list to render it.
   if (!getDmItemByUserId(peerUserId)) {
@@ -170252,42 +176633,77 @@ async function onGlobalDmMessageInserted(row) {
   }
 }
 function startGlobalDmMessageListener() {
-  if (!state.user?.id) return;
+  if (!state.user?.id) return null;
   exposeAltaraNotificationsDebugHelper();
   clearDmMessageConversationAccessCache();
   if (globalDmMessageRestartTimer) {
     clearTimeout(globalDmMessageRestartTimer);
     globalDmMessageRestartTimer = null;
   }
+  if (
+    globalDmMessageChannel
+    && ["JOINING", "SUBSCRIBED"].includes(globalDmMessageChannelStatus)
+  ) return globalDmMessageChannel;
   if (globalDmMessageChannel) {
-    supabase.removeChannel(globalDmMessageChannel);
+    const oldChannel = globalDmMessageChannel;
     globalDmMessageChannel = null;
+    globalDmMessageChannelStatus = "";
+    supabase.removeChannel(oldChannel);
   }
 
-  globalDmMessageChannel = supabase
-    .channel("global-dm-messages:" + state.user.id)
+  const channel = supabase
+    .channel("global-dm-messages:" + state.user.id, { config: { private: true } })
     .on("postgres_changes", {
       event: "INSERT",
       schema: "public",
       table: "messages"
     }, async (payload) => {
       await onGlobalDmMessageInserted(payload?.new || null);
-    })
-    .subscribe((status) => {
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        if (globalDmMessageRestartTimer || !state.user?.id) return;
-        globalDmMessageRestartTimer = setTimeout(() => {
-          globalDmMessageRestartTimer = null;
-          startGlobalDmMessageListener();
-        }, 1200);
-      }
     });
+  globalDmMessageChannel = channel;
+  globalDmMessageChannelStatus = "JOINING";
+  channel.subscribe((status, error) => {
+    if (globalDmMessageChannel !== channel) return;
+    globalDmMessageChannelStatus = String(status || "").trim().toUpperCase();
+    recordAltaraRealtimeStatus(status, { source: "core-messages", error });
+    if (globalDmMessageChannelStatus === "SUBSCRIBED") {
+      if (globalDmMessageNeedsCatchup) {
+        globalDmMessageNeedsCatchup = false;
+        invalidateGroupAndServerCollectionsCache();
+        void loadDmList().catch(() => {});
+      }
+      return;
+    }
+    if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(globalDmMessageChannelStatus)) return;
+    globalDmMessageNeedsCatchup = true;
+    globalDmMessageChannel = null;
+    void Promise.resolve(supabase.removeChannel(channel)).catch(() => {});
+    if (globalDmMessageRestartTimer || !state.user?.id) return;
+    globalDmMessageRestartTimer = setTimeout(() => {
+      globalDmMessageRestartTimer = null;
+      startGlobalDmMessageListener();
+    }, 1200);
+  });
+  return channel;
 }
 
 async function onGlobalBotChannelMessageInserted(row) {
   if (!row || !state.user?.id) return;
   const context = await getIncomingMessageContext(row, { sourceTable: "bot_channel_messages" });
   if (context.type !== "bot_server_channel") return;
+  const conversationId = getTimelineCacheKeyForServerChannel(context);
+  if (
+    conversationId
+    && conversationId === normId(activeDmId || state.activeDm?.conversationId || "")
+    && !isAltaraActiveConversationRealtimeSubscribed(conversationId)
+  ) {
+    await handleBotChannelMessageRealtimePayload(
+      conversationId,
+      { eventType: "INSERT", new: row },
+      "bot-channel-message-global-fallback"
+    );
+    return;
+  }
   applyIncomingServerChannelUnread(context, { row, sourceTable: "bot_channel_messages", isSystemEvent: false });
 }
 
@@ -170299,12 +176715,14 @@ function startGlobalBotChannelMessageListener() {
     globalBotChannelMessageRestartTimer = null;
   }
   if (globalBotChannelMessageChannel) {
-    supabase.removeChannel(globalBotChannelMessageChannel);
+    const oldChannel = globalBotChannelMessageChannel;
     globalBotChannelMessageChannel = null;
+    supabase.removeChannel(oldChannel);
   }
 
-  globalBotChannelMessageChannel = supabase
-    .channel("global-bot-channel-messages:" + state.user.id)
+  let channel = null;
+  channel = supabase
+    .channel("global-bot-channel-messages:" + state.user.id, { config: { private: true } })
     .on("postgres_changes", {
       event: "INSERT",
       schema: "public",
@@ -170317,11 +176735,13 @@ function startGlobalBotChannelMessageListener() {
       }
     })
     .subscribe((status) => {
+      if (globalBotChannelMessageChannel !== channel) return;
       if (status === "SUBSCRIBED") {
         logNotificationDebug("bot_channel_messages_subscription_ready", { sourceTable: "bot_channel_messages" });
         return;
       }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        if (status !== "CLOSED") return;
         if (globalBotChannelMessageRestartTimer || !state.user?.id) return;
         globalBotChannelMessageRestartTimer = setTimeout(() => {
           globalBotChannelMessageRestartTimer = null;
@@ -170329,6 +176749,7 @@ function startGlobalBotChannelMessageListener() {
         }, 1200);
       }
     });
+  globalBotChannelMessageChannel = channel;
 }
 function leaveActiveDmView({ captureHistory = true } = {}) {
   const renderedConversationId = normId(activeDmId || "");
@@ -170377,6 +176798,11 @@ function leaveActiveDmView({ captureHistory = true } = {}) {
     supabase.removeChannel(dmReactionsChannel);
     dmReactionsChannel = null;
   }
+  dmReactionsChannelStatus = "";
+  if (dmReactionsRestartTimer) {
+    clearTimeout(dmReactionsRestartTimer);
+    dmReactionsRestartTimer = null;
+  }
   dmReactionEventRefreshQueue.reset();
   stopActiveDmPrivacyListener();
   setCallStatus("", false);
@@ -170390,7 +176816,6 @@ function isAltaraDefinitivelyOffline() {
   return (
     getNavigatorOnlineSignal() === false
     || altaraConnectionState.simulatedOffline
-    || altaraConnectionState.supabaseReachable === false
     || String(altaraConnectionState.status || "").toLowerCase() === "offline"
   );
 }
@@ -170398,6 +176823,7 @@ function isAltaraDefinitivelyOffline() {
 async function showCachedConversationOffline(conversationId, metaInput = {}) {
   const convId = normId(conversationId || "");
   if (!convId || !state.user?.id) return false;
+  if (isGroupDmConversationRevoked(convId)) return false;
   const cachedMeta = {
     ...(getConversationMeta(convId) || {}),
     ...(metaInput || {}),
@@ -170419,7 +176845,9 @@ async function showCachedConversationOffline(conversationId, metaInput = {}) {
   );
   state.activeDm.displayName = title;
   setAltaraActiveConversationRealtimeRequirement(false);
-  setMidMode("dm");
+  setMidMode("dm", isServer
+    ? { skipServerConversationRefresh: true, skipBroadUiRefresh: true }
+    : {});
   const titleEl = document.getElementById("dmTitle");
   if (titleEl) titleEl.textContent = title;
   updateDmHeaderAvatar();
@@ -170463,6 +176891,7 @@ async function showDm(conversationId, opts = {}) {
   const previouslyRenderedConversationId = normId(activeDmId || "");
   const convIdNorm = normId(conversationId);
   const selectedConversationId = convIdNorm || conversationId;
+  if (isGroupDmConversationRevoked(convIdNorm || selectedConversationId)) return false;
   if (previouslyRenderedConversationId && previouslyRenderedConversationId !== convIdNorm) {
     const previousComposer = document.getElementById("dmInput");
     persistAltaraOfflineComposerDraft(previouslyRenderedConversationId, previousComposer?.value || "");
@@ -170471,17 +176900,50 @@ async function showDm(conversationId, opts = {}) {
     unsubscribeTypingContext({ sendStop: true, reason: "show-dm-switch" });
   }
   const preFeatureCachedMeta = getConversationMeta(convIdNorm) || {};
-  primeDmOpeningShell(selectedConversationId, {
-    ...(preFeatureCachedMeta || {}),
-    ...(state.activeDm || {}),
-    conversationId: selectedConversationId,
-  }, { reason: opts?.reason || "show_dm", pending: false });
+  const preFeatureKind = String(preFeatureCachedMeta?.kind || state.activeDm?.kind || "dm").trim().toLowerCase() || "dm";
+  if (preFeatureKind === "group") {
+    if (isGroupDmConversationRevoked(convIdNorm || selectedConversationId)) return false;
+    if (!isAltaraDefinitivelyOffline()) {
+      const hasCurrentMembership = await canCurrentUserAccessMessageConversation(
+        convIdNorm || selectedConversationId,
+        { force: true }
+      );
+      if (isShowRequestStale()) return false;
+      if (!hasCurrentMembership) {
+        await purgeRevokedGroupDmClientState(convIdNorm || selectedConversationId, {
+          reason: "show_group_membership_denied",
+          navigate: true,
+        });
+        return false;
+      }
+    }
+  }
+  if (opts?.shellPrimed !== true) {
+    primeDmOpeningShell(selectedConversationId, {
+      ...(preFeatureCachedMeta || {}),
+      ...(state.activeDm || {}),
+      conversationId: selectedConversationId,
+    }, { reason: opts?.reason || "show_dm", pending: false });
+  }
   discardActiveMessageRequestDraft({ rerender: true });
   if (selectedConversationId) activeDmId = selectedConversationId;
   activeMessageRequestPreviewId = "";
   activeMessageRequestDraftId = "";
   hideDmRequestBanner();
-  const preFeatureKind = String(preFeatureCachedMeta?.kind || state.activeDm?.kind || "dm").trim().toLowerCase() || "dm";
+  const preFeatureServerContext = preFeatureKind === "server"
+    ? (findServerChannelContextByConversationId(convIdNorm || selectedConversationId) || null)
+    : null;
+  const preFeatureServerId = normId(state.activeDm?.serverId || preFeatureCachedMeta?.serverId || preFeatureServerContext?.serverId || "");
+  const preFeatureChannelId = normId(state.activeDm?.channelId || preFeatureCachedMeta?.channelId || preFeatureCachedMeta?.channel_id || preFeatureServerContext?.channel?.id || "");
+  const authoritativeServerEntry = !!(
+    opts?.authoritativeServerEntry === true
+    && preFeatureKind === "server"
+    && isServerConversationAuthorizedByCurrentVisibilitySnapshot(
+      preFeatureServerId,
+      convIdNorm || selectedConversationId,
+      preFeatureChannelId
+    )
+  );
   if (isAltaraDefinitivelyOffline()) {
     return showCachedConversationOffline(selectedConversationId, {
       ...(preFeatureCachedMeta || {}),
@@ -170500,7 +176962,9 @@ async function showDm(conversationId, opts = {}) {
     try { renderDmPrivacyUi(); } catch (_) {}
   }
 
-  await ensureDmFeatureCaps(isDirectDmE2eeEnabled() && dmFeatureCaps.checked && !dmFeatureCaps.dmPrivacyState);
+  if (!authoritativeServerEntry) {
+    await ensureDmFeatureCaps(isDirectDmE2eeEnabled() && dmFeatureCaps.checked && !dmFeatureCaps.dmPrivacyState);
+  }
   if (isShowRequestStale()) return;
 
   logBroadActiveConversationRender(opts?.reason || "conversation-switch", selectedConversationId || "");
@@ -170537,7 +177001,7 @@ async function showDm(conversationId, opts = {}) {
     || cachedMeta?.ownerUserId
     || ""
   );
-  let resolvedServerByDb = false;
+  let resolvedServerByDb = authoritativeServerEntry;
   let resolvedChannelType = normalizeConversationChannelType(
     (keepPrevConversationState ? prevActiveDm?.channelType : "")
     || cachedMeta?.channelType
@@ -170563,7 +177027,28 @@ async function showDm(conversationId, opts = {}) {
     fallbackKind: String(resolvedKind || "dm").trim().toLowerCase() || "dm",
   });
 
-  if (convIdNorm) {
+  const localServerChannelCtxForResolve = (convIdNorm && !authoritativeServerEntry)
+    ? findServerChannelContextByConversationId(convIdNorm)
+    : null;
+  if (localServerChannelCtxForResolve?.serverId && localServerChannelCtxForResolve?.channel) {
+    // This conversation is a channel of a server whose channel list has
+    // already been authoritatively hydrated this session (same accepted
+    // snapshot the sidebar renders from) -- reuse it instead of re-resolving
+    // kind/channel_type over the network on every channel-to-channel switch
+    // inside an already-open server.
+    const cachedChannel = localServerChannelCtxForResolve.channel;
+    resolvedKind = "server";
+    resolvedServerByDb = true;
+    resolvedChannelType = normalizeConversationChannelType(
+      cachedChannel?.channelType || cachedChannel?.channel_type || ""
+    ) || resolvedChannelType || "text";
+    resolvedUserLimit = resolvedChannelType === "voice"
+      ? clampServerVoiceUserLimit(cachedChannel?.userLimit ?? cachedChannel?.user_limit ?? 0, 0)
+      : 0;
+    resolvedMediaMode = resolvedChannelType === "voice"
+      ? normalizeServerVoiceMediaMode(cachedChannel?.mediaMode || cachedChannel?.media_mode || "audio_only", "audio_only")
+      : "audio_only";
+  } else if (convIdNorm && !authoritativeServerEntry) {
     try {
       const conversationSelect = (dmFeatureCaps.dmPrivacyState && isDirectDmE2eeEnabled())
         ? `kind, created_by, ${buildDmPrivacyConversationSelectColumns().replace(/^id,\s*/, "")}`
@@ -170729,7 +177214,10 @@ async function showDm(conversationId, opts = {}) {
   dmOpenAutoScrollStartedAt = Date.now();
   dmOpenAutoScrollUntil = Date.now() + DM_OPEN_AUTOSCROLL_MS;
   dmOpenAutoScrollArmed = true;
-  setMidMode("dm");
+  setMidMode("dm", isServerConversation ? {
+    skipServerConversationRefresh: true,
+    skipBroadUiRefresh: true,
+  } : {});
   setRightSidebarInteractionModeForConversation({
     serverMode: isServerConversation,
     forceHidden: !isServerConversation,
@@ -170743,7 +177231,7 @@ async function showDm(conversationId, opts = {}) {
   captureCurrentMainNavigationRoute();
   persistAltaraOfflineNavigationSnapshot();
 
-  const openingHistoryContext = isServerConversation && !isServerVoiceConversation
+  const openingHistoryContext = isServerConversation
     ? getServerMessageHistoryContext(convIdNorm || conversationId)
     : null;
   if (openingHistoryContext) {
@@ -170786,6 +177274,11 @@ async function showDm(conversationId, opts = {}) {
   if (dmReactionsChannel) {
     supabase.removeChannel(dmReactionsChannel);
     dmReactionsChannel = null;
+  }
+  dmReactionsChannelStatus = "";
+  if (dmReactionsRestartTimer) {
+    clearTimeout(dmReactionsRestartTimer);
+    dmReactionsRestartTimer = null;
   }
   dmReactionEventRefreshQueue.reset();
   dmReactionEventRefreshQueue.setConversation(conversationId);
@@ -170971,9 +177464,17 @@ async function showDm(conversationId, opts = {}) {
       ownerUserId: normId(state.activeDm?.ownerUserId || ""),
       memberCount: Number(state.activeDm?.memberCount || 0),
     };
-    renderServerSidebarShell(serverShellCtx, { reason: "open-server-conversation-shell", forceHydration: true });
+    renderServerSidebarShell(serverShellCtx, { reason: "open-server-conversation-shell", forceHydration: false });
+    setupActiveServerChannelsRealtime(finalServerId);
   }
-  await refreshServerConversationUi({ force: isServerConversation, reason: isServerConversation ? "open-server-conversation" : "open-non-server-conversation", refreshChannels: !!isServerConversation, refreshMembers: !!isServerConversation }).catch(() => {});
+  if (!isServerConversation) {
+    await refreshServerConversationUi({
+      force: false,
+      reason: "open-non-server-conversation",
+      refreshChannels: false,
+      refreshMembers: false,
+    }).catch(() => {});
+  }
   if (isShowRequestStale()) return;
   const preferredPanelMode = getDmSidePanelMode();
   const btnDmCreateGroup = document.getElementById("btnDmCreateGroup");
@@ -171069,7 +177570,6 @@ async function showDm(conversationId, opts = {}) {
       if (groupManageSr) groupManageSr.textContent = groupMeta.actionLabel;
       btnDmGroupManage.onclick = async () => {
         await handleGroupDmMembershipAction(convIdNorm || conversationId, {
-          requestedAction: groupMeta.action,
           groupName: finalTitle || "Group DM",
         });
       };
@@ -171105,25 +177605,31 @@ async function showDm(conversationId, opts = {}) {
   };
 
   if (isShowRequestStale()) return;
-  if (isServerConversation) {
-    const privateDependentLoad = await loadPrivateChannelDependentDataForConversation(convIdNorm || conversationId, {
-      force: false,
-    }).catch(() => null);
-    if (privateDependentLoad && !privateDependentLoad.skipped) {
-      const activeServerCtx = getActiveServerContext?.() || null;
-      const activeServerId = normId(activeServerCtx?.serverId || "");
-      if (activeServerId) {
-        await renderServerMembersRightPanel(
-          activeServerCtx,
-          serverMemberListByServerId.get(activeServerId) || [],
-          { reason: "private_channel_open_members" }
-        ).catch(() => {});
-      }
-    }
-  }
   subscribeTypingForCurrentContext(opts?.reason || "show-dm");
   const channelOpenMessageLoadReason = normalizeRenderReason(opts?.reason || "channel-open");
+  recordServerNavigationPerfPhase(opts?.serverNavigationTraceId, "message_loading_started", {
+    conversationId: normId(conversationId || ""),
+  });
+  if (isServerConversation) {
+    // Fire-and-forget and independent of message loading (member list has no
+    // data dependency on messages) -- start it alongside fetchMessages rather
+    // than waiting for messages to fully resolve first, so the right-sidebar
+    // member panel is not delayed by an unrelated await.
+    void refreshServerConversationUi({
+      force: false,
+      reason: "open-server-conversation-background",
+      refreshChannels: false,
+      refreshMembers: true,
+    }).catch(() => {});
+  }
   await fetchMessages(conversationId, { initialLatest: true, reason: channelOpenMessageLoadReason, hydrateBots: false });
+  recordServerNavigationPerfPhase(opts?.serverNavigationTraceId, "message_loading_completed", {
+    conversationId: normId(conversationId || ""),
+    count: Array.isArray(dmMessagesCache) ? dmMessagesCache.length : 0,
+  });
+  recordServerNavigationPerfPhase(opts?.serverNavigationTraceId, "first_authorized_channel_content_rendered", {
+    conversationId: normId(conversationId || ""),
+  });
   scheduleActiveConversationMessageRestoreInvariant(channelOpenMessageLoadReason, { conversationId: convIdNorm || conversationId });
   if (isShowRequestStale()) return;
   const botRealtimeContext = getBotCommandServerTextContext(conversationId);
@@ -171148,14 +177654,17 @@ async function showDm(conversationId, opts = {}) {
   }
 
   setAltaraActiveConversationRealtimeRequirement(true);
-  dmChannel = supabase
-    .channel("dm:" + conversationId)
+  const subscribeActiveConversationChannel = () => {
+    let channel = null;
+    channel = supabase
+    .channel("dm:" + conversationId, { config: { private: true } })
     .on("postgres_changes", {
       event: "INSERT",
       schema: "public",
       table: "messages",
       filter: `conversation_id=eq.${conversationId}`
     }, async (payload) => {
+      if (!canCurrentUserRenderServerChannelConversation(conversationId)) return;
       if (payload?.new?.id) {
         const { data: row } = await supabase
           .from("messages")
@@ -171164,10 +177673,22 @@ async function showDm(conversationId, opts = {}) {
           .eq("conversation_id", conversationId)
           .single();
         const [resolvedRow] = await hydrateDmRowsForDisplay([row || payload.new], { conversationId });
+        if (!canCurrentUserRenderServerChannelConversation(conversationId)) return;
         appendMessage(resolvedRow || row || payload.new);
+        void hydrateMessageAuthorProfiles([resolvedRow || row || payload.new], {
+          conversationId,
+          reason: "message-insert-realtime-author-profile",
+          keepBottom: true,
+        }).catch(() => {});
       } else {
         const [resolvedRow] = await hydrateDmRowsForDisplay([payload.new], { conversationId });
+        if (!canCurrentUserRenderServerChannelConversation(conversationId)) return;
         appendMessage(resolvedRow || payload.new);
+        void hydrateMessageAuthorProfiles([resolvedRow || payload.new], {
+          conversationId,
+          reason: "message-insert-realtime-author-profile",
+          keepBottom: true,
+        }).catch(() => {});
       }
     })
     .on("postgres_changes", {
@@ -171176,6 +177697,7 @@ async function showDm(conversationId, opts = {}) {
       table: "messages",
       filter: `conversation_id=eq.${conversationId}`
     }, async (payload) => {
+      if (!canCurrentUserRenderServerChannelConversation(conversationId)) return;
       const row = payload?.new;
       if (!row?.id) return;
       if (row?.deleted_at) {
@@ -171191,6 +177713,7 @@ async function showDm(conversationId, opts = {}) {
       }
 
       const [resolvedRow] = await hydrateDmRowsForDisplay([row], { conversationId });
+      if (!canCurrentUserRenderServerChannelConversation(conversationId)) return;
       const previousMessageId = normId(dmMessagesCache[idx]?.id || "");
       dmMessagesCache[idx] = { ...dmMessagesCache[idx], ...(resolvedRow || row) };
       updateActiveConversationMessageCache({ persist: true, source: "message-update-realtime" });
@@ -171247,28 +177770,6 @@ async function showDm(conversationId, opts = {}) {
         console.warn("bot channel message update refresh failed", error?.message || error);
       });
     })
-    .on("broadcast", {
-      event: "server-bot-message-deleted-v1",
-    }, ({ payload } = {}) => {
-      const serverId = normId(payload?.serverId || "");
-      const channelId = normId(payload?.channelId || "");
-      const payloadConversationId = normId(payload?.conversationId || "");
-      const botMessageId = normId(payload?.botMessageId || "");
-      const activeContext = getBotCommandServerTextContext(conversationId) || {};
-      if (
-        !serverId
-        || !channelId
-        || !payloadConversationId
-        || !botMessageId
-        || serverId !== normId(activeContext.serverId || "")
-        || channelId !== normId(activeContext.channelId || "")
-        || payloadConversationId !== normId(conversationId)
-      ) return;
-      removePersistedBotChannelMessageFromTimeline(botMessageId, activeContext, {
-        render: true,
-        source: "bot-message-delete-broadcast",
-      });
-    })
     .on("postgres_changes", {
       event: "INSERT",
       schema: "public",
@@ -171288,50 +177789,142 @@ async function showDm(conversationId, opts = {}) {
       void handleBotInteractionRealtimePayload(conversationId, payload, "bot-interaction-update-realtime").catch((error) => {
         console.warn("bot interaction update refresh failed", error?.message || error);
       });
-    })
-    .subscribe((status) => {
+    });
+    dmChannel = channel;
+    channel.subscribe((status) => {
+      if (
+        channel !== dmChannel
+        || !altaraActiveConversationRealtimeRequired
+        || normId(activeDmId || state.activeDm?.conversationId || "") !== normId(conversationId)
+      ) return;
       recordAltaraRealtimeStatus(status, { source: "active-conversation" });
       if (status === "SUBSCRIBED") {
+        activeConversationRealtimeSubscribedChannel = channel;
+        activeConversationRealtimeRestartAttempt = 0;
+        activeConversationRealtimeRestartGeneration += 1;
+        if (activeConversationRealtimeRestartTimer) {
+          clearTimeout(activeConversationRealtimeRestartTimer);
+          activeConversationRealtimeRestartTimer = 0;
+        }
+        activeConversationRealtimeCatchupConversationId = normId(conversationId);
+        void refreshActiveConversationAfterRealtimeRecovery(conversationId).then((completed) => {
+          if (
+            completed
+            && normId(activeConversationRealtimeCatchupConversationId || "") === normId(conversationId)
+          ) {
+            activeConversationRealtimeCatchupConversationId = "";
+          }
+          if (isGroupConversation && !isServerConversation) {
+            logGdmRealtimeLocal("MESSAGE_CATCHUP", {
+              conversationId: normId(conversationId),
+              completed: completed === true,
+              subscriptionStatus: "SUBSCRIBED",
+            });
+          }
+        });
         logBotLiveState("subscription_ready", { table: "bot_channel_messages", conversationId, channelId: botRealtimeChannelId || null, source: "dm-channel-subscribe" });
         logBotLiveState("subscription_ready", { table: "bot_interaction_events", conversationId, channelId: botRealtimeChannelId || null, source: "dm-channel-subscribe" });
         return;
       }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        activeConversationRealtimeSubscribedChannel = null;
+        activeConversationRealtimeCatchupConversationId = normId(conversationId);
         logBotLiveState("subscription_error", { table: "bot_channel_messages", conversationId, channelId: botRealtimeChannelId || null, source: "dm-channel-subscribe", status });
         logBotLiveState("subscription_error", { table: "bot_interaction_events", conversationId, channelId: botRealtimeChannelId || null, source: "dm-channel-subscribe", status });
         console.warn("dm messages realtime channel error:", conversationId);
+        scheduleAltaraActiveConversationRealtimeRestart(
+          conversationId,
+          channel,
+          subscribeActiveConversationChannel,
+          `active-conversation:${String(status || "error").toLowerCase()}`
+        );
       }
     });
+    return channel;
+  };
+  subscribeActiveConversationChannel();
 
   if (dmFeatureCaps.messageReactions) {
-    dmReactionsChannel = supabase
-      .channel("dm-reaction-events:" + conversationId)
-      .on("postgres_changes", {
-        event: "INSERT",
-        schema: "public",
-        table: "message_reaction_events",
-        filter: `conversation_id=eq.${conversationId}`
-      }, (payload) => {
-        if (normId(activeDmId || "") !== normId(conversationId)) return;
-        dmReactionEventRefreshQueue.enqueue(payload?.new);
-      })
-      .subscribe((status) => {
+    const subscribeDmReactionsChannel = () => {
+      if (normId(activeDmId || state.activeDm?.conversationId || "") !== normId(conversationId)) return null;
+      const channel = supabase
+        .channel("dm-reaction-events:" + conversationId, { config: { private: true } })
+        .on("postgres_changes", {
+          event: "INSERT",
+          schema: "public",
+          table: "message_reaction_events",
+          filter: `conversation_id=eq.${conversationId}`
+        }, (payload) => {
+          if (dmReactionsChannel !== channel) return;
+          if (normId(activeDmId || "") !== normId(conversationId)) return;
+          dmReactionEventRefreshQueue.enqueue(payload?.new);
+        });
+      dmReactionsChannel = channel;
+      dmReactionsChannelStatus = "JOINING";
+      channel.subscribe((status) => {
+        if (dmReactionsChannel !== channel) return;
+        dmReactionsChannelStatus = String(status || "").trim().toUpperCase();
         if (status === "SUBSCRIBED") {
+          if (dmReactionsRestartTimer) {
+            clearTimeout(dmReactionsRestartTimer);
+            dmReactionsRestartTimer = null;
+          }
           void fetchReactionsForMessages(conversationId, { force: true })
             .then((ok) => {
+              if (isGroupConversation && !isServerConversation) {
+                logGdmRealtimeLocal("REACTION_CATCHUP", {
+                  conversationId: normId(conversationId),
+                  completed: ok === true,
+                  subscriptionStatus: "SUBSCRIBED",
+                });
+              }
               if (!ok || normId(activeDmId || "") !== normId(conversationId)) return;
               renderAllReactionChips();
             })
             .catch((error) => {
+              if (isGroupConversation && !isServerConversation) {
+                logGdmRealtimeLocal("REACTION_CATCHUP", {
+                  conversationId: normId(conversationId),
+                  completed: false,
+                  subscriptionStatus: "SUBSCRIBED",
+                  errorCode: String(error?.code || "reaction_catchup_failed"),
+                });
+              }
               console.warn(
                 "reaction event subscription refresh failed:",
                 String(error?.message || error || "unknown_error").slice(0, 220),
               );
             });
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-          console.warn("dm reaction events realtime channel error:", conversationId, status);
+          return;
         }
+        if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(dmReactionsChannelStatus)) return;
+        console.warn("dm reaction events realtime channel error:", conversationId, dmReactionsChannelStatus);
+        dmReactionsChannel = null;
+        void Promise.resolve(supabase.removeChannel(channel)).catch(() => {});
+        if (dmReactionsRestartTimer || !state.user?.id) return;
+        dmReactionsRestartTimer = setTimeout(() => {
+          dmReactionsRestartTimer = null;
+          if (
+            !state.user?.id
+            || normId(activeDmId || state.activeDm?.conversationId || "") !== normId(conversationId)
+            || dmReactionsChannel
+          ) return;
+          void refreshAltaraRealtimeAuthForReconnect(
+            `dm-reactions:${dmReactionsChannelStatus.toLowerCase()}`
+          ).then((authReady) => {
+            if (
+              !authReady
+              || !state.user?.id
+              || normId(activeDmId || state.activeDm?.conversationId || "") !== normId(conversationId)
+              || dmReactionsChannel
+            ) return;
+            subscribeDmReactionsChannel();
+          });
+        }, ALTARA_REALTIME_SOURCE_RESTART_DELAY_MS);
       });
+      return channel;
+    };
+    subscribeDmReactionsChannel();
   }
 
   // call buttons
@@ -171445,6 +178038,7 @@ async function showDm(conversationId, opts = {}) {
       scrollDmToLatest();
     }
   }
+  return true;
 }
 
 /* ========================= INIT + Call UI bindings ========================= */
@@ -173689,16 +180283,14 @@ async function uploadAvatarBlob(blob, user, ext, contentTypeOverride = "", crop 
     technicalHardCapBytes: safeExt === "gif" ? (10 * ALTARA_PLUS_LIMIT_UPLOAD_MB) : (2 * ALTARA_PLUS_LIMIT_UPLOAD_MB),
     technicalMessage: `Imagem muito grande (max ${safeExt === "gif" ? "10MB" : "2MB"})`,
   });
-  const path = `${user.id}/avatar_${Date.now()}.${safeExt}`;
   const uploadedGifStillFrame = safeExt === "gif"
     ? await captureManagedGifStillFrameFromImageBlob(blob, { maxSide: 192 }).catch(() => "")
     : "";
 
   const up = await uploadFileViaAltaraStorage(blob, {
     fileName: "avatar_" + Date.now() + "." + safeExt,
-    path,
     contentType: mime,
-    cacheControl: "31536000",
+    cacheControl: "60",
     uploadContext: "profile_avatar",
   });
 
@@ -173838,13 +180430,11 @@ async function uploadBannerBlob(blob, user, ext, contentTypeOverride = "", crop 
     technicalHardCapBytes: safeExt === "gif" ? (25 * ALTARA_PLUS_LIMIT_UPLOAD_MB) : (10 * ALTARA_PLUS_LIMIT_UPLOAD_MB),
     technicalMessage: `Banner muito grande (max ${safeExt === "gif" ? "25MB" : "10MB"}).`,
   });
-  const path = `${user.id}/banner_${Date.now()}.${safeExt}`;
 
   const upload = await uploadFileViaAltaraStorage(blob, {
     fileName: "banner_" + Date.now() + "." + safeExt,
-    path,
     contentType: mime,
-    cacheControl: "31536000",
+    cacheControl: "60",
     uploadContext: "profile_banner",
   });
   setProfileDebug({ banner_upload: upload?.upload || upload });
@@ -173986,7 +180576,11 @@ let presence = null;
 let presenceOwnerUserId = "";
 let presenceStopInFlight = null;
 let presenceStartInFlight = null;
+let presenceAuthStateSubscription = null;
+let presenceAuthStartupTimer = 0;
+let pendingPresenceAuthStartup = null;
 let presenceList = [];
+let presenceControllerGeneration = 0;
 let meStatusMenuBound = false;
 let meStatusPersistQueue = Promise.resolve();
 let currentUserPresenceStatusSyncTimer = null;
@@ -174008,6 +180602,26 @@ const PRESENCE_ONLINE_AT_ISO = new Date().toISOString();
 const presenceEffectiveStatusSignatureByUser = new Map();
 let lastPresenceActiveNowSignature = "";
 
+function isAltaraPresenceTraceEnabled() {
+  try {
+    const host = String(globalThis.location?.hostname || "").trim().toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch (_) {
+    return false;
+  }
+}
+
+function logAltaraPresenceTrace(stage = "", details = {}) {
+  if (!isAltaraPresenceTraceEnabled()) return;
+  try {
+    console.info(
+      "[ALTARA-PRESENCE-TRACE]",
+      String(stage || "UNKNOWN"),
+      details && typeof details === "object" ? details : {},
+    );
+  } catch (_) {}
+}
+
 function isPresenceDebugEnabled() {
   try { return localStorage.getItem("altara.debug.presence") === "1"; } catch (_) { return false; }
 }
@@ -174022,6 +180636,13 @@ function logPresenceLiveDebug(event = "", details = {}) {
   if (!isPresenceDebugEnabled()) return;
   if (typeof console === "undefined" || typeof console.info !== "function") return;
   console.info("[Presence] " + String(event || "event"), details && typeof details === "object" ? details : {});
+}
+
+function logPresenceStartupLifecycle(event = "", details = {}, { error = false } = {}) {
+  try {
+    const logger = error ? console.warn : console.info;
+    logger.call(console, "[presence] " + String(event || "event"), details && typeof details === "object" ? details : {});
+  } catch (_) {}
 }
 
 function getPresenceDeviceType() {
@@ -182610,9 +189231,9 @@ function applyMeStatusDot(status) {
 }
 
 function applySelfManualStatusFromPresenceList(list = []) {
-  const meId = normId(state.user?.id || "");
+  const meId = normalizePresenceUserId(state.user?.id);
   if (!meId) return;
-  const hit = (list || []).find((u) => normId(u?.id || u?.user_id || "") === meId);
+  const hit = (list || []).find((u) => normalizePresenceUserId(u?.id || u?.user_id || u?.userId || "") === meId);
   const remoteStatus = readPresenceStatusValue(hit?.manual_status) || readPresenceStatusValue(hit?.manualStatus);
   if (!remoteStatus) return;
   const nextStatus = normalizeManualPresenceStatus(remoteStatus);
@@ -182643,7 +189264,7 @@ function applySelfManualStatusFromPresenceList(list = []) {
 function syncProfilesFromPresenceList(list = []) {
   const rows = (list || [])
     .map((u) => {
-      const id = String(u?.id || "").trim();
+      const id = normalizePresenceUserId(u?.id || u?.user_id || u?.userId || "");
       if (!id) return null;
       return {
         id,
@@ -182661,7 +189282,7 @@ function syncProfilesFromPresenceList(list = []) {
   if (!rows.length) return;
   cacheProfileRows(rows);
 
-  const otherId = String(callOtherUserId || "").trim();
+  const otherId = normalizePresenceUserId(callOtherUserId);
   if (!otherId) return;
   const hit = rows.find((x) => x.id === otherId);
   if (!hit) return;
@@ -182720,7 +189341,7 @@ function injectStatusSelectorIntoProfileOverlay() {
 }
 
 function setStatusDotsForUser(userId, status) {
-  const raw = String(userId || "");
+  const raw = normalizePresenceUserId(userId);
   if (!raw) return;
 
   let dots = [];
@@ -182744,14 +189365,14 @@ function applyPresenceStatusDots(snapshot = []) {
   });
 
   (Array.isArray(snapshot) ? snapshot : []).forEach((entry) => {
-    const uid = normId(entry?.id || entry?.user_id || "");
+    const uid = normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || "");
     if (!uid) return;
     setStatusDotsForUser(uid, getPresenceStatusForUser(uid) || normalizePresenceStatus(entry?.status || "offline"));
   });
 }
 
 function pushFriendIdCandidate(list, source, value) {
-  const id = normId(value || "");
+  const id = normalizePresenceUserId(value);
   if (!id) return;
   list.push({ source, id });
 }
@@ -182789,7 +189410,7 @@ function getFriendRawIds(friend = {}) {
 }
 
 function getFriendUserId(friend = {}, currentUserId = "") {
-  const selfId = normId(currentUserId || state.user?.id || "");
+  const selfId = normalizePresenceUserId(currentUserId || state.user?.id || "");
   const candidates = getFriendIdCandidates(friend);
   const nonSelf = selfId ? candidates.find((item) => item.id && item.id !== selfId) : null;
   if (nonSelf) return nonSelf.id;
@@ -182801,7 +189422,7 @@ function getPresenceFriendUserId(friend = {}) {
 }
 
 function getPresenceKnownFriendIds() {
-  return Array.from(new Set((state.friends || []).map((f) => getFriendUserId(f)).filter(Boolean)));
+  return Array.from(new Set((state.friends || []).map((f) => getFriendUserId(f, state.user?.id || "")).filter(Boolean)));
 }
 
 function getPresenceFriendDebugRows() {
@@ -182837,32 +189458,89 @@ function getPresenceFriendDebugRows() {
       username: String(f?.username || ""),
       rawFriendIds,
       hasLiveSession: !!resolved?.hasLiveSession,
+      isPresenceLive: resolved?.isPresenceLive === true,
       manualStatus,
       effectiveStatus: resolved?.effectiveStatus || "offline",
+      visibleStatus: resolved?.visibleStatus || "offline",
+      countsAsOnlineNow: resolved?.countsAsOnlineNow === true,
       sessionCount: Number(entry?.live_session_count || 0),
       sessionsFound: Array.isArray(entry?.live_sessions) ? entry.live_sessions : [],
+      rawStatus: readPresenceStatusValue(entry?.status) || "",
+      rawManualStatus: readPresenceStatusValue(entry?.manual_status) || readPresenceStatusValue(entry?.manualStatus) || "",
+      rawEffectiveStatus: readPresenceStatusValue(entry?.effective_status) || readPresenceStatusValue(entry?.effectiveStatus) || "",
+      rawHasLiveSession: entry?.has_live_session ?? entry?.hasLiveSession ?? null,
       profileStatus: readPresenceStatusValue(f?.status) || readPresenceStatusValue(f?.presence_status) || readPresenceStatusValue(f?.theme_settings?.presence_status) || "",
       presenceManualStatus: readPresenceStatusValue(entry?.manual_status) || "",
       visibleToOthers: !!resolved?.visibleToOthers,
-      includedInActiveNow: resolved?.effectiveStatus === "online" || resolved?.effectiveStatus === "idle" || resolved?.effectiveStatus === "focus" || resolved?.effectiveStatus === "dnd",
+      includedInActiveNow: resolved?.countsAsOnlineNow === true,
     };
   });
 }
 
 function getPresenceActiveNowDebugUsers() {
-  return getPresenceFriendDebugRows().filter((row) => (
-    row.effectiveStatus === "online"
-    || row.effectiveStatus === "idle"
-    || row.effectiveStatus === "focus"
-    || row.effectiveStatus === "dnd"
-  ));
+  return getPresenceFriendDebugRows().filter((row) => row.includedInActiveNow === true);
+}
+
+function tracePresenceRenderResult(source = "render") {
+  if (!isAltaraPresenceTraceEnabled()) return;
+  const friendRows = getPresenceFriendDebugRows();
+  const knownFriendIds = friendRows.map((row) => normalizePresenceUserId(row.friendUserId || row.userId || "")).filter(Boolean);
+  const onlinePresenceIds = (presenceList || [])
+    .filter((entry) => classifyPresenceState(entry).countsAsOnlineNow === true)
+    .map((entry) => normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || ""))
+    .filter(Boolean);
+  const matchedFriendIds = friendRows
+    .filter((row) => row.countsAsOnlineNow === true)
+    .map((row) => normalizePresenceUserId(row.friendUserId || row.userId || ""))
+    .filter(Boolean);
+  const matchedSet = new Set(matchedFriendIds);
+  const renderedFriends = friendRows.map((row) => {
+    const uid = normalizePresenceUserId(row.friendUserId || row.userId || "");
+    let renderedDotStatus = "";
+    let renderedDotColor = "";
+    if (uid) {
+      try {
+        const escaped = typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(uid) : uid;
+        const dot = document.querySelector(`[data-status-dot="${escaped}"]`);
+        renderedDotStatus = String(dot?.getAttribute("data-status") || "");
+        renderedDotColor = dot && typeof globalThis.getComputedStyle === "function"
+          ? String(globalThis.getComputedStyle(dot)?.backgroundColor || "")
+          : String(dot?.style?.backgroundColor || "");
+      } catch (_) {}
+    }
+    return {
+      userId: uid,
+      isPresenceLive: row.isPresenceLive === true,
+      rawStatus: row.rawStatus || "",
+      rawManualStatus: row.rawManualStatus || "",
+      rawEffectiveStatus: row.rawEffectiveStatus || "",
+      selectedStatus: row.visibleStatus || "offline",
+      countsAsOnlineNow: row.countsAsOnlineNow === true,
+      renderedDotStatus,
+      renderedDotColor,
+    };
+  });
+  const traceDetails = {
+    source,
+    controllerGeneration: presenceControllerGeneration,
+    knownFriendIds,
+    onlinePresenceIds,
+    matchedFriendIds,
+    unmatchedPresenceIds: onlinePresenceIds.filter((id) => !matchedSet.has(id)),
+    onlineNowCount: Number(document.getElementById("onlineCount")?.textContent || 0),
+    rowsRendered: renderedFriends,
+    friends: renderedFriends,
+  };
+  logAltaraPresenceTrace("RENDER_PRESENCE_DEBUG", traceDetails);
+  logAltaraPresenceTrace("RENDER_RESULT", traceDetails);
 }
 
 function compactPresenceDebugPayload(payload = {}) {
   const p = payload && typeof payload === "object" ? payload : {};
   return {
-    user_id: normId(p.user_id || p.userId || p.id || ""),
+    user_id: normalizePresenceUserId(p.user_id || p.userId || p.id || ""),
     session_id: String(p.session_id || p.sessionId || "").trim(),
+    presence_ref: String(p.presence_ref || p.phx_ref || "").trim(),
     manual_status: normalizeManualPresenceStatus(p.manual_status || p.manualStatus || p.status || "online"),
     device_type: String(p.device_type || p.deviceType || getPresenceDeviceType()).trim(),
     online_at: String(p.online_at || p.onlineAt || "").trim(),
@@ -182910,6 +189588,11 @@ function bindPresenceDebugGlobals() {
       lastPresenceTrackAt: runtime.lastPresenceTrackAt || 0,
       lastTrackResult: runtime.lastTrackResult || "",
       lastPresenceError: runtime.lastPresenceError || "",
+      controllerReady: !!presence,
+      controllerOwnerUserId: normId(presenceOwnerUserId || ""),
+      controllerStarted: runtime.started === true,
+      startPending: !!presenceStartInFlight,
+      stopPending: !!presenceStopInFlight,
     };
   };
   window.__ALTARA_PRESENCE_RETRACK__ = async function () {
@@ -182996,6 +189679,18 @@ function updatePresenceRender() {
       || normId(state.activeDm?.serverId || "")
     )
   );
+
+  if (dmVisible && isServerWithoutSelectedChannelState(normId(state.activeDm?.serverId || ""))) {
+    if (isNoAccessibleServerChannelsState()) {
+      preserveNoAccessibleServerChannelsShell(serverCtx, "presence_server_no_access_guard");
+    } else {
+      preserveServerChannelAuthorityShell(serverCtx, "presence_server_visibility_guard");
+    }
+    applyPresenceStatusDots(presenceList);
+    ensureMeStatusDot();
+    applyMeStatusDot(getMePresencePayload().status || "online");
+    return;
+  }
 
   if (serverCtx) {
     const serverName = normalizeConversationLabel(serverCtx?.name || "Server", "Server");
@@ -183121,8 +189816,98 @@ function updatePresenceRender() {
   refreshOpenUserCard();
   refreshDmProfilePanel();
   renderTypingStatusOnUserCards({ reason: "presence-render" });
+  tracePresenceRenderResult("updatePresenceRender");
   } finally {
     relationshipTracePhaseEnd(trace, traceLabel);
+  }
+}
+
+async function startPresenceForAuthenticatedSession(reason = "auth-ready", suppliedSession = null) {
+  logPresenceStartupLifecycle("init called", {
+    reason: String(reason || "auth-ready"),
+    hasStateUser: !!normId(state.user?.id || ""),
+    hasProfile: !!state.me,
+  });
+  let session = suppliedSession;
+  if (!session) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      session = data?.session || null;
+    } catch (error) {
+      logPresenceStartupLifecycle("auth session error", {
+        reason: String(reason || "auth-ready"),
+        error: getSafeAuthErrorCode(error, "presence_auth_session"),
+      }, { error: true });
+      return false;
+    }
+  }
+  const authUserId = normId(session?.user?.id || "");
+  const stateUserId = normId(state.user?.id || "");
+  const accessToken = String(session?.access_token || "").trim();
+  logPresenceStartupLifecycle("auth user id", {
+    reason: String(reason || "auth-ready"),
+    authUserId,
+    stateUserId,
+    hasAccessToken: !!accessToken,
+    hasProfile: !!state.me,
+  });
+  if (!authUserId || !accessToken || !stateUserId || !state.me || authUserId !== stateUserId) {
+    logPresenceStartupLifecycle("init deferred", {
+      reason: String(reason || "auth-ready"),
+      authUserId,
+      stateUserId,
+      hasAccessToken: !!accessToken,
+      hasProfile: !!state.me,
+    });
+    return false;
+  }
+  if (supabase?.realtime && typeof supabase.realtime.setAuth === "function") {
+    await Promise.resolve(supabase.realtime.setAuth(accessToken));
+  }
+  await startPresence();
+  return true;
+}
+
+function schedulePresenceStartupAfterAuth(session = null, reason = "auth-state-change") {
+  pendingPresenceAuthStartup = {
+    session,
+    reason: String(reason || "auth-state-change"),
+  };
+  if (presenceAuthStartupTimer) return;
+  presenceAuthStartupTimer = setTimeout(() => {
+    presenceAuthStartupTimer = 0;
+    const pending = pendingPresenceAuthStartup;
+    pendingPresenceAuthStartup = null;
+    if (!pending) return;
+    void startPresenceForAuthenticatedSession(pending.reason, pending.session).catch((error) => {
+      logPresenceStartupLifecycle("init error", {
+        reason: pending.reason,
+        error: getSafeAuthErrorCode(error, "presence_start"),
+      }, { error: true });
+    });
+  }, 0);
+}
+
+function startPresenceAuthStateListener() {
+  if (presenceAuthStateSubscription) return;
+  if (!supabase?.auth || typeof supabase.auth.onAuthStateChange !== "function") return;
+  try {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      const authUserId = normId(session?.user?.id || "");
+      const hasAccessToken = !!String(session?.access_token || "").trim();
+      logPresenceStartupLifecycle("auth state", {
+        event: String(event || ""),
+        authUserId,
+        hasAccessToken,
+      });
+      if (!authUserId || !hasAccessToken) return;
+      schedulePresenceStartupAfterAuth(session, "auth:" + String(event || "session"));
+    });
+    presenceAuthStateSubscription = data?.subscription || null;
+  } catch (error) {
+    logPresenceStartupLifecycle("auth listener error", {
+      error: getSafeAuthErrorCode(error, "presence_auth_listener"),
+    }, { error: true });
   }
 }
 
@@ -183138,7 +189923,19 @@ async function startPresence() {
 }
 
 async function startPresenceOnce() {
-  if (!state.user || !state.me) return;
+  const authUserId = normId(state.user?.id || "");
+  logPresenceStartupLifecycle("start requested", {
+    authUserId,
+    hasProfile: !!state.me,
+    hasExistingPresence: !!presence,
+  });
+  if (!authUserId || !state.me) {
+    logPresenceStartupLifecycle("start skipped", {
+      authUserId,
+      hasProfile: !!state.me,
+    });
+    return false;
+  }
 
   ensureMeStatusDot();
   bindPresenceDebugGlobals();
@@ -183166,14 +189963,22 @@ async function startPresenceOnce() {
     presenceOwnerUserId = "";
   }
 
+  let presenceAuthSessionExists = false;
+  let presenceAuthSessionUserId = "";
+  let presenceRealtimeTokenAvailable = false;
+  let presenceRealtimeAuthApplied = false;
   try {
     const { data } = await supabase.auth.getSession();
     const token = String(data?.session?.access_token || "").trim();
+    presenceAuthSessionExists = !!data?.session?.user?.id;
+    presenceAuthSessionUserId = normalizePresenceUserId(data?.session?.user?.id || "");
+    presenceRealtimeTokenAvailable = !!token;
     logPresenceLiveDebug("auth ready", {
       userId: normId(data?.session?.user?.id || state.user?.id || ""),
     });
     if (token && supabase?.realtime && typeof supabase.realtime.setAuth === "function") {
       await Promise.resolve(supabase.realtime.setAuth(token));
+      presenceRealtimeAuthApplied = true;
     }
   } catch (error) {
     logPresenceDebug("realtime auth failed", {
@@ -183194,13 +189999,61 @@ async function startPresenceOnce() {
     source: bootStatusSource,
   });
 
+  const controllerGeneration = ++presenceControllerGeneration;
+  const currentProfileId = normalizePresenceUserId(state.me?.id || state.me?.user_id || state.me?.userId || "");
+  const activeIdentityIds = Array.from(new Set([
+    normalizePresenceUserId(state.user?.id || ""),
+    currentProfileId,
+    presenceAuthSessionUserId,
+  ].filter(Boolean)));
+  logAltaraPresenceTrace("AUTH_CONTEXT", {
+    controllerGeneration,
+    currentUserId: nextPresenceOwnerUserId,
+    currentProfileId,
+    sessionUserId: presenceAuthSessionUserId,
+    activeIdentityIds,
+    sessionExists: presenceAuthSessionExists,
+    realtimeTokenAvailable: presenceRealtimeTokenAvailable,
+    realtimeAuthAppliedBeforeSubscribe: presenceRealtimeAuthApplied,
+  });
+  logAltaraPresenceTrace("START", {
+    controllerGeneration,
+    authenticatedUserId: nextPresenceOwnerUserId,
+    sessionExists: presenceAuthSessionExists,
+    realtimeTokenAvailable: presenceRealtimeTokenAvailable,
+    realtimeAuthAppliedBeforeSubscribe: presenceRealtimeAuthApplied,
+    sharedSupabaseClient: true,
+  });
   presenceOwnerUserId = nextPresenceOwnerUserId;
-  presence = createPresenceSystem({
+  let nextPresenceController = null;
+  nextPresenceController = createPresenceSystem({
     supabase,
     getMe: () => getMePresencePayload(),
     manageReconnectExternally: true,
-    onStatus: (status, meta = {}) => recordAltaraRealtimeStatus(status, { source: meta?.source || "presence", error: meta?.error || null }),
+    onTrace: (stage, details = {}) => {
+      logAltaraPresenceTrace(stage, {
+        controllerGeneration,
+        currentController: presence === nextPresenceController,
+        ownerUserId: nextPresenceOwnerUserId,
+        currentUserId: normalizePresenceUserId(state.user?.id || ""),
+        currentProfileId: normalizePresenceUserId(state.me?.id || state.me?.user_id || state.me?.userId || ""),
+        ...details,
+      });
+    },
+    onStatus: (status, meta = {}) => {
+      if (presence !== nextPresenceController || presenceOwnerUserId !== nextPresenceOwnerUserId) return;
+      recordAltaraRealtimeStatus(status, { source: meta?.source || "presence", error: meta?.error || null });
+    },
     onPresenceList: (list) => {
+      if (presence !== nextPresenceController || presenceOwnerUserId !== nextPresenceOwnerUserId) {
+        logAltaraPresenceTrace("STALE_SNAPSHOT_IGNORED", {
+          controllerGeneration,
+          currentController: false,
+          ownerUserId: nextPresenceOwnerUserId,
+          snapshotCount: Array.isArray(list) ? list.length : 0,
+        });
+        return;
+      }
       presenceList = list || [];
       logPresenceDebug("presence sync received", {
         userId: normId(state.user?.id || ""),
@@ -183216,8 +190069,14 @@ async function startPresenceOnce() {
           friendName: String(row.displayName || row.username || "").slice(0, 120),
           friendUserId: row.extractedFriendUserId || row.friendUserId || row.userId || "",
           hasLiveSession: row.hasLiveSession === true,
+          isPresenceLive: row.isPresenceLive === true,
+          rawStatus: row.rawStatus || "",
+          rawManualStatus: row.rawManualStatus || "",
+          rawEffectiveStatus: row.rawEffectiveStatus || "",
+          rawHasLiveSession: row.rawHasLiveSession,
           manualStatusFromPresence: row.presenceManualStatus || "",
           effectiveStatus: row.effectiveStatus || "offline",
+          visibleStatus: row.visibleStatus || "offline",
           includedInActiveNow: row.includedInActiveNow === true,
         });
       });
@@ -183233,9 +190092,51 @@ async function startPresenceOnce() {
         count: getPresenceActiveNowDebugUsers().length,
         userIds: getPresenceActiveNowDebugUsers().map((row) => row.extractedFriendUserId || row.friendUserId || row.userId || "").filter(Boolean),
       });
+      const runtime = presence && typeof presence.getDebugSnapshot === "function"
+        ? presence.getDebugSnapshot()
+        : {};
+      const currentUserId = normalizePresenceUserId(state.user?.id);
+      const normalizedPresenceUserIds = Array.from(new Set(presenceList
+        .map((entry) => normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || ""))
+        .filter(Boolean)));
+      const knownFriendIds = getPresenceKnownFriendIds();
+      const matchedOnlineFriendIds = knownFriendIds.filter((friendId) => {
+        const entry = getPresenceEntryForUser(friendId);
+        return !!entry && resolveEffectivePresence(friendId, { presenceEntry: entry }).visibleToOthers === true;
+      });
+      const friendMatchDetails = {
+        controllerGeneration,
+        currentController: presence === nextPresenceController,
+        currentUserId,
+        expectedFriendIds: knownFriendIds,
+        presenceIdsAvailable: normalizedPresenceUserIds,
+        knownFriendIds,
+        onlinePresenceIds: normalizedPresenceUserIds.filter((userId) => {
+          const entry = getPresenceEntryForUser(userId);
+          return !!entry && classifyPresenceState(entry).countsAsOnlineNow === true;
+        }),
+        matchedFriendIds: matchedOnlineFriendIds,
+        unmatchedPresenceIds: normalizedPresenceUserIds.filter((userId) => (
+          userId !== currentUserId && !knownFriendIds.includes(userId)
+        )),
+      };
+      logAltaraPresenceTrace("FRIEND_MATCH_DEBUG", friendMatchDetails);
+      logAltaraPresenceTrace("FRIEND_MATCH", friendMatchDetails);
+      logPresenceLiveDebug("normalization bridge", {
+        rawPresenceStateKeys: Array.isArray(runtime.rawPresenceStateKeys) ? runtime.rawPresenceStateKeys : [],
+        rawPresenceMetas: Array.isArray(runtime.rawPresencePayloadsCompact) ? runtime.rawPresencePayloadsCompact : [],
+        normalizedPresenceUserIds,
+        currentUserId,
+        knownFriendIds,
+        matchedOnlineFriendIds,
+        onlineNowCount: matchedOnlineFriendIds.length,
+      });
       applySelfManualStatusFromPresenceList(presenceList);
       syncProfilesFromPresenceList(presenceList);
       schedulePresenceRender("presence_list");
+      if ((document.querySelector("[data-tab].active")?.getAttribute("data-tab") || "") === "widgets") {
+        scheduleUiRender("widgets", () => renderWidgets());
+      }
       const hasActiveCallUi = !!(
         inCall
         || groupCallMode
@@ -183250,6 +190151,8 @@ async function startPresenceOnce() {
     },
     onError: (e) => console.warn("presence error", e),
   });
+
+  presence = nextPresenceController;
 
   await presence.start();
 
@@ -183327,6 +190230,9 @@ async function startPresenceOnce() {
     authState: bootAuthFallbackCategory || bootAuthResolution.category,
     lastSafeErrorCode: bootAuthFallbackSafeCode || bootAuthResolution.safeErrorCode || altaraConnectionState.lastSafeErrorCode,
   }, "boot-auth-classified");
+  if (state.user?.id && isAltaraAuthRevalidationPending()) {
+    scheduleAltaraConnectionRetry("boot-auth-revalidation");
+  }
   recordAltaraBootEvent(state.user?.id ? "auth_done" : "auth_error", { source: "init", hasUser: !!state.user?.id });
   if (!state.user) {
     markPerfEnd("auth_ready", { ok: false });
@@ -183586,33 +190492,36 @@ async function startPresenceOnce() {
   void consumeServerInviteFromUrlIfPresent({ showFeedback: true }).catch(() => false);
   void consumePendingExternalServerInviteCodeIfPresent({ showFeedback: true }).catch(() => false);
 
+  const realtimeBootAuthReady = !isAltaraDefinitivelyOffline()
+    ? await refreshAltaraRealtimeAuthForReconnect("app-boot")
+    : false;
   startDmPrivacyAuthStateListener();
   startFriendRequestsAuthStateListener();
-  if (!isAltaraDefinitivelyOffline()) {
+  startServerRoleInvalidationAuthStateListener();
+  startPresenceAuthStateListener();
+  if (realtimeBootAuthReady) {
     startGlobalCallListener();
     startGlobalGroupDmCallStateListener();
-    subscribeTypingInboxForCurrentUser("app-boot");
     startGlobalDmMessageListener();
     startGlobalBotChannelMessageListener();
     startGlobalDmMembershipListener();
+    startGroupDmRevocationBroadcastListener();
     startGlobalConversationListener();
-    void startGlobalDmPrivacyEventListener({ force: true, reason: "init" });
     startGlobalServerChannelTableListener();
     startGlobalServerRoleTablesListener();
     startGlobalProfileListener();
-    void startGlobalFriendRequestListener({ force: true, reason: "init" });
-    startGlobalMessageRequestListener();
+  } else if (!isAltaraDefinitivelyOffline()) {
+    scheduleAltaraConnectionRetry("app-boot-realtime-auth");
   }
   bindMessageRequestLiveRefreshFallbacksOnce();
   bindConversationMessageCacheRefreshFallbacksOnce();
-  if (!isAltaraDefinitivelyOffline()) {
+  if (realtimeBootAuthReady) {
     void refreshMessageRequestsAndSidebar("app_boot", { force: true }).catch(() => {});
     scheduleConversationMessagePrefetch("app_boot");
     startGlobalModerationActionListener();
     startGlobalUserBlocksListener();
   }
   startFriendRequestsSyncFallback();
-  startProfileSyncFallback();
   startCurrentUserPresenceStatusSyncFallback();
   bindPresenceDebugGlobals();
   startDmCollectionsSyncFallback();
@@ -183652,9 +190561,12 @@ async function startPresenceOnce() {
       message: error?.message || error || "unknown",
     });
   });
-  if (!isAltaraDefinitivelyOffline()) {
-    void startPresence().catch((error) => console.warn("presence start failed", error?.message || error));
-  }
+  void startPresenceForAuthenticatedSession("app-boot").catch((error) => {
+    logPresenceStartupLifecycle("init error", {
+      reason: "app-boot",
+      error: getSafeAuthErrorCode(error, "presence_start"),
+    }, { error: true });
+  });
   window.setTimeout(() => {
     if (!isAltaraDefinitivelyOffline()) void syncWidgetTodoFromCloud({ force: false }).catch(() => false);
     try { startWidgetReminderMonitor(); } catch (_) {}
@@ -183682,7 +190594,3 @@ async function startPresenceOnce() {
   setDesktopBootOverlayVisible(false);
   showAltaraBootFailurePanelIfNeeded();
 });
-
-
-
-

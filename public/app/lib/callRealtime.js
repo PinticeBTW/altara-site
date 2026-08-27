@@ -27,6 +27,12 @@ function createChannelName(conversationId, conversationType) {
   return type === "group" ? `call:group_${convId}` : `call:dm_${convId}`;
 }
 
+function createServerMediatedChannelName(conversationId) {
+  const convId = normalizeId(conversationId);
+  if (!convId) throw new Error("callRealtime: conversationId is required");
+  return `gdm-user-fanout:${convId}`;
+}
+
 function isPlainObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -159,6 +165,11 @@ function bindChannelHandlers(context) {
 
 async function waitForSubscription(context) {
   if (context.closed) throw new Error("callRealtime: channel already closed");
+  if (context.serverMediated) {
+    context.status = "SUBSCRIBED";
+    context.subscribed = true;
+    return context;
+  }
   if (context.subscribePromise) return context.subscribePromise;
 
   context.subscribePromise = new Promise((resolve, reject) => {
@@ -202,6 +213,8 @@ async function waitForSubscription(context) {
 export async function createCallChannel({
   conversationId,
   conversationType = "dm",
+  privateChannel = true,
+  serverMediatedSend = null,
   currentUserId,
   onSignal,
   onPresenceSync,
@@ -216,7 +229,10 @@ export async function createCallChannel({
   if (!convId) throw new Error("callRealtime: conversationId is required");
   if (!userId) throw new Error("callRealtime: currentUserId is required");
 
-  const channelName = createChannelName(convId, conversationType);
+  const serverMediated = typeof serverMediatedSend === "function";
+  const channelName = serverMediated
+    ? createServerMediatedChannelName(convId)
+    : createChannelName(convId, conversationType);
   const existing = channelRegistry.get(channelName);
   if (existing && !existing.closed) {
     existing.onSignal = onSignal;
@@ -225,21 +241,28 @@ export async function createCallChannel({
     existing.onPresenceLeave = onPresenceLeave;
     existing.onStatus = onStatus;
     existing.onError = onError;
+    existing.serverMediatedSend = serverMediatedSend;
     return waitForSubscription(existing);
   }
 
-  const channel = supabaseClient.channel(channelName, {
-    config: {
-      broadcast: { self: false, ack: false },
-      presence: { key: userId },
-    },
-  });
+  const channel = serverMediated
+    ? null
+    : supabaseClient.channel(channelName, {
+        config: {
+          private: privateChannel === true,
+          broadcast: { self: false, ack: false },
+          presence: { key: userId },
+        },
+      });
 
   const context = {
     channel,
     channelName,
     conversationId: convId,
     conversationType: normalizeConversationType(conversationType),
+    privateChannel: privateChannel === true,
+    serverMediated,
+    serverMediatedSend,
     currentUserId: userId,
     onSignal,
     onPresenceSync,
@@ -259,8 +282,9 @@ export async function createCallChannel({
     supabaseClient,
   };
 
-  bindChannelHandlers(context);
+  if (!serverMediated) bindChannelHandlers(context);
   channelRegistry.set(channelName, context);
+  if (serverMediated) invokeCallback(context.onStatus, "SUBSCRIBED", context);
   return waitForSubscription(context);
 }
 
@@ -274,10 +298,10 @@ export async function joinCallChannel(context, presenceMeta = {}) {
     meta: isPlainObject(presenceMeta) ? { ...presenceMeta } : {},
   };
 
-  await context.channel.track(payload);
+  if (!context.serverMediated) await context.channel.track(payload);
   context.lastPresencePayload = payload;
   context.joined = true;
-  context.presenceMembers = readPresenceMembers(context.channel);
+  context.presenceMembers = context.serverMediated ? [] : readPresenceMembers(context.channel);
   context.presenceSynced = true;
   context.lastPresenceSyncAt = Date.now();
   invokeCallback(context.onPresenceSync, context.presenceMembers.slice(), context);
@@ -288,6 +312,10 @@ export async function sendCallSignal(context, signal) {
   if (!context || context.closed) throw new Error("callRealtime: invalid channel context");
   await waitForSubscription(context);
   const payload = normalizeSignal(signal, context.conversationId, context.currentUserId);
+  if (context.serverMediated) {
+    await context.serverMediatedSend(payload);
+    return payload;
+  }
   const result = await context.channel.send({
     type: "broadcast",
     event: SIGNAL_EVENT,
@@ -304,9 +332,11 @@ export async function leaveCallChannel(context, { unsubscribe = true } = {}) {
   if (!context || context.closed) return;
 
   if (context.joined) {
-    try {
-      await context.channel.untrack();
-    } catch (_) {}
+    if (!context.serverMediated) {
+      try {
+        await context.channel.untrack();
+      } catch (_) {}
+    }
     context.joined = false;
     context.lastPresencePayload = null;
   }
@@ -321,10 +351,12 @@ export async function leaveCallChannel(context, { unsubscribe = true } = {}) {
   context.subscribePromise = null;
   channelRegistry.delete(context.channelName);
 
-  try {
-    await context.channel.unsubscribe();
-  } catch (_) {}
-  try {
-    context.supabaseClient.removeChannel(context.channel);
-  } catch (_) {}
+  if (!context.serverMediated) {
+    try {
+      await context.channel.unsubscribe();
+    } catch (_) {}
+    try {
+      context.supabaseClient.removeChannel(context.channel);
+    } catch (_) {}
+  }
 }

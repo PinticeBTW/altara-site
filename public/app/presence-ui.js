@@ -33,8 +33,70 @@ function normalizeManualStatus(s) {
   return "";
 }
 
+function readPresenceLiveFlag(value) {
+  if (value === true || value === 1) return true;
+  const raw = String(value ?? "").trim().toLowerCase();
+  return raw === "true" || raw === "1";
+}
+
+function readPresenceStatusField(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "online"
+    || raw === "idle"
+    || raw === "focus"
+    || raw === "dnd"
+    || raw === "offline"
+    || raw === "invisible"
+    ? raw
+    : "";
+}
+
+// This is the single boundary between Presence transport state and UI state.
+// A status describes presentation; only a live session proves connectivity.
+export function classifyPresenceState(entry = {}) {
+  const row = entry && typeof entry === "object" ? entry : {};
+  const liveSessionCount = Math.max(
+    0,
+    Number(row.live_session_count || row.liveSessionCount || 0) || 0,
+    Array.isArray(row.live_sessions) ? row.live_sessions.length : 0,
+    Array.isArray(row.liveSessions) ? row.liveSessions.length : 0,
+  );
+  const isPresenceLive = liveSessionCount > 0
+    || readPresenceLiveFlag(row.has_live_session)
+    || readPresenceLiveFlag(row.hasLiveSession)
+    || readPresenceLiveFlag(row.is_live)
+    || readPresenceLiveFlag(row.isLive);
+  const rawStatus = readPresenceStatusField(row.status);
+  const manualStatus = readPresenceStatusField(row.manual_status)
+    || readPresenceStatusField(row.manualStatus);
+  const effectiveStatus = readPresenceStatusField(row.effective_status)
+    || readPresenceStatusField(row.effectiveStatus);
+  const requestedStatus = manualStatus === "invisible"
+    ? "invisible"
+    : (effectiveStatus || manualStatus || rawStatus);
+
+  let visibleStatus = "offline";
+  if (isPresenceLive && requestedStatus !== "invisible" && requestedStatus !== "offline") {
+    visibleStatus = requestedStatus || "online";
+  }
+  const countsAsOnlineNow = isPresenceLive && visibleStatus !== "offline";
+
+  return {
+    isPresenceLive,
+    visibleStatus,
+    countsAsOnlineNow,
+    liveSessionCount,
+    rawStatus,
+    manualStatus,
+    effectiveStatus,
+  };
+}
+
 function normalizeId(value = "") {
-  return String(value || "").trim();
+  const raw = String(value || "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw)
+    ? raw.toLowerCase()
+    : raw;
 }
 
 function pushFriendIdCandidate(list, source, value) {
@@ -88,14 +150,13 @@ function getFriendPresenceId(friend = {}, currentUserId = "") {
 }
 
 function resolveEffectivePresenceStatus({ liveStatus = "", manualStatus = "", hasLiveSession = null } = {}) {
-  const live = normalizeStatus(liveStatus);
-  const manual = normalizeManualStatus(manualStatus);
-  const hasLive = typeof hasLiveSession === "boolean" ? hasLiveSession : live !== "offline";
-  if (!hasLive) return "offline";
-  if (manual === "invisible") return "offline";
-  if (manual === "online") return "online";
-  if (manual === "idle" || manual === "focus" || manual === "dnd") return manual;
-  return live;
+  return classifyPresenceState({
+    status: liveStatus,
+    manual_status: manualStatus,
+    has_live_session: typeof hasLiveSession === "boolean"
+      ? hasLiveSession
+      : normalizeStatus(liveStatus) !== "offline",
+  }).visibleStatus;
 }
 
 function isPresenceDebugEnabled() {
@@ -312,17 +373,18 @@ export function renderPresenceUI({
   for (const u of (list || [])) {
     const id = normalizeId(u?.id || u?.user_id || u?.userId || "");
     if (!id) continue;
-    const liveSessionCount = Number(u.live_session_count || u.liveSessionCount || 0);
+    const classification = classifyPresenceState(u);
     presenceMap.set(id, {
       id,
       username: u.username || "",
       display_name: u.display_name || u.username || "User",
       avatar_url: u.avatar_url || null,
       name_color: normalizeNameColor(u.name_color),
-      status: normalizeStatus(u.status),
-      manual_status: normalizeManualStatus(u.manual_status || u.status),
-      has_live_session: liveSessionCount > 0 || u.has_live_session === true || u.hasLiveSession === true || u.is_live === true || u.isLive === true,
-      live_session_count: liveSessionCount,
+      status: classification.visibleStatus,
+      manual_status: normalizeManualStatus(classification.manualStatus || classification.effectiveStatus || classification.rawStatus),
+      has_live_session: classification.isPresenceLive,
+      live_session_count: classification.liveSessionCount,
+      counts_as_online_now: classification.countsAsOnlineNow,
       activity: normalizeActivity(u.activity || u.spotify_activity || u.spotifyActivity),
       spotify_activity: normalizeActivity(u.spotify_activity || u.spotifyActivity || u.activity),
     });
@@ -366,6 +428,8 @@ export function renderPresenceUI({
     return {
       ...u,
       status,
+      has_live_session: p.has_live_session,
+      counts_as_online_now: p.counts_as_online_now,
       activity: status === "offline" ? null : normalizeActivity(p.activity || p.spotify_activity),
     };
   });
@@ -401,8 +465,8 @@ export function renderPresenceUI({
   // filter por search
   const filtered = friendOnly.filter(u => matchSearch(u, q));
 
-  const online = filtered.filter(u => normalizeStatus(u.status) !== "offline");
-  const offline = filtered.filter(u => normalizeStatus(u.status) === "offline");
+  const online = filtered.filter(u => u.counts_as_online_now === true);
+  const offline = filtered.filter(u => u.counts_as_online_now !== true);
 
   logPresenceLiveDebug("activeNow render source", {
     source,
@@ -421,7 +485,7 @@ export function renderPresenceUI({
       hasLiveSession: !!p?.has_live_session,
       manualStatusFromPresence: p?.manual_status || "",
       effectiveStatus,
-      includedInActiveNow: effectiveStatus === "online" || effectiveStatus === "idle" || effectiveStatus === "focus" || effectiveStatus === "dnd",
+      includedInActiveNow: u.counts_as_online_now === true,
     });
   });
 

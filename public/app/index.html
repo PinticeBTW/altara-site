@@ -5,7 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>altara</title>
   <link rel="stylesheet" href="/app/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600;700;800&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" media="print" onload="this.media='all'" />
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600;700;800&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" /></noscript>
   <link rel="stylesheet" href="runtimeChrome.css" />
+  <link rel="modulepreload" href="./ui.js" />
+  <link rel="modulepreload" href="./supabaseClient.js" />
   <style id="serverPermissionsInvitesV1Styles">
     .serverSettingsInvitesRoot{min-height:0;overflow:auto}
     .serverSettingsInvitesToolbar{display:grid;grid-template-columns:minmax(180px,1fr) auto auto auto;gap:8px;align-items:center;margin-bottom:12px}
@@ -129,6 +135,68 @@
           scriptSrc
         });
       });
+    })();
+  </script>
+  <script>
+    /*
+     * Static (non-module) boot watchdog. app.js is a type="module" script whose
+     * static import chain resolves a remote CDN dependency (supabaseClient.js ->
+     * esm.sh) before ANY of app.js's own top-level code runs -- including its own
+     * internal 8s "boot failure panel" watchdog. If that remote fetch stalls,
+     * app.js never executes at all, so nothing inside app.js can ever recover it.
+     * This script cannot depend on app.js in any way, so it stays plain and self
+     * contained: one safe automatic retry (reload), then a manual, honest,
+     * bounded prompt -- never a silent, permanent stuck-loading void.
+     */
+    (() => {
+      const WATCHDOG_TIMEOUT_MS = 10000;
+      const RETRIED_MARKER_KEY = "altara_static_boot_watchdog_retried_v1";
+      setTimeout(() => {
+        try {
+          if (window.__ALTARA_BOOT_PROOF__ && window.__ALTARA_BOOT_PROOF__.appJsExecuted === true) return;
+          if (document.getElementById("altaraStaticBootWatchdogPanel")) return;
+          window.__ALTARA_PUSH_BOOT_TRACE__?.("static_boot_watchdog_fired", { timeoutMs: WATCHDOG_TIMEOUT_MS });
+          let alreadyRetried = false;
+          try { alreadyRetried = sessionStorage.getItem(RETRIED_MARKER_KEY) === "1"; } catch (_) {}
+          if (!alreadyRetried) {
+            try { sessionStorage.setItem(RETRIED_MARKER_KEY, "1"); } catch (_) {}
+            window.location.reload();
+            return;
+          }
+          const panel = document.createElement("div");
+          panel.id = "altaraStaticBootWatchdogPanel";
+          panel.style.cssText = [
+            "position:fixed",
+            "right:18px",
+            "bottom:18px",
+            "z-index:2147483647",
+            "max-width:360px",
+            "padding:16px",
+            "border:1px solid rgba(235,205,150,.35)",
+            "border-radius:14px",
+            "background:rgba(20,18,24,.96)",
+            "color:#f8edd6",
+            "box-shadow:0 24px 70px rgba(0,0,0,.45)",
+            "font:13px/1.45 system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif",
+          ].join(";");
+          const title = document.createElement("div");
+          title.textContent = "Altara is taking longer than expected to start";
+          title.style.cssText = "font-weight:800;font-size:14px;margin-bottom:6px";
+          const summary = document.createElement("div");
+          summary.textContent = "A required resource is slow to load. This does not mean the connection is offline. Keep waiting, or retry now.";
+          summary.style.cssText = "margin-bottom:12px;color:rgba(248,237,214,.82)";
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = "Retry now";
+          button.style.cssText = "width:100%;border:0;border-radius:10px;padding:10px 12px;background:#d8b46a;color:#171318;font-weight:800;cursor:pointer";
+          button.addEventListener("click", () => {
+            try { sessionStorage.removeItem(RETRIED_MARKER_KEY); } catch (_) {}
+            window.location.reload();
+          });
+          panel.append(title, summary, button);
+          (document.body || document.documentElement).appendChild(panel);
+        } catch (_) {}
+      }, WATCHDOG_TIMEOUT_MS);
     })();
   </script>
   <script>

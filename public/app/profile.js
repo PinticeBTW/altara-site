@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient.js";
+import { uploadViaTrustedAuthority } from "./lib/trustedUploadClient.js";
 import { $, esc, setDebug, requireAuth, getMyProfile, logout, LIMITS } from "./ui.js";
 import {
   createCallChannel as createRealtimeCallChannel,
@@ -709,18 +710,18 @@ function resolveAvatarMimeAndExt(ext = "", contentTypeOverride = ""){
 
 async function uploadAvatarBlob(blob, user, ext, contentTypeOverride = ""){
   const { ext: safeExt, mime } = resolveAvatarMimeAndExt(ext, contentTypeOverride);
-  const path = `${user.id}/avatar_${Date.now()}.${safeExt}`;
-
-  const up = await supabase.storage.from("avatars").upload(path, blob, {
-    upsert: true,
-    contentType: mime,
-    cacheControl: "31536000",
+  const file = blob instanceof File
+    ? blob
+    : new File([blob], `avatar_${Date.now()}.${safeExt}`, { type: mime, lastModified: Date.now() });
+  const up = await uploadViaTrustedAuthority({
+    supabase,
+    file,
+    uploadContext: "profile_avatar",
+    cacheControl: "60",
   });
   setDebug({ upload: up });
-  if (up.error) throw up.error;
-
-  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
-  const url = data.publicUrl;
+  const url = String(up.publicUrl || "").trim();
+  if (!url) throw new Error("ALTARA could not verify the avatar upload.");
 
   const { error } = await supabase.from("profiles").update({ avatar_url: url }).eq("id", user.id);
   setDebug({ avatar_url_save: { error, url } });

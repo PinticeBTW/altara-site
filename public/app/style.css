@@ -1,4 +1,8 @@
-@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap");
+/* Fonts are loaded non-blocking from each HTML entry point's <head> (preconnect
+   + media="print" swap-to-"all" on load) instead of a CSS @import here, since
+   an @import at the top of an already render-blocking stylesheet serializes
+   an extra remote fetch before first paint on every screen. See index.html,
+   login.html, register.html, profile.html, app.html. */
 
 :root {
   --altara-profile-banner-ratio: 4 / 1;
@@ -27725,7 +27729,7 @@ body.motion-ready .panel {
    ANIMATION LAYER
    All rules here are gated on body.motion-ready so they
    are automatically disabled by the "Reduce motion" toggle
-   in Settings â?' Appearance.
+   in Settings ï¿½?' Appearance.
    ========================================= */
 
 /* --- Keyframes --- */
@@ -50531,117 +50535,6 @@ body:not(.authPage) .panel.left:has(.leftDockDms.is-server-context) #meProfileCa
   transform: translate(-50%, 0);
 }
 
-.connectionOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2147482600;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  opacity: 0;
-  pointer-events: none;
-  background: color-mix(in srgb, rgba(0, 0, 0, 0.72) 82%, transparent);
-  transition: opacity 180ms ease;
-}
-
-.connectionOverlay.is-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.connectionOverlayCard {
-  width: min(390px, calc(100vw - 32px));
-  display: grid;
-  justify-items: center;
-  gap: 12px;
-  padding: 26px 24px 22px;
-  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 20%, rgba(255, 255, 255, 0.12));
-  border-radius: 28px;
-  background:
-    radial-gradient(110% 80% at 50% -20%, color-mix(in srgb, var(--altara-accent, #e8cfae) 14%, transparent), transparent 58%),
-    color-mix(in srgb, var(--altara-surface-elevated, #202020) 94%, #000 6%);
-  color: var(--altara-text, #f2f0ec);
-  text-align: center;
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.52);
-}
-
-.connectionOverlayMark {
-  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
-  font-size: 11px;
-  font-weight: 820;
-  letter-spacing: 0;
-}
-
-.connectionOverlaySpinner {
-  width: 42px;
-  aspect-ratio: 1;
-  border-radius: 999px;
-  border: 2px solid color-mix(in srgb, var(--altara-border, rgba(255, 255, 255, 0.12)) 80%, transparent);
-  border-top-color: var(--altara-accent, #e8cfae);
-  animation: connectionSpin 920ms linear infinite;
-}
-
-.connectionOverlayCard h2 {
-  margin: 2px 0 0;
-  font-size: 22px;
-  font-weight: 820;
-  line-height: 1.12;
-  letter-spacing: 0;
-}
-
-.connectionOverlayCard p {
-  margin: 0;
-  max-width: 30ch;
-  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
-  font-size: 13px;
-  font-weight: 620;
-  line-height: 1.42;
-}
-
-.connectionOverlayMeta {
-  min-height: 18px;
-  color: var(--altara-text-muted, rgba(242, 240, 236, 0.52));
-  font-size: 11px;
-  font-weight: 680;
-}
-
-.connectionRetryButton {
-  height: 34px;
-  padding: 0 16px;
-  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 36%, var(--altara-border, rgba(255, 255, 255, 0.12)));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 78%, var(--altara-accent, #e8cfae) 12%);
-  color: var(--altara-text, #f2f0ec);
-  font-size: 12px;
-  font-weight: 780;
-  cursor: pointer;
-}
-
-.connectionStatusBanner {
-  position: fixed;
-  top: 14px;
-  left: 50%;
-  z-index: 2147482400;
-  transform: translate(-50%, -10px);
-  opacity: 0;
-  pointer-events: none;
-  max-width: min(460px, calc(100vw - 28px));
-  padding: 9px 14px;
-  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 18%, rgba(255, 255, 255, 0.12));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--altara-surface-elevated, #202020) 90%, #000 10%);
-  color: var(--altara-text-soft, rgba(242, 240, 236, 0.72));
-  font-size: 12px;
-  font-weight: 720;
-  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.34);
-  transition: opacity 170ms ease, transform 170ms ease;
-}
-
-.connectionStatusBanner.is-visible {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-
 .connectionToast {
   position: fixed;
   left: 50%;
@@ -50671,19 +50564,9 @@ body.connection-is-offline :is(#dmSend, #btnAttach, #btnSendRequest, #btnCreateS
   cursor: not-allowed;
 }
 
-@keyframes connectionSpin {
-  to { transform: rotate(360deg); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .connectionOverlay,
-  .connectionStatusBanner,
   .connectionToast {
     transition: none;
-  }
-
-  .connectionOverlaySpinner {
-    animation: none;
   }
 }
 
@@ -53126,7 +53009,6 @@ html.altara-motion-on body:not(.authPage) :is(
 
 html.altara-motion-on body:not(.authPage) :is(
   .connectionToast,
-  .connectionStatusBanner,
   .dmPrivacyToast,
   .toast,
   .tooltip,
@@ -53206,8 +53088,6 @@ html.altara-motion-off *::after {
   html.altara-motion-on body:not(.authPage) :is(
     .profileWidgetCard__controls,
     .profileWidgetIconBtn,
-    .connectionOverlay,
-    .connectionStatusBanner,
     .connectionToast,
     .profileWidgetInlineResultBtn,
     .userCardWidgetBtn,
