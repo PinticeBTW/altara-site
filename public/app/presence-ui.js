@@ -1,6 +1,14 @@
 // presence-ui.js
 // Renderiza Active Now + Offline + dots nas DMs
 
+import {
+  formatSpotifyProgressTime,
+  getSpotifyInterpolatedProgress,
+  getSpotifyProgressAnchor,
+  scheduleSpotifyProgressTickerSync,
+} from "./lib/spotifyProgress.js";
+
+
 function esc(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -179,6 +187,17 @@ function logPresenceLiveDebug(event = "", details = {}) {
   console.info("[Presence] " + String(event || "event"), details && typeof details === "object" ? details : {});
 }
 
+function normalizeActivityAssetUrl(value = "") {
+  const raw = String(value || "").trim().slice(0, 512);
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw, typeof location !== "undefined" ? location.href : "https://altara.invalid/");
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : "";
+  } catch (_) {
+    return "";
+  }
+}
+
 function normalizeActivity(raw) {
   if (!raw || typeof raw !== "object") return null;
   const type = String(raw.type || "").trim().toLowerCase();
@@ -189,22 +208,33 @@ function normalizeActivity(raw) {
     const title = String(raw.title || raw.name || "").trim();
     const artist = String(raw.artist || raw.details || "").trim();
     const isPlaying = raw.isPlaying !== false && raw.is_playing !== false;
-    if (provider !== "spotify" || !title || !isPlaying) return null;
+    const fetchedAt = Number(raw.fetchedAt || raw.fetched_at || raw.updatedAt || raw.updated_at || 0);
+    const nowMs = Date.now();
+    if (
+      provider !== "spotify"
+      || !title
+      || !isPlaying
+      || !Number.isFinite(fetchedAt)
+      || fetchedAt <= 0
+      || fetchedAt > nowMs + 5 * 60 * 1000
+    ) return null;
     return {
       type: "listening",
       provider: "spotify",
+      trackId: String(raw.trackId || raw.track_id || raw.id || "").trim().slice(0, 120),
       name: title,
       title,
       details: artist,
       artist,
       album: String(raw.album || "").trim(),
-      artworkUrl: String(raw.artworkUrl || raw.artwork_url || raw.cover || raw.icon || "").trim(),
+      artworkUrl: normalizeActivityAssetUrl(raw.artworkUrl || raw.artwork_url || raw.cover || raw.icon),
       progressMs: Math.max(0, Math.round(Number(raw.progressMs || raw.progress_ms || 0) || 0)),
       durationMs: Math.max(0, Math.round(Number(raw.durationMs || raw.duration_ms || 0) || 0)),
-      startedAt: (() => { const fetchedAt = Number(raw.fetchedAt || raw.fetched_at || raw.updatedAt || raw.updated_at || Date.now()) || Date.now(); const progressMs = Math.max(0, Math.round(Number(raw.progressMs || raw.progress_ms || 0) || 0)); return Math.max(1, Math.round(fetchedAt) - progressMs); })(),
-      fetchedAt: Number(raw.fetchedAt || raw.fetched_at || raw.updatedAt || raw.updated_at || Date.now()) || Date.now(),
-      updatedAt: Number(raw.fetchedAt || raw.fetched_at || raw.updatedAt || raw.updated_at || Date.now()) || Date.now(),
-      externalUrl: String(raw.externalUrl || raw.external_url || "").trim(),
+      startedAt: (() => { const progressMs = Math.max(0, Math.round(Number(raw.progressMs || raw.progress_ms || 0) || 0)); return Math.max(1, Math.round(fetchedAt) - progressMs); })(),
+      fetchedAt,
+      updatedAt: fetchedAt,
+      isPlaying: true,
+      externalUrl: normalizeActivityAssetUrl(raw.externalUrl || raw.external_url),
       showOnProfile: raw.showOnProfile !== false && raw.show_on_profile !== false,
       showProgress: raw.showProgress !== false && raw.show_progress !== false,
       activityVerb: "listening",
@@ -222,9 +252,9 @@ function normalizeActivity(raw) {
     kind,
     activityVerb,
     startedAt,
-    icon: String(raw.icon || "").trim(),
-    cover: String(raw.cover || "").trim(),
-    background: String(raw.background || "").trim(),
+    icon: normalizeActivityAssetUrl(raw.icon),
+    cover: normalizeActivityAssetUrl(raw.cover),
+    background: normalizeActivityAssetUrl(raw.background),
     provider: String(raw.provider || "").trim(),
     providerId: String(raw.providerId || "").trim(),
     slug: String(raw.slug || "").trim(),
@@ -242,6 +272,15 @@ function buildSpotifyActivityHtml(activity, userId = "") {
   const normalized = normalizeActivity(activity);
   if (!normalized || normalized.type !== "listening" || normalized.provider !== "spotify") return "";
   const artwork = String(normalized.artworkUrl || "").trim();
+  const progress = getSpotifyInterpolatedProgress(normalized);
+  const anchor = getSpotifyProgressAnchor(normalized);
+  const progressHtml = normalized.showProgress !== false && progress.durationMs > 0
+    ? `<div class="spotifyActivityProgress presenceActivityProgress" data-spotify-activity-progress="1" data-spotify-track-id="${esc(normalized.trackId || "")}" data-spotify-anchor-progress-ms="${esc(anchor.anchorProgressMs)}" data-spotify-anchor-timestamp="${esc(anchor.anchorTimestamp)}" data-spotify-started-at="${esc(normalized.startedAt || 0)}" data-spotify-progress-ms="${esc(normalized.progressMs || 0)}" data-spotify-duration-ms="${esc(normalized.durationMs || 0)}" data-spotify-is-playing="${normalized.isPlaying !== false ? "1" : "0"}">
+        <div class="presenceActivityProgress__time" data-spotify-progress-label="1">${esc(formatSpotifyProgressTime(progress.progressMs) + " / " + formatSpotifyProgressTime(progress.durationMs))}</div>
+        <div class="spotifyActivityProgress__bar" aria-hidden="true"><span style="--spotify-progress:${esc(progress.percent.toFixed(2))}%"></span></div>
+      </div>`
+    : "";
+  if (progressHtml) scheduleSpotifyProgressTickerSync();
   logActiveNowDebug("spotify activity rendered", {
     userId: String(userId || ""),
     trackTitle: normalized.title || normalized.name || "",
@@ -256,6 +295,7 @@ function buildSpotifyActivityHtml(activity, userId = "") {
         <div class="presenceActivityLabel">Listening to Spotify</div>
         <div class="presenceActivityTitle">${esc(normalized.title || normalized.name || "Spotify")}</div>
         <div class="presenceActivityMeta">${esc(normalized.artist || normalized.details || "Spotify")}</div>
+        ${progressHtml}
       </div>
     </div>
   `;
@@ -466,12 +506,14 @@ export function renderPresenceUI({
   const filtered = friendOnly.filter(u => matchSearch(u, q));
 
   const online = filtered.filter(u => u.counts_as_online_now === true);
+  const active = online.filter(u => !!normalizeActivity(u.activity || u.spotify_activity));
   const offline = filtered.filter(u => u.counts_as_online_now !== true);
 
   logPresenceLiveDebug("activeNow render source", {
     source,
     liveUserIds: Array.from(presenceMap.values()).filter((u) => u.has_live_session).map((u) => String(u.id || "")).filter(Boolean),
-    activeNowUserIds: online.map((u) => String(u.id || "")).filter(Boolean),
+    onlineNowUserIds: online.map((u) => String(u.id || "")).filter(Boolean),
+    activeNowUserIds: active.map((u) => String(u.id || "")).filter(Boolean),
     friendCount: friendUsers.length,
   });
 
@@ -485,7 +527,8 @@ export function renderPresenceUI({
       hasLiveSession: !!p?.has_live_session,
       manualStatusFromPresence: p?.manual_status || "",
       effectiveStatus,
-      includedInActiveNow: u.counts_as_online_now === true,
+      includedInOnlineNow: u.counts_as_online_now === true,
+      includedInActiveNow: u.counts_as_online_now === true && !!normalizeActivity(u.activity || u.spotify_activity),
     });
   });
 
@@ -501,8 +544,8 @@ export function renderPresenceUI({
     }),
   });
   logPresenceLiveDebug("activeNowUsers", {
-    count: online.length,
-    userIds: online.map((u) => String(u.id || "")).filter(Boolean),
+    count: active.length,
+    userIds: active.map((u) => String(u.id || "")).filter(Boolean),
   });
 
   // atualizar contador
@@ -510,13 +553,13 @@ export function renderPresenceUI({
 
   // render Active Now
   if (activeNowEl) {
-    const signature = buildPresenceListSignature("active", online, q);
+    const signature = buildPresenceListSignature("active", active, q);
     if (activeNowEl.getAttribute("data-presence-signature") === signature) {
       if (onlineCountEl) onlineCountEl.textContent = String(online.length);
     } else {
-    const html = online.length
-      ? online.map(u => cardUser(u)).join("")
-      : `<div class="hint">Ninguém online agora.</div>`;
+    const html = active.length
+      ? active.map(u => cardUser(u)).join("")
+      : `<div class="hint">No one active right now.</div>`;
     activeNowEl.innerHTML = html;
     activeNowEl.setAttribute("data-presence-signature", signature);
     queuePresenceGifPlaybackSync(activeNowEl);

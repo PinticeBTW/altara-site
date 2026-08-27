@@ -47535,6 +47535,22 @@ body:not(.authPage) #activeNow .presenceActivityMeta {
   font-size: 11px;
 }
 
+body:not(.authPage) #activeNow .presenceActivityProgress {
+  gap: 3px;
+  margin-top: 3px;
+}
+
+body:not(.authPage) #activeNow .presenceActivityProgress__time {
+  color: var(--altara-text-muted, rgba(242, 240, 236, 0.58));
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+body:not(.authPage) #activeNow .presenceActivityProgress .spotifyActivityProgress__bar {
+  height: 3px;
+}
+
 .settingsFocusPlusSubhead {
   margin: 12px 0 6px;
   color: var(--altara-text-muted, rgba(242, 240, 236, 0.58));

@@ -78,7 +78,19 @@
   });
   try { console.log("[ALTARA BOOT PROOF] app.js executing server-read-message-history-ux-v3", nowIso(), { assetVersion }); } catch (_) {}
 })();
-import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabaseClient.js";
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY, realtimeConnectionHealth, realtimeStartupBarrier } from "./supabaseClient.js";
+realtimeStartupBarrier.activate();
+import { createPresenceLatencyTracker } from "./lib/presenceLatency.js";
+import { createSpotifyActivityController, getSpotifyPublicActivitySignature } from "./lib/spotifyActivityController.js";
+import {
+  formatSpotifyProgressTime as formatSpotifyTime,
+  getSpotifyInterpolatedProgress as getSpotifyActivityProgress,
+  getSpotifyProgressAnchor,
+  rebaseSpotifyProgressElements,
+  scheduleSpotifyProgressTickerSync,
+  syncSpotifyProgressTicker,
+  updateSpotifyProgressElements,
+} from "./lib/spotifyProgress.js";
 import {
   hydrateTrustedAttachmentRows,
   persistedTrustedAttachment,
@@ -104,6 +116,7 @@ import {
   joinCallChannel as joinRealtimeCallChannel,
   sendCallSignal as broadcastCallSignal,
   leaveCallChannel as leaveRealtimeCallChannel,
+  discardCallChannelForRecovery,
 } from "./lib/callRealtime.js";
 import {
   createServerVoiceLiveKitController,
@@ -2020,11 +2033,10 @@ let altaraActiveConversationRealtimeRequired = false;
 let altaraConnectionActionGuardBound = false;
 let altaraConnectionManagerInitialized = false;
 let altaraConnectionBootWaiting = false;
-// Global connection health follows an actually subscribed core message path,
-// not optional feature channels such as Presence, typing, or role invalidation.
-// The global messages channel and active-conversation channel are alternate
-// delivery paths: either one proves that core Realtime is working.
-const altaraRealtimeCoreSources = new Set(["core-messages", "active-conversation"]);
+// Global connection health follows the canonical Presence/heartbeat path.
+// Feature-channel authorization failures are isolated and must never create a
+// new Presence generation or mark the shared socket unhealthy.
+const altaraRealtimeCoreSources = new Set(["presence"]);
 const altaraRealtimeSubscribedSources = new Set();
 const altaraConnectionState = {
   networkOnline: typeof navigator === "undefined" ? true : navigator.onLine !== false,
@@ -2661,11 +2673,64 @@ async function refreshAltaraRealtimeAuthForReconnect(reason = "realtime-reconnec
   }
 }
 
+async function recoverAltaraRealtimeConnectionHealth({ reason = "heartbeat:disconnected" } = {}) {
+  if (!state.user?.id || getNavigatorOnlineSignal() === false || altaraConnectionState.simulatedOffline) return false;
+  preparedPresenceBootstrapGeneration = realtimeStartupBarrier.beginBootstrap(
+    `realtime-health:${String(reason || "unhealthy")}`,
+  );
+  await realtimeStartupBarrier.suspendNonPresenceChannels(`realtime-health:${String(reason || "unhealthy")}`);
+  await resetAltaraRealtimeSubscriptionsForRecovery(`realtime-health:${String(reason || "unhealthy")}`);
+  if (altaraPresenceRealtimeRestartTimer) {
+    clearTimeout(altaraPresenceRealtimeRestartTimer);
+    altaraPresenceRealtimeRestartTimer = 0;
+  }
+  altaraPresenceRealtimeRestartGeneration += 1;
+  recordPresenceLiveDiagnosticEvent("RECONNECT_START", {
+    generation: presenceControllerGeneration,
+    status: String(reason || "realtime-health"),
+    source: "realtime-heartbeat",
+  });
+  setAltaraConnectionPatch({
+    realtimeConnected: false,
+    realtimeState: "recovering",
+  }, `realtime-health:${String(reason || "unhealthy")}`);
+
+  const sessionResult = await altaraWithTimeout(
+    supabase.auth.getSession(),
+    ALTARA_CONNECTION_BACKEND_TIMEOUT_MS,
+    "auth.getSession.realtime-health",
+  );
+  const session = sessionResult?.data?.session || null;
+  if (!session?.user?.id || normId(session.user.id) !== normId(state.user.id)) return false;
+  const accessToken = String(session.access_token || "").trim();
+  if (!accessToken || !supabase?.realtime) return false;
+  if (typeof supabase.realtime.setAuth === "function") {
+    await Promise.resolve(supabase.realtime.setAuth(accessToken));
+  }
+
+  // Phoenix 0.4.5 automatically rejoins errored joined channels when its
+  // socket opens. Feature channels were detached above, before transport
+  // reconnect, so only Presence can reach native join during this generation.
+  if (typeof supabase.realtime.isConnected === "function" && supabase.realtime.isConnected()) {
+    await Promise.resolve(supabase.realtime.disconnect?.(4000, "altara heartbeat recovery"));
+  }
+  if (typeof supabase.realtime.connect === "function") supabase.realtime.connect();
+
+  const activePresence = presence;
+  if (activePresence && typeof activePresence.reconnect === "function") {
+    await activePresence.reconnect(`health:${String(reason || "realtime-unhealthy")}`);
+  } else {
+    await startPresenceForAuthenticatedSession("realtime-health", session);
+  }
+  return true;
+}
+
 function scheduleAltaraPresenceRealtimeRestart(reason = "presence-reconnect") {
   if (
     !state.user?.id
     || altaraPresenceRealtimeRestartTimer
     || altaraPresenceRealtimeRestartInFlight
+    || realtimeConnectionHealth.getSnapshot().reconnectInFlight
     || isAltaraPresenceRealtimeActiveOrJoining()
   ) return false;
   const generation = ++altaraPresenceRealtimeRestartGeneration;
@@ -2685,6 +2750,10 @@ function scheduleAltaraPresenceRealtimeRestart(reason = "presence-reconnect") {
       || altaraConnectionState.simulatedOffline
     ) return;
     const restart = (async () => {
+      recordPresenceLiveDiagnosticEvent("RECONNECT_START", {
+        generation: presenceControllerGeneration,
+        status: String(reason || "presence-reconnect"),
+      });
       const authReady = await refreshAltaraRealtimeAuthForReconnect(reason);
       if (
         !authReady
@@ -2693,18 +2762,45 @@ function scheduleAltaraPresenceRealtimeRestart(reason = "presence-reconnect") {
         || altaraRealtimeResetInFlight
         || isAltaraPresenceRealtimeActiveOrJoining()
       ) return false;
-      await stopAltaraPresenceForRecovery(`local:${reason}`);
-      if (
-        generation !== altaraPresenceRealtimeRestartGeneration
-        || altaraConnectionRecoveryInFlight
-        || altaraRealtimeResetInFlight
-        || !state.user?.id
-        || getNavigatorOnlineSignal() === false
-        || altaraConnectionState.simulatedOffline
-      ) return false;
-      await startPresence();
+      preparedPresenceBootstrapGeneration = realtimeStartupBarrier.beginBootstrap(
+        `presence-restart:${String(reason || "presence-reconnect")}`,
+      );
+      await realtimeStartupBarrier.suspendNonPresenceChannels(
+        `presence-restart:${String(reason || "presence-reconnect")}`,
+      );
+      await resetAltaraRealtimeSubscriptionsForRecovery(
+        `presence-restart:${String(reason || "presence-reconnect")}`,
+        { preservePresenceRestartOwner: true },
+      );
+      const activePresence = presence;
+      if (activePresence && typeof activePresence.reconnect === "function") {
+        await activePresence.reconnect(`local:${reason}`);
+      } else {
+        await stopAltaraPresenceForRecovery(`local:${reason}`);
+        if (
+          generation !== altaraPresenceRealtimeRestartGeneration
+          || altaraConnectionRecoveryInFlight
+          || altaraRealtimeResetInFlight
+          || !state.user?.id
+          || getNavigatorOnlineSignal() === false
+          || altaraConnectionState.simulatedOffline
+        ) return false;
+        await startPresence();
+      }
+      recordPresenceLiveDiagnosticEvent(
+        isAltaraPresenceRealtimeActiveOrJoining() ? "RECONNECT_OK" : "RECONNECT_PENDING",
+        {
+          generation: presenceControllerGeneration,
+          status: getAltaraPresenceRealtimeChannelState() || "PENDING",
+        },
+      );
       return true;
     })().catch((error) => {
+      recordPresenceLiveDiagnosticEvent("RECONNECT_FAILED", {
+        generation: presenceControllerGeneration,
+        status: "ERROR",
+        message: error,
+      });
       logAltaraConnection("presence local reconnect failed", {
         reason,
         error: getSafeAuthErrorCode(error, "presence_reconnect"),
@@ -2776,12 +2872,12 @@ function recordAltaraRealtimeStatus(statusInput = "", { source = "realtime", err
   }
   if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
     altaraRealtimeSubscribedSources.delete(sourceKey);
+    if (sourceKey === "presence" && state.user?.id) {
+      scheduleAltaraPresenceRealtimeRestart(`realtime:${status.toLowerCase()}`);
+    }
     const coreSource = altaraRealtimeCoreSources.has(sourceKey);
     const coreHealthy = isAltaraCoreRealtimeHealthy();
     if (!coreSource) {
-      if (sourceKey === "presence" && state.user?.id) {
-        scheduleAltaraPresenceRealtimeRestart(`realtime:${status.toLowerCase()}`);
-      }
       if (coreHealthy && altaraConnectionState.supabaseReachable === true) {
         const realtimeErrorActive = String(altaraConnectionState.lastSafeErrorCode || "").startsWith("realtime_");
         setAltaraConnectionPatch({
@@ -3059,10 +3155,10 @@ async function removeAltaraRealtimeChannelForRecovery(channel) {
   }
 }
 
-function clearAltaraRealtimeRestartTimersForRecovery() {
-  altaraPresenceRealtimeRestartGeneration += 1;
+function clearAltaraRealtimeRestartTimersForRecovery({ preservePresenceRestartOwner = false } = {}) {
+  if (!preservePresenceRestartOwner) altaraPresenceRealtimeRestartGeneration += 1;
   activeConversationRealtimeRestartGeneration += 1;
-  altaraPresenceRealtimeRestartInFlight = null;
+  if (!preservePresenceRestartOwner) altaraPresenceRealtimeRestartInFlight = null;
   activeConversationRealtimeRestartInFlight = null;
   activeConversationRealtimeSubscribedChannel = null;
   const clearTimer = (timer) => {
@@ -3121,10 +3217,46 @@ function clearAltaraRealtimeRestartTimersForRecovery() {
   activeServerBotInstallRealtimeRestartTimer = null;
 }
 
-function resetAltaraRealtimeSubscriptionsForRecovery(reason = "connection-recovery") {
+let realtimeSubscriptionsNeedResumeAfterPresenceReady = false;
+let realtimeSubscriptionsLastResumedGeneration = 0;
+
+function resumeAltaraRealtimeSubscriptionsAfterPresenceReady(presenceGeneration = 0) {
+  const generation = Math.max(0, Number(presenceGeneration || 0));
+  const barrierSnapshot = realtimeStartupBarrier.getBootstrapSnapshot();
+  if (
+    !state.user?.id
+    || !barrierSnapshot.gateValidForCurrentGeneration
+    || generation !== Number(barrierSnapshot.currentPresenceGeneration || 0)
+    || realtimeSubscriptionsLastResumedGeneration === generation
+  ) return false;
+  realtimeSubscriptionsNeedResumeAfterPresenceReady = false;
+  realtimeSubscriptionsLastResumedGeneration = generation;
+  realtimeStartupBarrier.pruneSuspendedDesiredSubscriptions();
+
+  // Security/user-global sources first. The barrier still serializes their
+  // actual native joins; context-only sources are derived from current UI
+  // state and never reconstructed from historical server/channel lists.
+  try { void startGroupDmRevocationBroadcastListener({ force: true, reason: "presence-generation-ready" }); } catch (_) {}
+  try { void startServerRoleInvalidationPrivateBroadcast({ force: true, reason: "presence-generation-ready" }); } catch (_) {}
+  try { syncUserMembershipBroadcastSubscription(); } catch (_) {}
+  try { startGlobalDmPrivacyEventListener({ reason: "presence-generation-ready" }); } catch (_) {}
+
+  try { startGlobalProfileListener(); } catch (_) {}
+  try { subscribeTypingInboxForCurrentUser("presence-generation-ready"); } catch (_) {}
+  try { syncServerMemberRemovalBroadcastSubscriptions(); } catch (_) {}
+  try { syncServerProfileBroadcastSubscriptions(); } catch (_) {}
+  try { scheduleCallRealtimeSubscriptionSync(0); } catch (_) {}
+  return true;
+}
+
+function resetAltaraRealtimeSubscriptionsForRecovery(
+  reason = "connection-recovery",
+  { preservePresenceRestartOwner = false } = {},
+) {
   if (altaraRealtimeResetInFlight) return altaraRealtimeResetInFlight;
   const resetTask = (async () => {
-  clearAltaraRealtimeRestartTimersForRecovery();
+  realtimeSubscriptionsNeedResumeAfterPresenceReady = true;
+  clearAltaraRealtimeRestartTimersForRecovery({ preservePresenceRestartOwner });
   altaraRealtimeSubscribedSources.clear();
   const activeConversationIdBeforeReset = normId(activeDmId || state.activeDm?.conversationId || "");
   if (dmChannel && activeConversationIdBeforeReset) {
@@ -3173,6 +3305,7 @@ function resetAltaraRealtimeSubscriptionsForRecovery(reason = "connection-recove
     ...serverMemberRemovalBroadcastChannels.values(),
     ...serverProfileBroadcastChannels.values(),
   ];
+  const callRealtimeContexts = Array.from(callRealtimeChannelsByConversationId.values());
 
   dmChannel = null;
   dmReactionsChannel = null;
@@ -3222,6 +3355,8 @@ function resetAltaraRealtimeSubscriptionsForRecovery(reason = "connection-recove
   userMembershipBroadcastChannelName = "";
   serverMemberRemovalBroadcastChannels.clear();
   serverProfileBroadcastChannels.clear();
+  callRealtimeChannelsByConversationId.clear();
+  callRealtimeContexts.forEach((context) => discardCallChannelForRecovery(context));
   await Promise.allSettled(
     [...channels, ...mappedChannels]
       .filter(Boolean)
@@ -3261,6 +3396,12 @@ function stopAltaraPresenceForRecovery(reason = "connection-recovery") {
 }
 
 function handleAltaraConnectionBecameDisconnected(reason = "connection") {
+  preparedPresenceBootstrapGeneration = realtimeStartupBarrier.beginBootstrap(
+    `connection-disconnected:${String(reason || "connection")}`,
+  );
+  void realtimeStartupBarrier.suspendNonPresenceChannels(
+    `connection-disconnected:${String(reason || "connection")}`,
+  );
   altaraRealtimeGlobalResetPending = true;
   void stopAltaraPresenceForRecovery(reason);
   void resetAltaraRealtimeSubscriptionsForRecovery(reason);
@@ -3373,6 +3514,10 @@ async function performAltaraConnectionRecovery(reason = "restored") {
       await Promise.resolve(supabase.realtime.setAuth(validatedSession.access_token));
     }
 
+    // Close the shared private-subscription gate before any recovery teardown
+    // can race with auth callbacks or feature-specific resubscribe timers.
+    preparedPresenceBootstrapGeneration = realtimeStartupBarrier.beginBootstrap("connection-restored");
+    await realtimeStartupBarrier.suspendNonPresenceChannels("connection-restored");
     await Promise.all([
       stopAltaraPresenceForRecovery("connection-restored"),
       resetAltaraRealtimeSubscriptionsForRecovery("connection-restored"),
@@ -3397,24 +3542,13 @@ async function performAltaraConnectionRecovery(reason = "restored") {
     try { await startPresence(); } catch (error) { console.warn("presence restore failed", getSafeAuthErrorCode(error, "presence_restore")); }
     try { await presence?.refresh?.(); } catch (_) {}
     try { await refreshCurrentUserPresenceStatusFromAccount({ reason: "connection-restored" }); } catch (_) {}
-    try { startGlobalCallListener(); } catch (_) {}
-    try { startGlobalGroupDmCallStateListener(); } catch (_) {}
-    try { startGlobalDmMessageListener(); } catch (_) {}
-    try { startGlobalBotChannelMessageListener(); } catch (_) {}
-    try { startGlobalDmMembershipListener(); } catch (_) {}
-    try { startGroupDmRevocationBroadcastListener(); } catch (_) {}
-    try { startGlobalConversationListener(); } catch (_) {}
-    try { startGlobalServerChannelTableListener(); } catch (_) {}
-    try { startGlobalServerRoleTablesListener(); } catch (_) {}
-    try { void startServerRoleInvalidationPrivateBroadcast({ force: true, reason: "connection-restored" }); } catch (_) {}
-    try { startServerMembershipEventsRealtime(); } catch (_) {}
-    try { startGlobalProfileListener(); } catch (_) {}
-    try { void startGlobalFriendRequestListener({ force: true, reason: "connection-restored" }); } catch (_) {}
-    try { startGlobalMessageRequestListener(); } catch (_) {}
-    try { startGlobalModerationActionListener(); } catch (_) {}
-    try { startGlobalUserBlocksListener(); } catch (_) {}
-    try { startGlobalDmPrivacyEventListener(); } catch (_) {}
-    try { subscribeTypingInboxForCurrentUser("connection-restored"); } catch (_) {}
+    realtimeSubscriptionsNeedResumeAfterPresenceReady = true;
+    const readyBarrierSnapshot = realtimeStartupBarrier.getBootstrapSnapshot();
+    if (readyBarrierSnapshot.gateValidForCurrentGeneration) {
+      resumeAltaraRealtimeSubscriptionsAfterPresenceReady(
+        readyBarrierSnapshot.currentPresenceGeneration,
+      );
+    }
     try {
       if (currentServerVoiceV2Session?.serverId && serverVoiceTransportController) {
         void ensureServerVoiceV2ControlPlaneSubscription(currentServerVoiceV2Session.serverId, {
@@ -3608,10 +3742,12 @@ function initAltaraConnectionManager() {
     window.addEventListener("online", () => {
       logAltaraConnection("online event", {});
       setAltaraConnectionPatch({ networkOnline: true }, "window-online");
+      syncSpotifyPollingFromAccounts({ immediate: true });
       void retryAltaraConnectionNow("online-event");
     });
     window.addEventListener("offline", () => {
       logAltaraConnection("offline event", {});
+      stopSpotifyActivityPolling({ clearActivity: true, reason: "spotify_network_offline" });
       markAltaraConnectionOffline("window-offline");
     });
     window.__ALTARA_CONNECTION_DEBUG__ = () => {
@@ -7088,10 +7224,12 @@ function initGlobalMotionMode() {
   });
 }
 
-window.addEventListener("pagehide", () => {
+window.addEventListener("pagehide", (event) => {
   try {
     notifyCallEndedOnUnload();
-    try { presence?.stop?.(); } catch (_) {}
+    if (!event?.persisted) {
+      try { void presence?.stop?.({ deadlineMs: 450 }); } catch (_) {}
+    }
     hideCallChromeImmediately();
     cleanupPeer();
     inCall = false;
@@ -7103,7 +7241,7 @@ window.addEventListener("pagehide", () => {
 window.addEventListener("beforeunload", () => {
   try {
     notifyCallEndedOnUnload();
-    try { presence?.stop?.(); } catch (_) {}
+    try { void presence?.stop?.({ deadlineMs: 450 }); } catch (_) {}
   } catch (_) {}
 });
 
@@ -55197,7 +55335,11 @@ async function confirmCurrentUserRemovalFromServer(serverId = "", { reason = "me
 
 function syncServerMemberRemovalBroadcastSubscriptions() {
   if (!state.user?.id) return;
-  const wanted = new Set((state.servers || []).map((row) => normId(row?.serverId || "")).filter(Boolean));
+  const wanted = new Set([
+    getCurrentActiveServerUiId(),
+    isServerSettingsOpenForServer(serverSettingsServerId) ? normId(serverSettingsServerId || "") : "",
+    normId(currentServerVoiceV2Session?.serverId || ""),
+  ].filter(Boolean));
   for (const [sid, channel] of Array.from(serverMemberRemovalBroadcastChannels.entries())) {
     if (wanted.has(sid)) continue;
     try { supabase.removeChannel(channel); } catch (_) {}
@@ -55253,7 +55395,10 @@ function syncServerMemberRemovalBroadcastSubscriptions() {
 }
 
 function getWantedServerProfileSubscriptionIds() {
-  const wanted = new Set((state.servers || []).map((row) => normId(row?.serverId || "")).filter(Boolean));
+  const wanted = new Set([
+    getCurrentActiveServerUiId(),
+    isServerSettingsOpenForServer(serverSettingsServerId) ? normId(serverSettingsServerId || "") : "",
+  ].filter(Boolean));
   document.querySelectorAll(".dmServerInviteCard[data-invite-server-id]").forEach((card) => {
     const sid = normId(card.getAttribute("data-invite-server-id") || "");
     if (sid) wanted.add(sid);
@@ -55347,73 +55492,14 @@ function startServerMembershipEventsRealtime() {
     stopServerMembershipEventsRealtime();
     return null;
   }
-  if (serverMembershipEventsChannel) return serverMembershipEventsChannel;
-  serverMembershipEventsChannelState = "starting";
-  let channel = null;
-  channel = supabase
-    .channel("server-membership-events:" + state.user.id, { config: { private: true } })
-    .on("postgres_changes", {
-      event: "INSERT",
-      schema: "public",
-      table: "server_membership_events",
-    }, (payload) => {
-      const row = payload?.new || {};
-      const sid = normId(row?.server_id || "");
-      const uid = normId(row?.user_id || "");
-      const eventType = String(row?.event_type || "").trim().toLowerCase();
-      if (!sid || !uid) return;
-      lastMembershipEventReceivedAt = Date.now();
-      lastMembershipEvent = {
-        serverId: sid,
-        userId: uid,
-        actorUserId: normId(row?.actor_user_id || ""),
-        eventType,
-        reason: String(row?.reason || "").trim(),
-        createdAt: row?.created_at || "",
-        receivedAt: lastMembershipEventReceivedAt,
-      };
-      serverMembersDebugLog("[server-members] membership event received", lastMembershipEvent);
-      if (eventType === "member_joined") {
-        void handleServerMemberJoined({
-          serverId: sid,
-          userId: uid,
-          row: {
-            ...(row || {}),
-            server_id: sid,
-            user_id: uid,
-            role: row?.role || "member",
-            joined_at: row?.created_at || new Date().toISOString(),
-          },
-          reason: row?.reason || "member_joined",
-          source: "membership_events_insert",
-        });
-      } else if (eventType === "member_removed") {
-        void handleServerMemberRemoved({
-          serverId: sid,
-          userId: uid,
-          actorUserId: row?.actor_user_id || "",
-          reason: row?.reason || "remove",
-          source: "membership_events_insert",
-        });
-      }
-    });
-  serverMembershipEventsChannel = channel;
-  channel.subscribe((status) => {
-    if (serverMembershipEventsChannel !== channel) return;
-    serverMembershipEventsChannelState = String(status || "");
-    if (status === "SUBSCRIBED") return;
-    if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(String(status || ""))) return;
-    console.warn("[server-members] membership events realtime issue", { status });
-    if (status !== "CLOSED" || serverMembershipEventsRestartTimer || !state.user?.id) return;
-    serverMembershipEventsChannel = null;
-    try { supabase.removeChannel(channel); } catch (_) {}
-    serverMembershipEventsRestartTimer = setTimeout(() => {
-      serverMembershipEventsRestartTimer = 0;
-      if (!state.user?.id || serverMembershipEventsChannel) return;
-      startServerMembershipEventsRealtime();
-    }, 1200);
-  });
-  return channel;
+  // Production Phase 1 authorization deliberately has no
+  // server-membership-events:<user> topic. Self revocation is delivered by the
+  // authorized user-membership:<user> broadcast; per-server context refreshes
+  // and database RLS remain authoritative for joins/updates.
+  stopServerMembershipEventsRealtime();
+  serverMembershipEventsChannelState = "covered-by-user-membership";
+  syncUserMembershipBroadcastSubscription();
+  return userMembershipBroadcastChannel;
 }
 
 async function verifyCurrentUserServerMembership(serverId = "", { source = "membership_check" } = {}) {
@@ -82894,13 +82980,16 @@ async function applyFriendCollectionsData({
   updatePresenceRender();
 }
 
-async function refresh({ lightweight = false } = {}) {
+async function refresh({ lightweight = false, prefetchedFriendsPromise = null } = {}) {
   const trace = getRelationshipCurrentTrace();
+  const friendsRequest = prefetchedFriendsPromise
+    ? Promise.resolve(prefetchedFriendsPromise)
+    : rpcWithTimeout("list_my_friends");
   const batchResults = await relationshipTraceMeasureAsync(
     trace,
     "refresh:rpcBatch",
     () => Promise.all([
-      rpcWithTimeout("list_my_friends"),
+      friendsRequest,
       rpcWithTimeout("incoming_friend_requests"),
       rpcWithTimeout("outgoing_friend_requests"),
       rpcWithTimeout("incoming_message_requests"),
@@ -90177,7 +90266,6 @@ let typingInboxChannelStatus = "";
 let typingInboxSubscribeInFlight = null;
 let typingInboxSubscriptionGeneration = 0;
 let typingInboxRestartTimer = 0;
-const typingInboxOutboundChannelsByRecipientUserId = new Map();
 
 function logTypingDebug(action = "", details = {}) {
   try {
@@ -90937,64 +91025,6 @@ function getTypingInboxGroupName(context = typingActiveContext) {
   return String(active?.displayName || active?.name || meta?.displayName || meta?.name || row?.name || "Group DM").trim() || "Group DM";
 }
 
-function getOrCreateTypingInboxOutboundChannel(recipientUserId = "") {
-  const uid = normId(recipientUserId || "");
-  if (!uid) return null;
-  const existing = typingInboxOutboundChannelsByRecipientUserId.get(uid);
-  if (existing?.channel) return existing;
-  const channelName = getTypingInboxChannelName(uid);
-  if (!channelName) return null;
-  const entry = { channel: null, status: "created", readyPromise: null, readyResolved: false, readyTimer: 0 };
-  const channel = supabase.channel(channelName, { config: { private: true, broadcast: { self: false } } });
-  entry.channel = channel;
-  entry.readyPromise = new Promise((resolve) => {
-    const finish = () => {
-      if (entry.readyResolved) return;
-      entry.readyResolved = true;
-      if (entry.readyTimer) clearTimeout(entry.readyTimer);
-      entry.readyTimer = 0;
-      resolve(channel);
-    };
-    entry.readyTimer = setTimeout(finish, 900);
-    channel.subscribe((status) => {
-      entry.status = status;
-      if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") finish();
-    });
-  });
-  typingInboxOutboundChannelsByRecipientUserId.set(uid, entry);
-  return entry;
-}
-
-function unsubscribeTypingInboxOutboundChannels(reason = "outbound_cleanup") {
-  typingInboxOutboundChannelsByRecipientUserId.forEach((entry, recipientUserId) => {
-    if (entry?.readyTimer) clearTimeout(entry.readyTimer);
-    try { if (entry?.channel) supabase.removeChannel(entry.channel); } catch (_) {}
-    logTypingInboxDebug("unsubscribe", { reason, recipientUserId, outbound: true });
-  });
-  typingInboxOutboundChannelsByRecipientUserId.clear();
-}
-
-async function sendTypingInboxPayload(recipientUserId = "", payload = {}) {
-  const recipientId = normId(recipientUserId || "");
-  if (!recipientId || !payload?.senderUserId || recipientId === normId(payload.senderUserId || "")) return false;
-  const entry = getOrCreateTypingInboxOutboundChannel(recipientId);
-  if (!entry?.channel) return false;
-  try {
-    await entry.readyPromise;
-    await entry.channel.send({ type: "broadcast", event: "typing_inbox", payload: { ...payload, recipientUserId: recipientId } });
-    logTypingInboxDebug(payload.type === "typing_stop" ? "send_stop" : "send_start", {
-      senderUserId: payload.senderUserId,
-      recipientUserId: recipientId,
-      conversationId: payload.conversationId || "",
-      contextType: payload.contextType || "",
-    });
-    return true;
-  } catch (error) {
-    logTypingInboxDebug("send_error", { recipientUserId: recipientId, message: String(error?.message || error || "unknown_error") });
-    return false;
-  }
-}
-
 async function sendTypingInboxBroadcasts(type = "typing_start", context = typingActiveContext, basePayload = null) {
   const ctx = context || typingActiveContext;
   const contextType = String(ctx?.contextType || "").trim().toLowerCase();
@@ -91098,7 +91128,6 @@ function unsubscribeTypingInboxForCurrentUser({ reason = "unsubscribe", clearSta
     try { supabase.removeChannel(oldChannel); } catch (_) {}
     logTypingInboxDebug("unsubscribe", { reason, contextKey: oldKey });
   }
-  if (clearOutbound) unsubscribeTypingInboxOutboundChannels(reason);
   if (clearState) {
     for (const key of Array.from(typingUsersByContextKey.keys())) {
       if (String(key || "").startsWith("inbox:")) typingUsersByContextKey.delete(key);
@@ -91381,23 +91410,21 @@ function subscribeTypingSidebarContext(context, reason = "sidebar_subscribe") {
 
 function syncTypingSidebarSubscriptionsFromVisibleRows(reason = "sidebar_sync") {
   if (!state.user?.id) return;
-  const contexts = collectVisibleTypingSidebarContexts();
+  // Sidebar typing is delivered by the authorized self-bound typing inbox.
+  // Per-row DM topics were both redundant and unsafe to infer from stale DOM
+  // metadata (a revoked GDM was observed as typing:dm in production).
+  const contexts = new Map();
   logTypingDebug("sidebar_contexts_scan", {
     reason,
-    visibleCount: contexts.size,
-    visibleContextKeys: Array.from(contexts.keys()),
+    visibleCount: 0,
+    visibleContextKeys: [],
     subscribedContextKeys: Array.from(typingSidebarSubscriptionsByContextKey.keys()),
+    mode: "authorized-inbox-only",
   });
   for (const key of Array.from(typingSidebarSubscriptionsByContextKey.keys())) {
-    if (!contexts.has(key) || key === typingActiveContextKey) unsubscribeTypingSidebarContext(key, `${reason}:stale`);
+    unsubscribeTypingSidebarContext(key, `${reason}:inbox-only`);
   }
-  contexts.forEach((context, key) => {
-    if (key === typingActiveContextKey) {
-      unsubscribeTypingSidebarContext(key, `${reason}:active-context`);
-      return;
-    }
-    subscribeTypingSidebarContext(context, reason);
-  });
+  subscribeTypingInboxForCurrentUser(`${reason}:sidebar-inbox`);
   scheduleTypingExpirySweep();
   exposeAltaraTypingDebugHelper();
   renderTypingStatusOnUserCards({ reason });
@@ -113139,7 +113166,9 @@ function buildProfileSpotifyProgressHtml(activity = null) {
   if (!normalized || normalized.showProgress === false) return "";
   const progress = getSpotifyActivityProgress(normalized);
   if (!progress.durationMs) return "";
-  return '<div class="profile-spotify-progress" data-spotify-activity-progress="1" data-spotify-started-at="' + escAttr(normalized.startedAt || 0) + '" data-spotify-progress-ms="' + escAttr(normalized.progressMs || 0) + '" data-spotify-duration-ms="' + escAttr(normalized.durationMs || 0) + '" data-spotify-is-playing="' + escAttr(normalized.isPlaying !== false ? '1' : '0') + '">' +
+  const anchor = getSpotifyProgressAnchor(normalized);
+  scheduleSpotifyProgressTickerSync();
+  return '<div class="profile-spotify-progress" data-spotify-activity-progress="1" data-spotify-track-id="' + escAttr(normalized.trackId || '') + '" data-spotify-anchor-progress-ms="' + escAttr(anchor.anchorProgressMs) + '" data-spotify-anchor-timestamp="' + escAttr(anchor.anchorTimestamp) + '" data-spotify-started-at="' + escAttr(normalized.startedAt || 0) + '" data-spotify-progress-ms="' + escAttr(normalized.progressMs || 0) + '" data-spotify-duration-ms="' + escAttr(normalized.durationMs || 0) + '" data-spotify-is-playing="' + escAttr(normalized.isPlaying !== false ? '1' : '0') + '">' +
     '<div class="profile-spotify-progress__time" data-spotify-progress-label="1">' + esc(formatSpotifyTime(progress.progressMs) + ' / ' + formatSpotifyTime(progress.durationMs)) + '</div>' +
     '<div class="spotifyActivityProgress__bar profile-spotify-progress__bar" aria-hidden="true"><span style="--spotify-progress:' + escAttr(progress.percent.toFixed(2)) + '%"></span></div>' +
   '</div>';
@@ -152290,10 +152319,6 @@ function hasActiveCallSignalContext() {
 const callRealtimeChannelsByConversationId = new Map();
 let activeCallRealtimeConversationId = "";
 let callRealtimeSyncTimer = null;
-let callRealtimeMembershipDescriptorsByConversation = new Map();
-let callRealtimeMembershipDescriptorsLoadedAt = 0;
-let callRealtimeMembershipDescriptorsInFlight = null;
-const CALL_REALTIME_MEMBERSHIP_CACHE_MS = 30 * 1000;
 
 function readServerVoiceDebugLoggingFlag() {
   try {
@@ -158493,113 +158518,13 @@ function collectTrackedCallRealtimeConversationDescriptors() {
     push(row?.conversationId || row?.conversation_id || "", "dm");
   });
 
-  (state.groupDms || []).forEach((row) => {
-    push(row?.conversationId || row?.conversation_id || "", "group");
-  });
-
-  (state.servers || []).forEach((row) => {
-    push(row?.defaultConversationId || row?.default_conversation_id || row?.conversationId || row?.conversation_id || "", "group");
-  });
-
-  for (const [convId, meta] of dmConversationMetaById.entries()) {
-    push(convId, resolveCallRealtimeConversationType(meta?.conversationId || convId));
-  }
-
-  for (const channels of serverChannelListByServerId.values()) {
-    (Array.isArray(channels) ? channels : []).forEach((row) => {
-      push(row?.conversationId || row?.conversation_id || "", "group");
-    });
-  }
+  // Incoming standalone GDM signaling already arrives on the authenticated
+  // user-scoped altara:user:<id>:gdm-events stream. Server voice never rings
+  // users outside the open/active context. Only direct-DM ringing still needs
+  // one conversation broadcast topic with the current backend architecture.
+  // Do not fan out call channels across historical GDM/server membership.
 
   return descriptors;
-}
-
-function cloneCallRealtimeDescriptorMap(source = null) {
-  const next = new Map();
-  if (!(source instanceof Map)) return next;
-  for (const [convId, conversationType] of source.entries()) {
-    const normalizedConvId = normId(convId || "");
-    if (!normalizedConvId) continue;
-    next.set(normalizedConvId, String(conversationType || "").trim().toLowerCase() === "group" ? "group" : "dm");
-  }
-  return next;
-}
-
-async function fetchCallRealtimeMembershipDescriptorsFromServer({ force = false } = {}) {
-  const meId = normId(state.user?.id || "");
-  if (!meId) return new Map();
-  const now = Date.now();
-  const cacheFresh = !!(
-    !force
-    && callRealtimeMembershipDescriptorsByConversation instanceof Map
-    && callRealtimeMembershipDescriptorsByConversation.size
-    && (now - Number(callRealtimeMembershipDescriptorsLoadedAt || 0)) <= CALL_REALTIME_MEMBERSHIP_CACHE_MS
-  );
-  if (cacheFresh) {
-    return cloneCallRealtimeDescriptorMap(callRealtimeMembershipDescriptorsByConversation);
-  }
-  if (callRealtimeMembershipDescriptorsInFlight) {
-    try {
-      const inFlight = await callRealtimeMembershipDescriptorsInFlight;
-      return cloneCallRealtimeDescriptorMap(inFlight);
-    } catch (_) {
-      return cloneCallRealtimeDescriptorMap(callRealtimeMembershipDescriptorsByConversation);
-    }
-  }
-
-  callRealtimeMembershipDescriptorsInFlight = (async () => {
-    const descriptorMap = new Map();
-    const { data: memberRows, error: memberError } = await supabase
-      .from("conversation_members")
-      .select("conversation_id")
-      .eq("user_id", meId);
-    if (memberError || !Array.isArray(memberRows)) {
-      if (memberError) console.warn("call realtime membership descriptor lookup failed", memberError);
-      return cloneCallRealtimeDescriptorMap(callRealtimeMembershipDescriptorsByConversation);
-    }
-
-    const conversationIds = normalizeUuidArray(
-      memberRows.map((row) => normId(row?.conversation_id || ""))
-    );
-    if (!conversationIds.length) {
-      callRealtimeMembershipDescriptorsByConversation = descriptorMap;
-      callRealtimeMembershipDescriptorsLoadedAt = Date.now();
-      return descriptorMap;
-    }
-
-    let kindByConversationId = new Map();
-    const { data: conversationRows, error: conversationError } = await supabase
-      .from("conversations")
-      .select("id, kind")
-      .in("id", conversationIds);
-    if (!conversationError && Array.isArray(conversationRows)) {
-      kindByConversationId = new Map(
-        conversationRows
-          .map((row) => [normId(row?.id || ""), String(row?.kind || "").trim().toLowerCase()])
-          .filter(([id]) => !!id)
-      );
-    } else if (conversationError) {
-      console.warn("call realtime conversation kind lookup failed", conversationError);
-    }
-
-    conversationIds.forEach((convId) => {
-      if (!convId) return;
-      const kind = String(kindByConversationId.get(convId) || "").trim().toLowerCase();
-      const conversationType = (kind === "group" || kind === "server") ? "group" : "dm";
-      descriptorMap.set(convId, conversationType);
-    });
-
-    callRealtimeMembershipDescriptorsByConversation = descriptorMap;
-    callRealtimeMembershipDescriptorsLoadedAt = Date.now();
-    return descriptorMap;
-  })();
-
-  try {
-    const result = await callRealtimeMembershipDescriptorsInFlight;
-    return cloneCallRealtimeDescriptorMap(result);
-  } finally {
-    callRealtimeMembershipDescriptorsInFlight = null;
-  }
 }
 
 async function handleRealtimeCallSignal(signal) {
@@ -158764,13 +158689,6 @@ async function syncCallRealtimeSubscriptions() {
   if (!meId) return;
 
   const desired = collectTrackedCallRealtimeConversationDescriptors();
-  const membershipDescriptors = await fetchCallRealtimeMembershipDescriptorsFromServer({
-    force: desired.size === 0,
-  }).catch(() => new Map());
-  for (const [convId, conversationType] of membershipDescriptors.entries()) {
-    if (!convId || desired.has(convId)) continue;
-    desired.set(convId, conversationType === "group" ? "group" : "dm");
-  }
   for (const [convId, context] of Array.from(callRealtimeChannelsByConversationId.entries())) {
     if (desired.has(convId)) continue;
     try {
@@ -170611,7 +170529,10 @@ async function onCallSignal(sig) {
 }
 
 /* ========================= GLOBAL REALTIME LISTENER ========================= */
-let globalCallChannel = null;
+// These legacy user-named Postgres Changes topics are not authorized by the
+// deployed Phase 1 realtime.messages policy. Keep their implementation for a
+// future explicit policy migration, but do not join or retry them today.
+const ALTARA_LEGACY_GLOBAL_POSTGRES_REALTIME_ENABLED = false;
 let globalGroupDmCallSessionChannel = null;
 let globalGroupDmCallParticipantChannel = null;
 let globalProfileChannel = null;
@@ -170730,16 +170651,7 @@ let activeServerBotInstallChannel = null;
 let activeServerBotInstallRealtimeServerId = "";
 let activeServerBotInstallRealtimeRestartTimer = null;
 const profileRealtimeFingerprints = new Map();
-function startGlobalCallListener() {
-  if (globalCallChannel) {
-    try {
-      supabase.removeChannel(globalCallChannel);
-    } catch (_) {}
-    globalCallChannel = null;
-  }
-  callRealtimeMembershipDescriptorsByConversation = new Map();
-  callRealtimeMembershipDescriptorsLoadedAt = 0;
-  callRealtimeMembershipDescriptorsInFlight = null;
+function startRequiredCallRealtimeSubscriptions() {
   scheduleCallRealtimeSubscriptionSync(0);
 }
 
@@ -171252,6 +171164,13 @@ function stopGlobalFriendRequestListener({ stopPoll = false, reason = "stopped" 
 async function startGlobalFriendRequestListener({ force = false, reason = "start" } = {}) {
   const stateUserId = normId(state.user?.id || "");
   if (!stateUserId) return;
+  if (!ALTARA_LEGACY_GLOBAL_POSTGRES_REALTIME_ENABLED) {
+    stopGlobalFriendRequestListener({ stopPoll: false, reason: "policy-unavailable" });
+    startFriendRequestsSyncFallback();
+    scheduleGlobalFriendRequestRefresh(0);
+    logFriendsRealtimeDebug("status", { status: "FALLBACK_ONLY", reason: String(reason || "start") });
+    return null;
+  }
   if (globalFriendRequestRestartTimer) {
     clearTimeout(globalFriendRequestRestartTimer);
     globalFriendRequestRestartTimer = null;
@@ -171378,6 +171297,11 @@ function stopGlobalMessageRequestListener(reason = "stopped") {
 
 function startGlobalMessageRequestListener() {
   if (!state.user?.id) return;
+  if (!ALTARA_LEGACY_GLOBAL_POSTGRES_REALTIME_ENABLED) {
+    stopGlobalMessageRequestListener("policy-unavailable");
+    void refreshMessageRequestsAndSidebar("message_requests_fallback", { force: true }).catch(() => {});
+    return null;
+  }
   const mrUserId = normId(state.user.id);
   if (
     globalMessageRequestChannel
@@ -171756,8 +171680,6 @@ async function purgeRevokedGroupDmClientState(conversationId = "", {
   }
   if (normId(pendingGroupRingInfo?.conversationId || "") === convId) pendingGroupRingInfo = null;
   if (normId(pendingGroupRingAutoJoin?.conversationId || "") === convId) pendingGroupRingAutoJoin = null;
-  callRealtimeMembershipDescriptorsByConversation.delete(convId);
-  callRealtimeMembershipDescriptorsLoadedAt = 0;
   const callRealtimeContext = callRealtimeChannelsByConversationId.get(convId) || null;
   if (callRealtimeContext) {
     await leaveRealtimeCallChannel(callRealtimeContext, { unsubscribe: true }).catch(() => {});
@@ -173291,6 +173213,16 @@ async function startGlobalDmPrivacyEventListener(options = {}) {
   clearGlobalDmPrivacyEventSessionRetry();
   logDmPrivacyEventsDebug("session ready", { userId: currentUserId });
   startGlobalDmPrivacyEventPolling(currentUserId);
+  if (!ALTARA_LEGACY_GLOBAL_POSTGRES_REALTIME_ENABLED) {
+    stopGlobalDmPrivacyEventListener();
+    globalDmPrivacyEventStatus = "FALLBACK_ONLY";
+    logDmPrivacyEventsDebug("status", {
+      status: "FALLBACK_ONLY",
+      reason: "realtime-topic-not-authorized",
+      userId: currentUserId,
+    });
+    return null;
+  }
 
   try {
     if (supabase?.realtime && typeof supabase.realtime.setAuth === "function") {
@@ -175501,6 +175433,7 @@ function applyRealtimeProfileUpdate(profileRow) {
   const meId = normId(state.user?.id || "");
   if (uid === meId) {
     const currentMe = getCurrentMeProfileSnapshot();
+    const previousMeStatus = normalizeManualPresenceStatus(resolveMyPresenceStatus(currentMe));
     const nextMeStatus = resolveAccountPresenceStatus(
       {
         ...currentMe,
@@ -175513,6 +175446,9 @@ function applyRealtimeProfileUpdate(profileRow) {
     state.me.call_tile_color = normalizeCallTileColor(profilePatch.call_tile_color ?? currentMe?.call_tile_color);
     state.me.status = nextMeStatus;
     setMyStatus(nextMeStatus);
+    if (previousMeStatus !== normalizeManualPresenceStatus(nextMeStatus)) {
+      syncSpotifyPollingFromAccounts({ immediate: true });
+    }
     cacheProfileRow(state.me);
     applyMeHeaderNameStyle();
     if (document.getElementById("meName")) {
@@ -180579,8 +180515,17 @@ let presenceStartInFlight = null;
 let presenceAuthStateSubscription = null;
 let presenceAuthStartupTimer = 0;
 let pendingPresenceAuthStartup = null;
+let presenceVisibilityListenerBound = false;
+let desktopPresenceShutdownListenerBound = false;
+let presenceSessionEpoch = 0;
 let presenceList = [];
 let presenceControllerGeneration = 0;
+let preparedPresenceBootstrapGeneration = 0;
+const PRESENCE_LIVE_DIAGNOSTIC_HISTORY_LIMIT = 20;
+const presenceLiveDiagnosticHistory = [];
+const presenceLatencyTracker = createPresenceLatencyTracker();
+let presenceDebugAuthReady = false;
+let presenceDebugTokenExpiresAt = "";
 let meStatusMenuBound = false;
 let meStatusPersistQueue = Promise.resolve();
 let currentUserPresenceStatusSyncTimer = null;
@@ -180601,6 +180546,12 @@ const PRESENCE_SESSION_ID = (() => {
 const PRESENCE_ONLINE_AT_ISO = new Date().toISOString();
 const presenceEffectiveStatusSignatureByUser = new Map();
 let lastPresenceActiveNowSignature = "";
+let lastPresenceOnlineUiSignature = null;
+let lastPresenceOnlineUiAppliedAt = 0;
+let presenceRenderQueued = false;
+const pendingPresenceRenderReasons = new Set();
+
+realtimeConnectionHealth.setRecoveryHandler(recoverAltaraRealtimeConnectionHealth);
 
 function isAltaraPresenceTraceEnabled() {
   try {
@@ -180608,6 +180559,163 @@ function isAltaraPresenceTraceEnabled() {
     return host === "localhost" || host === "127.0.0.1" || host === "::1";
   } catch (_) {
     return false;
+  }
+}
+
+function isPresenceLiveDiagnosticsAllowed() {
+  try {
+    const host = String(globalThis.location?.hostname || "").trim().toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
+    return globalThis.altaraDesktop?.isDev === true || globalThis.altaraElectron?.isDev === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function sanitizePresenceDiagnosticMessage(value = "") {
+  return String(value?.message || value || "")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, "Bearer [redacted]")
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted-jwt]")
+    .replace(/\b(access_token|refresh_token|token|apikey|api_key)["']?\s*[:=]\s*["']?[^\s,;&"']+/gi, "$1=[redacted]")
+    .slice(0, 220);
+}
+
+function updatePresenceDiagnosticAuth(session = null) {
+  if (!isPresenceLiveDiagnosticsAllowed()) return;
+  const authUserId = normalizePresenceUserId(session?.user?.id || "");
+  presenceDebugAuthReady = !!authUserId && authUserId === normalizePresenceUserId(state.user?.id || "");
+  const expiresAtSeconds = Number(session?.expires_at || 0);
+  presenceDebugTokenExpiresAt = Number.isFinite(expiresAtSeconds) && expiresAtSeconds > 0
+    ? new Date(expiresAtSeconds * 1000).toISOString()
+    : "";
+}
+
+function recordPresenceLiveDiagnosticEvent(event = "", details = {}) {
+  if (!isPresenceLiveDiagnosticsAllowed()) return;
+  const ids = Array.from(new Set((Array.isArray(details?.userIds) ? details.userIds : [])
+    .map((id) => normalizePresenceUserId(id))
+    .filter(Boolean))).sort();
+  const sessionCountsByUserId = Object.fromEntries(Object.entries(details?.sessionCountsByUserId || {})
+    .map(([id, count]) => [normalizePresenceUserId(id), Math.max(0, Number(count || 0))])
+    .filter(([id]) => !!id));
+  presenceLiveDiagnosticHistory.push({
+    timestamp: new Date().toISOString(),
+    event: String(event || "UNKNOWN").trim().toUpperCase(),
+    generation: Number(details?.generation ?? presenceControllerGeneration ?? 0) || 0,
+    status: String(details?.status || ""),
+    userIds: ids,
+    count: Number.isFinite(Number(details?.count)) ? Math.max(0, Number(details.count)) : ids.length,
+    sessionCountsByUserId,
+    source: String(details?.source || "presence").slice(0, 80),
+    message: sanitizePresenceDiagnosticMessage(details?.message || ""),
+  });
+  if (presenceLiveDiagnosticHistory.length > PRESENCE_LIVE_DIAGNOSTIC_HISTORY_LIMIT) {
+    presenceLiveDiagnosticHistory.splice(0, presenceLiveDiagnosticHistory.length - PRESENCE_LIVE_DIAGNOSTIC_HISTORY_LIMIT);
+  }
+}
+
+function recordPresenceTraceForLiveDiagnostics(stage = "", details = {}, controllerGeneration = presenceControllerGeneration) {
+  const traceStage = String(stage || "").trim().toUpperCase();
+  if (!traceStage) return;
+  if (traceStage === "SUBSCRIBE_START") {
+    recordPresenceLiveDiagnosticEvent("SUBSCRIBE_START", { generation: controllerGeneration, status: "JOINING" });
+    return;
+  }
+  if (traceStage === "SUBSCRIBE_STATUS") {
+    const status = String(details?.status || "").trim().toUpperCase();
+    recordPresenceLiveDiagnosticEvent(status === "SUBSCRIBED" ? "SUBSCRIBED" : (status || "SUBSCRIBE_STATUS"), {
+      generation: controllerGeneration,
+      status,
+      message: details?.error || "",
+    });
+    return;
+  }
+  if (traceStage === "TRACK_CALL") {
+    recordPresenceLiveDiagnosticEvent("TRACK_START", {
+      generation: controllerGeneration,
+      status: String(details?.effectiveStatus || details?.manualStatus || ""),
+      userIds: [details?.userId],
+    });
+    return;
+  }
+  if (traceStage === "TRACK_RESULT") {
+    const result = String(details?.rawResult || "").trim().toLowerCase();
+    recordPresenceLiveDiagnosticEvent(result === "ok" || result === "undefined" || !result ? "TRACK_OK" : "TRACK_FAILED", {
+      generation: controllerGeneration,
+      status: result || "ok",
+      message: details?.error || (result && result !== "ok" && result !== "undefined" ? result : ""),
+    });
+    return;
+  }
+  if (traceStage === "PRESENCE_EVENT") {
+    const eventType = String(details?.eventType || "SYNC").trim().toUpperCase();
+    recordPresenceLiveDiagnosticEvent(eventType, {
+      generation: controllerGeneration,
+      status: eventType,
+      userIds: details?.senderIds || [],
+    });
+    return;
+  }
+  if (traceStage === "RAW_PRESENCE_STATE") {
+    recordPresenceLiveDiagnosticEvent("RAW_PRESENCE_STATE", {
+      generation: controllerGeneration,
+      status: "APPLIED",
+      userIds: details?.userIds || [],
+      count: details?.count,
+      sessionCountsByUserId: details?.sessionCountsByUserId || {},
+      source: details?.reason || "presence_state",
+    });
+    return;
+  }
+  if (traceStage === "RAW_PRESENCE_DIFF") {
+    recordPresenceLiveDiagnosticEvent("RAW_PRESENCE_DIFF", {
+      generation: controllerGeneration,
+      status: "APPLIED",
+      userIds: details?.userIds || [],
+      count: Number(details?.joinedMetaCount || 0) + Number(details?.leftMetaCount || 0),
+      sessionCountsByUserId: details?.sessionCountsByUserId || {},
+      source: details?.reason || "presence_diff",
+    });
+    return;
+  }
+  if (traceStage === "RAW_JOIN_APPLIED" || traceStage === "RAW_LEAVE_APPLIED") {
+    recordPresenceLiveDiagnosticEvent(traceStage, {
+      generation: controllerGeneration,
+      status: "APPLIED",
+      userIds: details?.userIds || [],
+      count: details?.count,
+      source: "raw-protocol",
+    });
+    return;
+  }
+  if (traceStage === "CANONICAL_PRESENCE_APPLIED") {
+    recordPresenceLiveDiagnosticEvent("CANONICAL_PRESENCE_APPLIED", {
+      generation: controllerGeneration,
+      status: "APPLIED",
+      userIds: details?.userIds || [],
+      count: Array.isArray(details?.userIds) ? details.userIds.length : 0,
+      sessionCountsByUserId: details?.sessionCountsByUserId || {},
+      source: details?.reason || "canonical-presence",
+    });
+    return;
+  }
+  if (traceStage === "AUTHORITATIVE_RECONCILE") {
+    recordPresenceLiveDiagnosticEvent("AUTHORITATIVE_RECONCILE", {
+      generation: controllerGeneration,
+      status: "APPLIED",
+      userIds: details?.userIds || [],
+      count: Array.isArray(details?.userIds) ? details.userIds.length : 0,
+      sessionCountsByUserId: details?.sessionCountsByUserId || {},
+      source: details?.reason || "presence-event",
+    });
+    return;
+  }
+  if (traceStage === "STALE_GENERATION_IGNORED") {
+    recordPresenceLiveDiagnosticEvent("STALE_GENERATION_IGNORED", {
+      generation: controllerGeneration,
+      status: "STALE",
+      source: details?.reason || "presence-event",
+    });
   }
 }
 
@@ -182113,14 +182221,12 @@ const YOUTUBE_DISCONNECT_FUNCTION_NAME = "youtube-disconnect";
 const STEAM_REFRESH_PROFILE_FALLBACK_FUNCTION_NAME = "steam-refresh-profile";
 const STEAM_CALLBACK_QUERY_KEY = "steam_callback";
 const STEAM_APP_CALLBACK_PATH = "/app/index.html";
-const SPOTIFY_ACTIVITY_POLL_ACTIVE_MS = 5000;
-const SPOTIFY_ACTIVITY_POLL_CONNECTIONS_INACTIVE_MS = 10000;
-const SPOTIFY_ACTIVITY_POLL_FOCUSED_MS = 15000;
-const SPOTIFY_ACTIVITY_POLL_IDLE_MS = 30000;
+const SPOTIFY_ACTIVITY_POLL_ACTIVE_MS = 12000;
+const SPOTIFY_ACTIVITY_POLL_INACTIVE_MS = 45000;
 const SPOTIFY_ACTIVITY_POLL_BACKGROUND_ACTIVE_MS = 30000;
 const SPOTIFY_ACTIVITY_POLL_BACKGROUND_MS = 60000;
-const SPOTIFY_ACTIVITY_IDLE_SLOWDOWN_MS = 60000;
-const SPOTIFY_ACTIVITY_STALE_MS = 20000;
+const SPOTIFY_ACTIVITY_FOCUS_STALE_MS = 10000;
+const SPOTIFY_ACTIVITY_LEASE_MS = 75000;
 const SPOTIFY_CONNECT_COMPLETION_POLL_MS = 2000;
 const SPOTIFY_CONNECT_COMPLETION_TIMEOUT_MS = 60000;
 const YOUTUBE_OAUTH_PENDING_STORAGE_KEY = "altara.youtubeOAuth.pending.v1";
@@ -182226,13 +182332,9 @@ let connectedAccountsState = {
   spotifyConnectPollTimer: null,
   spotifyConnectPollDeadline: 0,
   spotifyCallbackEventsBound: false,
-  spotifyPollTimer: null,
-  spotifyPollInFlight: false,
   spotifyPollVisibilityBound: false,
-  spotifyInactiveSince: 0,
-  spotifyStaleTimer: null,
-  spotifyLastPollAt: 0,
 };
+let spotifyActivityController = null;
 
 function normalizeConnectionProvider(value = "") {
   const raw = normalizePublicConnectionProvider(value || "");
@@ -182472,93 +182574,39 @@ function clearConnectionsStatusState() {
   renderConnectionsSettingsUi();
 }
 
-function formatSpotifyTime(msInput = 0) {
-  const ms = Math.max(0, Number(msInput || 0));
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return String(minutes) + ":" + String(seconds).padStart(2, "0");
-}
-
-function getSpotifyActivityProgress(activity = null) {
-  const normalized = sanitizeSpotifyActivity(activity || null);
-  if (!normalized) return { progressMs: 0, durationMs: 0, percent: 0 };
-  const durationMs = Math.max(0, Number(normalized.durationMs || 0));
-  const baseProgress = Math.max(0, Number(normalized.progressMs || 0));
-  const startedAt = Math.max(0, Number(normalized.startedAt || 0));
-  const isPlaying = normalized.isPlaying !== false;
-  const liveProgress = isPlaying && startedAt > 0 ? Math.max(0, Date.now() - startedAt) : baseProgress;
-  const progressMs = durationMs > 0 ? Math.min(durationMs, liveProgress) : liveProgress;
-  const percent = durationMs > 0 ? Math.max(0, Math.min(100, (progressMs / durationMs) * 100)) : 0;
-  return { progressMs, durationMs, percent };
-}
-
 function buildSpotifyProgressHtml(activity = null) {
   const normalized = sanitizeSpotifyActivity(activity || null);
-  const account = getSpotifyConnectedAccount();
-  if (!normalized || normalized.showProgress === false || account?.showProgress === false) return "";
+  if (!normalized || normalized.showProgress === false) return "";
   const progress = getSpotifyActivityProgress(normalized);
   if (!progress.durationMs) return "";
-  return '<div class="spotifyActivityProgress" data-spotify-activity-progress="1" data-spotify-started-at="' + escAttr(normalized.startedAt || 0) + '" data-spotify-progress-ms="' + escAttr(normalized.progressMs || 0) + '" data-spotify-duration-ms="' + escAttr(normalized.durationMs || 0) + '" data-spotify-is-playing="' + escAttr(normalized.isPlaying !== false ? '1' : '0') + '">' +
+  const anchor = getSpotifyProgressAnchor(normalized);
+  scheduleSpotifyProgressTickerSync();
+  return '<div class="spotifyActivityProgress" data-spotify-activity-progress="1" data-spotify-track-id="' + escAttr(normalized.trackId || '') + '" data-spotify-anchor-progress-ms="' + escAttr(anchor.anchorProgressMs) + '" data-spotify-anchor-timestamp="' + escAttr(anchor.anchorTimestamp) + '" data-spotify-started-at="' + escAttr(normalized.startedAt || 0) + '" data-spotify-progress-ms="' + escAttr(normalized.progressMs || 0) + '" data-spotify-duration-ms="' + escAttr(normalized.durationMs || 0) + '" data-spotify-is-playing="' + escAttr(normalized.isPlaying !== false ? '1' : '0') + '">' +
     '<div class="gameActivityCard__meta" data-spotify-progress-label="1">' + esc(formatSpotifyTime(progress.progressMs) + ' / ' + formatSpotifyTime(progress.durationMs)) + '</div>' +
     '<div class="spotifyActivityProgress__bar" aria-hidden="true"><span style="--spotify-progress:' + escAttr(progress.percent.toFixed(2)) + '%"></span></div>' +
   '</div>';
 }
 
 function updateSpotifyProgressLabels() {
-  let updatedCount = 0;
-  document.querySelectorAll("[data-spotify-activity-progress]").forEach((el) => {
-    const startedAt = Number(el.getAttribute("data-spotify-started-at") || 0) || 0;
-    const progressMs = Number(el.getAttribute("data-spotify-progress-ms") || 0) || 0;
-    const durationMs = Number(el.getAttribute("data-spotify-duration-ms") || 0) || 0;
-    const isPlaying = el.getAttribute("data-spotify-is-playing") !== "0";
-    const liveProgress = isPlaying && startedAt > 0 ? Math.max(0, Date.now() - startedAt) : progressMs;
-    const current = durationMs > 0 ? Math.min(durationMs, liveProgress) : liveProgress;
-    const percent = durationMs > 0 ? Math.max(0, Math.min(100, (current / durationMs) * 100)) : 0;
-    const label = el.querySelector("[data-spotify-progress-label]");
-    const nextLabel = durationMs > 0 ? (formatSpotifyTime(current) + " / " + formatSpotifyTime(durationMs)) : "";
-    if (label && label.textContent !== nextLabel) {
-      label.textContent = nextLabel;
-      updatedCount += 1;
-    }
-    const bar = el.querySelector(".spotifyActivityProgress__bar span");
-    const nextProgress = percent.toFixed(2) + "%";
-    if (bar && String(bar.style.getPropertyValue("--spotify-progress") || "") !== nextProgress) {
-      bar.style.setProperty("--spotify-progress", nextProgress);
-      updatedCount += 1;
-    }
-  });
-  if (updatedCount > 0) {
-    logRenderDebug("spotify progress only", { updatedCount });
+  const result = updateSpotifyProgressElements();
+  if (result.updatedCount > 0) {
+    logRenderDebug("spotify progress only", { updatedCount: result.updatedCount });
   }
+  return result;
 }
 
 function isSpotifyActivityFresh(activity = null) {
   const normalized = sanitizeSpotifyActivity(activity || null);
-  if (!normalized) return false;
-  const updatedAt = Number(normalized.updatedAt || 0);
-  return updatedAt > 0 && Date.now() - updatedAt <= SPOTIFY_ACTIVITY_STALE_MS;
-}
-
-function getSpotifyPlaybackFreshnessMs(activity = connectedAccountsState.spotifyPlayback) {
-  const normalized = sanitizeSpotifyActivity(activity || null);
-  if (!normalized) return Infinity;
-  const updatedAt = Number(normalized.updatedAt || 0);
-  return updatedAt > 0 ? Math.max(0, Date.now() - updatedAt) : Infinity;
-}
-
-function hasActiveSpotifyPlaybackState() {
-  return !!(sanitizeSpotifyActivity(connectedAccountsState.spotifyPlayback || null) && isSpotifyActivityFresh(connectedAccountsState.spotifyPlayback));
-}
-
-function isConnectionsSettingsTabActive() {
-  try { return settingsActiveTab === "connections"; } catch (_) { return false; }
+  if (!normalized || !spotifyActivityController) return false;
+  return spotifyActivityController.isActivityFresh(connectedAccountsState.spotifyPlayback);
 }
 
 function shouldShareSpotifyActivity() {
   const account = getSpotifyConnectedAccount();
-  if (!account || account.showActivity === false) return false;
+  if (!account || account.showActivity === false || account.needsReconnect) return false;
   if (!normId(state.user?.id || "")) return false;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
+  if (altaraConnectionState?.simulatedOffline === true || altaraConnectionState?.networkOnline === false) return false;
   const status = normalizeManualPresenceStatus(resolveMyPresenceStatus(state.me));
   return status !== "offline" && status !== "invisible";
 }
@@ -182584,19 +182632,7 @@ function getPresenceActivitySignature(activity = null) {
   const normalized = sanitizePresenceActivity(activity || null);
   if (!normalized) return "";
   if (normalized.type === "listening" && normalized.provider === SPOTIFY_PROVIDER) {
-    return [
-      normalized.type,
-      normalized.provider,
-      normalized.trackId || "",
-      normalized.name,
-      normalized.artist || "",
-      normalized.album || "",
-      normalized.artworkUrl || "",
-      String(normalized.progressMs || 0),
-      String(normalized.durationMs || 0),
-      String(normalized.updatedAt || 0),
-      String(normalized.startedAt || 0),
-    ].join("|");
+    return getSpotifyPublicActivitySignature(normalized);
   }
   return getGameActivitySignature(normalized);
 }
@@ -182664,51 +182700,38 @@ function syncCurrentPresenceActivityFromConnections({ publishPresence = true, re
 }
 
 
-function clearSpotifyActivityStaleTimer() {
-  if (connectedAccountsState.spotifyStaleTimer) {
-    clearTimeout(connectedAccountsState.spotifyStaleTimer);
-    connectedAccountsState.spotifyStaleTimer = null;
-  }
-}
-
-function scheduleSpotifyActivityStaleTimeout(activityInput = connectedAccountsState.spotifyPlayback) {
-  clearSpotifyActivityStaleTimer();
-  const activity = sanitizeSpotifyActivity(activityInput || null);
-  if (!activity) return;
-  const updatedAt = Number(activity.updatedAt || 0) || Date.now();
-  const delay = Math.max(1000, updatedAt + SPOTIFY_ACTIVITY_STALE_MS - Date.now() + 250);
-  connectedAccountsState.spotifyStaleTimer = setTimeout(() => {
-    const current = sanitizeSpotifyActivity(connectedAccountsState.spotifyPlayback || null);
-    if (!current || isSpotifyActivityFresh(current)) return;
-    connectedAccountsState.spotifyPlaybackError = "Nothing playing right now.";
-    clearSpotifyPlaybackActivity({ publishPresence: true, render: true });
-    syncSpotifyPollingFromAccounts({ immediate: false });
-  }, delay);
-}
-
-function applySpotifyPlaybackActivity(activityInput = null, { publishPresence = true, render = true } = {}) {
-  const previousActivity = getCurrentPublicPresenceActivity();
+function applySpotifyPlaybackActivity(activityInput = null, {
+  publishPresence = true,
+  render = true,
+  reason = "spotify-activity-changed",
+  previousActivityOverride = undefined,
+} = {}) {
+  const previousActivity = typeof previousActivityOverride === "undefined"
+    ? getCurrentPublicPresenceActivity()
+    : sanitizePresenceActivity(previousActivityOverride || null);
   const previousSignature = getPresenceActivitySignature(previousActivity);
   const previousRenderSignature = getPresenceActivityRenderSignature(previousActivity);
   const normalized = sanitizeSpotifyActivity(activityInput || null);
   connectedAccountsState.spotifyPlayback = normalized;
   if (normalized) {
-    connectedAccountsState.spotifyInactiveSince = 0;
     connectedAccountsState.spotifyPlaybackError = "";
-    scheduleSpotifyActivityStaleTimeout(normalized);
-  } else {
-    clearSpotifyActivityStaleTimer();
-    if (!connectedAccountsState.spotifyInactiveSince) connectedAccountsState.spotifyInactiveSince = Date.now();
   }
   const nextActivity = getCurrentPublicPresenceActivity();
   const nextSignature = getPresenceActivitySignature(nextActivity);
   const nextRenderSignature = getPresenceActivityRenderSignature(nextActivity);
   const structureChanged = previousRenderSignature !== nextRenderSignature;
+  const presenceActivityChanged = previousSignature !== nextSignature;
   syncCurrentPresenceActivityFromConnections({
-    publishPresence: publishPresence && previousSignature !== nextSignature,
+    publishPresence: publishPresence && presenceActivityChanged,
     render: render && structureChanged,
   });
+  if (publishPresence && presenceActivityChanged) {
+    spotifyActivityController?.notePresenceActivityPublish?.(reason);
+  }
   if (render && !structureChanged && (previousRenderSignature || nextRenderSignature)) {
+    if (normalized) {
+      rebaseSpotifyProgressElements(normalized, { previousActivity });
+    }
     updateGameActivityElapsedLabels();
     syncGameActivityElapsedTimer();
     if ((nextActivity || previousActivity)?.type === "listening") {
@@ -182720,34 +182743,21 @@ function applySpotifyPlaybackActivity(activityInput = null, { publishPresence = 
   return connectedAccountsState.spotifyPlayback;
 }
 
-function clearSpotifyPlaybackActivity({ publishPresence = true, render = true } = {}) {
-  return applySpotifyPlaybackActivity(null, { publishPresence, render });
-}
-
 function shouldPollSpotifyActivity() {
+  return shouldShareSpotifyActivity();
+}
+
+function getSpotifyControllerDisabledReason() {
   const account = getSpotifyConnectedAccount();
-  if (!state.user?.id || !account || account.needsReconnect) return false;
-  return account.showActivity !== false || isConnectionsSettingsTabActive();
-}
-
-function getSpotifyPollIntervalMs() {
-  const active = hasActiveSpotifyPlaybackState();
-  if (document.visibilityState === "hidden") {
-    return active ? SPOTIFY_ACTIVITY_POLL_BACKGROUND_ACTIVE_MS : SPOTIFY_ACTIVITY_POLL_BACKGROUND_MS;
-  }
-  if (active) return SPOTIFY_ACTIVITY_POLL_ACTIVE_MS;
-  if (isConnectionsSettingsTabActive()) return SPOTIFY_ACTIVITY_POLL_CONNECTIONS_INACTIVE_MS;
-  const inactiveSince = Number(connectedAccountsState.spotifyInactiveSince || 0);
-  const inactiveFor = inactiveSince > 0 ? Date.now() - inactiveSince : 0;
-  return inactiveFor > SPOTIFY_ACTIVITY_IDLE_SLOWDOWN_MS ? SPOTIFY_ACTIVITY_POLL_IDLE_MS : SPOTIFY_ACTIVITY_POLL_FOCUSED_MS;
-}
-
-function stopSpotifyActivityPolling({ clearActivity = false } = {}) {
-  if (connectedAccountsState.spotifyPollTimer) {
-    clearTimeout(connectedAccountsState.spotifyPollTimer);
-    connectedAccountsState.spotifyPollTimer = null;
-  }
-  if (clearActivity) clearSpotifyPlaybackActivity({ publishPresence: true, render: true });
+  if (!state.user?.id) return "spotify_signed_out";
+  if (!account) return "spotify_disconnected";
+  if (account.needsReconnect) return "spotify_needs_reconnect";
+  if (account.showActivity === false) return "spotify_activity_disabled";
+  const status = normalizeManualPresenceStatus(resolveMyPresenceStatus(state.me));
+  if (status === "offline" || status === "invisible") return "spotify_presence_hidden";
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return "spotify_network_offline";
+  if (altaraConnectionState?.simulatedOffline === true || altaraConnectionState?.networkOnline === false) return "spotify_network_offline";
+  return "spotify_controller_disabled";
 }
 
 function bindSpotifyActivityPollingVisibilityOnce() {
@@ -182755,57 +182765,43 @@ function bindSpotifyActivityPollingVisibilityOnce() {
   connectedAccountsState.spotifyPollVisibilityBound = true;
   document.addEventListener("visibilitychange", () => {
     if (!shouldPollSpotifyActivity()) {
-      stopSpotifyActivityPolling({ clearActivity: true });
+      stopSpotifyActivityPolling({ clearActivity: true, reason: getSpotifyControllerDisabledReason() });
       return;
     }
-    startSpotifyActivityPolling({ immediate: document.visibilityState === "visible" });
+    if (document.visibilityState === "visible") {
+      void getSpotifyActivityController().refreshIfStale({
+        reason: "visibility-visible",
+        staleAfterMs: SPOTIFY_ACTIVITY_FOCUS_STALE_MS,
+      });
+    } else {
+      startSpotifyActivityPolling({ immediate: false, reason: "visibility-hidden" });
+    }
+  });
+  window.addEventListener("focus", () => {
+    if (!shouldPollSpotifyActivity()) return;
+    void getSpotifyActivityController().refreshIfStale({
+      reason: "window-focus",
+      staleAfterMs: SPOTIFY_ACTIVITY_FOCUS_STALE_MS,
+    });
   });
 }
 
-function queueNextSpotifyActivityPoll() {
-  if (connectedAccountsState.spotifyPollTimer) clearTimeout(connectedAccountsState.spotifyPollTimer);
-  if (!shouldPollSpotifyActivity()) {
-    connectedAccountsState.spotifyPollTimer = null;
-    return;
-  }
-  connectedAccountsState.spotifyPollTimer = setTimeout(() => {
-    connectedAccountsState.spotifyPollTimer = null;
-    void runSpotifyActivityPollLoop();
-  }, getSpotifyPollIntervalMs());
-}
-
-async function runSpotifyActivityPollLoop() {
-  if (connectedAccountsState.spotifyPollTimer) {
-    clearTimeout(connectedAccountsState.spotifyPollTimer);
-    connectedAccountsState.spotifyPollTimer = null;
-  }
-  if (!shouldPollSpotifyActivity()) return;
-  await pollSpotifyCurrentlyPlaying({ manual: false }).catch(() => null);
-  queueNextSpotifyActivityPoll();
-}
-
-function startSpotifyActivityPolling({ immediate = false } = {}) {
+function startSpotifyActivityPolling({ immediate = false, reason = "spotify-controller-start" } = {}) {
   bindSpotifyActivityPollingVisibilityOnce();
   if (!shouldPollSpotifyActivity()) {
-    stopSpotifyActivityPolling({ clearActivity: true });
-    return;
+    stopSpotifyActivityPolling({ clearActivity: true, reason: getSpotifyControllerDisabledReason() });
+    return Promise.resolve(null);
   }
-  if (connectedAccountsState.spotifyPollTimer) {
-    clearTimeout(connectedAccountsState.spotifyPollTimer);
-    connectedAccountsState.spotifyPollTimer = null;
-  }
-  if (immediate) void runSpotifyActivityPollLoop();
-  else queueNextSpotifyActivityPoll();
+  return getSpotifyActivityController().start({ immediate, reason });
 }
 
-async function pollSpotifyCurrentlyPlaying({ manual = false, force = false } = {}) {
-  if (!force && !shouldPollSpotifyActivity()) {
-    const account = getSpotifyConnectedAccount();
-    if (!manual || !state.user?.id || !account || account.needsReconnect) return null;
-  }
-  if (connectedAccountsState.spotifyPollInFlight) return connectedAccountsState.spotifyPlayback;
+function stopSpotifyActivityPolling({ clearActivity = false, reason = "spotify-controller-stop" } = {}) {
+  if (!spotifyActivityController) return null;
+  return spotifyActivityController.stop({ clearActivity, reason });
+}
+
+async function fetchSpotifyCurrentlyPlayingForController({ manual = false } = {}) {
   const manualActionStarted = manual && !connectedAccountsState.action;
-  connectedAccountsState.spotifyPollInFlight = true;
   if (manualActionStarted) setConnectionsAction("spotify-refresh");
   else if (manual) renderConnectionsSettingsUi();
   try {
@@ -182822,11 +182818,9 @@ async function pollSpotifyCurrentlyPlaying({ manual = false, force = false } = {
     if (!authReady.ok) {
       const details = buildSpotifyPlaybackDiagnostics({ authReady, error: authReady.error });
       logSpotifyPlaybackDiagnostics("spotify currently-playing auth missing", details, "warn");
-      handleSpotifyPlaybackNoActivity({ ...details, functionError: "spotify_not_connected" }, { manual });
-      return null;
+      return { kind: "transient-error", reason: "spotify_auth_not_ready", details };
     }
 
-    connectedAccountsState.spotifyLastPollAt = Date.now();
     const { data: rawData, error } = await supabase.functions.invoke(edgeFunctionName, { body: {} });
     const errorPayload = error ? await readSupabaseFunctionErrorPayload(error) : null;
     const errorSnapshot = error ? await readSupabaseFunctionErrorSnapshot(error, errorPayload) : null;
@@ -182841,8 +182835,13 @@ async function pollSpotifyCurrentlyPlaying({ manual = false, force = false } = {
         nextDetails,
         isSpotifyPlaybackInfoCode(code) ? "info" : "warn"
       );
-      handleSpotifyPlaybackNoActivity(nextDetails, { manual });
-      return null;
+      if (isSpotifyPlaybackReconnectCode(code) || data.needs_reconnect === true || code === "spotify_not_connected") {
+        return { kind: "auth-invalid", reason: code || "spotify_needs_reconnect", details: nextDetails };
+      }
+      if (code === "spotify_nothing_playing" || code === "spotify_activity_disabled") {
+        return { kind: "inactive", reason: code, details: nextDetails };
+      }
+      return { kind: "transient-error", reason: code || "spotify_api_error", details: nextDetails };
     }
 
     const playbackPayload = data.playback || data.activity || null;
@@ -182852,14 +182851,17 @@ async function pollSpotifyCurrentlyPlaying({ manual = false, force = false } = {
       const code = normalizeSpotifyPlaybackErrorCode(data.error || data.reason || "spotify_nothing_playing");
       const nextDetails = { ...details, functionError: code };
       if (code !== "spotify_nothing_playing") logSpotifyPlaybackDiagnostics("spotify currently-playing returned no usable activity", nextDetails, "warn");
-      handleSpotifyPlaybackNoActivity(nextDetails, { manual });
-      return null;
+      return code === "spotify_nothing_playing"
+        ? { kind: "inactive", reason: code, details: nextDetails }
+        : { kind: "transient-error", reason: code || "spotify_api_error", details: nextDetails };
     }
 
-    connectedAccountsState.spotifyPlaybackError = "";
-    applySpotifyPlaybackActivity(activity, { publishPresence: true, render: true });
-    if (manual) setConnectionsStatus("Spotify activity refreshed.", "info");
-    return activity;
+    return {
+      kind: "playing",
+      activity,
+      tokenRefreshed: data.token_refreshed === true,
+      details,
+    };
   } catch (error) {
     const errorPayload = await readSupabaseFunctionErrorPayload(error);
     const errorSnapshot = await readSupabaseFunctionErrorSnapshot(error, errorPayload);
@@ -182867,26 +182869,110 @@ async function pollSpotifyCurrentlyPlaying({ manual = false, force = false } = {
     const code = normalizeSpotifyPlaybackErrorCode(details.functionError || "spotify_api_error") || "spotify_api_error";
     const nextDetails = { ...details, functionError: code };
     logSpotifyPlaybackDiagnostics("spotify currently-playing unexpected failure", nextDetails, "warn");
-    handleSpotifyPlaybackNoActivity(nextDetails, { manual });
-    return null;
+    return { kind: "transient-error", reason: code, details: nextDetails };
   } finally {
-    connectedAccountsState.spotifyPollInFlight = false;
     if (manualActionStarted && connectedAccountsState.action === "spotify-refresh") setConnectionsAction("");
     else if (manual) renderConnectionsSettingsUi();
   }
 }
 
+function bindSpotifyActivityDebugGlobal() {
+  if (typeof window === "undefined") return;
+  if (!isPresenceLiveDiagnosticsAllowed()) {
+    delete window.__ALTARA_SPOTIFY_ACTIVITY_DEBUG__;
+    return;
+  }
+  window.__ALTARA_SPOTIFY_ACTIVITY_DEBUG__ = function () {
+    return getSpotifyActivityController().getDebugSnapshot();
+  };
+}
+
+function getSpotifyActivityController() {
+  if (spotifyActivityController) return spotifyActivityController;
+  spotifyActivityController = createSpotifyActivityController({
+    fetchPlayback: fetchSpotifyCurrentlyPlayingForController,
+    isEnabled: shouldPollSpotifyActivity,
+    isVisible: () => document.visibilityState !== "hidden",
+    getConnected: () => !!getSpotifyConnectedAccount(),
+    getSharingEnabled: shouldShareSpotifyActivity,
+    activeIntervalMs: SPOTIFY_ACTIVITY_POLL_ACTIVE_MS,
+    inactiveIntervalMs: SPOTIFY_ACTIVITY_POLL_INACTIVE_MS,
+    backgroundActiveIntervalMs: SPOTIFY_ACTIVITY_POLL_BACKGROUND_ACTIVE_MS,
+    backgroundInactiveIntervalMs: SPOTIFY_ACTIVITY_POLL_BACKGROUND_MS,
+    focusStaleMs: SPOTIFY_ACTIVITY_FOCUS_STALE_MS,
+    activityLeaseMs: SPOTIFY_ACTIVITY_LEASE_MS,
+    onActivity: (activity, context = {}) => {
+      connectedAccountsState.spotifyPlaybackError = "";
+      applySpotifyPlaybackActivity(activity, {
+        publishPresence: true,
+        render: true,
+        reason: context.reason || "spotify-playing",
+        previousActivityOverride: context.previousActivity,
+      });
+      if (context.manual) setConnectionsStatus("Spotify activity refreshed.", "info");
+    },
+    onClear: (context = {}) => {
+      const code = normalizeSpotifyPlaybackErrorCode(context.reason || "spotify_nothing_playing");
+      connectedAccountsState.spotifyPlaybackError = getSpotifyPlaybackStatusMessage(code);
+      applySpotifyPlaybackActivity(null, {
+        publishPresence: true,
+        render: true,
+        reason: context.reason || "spotify-cleared",
+        previousActivityOverride: context.previousActivity,
+      });
+    },
+    onInactive: (context = {}) => {
+      const code = normalizeSpotifyPlaybackErrorCode(context.reason || "spotify_nothing_playing");
+      const message = getSpotifyPlaybackStatusMessage(code);
+      connectedAccountsState.spotifyPlaybackError = message;
+      if (context.manual) setConnectionsStatus(message, "info");
+    },
+    onTransientFailure: (context = {}) => {
+      const code = normalizeSpotifyPlaybackErrorCode(context.reason || "spotify_api_error") || "spotify_api_error";
+      if (!context.preservedActivity) connectedAccountsState.spotifyPlaybackError = getSpotifyPlaybackStatusMessage(code);
+      if (context.manual) {
+        const suffix = context.preservedActivity ? " Current activity is being kept briefly." : "";
+        setConnectionsStatus(getSpotifyPlaybackStatusMessage(code) + suffix, "warn");
+      }
+    },
+    onAuthInvalid: (context = {}) => {
+      const code = normalizeSpotifyPlaybackErrorCode(context.reason || "spotify_needs_reconnect") || "spotify_needs_reconnect";
+      setSpotifyAccountNeedsReconnect(code);
+      connectedAccountsState.spotifyPlaybackError = getSpotifyPlaybackStatusMessage(code);
+      if (context.manual) setConnectionsStatus(getSpotifyPlaybackStatusMessage(code), "warn");
+      renderConnectionsSettingsUi();
+    },
+  });
+  bindSpotifyActivityDebugGlobal();
+  return spotifyActivityController;
+}
+
+async function pollSpotifyCurrentlyPlaying({ manual = false, force = false, reason = "manual-refresh" } = {}) {
+  if (!shouldPollSpotifyActivity()) {
+    if (manual) setConnectionsStatus(getSpotifyPlaybackStatusMessage(getSpotifyControllerDisabledReason()), "info");
+    syncSpotifyPollingFromAccounts({ immediate: false });
+    return null;
+  }
+  return getSpotifyActivityController().refresh({ manual, force: force === true, reason });
+}
 
 function syncSpotifyPollingFromAccounts({ immediate = false } = {}) {
-  if (shouldPollSpotifyActivity()) startSpotifyActivityPolling({ immediate });
-  else stopSpotifyActivityPolling({ clearActivity: true });
+  if (shouldPollSpotifyActivity()) {
+    return startSpotifyActivityPolling({
+      immediate,
+      reason: immediate ? "startup-account-ready" : "account-state-ready",
+    });
+  }
+  return stopSpotifyActivityPolling({ clearActivity: true, reason: getSpotifyControllerDisabledReason() });
 }
 
 function getSpotifyPlaybackStatusMessage(code = "") {
   const normalized = normalizeSpotifyPlaybackErrorCode(code);
   if (!normalized || normalized === "spotify_nothing_playing") return "Nothing playing right now.";
-  if (normalized === "spotify_not_connected") return "Spotify is not connected.";
+  if (normalized === "spotify_not_connected" || normalized === "spotify_disconnected") return "Spotify is not connected.";
   if (normalized === "spotify_activity_disabled") return "Spotify activity sharing is off.";
+  if (normalized === "spotify_presence_hidden") return "Spotify activity is hidden while you are offline or invisible.";
+  if (normalized === "spotify_network_offline") return "Spotify activity is unavailable while ALTARA is offline.";
   if (normalized === "spotify_missing_scope") return "Spotify needs reconnect.";
   if (isSpotifyPlaybackReconnectCode(normalized)) return "Spotify connection expired. Reconnect Spotify.";
   if (normalized === "spotify_rate_limited") return "Spotify rate limited. Trying again later.";
@@ -183128,10 +183214,8 @@ function bindSpotifyConnectionCallbackEventsOnce() {
     }
     if (settingsActiveTab === "connections") {
       void refreshConnectedAccounts({ force: true, silent: true });
-      if (getSpotifyConnectedAccount()) syncSpotifyPollingFromAccounts({ immediate: true });
       return;
     }
-    if (getSpotifyConnectedAccount()) syncSpotifyPollingFromAccounts({ immediate: true });
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible" || !state.user?.id) return;
@@ -183141,16 +183225,14 @@ function bindSpotifyConnectionCallbackEventsOnce() {
     }
     if (settingsActiveTab === "connections") {
       void refreshConnectedAccounts({ force: true, silent: true });
-      if (getSpotifyConnectedAccount()) syncSpotifyPollingFromAccounts({ immediate: true });
       return;
     }
-    if (getSpotifyConnectedAccount()) syncSpotifyPollingFromAccounts({ immediate: true });
   });
 }
 
 async function refreshConnectedAccounts({ force = false, silent = false } = {}) {
   if (!state.user?.id) return [];
-  if (connectedAccountsRefreshInFlight && !force) return connectedAccountsRefreshInFlight;
+  if (connectedAccountsRefreshInFlight) return connectedAccountsRefreshInFlight;
   if (!silent) setConnectionsLoadingState(true, connectedAccountsState.loaded ? "background_refresh" : "initial_load");
   connectedAccountsState.error = "";
   if (!silent) renderConnectionsSettingsUi();
@@ -183161,7 +183243,7 @@ async function refreshConnectedAccounts({ force = false, silent = false } = {}) 
       connectedAccountsState.accounts = mergeProfileConnectedAccountFallbacks(data || []);
       connectedAccountsState.loaded = true;
       connectedAccountsState.error = "";
-      syncSpotifyPollingFromAccounts({ immediate: true });
+      void syncSpotifyPollingFromAccounts({ immediate: true });
       return connectedAccountsState.accounts;
     } catch (error) {
       connectedAccountsState.loaded = true;
@@ -183195,7 +183277,6 @@ async function updateSpotifyConnectionSettings(patch = {}) {
     if (updated) {
       connectedAccountsState.accounts = connectedAccountsState.accounts.map((row) => row.provider === SPOTIFY_PROVIDER ? updated : row);
     }
-    if (patch.showActivity === false) clearSpotifyPlaybackActivity({ publishPresence: true, render: true });
     syncSpotifyPollingFromAccounts({ immediate: patch.showActivity !== false });
     setConnectionsStatus("Spotify settings saved.", "info");
   } catch (error) {
@@ -183831,15 +183912,6 @@ function setSpotifyAccountNeedsReconnect(reason = "spotify_needs_reconnect") {
       },
     };
   });
-}
-
-function handleSpotifyPlaybackNoActivity(details = {}, { manual = false } = {}) {
-  const code = normalizeSpotifyPlaybackErrorCode(details.functionError || "spotify_nothing_playing") || "spotify_nothing_playing";
-  if (isSpotifyPlaybackReconnectCode(code)) setSpotifyAccountNeedsReconnect(code);
-  const message = getSpotifyPlaybackStatusMessage(code);
-  connectedAccountsState.spotifyPlaybackError = message;
-  clearSpotifyPlaybackActivity({ publishPresence: true, render: true });
-  if (manual) setConnectionsStatus(message, isSpotifyPlaybackInfoCode(code) ? "info" : "warn");
 }
 
 function getCurrentSpotifySettingsPlaybackActivity() {
@@ -184904,7 +184976,7 @@ async function disconnectSpotifyConnection() {
     if (error) throw error;
     connectedAccountsState.accounts = connectedAccountsState.accounts.filter((account) => account.provider !== SPOTIFY_PROVIDER);
     setConnectionsStatus("Spotify disconnected.", "info");
-    stopSpotifyActivityPolling({ clearActivity: true });
+    stopSpotifyActivityPolling({ clearActivity: true, reason: "spotify_disconnected" });
   } catch (error) {
     setConnectionsStatus("Could not disconnect Spotify.", "warn");
   } finally {
@@ -187560,7 +187632,7 @@ function getPublicGameActivity(activity = null) {
 }
 
 function getCurrentPublicGameActivity() {
-  return sanitizeGameActivity(effectiveGameActivity);
+  return getPublicGameActivity(effectiveGameActivity);
 }
 
 function getPresenceActivityForUser(userId = "") {
@@ -187646,17 +187718,17 @@ function updateGameActivityElapsedLabels() {
     const startedAt = Number(el.getAttribute("data-game-activity-elapsed") || 0);
     el.textContent = formatGameActivityDurationText(startedAt);
   });
-  updateSpotifyProgressLabels();
 }
 
 function syncGameActivityElapsedTimer() {
-  const hasActivity = !!(effectiveGameActivity || detectedGameActivity || getCurrentSpotifyPresenceActivity() || document.querySelector("[data-game-activity-elapsed], [data-spotify-activity-progress]"));
+  const hasActivity = !!(effectiveGameActivity || detectedGameActivity || document.querySelector("[data-game-activity-elapsed]"));
   if (hasActivity && !gameActivityElapsedTimer) {
     gameActivityElapsedTimer = window.setInterval(updateGameActivityElapsedLabels, GAME_ACTIVITY_ELAPSED_TICK_MS);
   } else if (!hasActivity && gameActivityElapsedTimer) {
     clearInterval(gameActivityElapsedTimer);
     gameActivityElapsedTimer = null;
   }
+  syncSpotifyProgressTicker();
 }
 
 function rerenderOpenProfileMiniPopoutForActivity() {
@@ -189087,6 +189159,7 @@ async function setMyPresenceStatusEverywhere(statusInput, { persistAccount = tru
     scheduleFocusAutomationEvaluation("manual_status_changed", 0);
   }
   if (state.user?.id) cacheProfileRow({ id: state.user.id, status });
+  syncSpotifyPollingFromAccounts({ immediate: previousStatus !== status });
   applyMeStatusDot(status);
   updateEffectiveGameActivity({ publishPresence: false, render: true });
 
@@ -189120,6 +189193,7 @@ async function setMyPresenceStatusEverywhere(statusInput, { persistAccount = tru
   if (persistAccount && persisted !== true) {
     state.me.status = setMyStatus(previousStatus);
     if (state.user?.id) cacheProfileRow({ id: state.user.id, status: previousStatus });
+    syncSpotifyPollingFromAccounts({ immediate: true });
     applyMeStatusDot(previousStatus);
     updatePresenceRender();
     void refreshCurrentUserPresenceStatusFromAccount({ reason: "manual-status-persist-failed" });
@@ -189450,6 +189524,9 @@ function getPresenceFriendDebugRows() {
       || readPresenceStatusValue(friendProfile?.status)
       || readPresenceStatusValue(friendProfile?.theme_settings?.presence_status)
       || "";
+    const currentActivity = resolved?.countsAsOnlineNow === true
+      ? sanitizePresenceActivity(resolved?.activity || entry?.activity || entry?.spotify_activity || entry?.spotifyActivity)
+      : null;
     return {
       displayName,
       extractedFriendUserId,
@@ -189472,7 +189549,9 @@ function getPresenceFriendDebugRows() {
       profileStatus: readPresenceStatusValue(f?.status) || readPresenceStatusValue(f?.presence_status) || readPresenceStatusValue(f?.theme_settings?.presence_status) || "",
       presenceManualStatus: readPresenceStatusValue(entry?.manual_status) || "",
       visibleToOthers: !!resolved?.visibleToOthers,
-      includedInActiveNow: resolved?.countsAsOnlineNow === true,
+      includedInOnlineNow: resolved?.countsAsOnlineNow === true,
+      includedInActiveNow: resolved?.countsAsOnlineNow === true && !!currentActivity,
+      activity: currentActivity,
     };
   });
 }
@@ -189537,95 +189616,290 @@ function tracePresenceRenderResult(source = "render") {
 
 function compactPresenceDebugPayload(payload = {}) {
   const p = payload && typeof payload === "object" ? payload : {};
+  const publicActivity = p.activity && typeof p.activity === "object"
+    ? p.activity
+    : (p.spotify_activity && typeof p.spotify_activity === "object" ? p.spotify_activity : null);
   return {
     user_id: normalizePresenceUserId(p.user_id || p.userId || p.id || ""),
     session_id: String(p.session_id || p.sessionId || "").trim(),
-    presence_ref: String(p.presence_ref || p.phx_ref || "").trim(),
     manual_status: normalizeManualPresenceStatus(p.manual_status || p.manualStatus || p.status || "online"),
-    device_type: String(p.device_type || p.deviceType || getPresenceDeviceType()).trim(),
-    online_at: String(p.online_at || p.onlineAt || "").trim(),
-    last_seen_at: String(p.last_seen_at || p.lastSeenAt || p.last_seen || p.lastSeen || "").trim(),
+    activity_type: String(publicActivity?.type || "").trim().toLowerCase(),
   };
 }
 
 function bindPresenceDebugGlobals() {
   if (typeof window === "undefined") return;
+  delete window.__ALTARA_PRESENCE_RETRACK__;
+  delete window.__ALTARA_PRESENCE_FORCE_RESYNC__;
+  delete window.__ALTARA_PRESENCE_DUMP_FRIENDS__;
+  if (!isPresenceLiveDiagnosticsAllowed()) {
+    delete window.__ALTARA_PRESENCE_DEBUG__;
+    delete window.__ALTARA_PRESENCE_DEBUG_PRINT__;
+    delete window.__ALTARA_REALTIME_STARTUP_DEBUG__;
+    delete window.__ALTARA_REALTIME_BARRIER_DEBUG__;
+    return;
+  }
+  window.__ALTARA_REALTIME_STARTUP_DEBUG__ = function () {
+    return realtimeStartupBarrier.getStartupDebugSnapshot().map((entry) => ({
+      topic: String(entry?.topic || ""),
+      private: entry?.private === true,
+      startTimestamp: String(entry?.startTimestamp || ""),
+      subscribeStatus: String(entry?.subscribeStatus || ""),
+      classification: String(entry?.classification || "optional"),
+      family: String(entry?.family || "other"),
+      necessity: String(entry?.necessity || "CURRENT_CONTEXT_ONLY"),
+      presenceBootstrapStateAtStart: String(entry?.presenceBootstrapStateAtStart || ""),
+      presenceGenerationAtNativeSubscribe: Number(entry?.presenceGenerationAtNativeSubscribe || 0),
+      startedBeforeCurrentGenerationTrackOk: entry?.startedBeforeCurrentGenerationTrackOk === true,
+      clientId: String(entry?.clientId || ""),
+      channelId: String(entry?.channelId || ""),
+      barrierWrapperIntercepted: entry?.barrierWrapperIntercepted === true,
+      creationCallsite: String(entry?.creationCallsite || ""),
+      subscribeCallsite: String(entry?.subscribeCallsite || ""),
+      channelExistedBeforeBarrierInstallation: entry?.channelExistedBeforeBarrierInstallation === true,
+      subscribeMethodCapturedBeforeWrapping: entry?.subscribeMethodCapturedBeforeWrapping === true,
+    }));
+  };
+  window.__ALTARA_REALTIME_BARRIER_DEBUG__ = function () {
+    const barrier = realtimeStartupBarrier.getBarrierDebugSnapshot();
+    const health = realtimeConnectionHealth.getSnapshot();
+    return {
+      ...barrier,
+      socketRecoveriesLast5m: Number(health.socketRecoveriesLast5m || 0),
+      clientRecoveriesLast5m: Number(health.clientRecoveriesLast5m || 0),
+      // Barrier recoveryReasons covers every Presence generation. Connection
+      // recoveryReasons covers only reconnects requested by transport health.
+      // Keep both so a later live capture can distinguish a real socket loss
+      // from a client-owned Presence restart without conflating the timelines.
+      connectionRecoveryReasons: (Array.isArray(health.recoveryReasons) ? health.recoveryReasons : []).map((entry) => ({
+        at: Number(entry?.at || 0),
+        generation: Number(entry?.generation || 0),
+        reason: String(entry?.reason || ""),
+        origin: String(entry?.origin || ""),
+      })),
+    };
+  };
   window.__ALTARA_PRESENCE_DEBUG__ = function () {
     const runtime = presence && typeof presence.getDebugSnapshot === "function"
       ? presence.getDebugSnapshot()
       : {};
-    const manualStatus = normalizeManualPresenceStatus(resolveMyPresenceStatus(state.me));
-    const friends = getPresenceFriendDebugRows();
-    const channelState = runtime.channelState || runtime.presenceChannelState || "not-started";
+    const realtimeHealthRuntime = realtimeConnectionHealth.getSnapshot();
+    const realtimeHealth = {
+      heartbeatLastStatus: String(realtimeHealthRuntime.heartbeatLastStatus || ""),
+      heartbeatLastAt: Number(realtimeHealthRuntime.heartbeatLastAt || 0),
+      heartbeatLastOkAt: Number(realtimeHealthRuntime.heartbeatLastOkAt || 0),
+      heartbeatTimeoutCount: Number(realtimeHealthRuntime.heartbeatTimeoutCount || 0),
+      disconnectedCount: Number(realtimeHealthRuntime.disconnectedCount || 0),
+      reconnectCount: Number(realtimeHealthRuntime.reconnectCount || 0),
+      workerEnabled: realtimeHealthRuntime.workerEnabled === true,
+      socketHealthy: realtimeHealthRuntime.socketHealthy === true,
+      lastReconnectStartedAt: Number(realtimeHealthRuntime.lastReconnectStartedAt || 0),
+      lastReconnectCompletedAt: Number(realtimeHealthRuntime.lastReconnectCompletedAt || 0),
+      reconnectInFlight: realtimeHealthRuntime.reconnectInFlight === true,
+      lastReconnectError: sanitizePresenceDiagnosticMessage(realtimeHealthRuntime.lastReconnectError || ""),
+      socketRecoveriesLast5m: Number(realtimeHealthRuntime.socketRecoveriesLast5m || 0),
+      clientRecoveriesLast5m: Number(realtimeHealthRuntime.clientRecoveriesLast5m || 0),
+      recoveryReasons: (Array.isArray(realtimeHealthRuntime.recoveryReasons) ? realtimeHealthRuntime.recoveryReasons : []).map((entry) => ({
+        at: Number(entry?.at || 0),
+        generation: Number(entry?.generation || 0),
+        reason: String(entry?.reason || ""),
+        origin: String(entry?.origin || ""),
+      })),
+    };
+    const ownTrack = runtime.ownTrackPayload || compactPresenceDebugPayload(getMePresencePayload());
+    const manualStatus = normalizeManualPresenceStatus(ownTrack?.manual_status || resolveMyPresenceStatus(state.me));
+    const friendRows = getPresenceFriendDebugRows();
+    const knownFriendIds = getPresenceKnownFriendIds().sort();
+    const onlineFriendIds = friendRows
+      .filter((row) => row.includedInOnlineNow === true)
+      .map((row) => normalizePresenceUserId(row.friendUserId || row.userId || ""))
+      .filter(Boolean)
+      .sort();
+    const activeNowIds = friendRows
+      .filter((row) => row.includedInActiveNow === true)
+      .map((row) => normalizePresenceUserId(row.friendUserId || row.userId || ""))
+      .filter(Boolean)
+      .sort();
+    const channelState = String(runtime.channelState || runtime.presenceChannelState || "NOT_STARTED").toUpperCase();
+    const authenticatedUserId = normalizePresenceUserId(state.user?.id || "");
     return {
-      currentUserId: normId(state.user?.id || ""),
-      currentUserName: String(state.me?.display_name || state.me?.username || state.user?.email || "").trim(),
-      manualStatus,
-      supabaseUrl: String(SUPABASE_URL || ""),
-      presenceChannelName: runtime.presenceChannelName || "altara-presence-global",
-      channelName: runtime.presenceChannelName || "altara-presence-global",
-      channelTopic: runtime.channelTopic || "",
-      channelState,
-      presenceChannelState: channelState,
-      socketConnected: runtime.socketConnected === true,
-      ownSessionId: runtime.ownSessionId || PRESENCE_SESSION_ID,
-      ownTrackPayload: runtime.ownTrackPayload || compactPresenceDebugPayload(getMePresencePayload()),
-      rawPresenceState: runtime.rawPresenceState || {},
-      rawPresenceStateKeys: Array.isArray(runtime.rawPresenceStateKeys) ? runtime.rawPresenceStateKeys : Object.keys(runtime.rawPresenceState || {}),
-      rawPresencePayloadsCompact: Array.isArray(runtime.rawPresencePayloadsCompact) ? runtime.rawPresencePayloadsCompact : [],
-      liveSessionsByUserId: runtime.liveSessionsByUserId || {},
-      effectivePresenceByUserId: runtime.effectivePresenceByUserId || {},
-      rawLiveSessionsByUserId: runtime.rawLiveSessionsByUserId || {},
-      lastSeenLiveAtByUserId: runtime.lastSeenLiveAtByUserId || {},
-      presenceList: Array.isArray(presenceList) ? presenceList : [],
-      knownFriendIds: getPresenceKnownFriendIds(),
-      friends,
-      resolvedFriendPresenceRows: friends,
-      friendPresenceSummary: friends,
-      activeNowUsers: getPresenceActiveNowDebugUsers(),
-      connectionState: window.__ALTARA_CONNECTION_STATE__ || null,
-      lastPresenceSyncAt: runtime.lastPresenceSyncAt || 0,
-      lastPresenceTrackAt: runtime.lastPresenceTrackAt || 0,
-      lastTrackResult: runtime.lastTrackResult || "",
-      lastPresenceError: runtime.lastPresenceError || "",
-      controllerReady: !!presence,
-      controllerOwnerUserId: normId(presenceOwnerUserId || ""),
-      controllerStarted: runtime.started === true,
-      startPending: !!presenceStartInFlight,
-      stopPending: !!presenceStopInFlight,
+      version: "presence-live-diagnostics-v7",
+      generatedAt: new Date().toISOString(),
+      auth: {
+        authenticatedUserId,
+        tokenExpiresAt: presenceDebugTokenExpiresAt,
+        readyState: presenceDebugAuthReady ? "READY" : "NOT_READY",
+        ready: presenceDebugAuthReady,
+      },
+      realtime: {
+        socketConnectionState: String(runtime.socketConnectionState || (runtime.socketConnected === true ? "OPEN" : "UNKNOWN")),
+        socketConnected: runtime.socketConnected === true,
+        channelTopic: String(runtime.channelTopic || ""),
+        channelPrivate: runtime.channelPrivate !== false,
+        channelConfig: { private: true, presence: { key: "sessionId" } },
+        presenceKeyMode: String(runtime.presenceKeyMode || "session_id"),
+        subscriptionStatus: channelState,
+        controllerGeneration: presenceControllerGeneration,
+        channelGeneration: Number(runtime.trackGeneration || 0),
+        controllerOwnerUserId: normalizePresenceUserId(presenceOwnerUserId || ""),
+        controllerOwnsAuthenticatedUser: !!authenticatedUserId && authenticatedUserId === normalizePresenceUserId(presenceOwnerUserId || ""),
+        retryAttempt: Math.max(Number(runtime.reconnectAttempt || 0), Number(altaraPresenceRealtimeRestartAttempt || 0)),
+        reconnectInFlight: runtime.reconnectInFlight === true || !!altaraPresenceRealtimeRestartInFlight,
+        reconnectScheduled: !!altaraPresenceRealtimeRestartTimer,
+        startPending: !!presenceStartInFlight,
+        stopPending: !!presenceStopInFlight,
+        lastSubscribeStatus: String(runtime.lastSubscribeStatus || channelState),
+        lastSubscribeError: sanitizePresenceDiagnosticMessage(runtime.lastSubscribeError || ""),
+        lastTrackAttemptAt: Number(runtime.lastTrackAttemptAt || 0),
+        lastTrackSuccessAt: Number(runtime.lastPresenceTrackAt || 0),
+        lastTrackResult: String(runtime.lastTrackResult || ""),
+        lastTrackError: String(runtime.lastTrackResult || "").toLowerCase() === "ok"
+          ? ""
+          : sanitizePresenceDiagnosticMessage(runtime.lastPresenceError || ""),
+        lastPresenceSyncAt: Number(runtime.lastPresenceSyncAt || 0),
+        lastSnapshotSource: String(runtime.lastSnapshotSource || ""),
+      },
+      realtimeHealth,
+      shutdown: {
+        untrackAttemptAt: Number(runtime.shutdown?.untrackAttemptAt || 0),
+        untrackResult: String(runtime.shutdown?.untrackResult || ""),
+        unsubscribeAttemptAt: Number(runtime.shutdown?.unsubscribeAttemptAt || 0),
+        unsubscribeResult: String(runtime.shutdown?.unsubscribeResult || ""),
+      },
+      localTrack: {
+        trackedUserId: normalizePresenceUserId(ownTrack?.user_id || ""),
+        sessionId: String(ownTrack?.session_id || runtime.ownSessionId || PRESENCE_SESSION_ID),
+        normalizedStatus: manualStatus === "invisible" ? "offline" : manualStatus,
+        invisible: manualStatus === "invisible",
+        publicActivityType: String(ownTrack?.activity_type || "").trim().toLowerCase(),
+      },
+      presence: {
+        rawPresenceStateUserIds: Array.isArray(runtime.rawPresenceStateUserIds) ? [...runtime.rawPresenceStateUserIds] : [],
+        rawPresenceMetaCount: Number(runtime.rawPresenceMetaCount || 0),
+        sessionCountsByUserId: { ...(runtime.rawPresenceSessionCountsByUserId || {}) },
+        normalizedVisibleOnlineUserIds: Array.isArray(runtime.normalizedVisibleOnlineUserIds)
+          ? [...runtime.normalizedVisibleOnlineUserIds]
+          : [],
+        latestJoinUserIds: Array.isArray(runtime.latestJoinUserIds) ? [...runtime.latestJoinUserIds] : [],
+        latestLeaveUserIds: Array.isArray(runtime.latestLeaveUserIds) ? [...runtime.latestLeaveUserIds] : [],
+        lastJoinAt: Number(runtime.lastJoinAt || 0),
+        lastJoinKeys: Array.isArray(runtime.lastJoinKeys) ? [...runtime.lastJoinKeys] : [],
+        lastJoinUserIds: Array.isArray(runtime.lastJoinUserIds) ? [...runtime.lastJoinUserIds] : [],
+        lastLeaveAt: Number(runtime.lastLeaveAt || 0),
+        lastLeaveUserIds: Array.isArray(runtime.lastLeaveUserIds) ? [...runtime.lastLeaveUserIds] : [],
+        lastSyncAt: Number(runtime.lastSyncAt || 0),
+        lastAuthoritativeReconcileAt: Number(runtime.lastAuthoritativeReconcileAt || 0),
+        lastAuthoritativeReconcileReason: String(runtime.lastAuthoritativeReconcileReason || ""),
+        lastRemotePresenceDetectedAt: Number(runtime.lastRemotePresenceDetectedAt || 0),
+        canonicalPresenceSource: String(runtime.canonicalPresenceSource || "raw-mirror"),
+        canonicalSessionsByUserId: { ...(runtime.canonicalSessionsByUserId || {}) },
+      },
+      rawProtocol: {
+        rawStateCount: Number(runtime.rawProtocol?.rawStateCount || 0),
+        rawDiffCount: Number(runtime.rawProtocol?.rawDiffCount || 0),
+        rawJoinCount: Number(runtime.rawProtocol?.rawJoinCount || 0),
+        rawLeaveCount: Number(runtime.rawProtocol?.rawLeaveCount || 0),
+        lastRawStateAt: Number(runtime.rawProtocol?.lastRawStateAt || 0),
+        lastRawDiffAt: Number(runtime.rawProtocol?.lastRawDiffAt || 0),
+        lastRawJoinUserIds: Array.isArray(runtime.rawProtocol?.lastRawJoinUserIds)
+          ? [...runtime.rawProtocol.lastRawJoinUserIds]
+          : [],
+        lastRawLeaveUserIds: Array.isArray(runtime.rawProtocol?.lastRawLeaveUserIds)
+          ? [...runtime.rawProtocol.lastRawLeaveUserIds]
+          : [],
+        mirrorPresenceKeys: Array.isArray(runtime.rawProtocol?.mirrorPresenceKeys)
+          ? [...runtime.rawProtocol.mirrorPresenceKeys]
+          : [],
+        mirrorSessionCount: Number(runtime.rawProtocol?.mirrorSessionCount || 0),
+        mirrorUserIds: Array.isArray(runtime.rawProtocol?.mirrorUserIds)
+          ? [...runtime.rawProtocol.mirrorUserIds]
+          : [],
+      },
+      comparison: {
+        officialEventCount: Number(runtime.comparison?.officialEventCount || 0),
+        rawEventCount: Number(runtime.comparison?.rawEventCount || 0),
+        officialVsRawMismatchCount: Number(runtime.comparison?.officialVsRawMismatchCount || 0),
+      },
+      friends: {
+        knownFriendIds,
+        acceptedFriendIds: [...knownFriendIds],
+        onlineFriendIds,
+      },
+      ui: {
+        onlineNowIds: [...onlineFriendIds],
+        onlineNowCount: onlineFriendIds.length,
+        activeNowIds,
+        activeNowCount: activeNowIds.length,
+        lastOnlineUiAppliedAt: Number(lastPresenceOnlineUiAppliedAt || 0),
+        remoteJoinToUiMs: (
+          Number(runtime.lastJoinAt || 0) > 0
+          && Number(lastPresenceOnlineUiAppliedAt || 0) >= Number(runtime.lastJoinAt || 0)
+          && (Array.isArray(runtime.lastJoinUserIds) ? runtime.lastJoinUserIds : [])
+            .some((userId) => onlineFriendIds.includes(normalizePresenceUserId(userId)))
+        )
+          ? Number(lastPresenceOnlineUiAppliedAt || 0) - Number(runtime.lastJoinAt || 0)
+          : null,
+        remoteLeaveToUiMs: (
+          Number(runtime.lastLeaveAt || 0) > 0
+          && Number(lastPresenceOnlineUiAppliedAt || 0) >= Number(runtime.lastLeaveAt || 0)
+          && (Array.isArray(runtime.lastLeaveUserIds) ? runtime.lastLeaveUserIds : [])
+            .every((userId) => !onlineFriendIds.includes(normalizePresenceUserId(userId)))
+        )
+          ? Number(lastPresenceOnlineUiAppliedAt || 0) - Number(runtime.lastLeaveAt || 0)
+          : null,
+      },
+      latency: presenceLatencyTracker.getSnapshot(),
+      bootstrap: realtimeStartupBarrier.getBootstrapSnapshot(),
+      history: presenceLiveDiagnosticHistory.map((entry) => ({
+        ...entry,
+        userIds: [...entry.userIds],
+        sessionCountsByUserId: { ...entry.sessionCountsByUserId },
+      })),
     };
   };
-  window.__ALTARA_PRESENCE_RETRACK__ = async function () {
-    if (!presence) await startPresence().catch(() => null);
-    await presence?.refresh?.();
-    renderFriends({ skipPresenceRefresh: true });
-    updatePresenceRender();
-    return window.__ALTARA_PRESENCE_DEBUG__();
-  };
-  window.__ALTARA_PRESENCE_FORCE_RESYNC__ = async function () {
-    logPresenceLiveDebug("force resync requested", { currentUserId: normId(state.user?.id || "") });
-    if (!presence) await startPresence().catch(() => null);
-    await presence?.refresh?.();
-    await loadDmList({ lightweight: true }).catch(() => null);
-    await refresh({ lightweight: true }).catch(() => null);
-    renderFriends({ skipPresenceRefresh: true });
-    updatePresenceRender();
-    logPresenceLiveDebug("force resync complete", { currentUserId: normId(state.user?.id || "") });
-    return window.__ALTARA_PRESENCE_DEBUG__();
-  };
-  window.__ALTARA_PRESENCE_DUMP_FRIENDS__ = function () {
-    const rows = getPresenceFriendDebugRows();
-    try { console.table(rows); } catch (_) { try { console.log("[Presence] friends", rows); } catch (_) {} }
-    return rows;
+  window.__ALTARA_PRESENCE_DEBUG_PRINT__ = function () {
+    const snapshot = window.__ALTARA_PRESENCE_DEBUG__();
+    try {
+      console.groupCollapsed("[ALTARA Presence Live Diagnostics]");
+      console.log("auth", snapshot.auth);
+      console.log("realtime", snapshot.realtime);
+      console.log("realtimeHealth", snapshot.realtimeHealth);
+      console.log("shutdown", snapshot.shutdown);
+      console.log("localTrack", snapshot.localTrack);
+      console.log("presence", snapshot.presence);
+      console.log("rawProtocol", snapshot.rawProtocol);
+      console.log("comparison", snapshot.comparison);
+      console.log("friends", snapshot.friends);
+      console.log("ui", snapshot.ui);
+      console.log("latency", snapshot.latency);
+      console.log("bootstrap", snapshot.bootstrap);
+      console.log("barrier", window.__ALTARA_REALTIME_BARRIER_DEBUG__());
+      console.table(window.__ALTARA_REALTIME_STARTUP_DEBUG__());
+      console.table(snapshot.history);
+      console.groupEnd();
+    } catch (_) {}
+    return snapshot;
   };
 }
 
 function schedulePresenceRender(reason = "presence") {
-  scheduleUiRender("presence", () => {
-    markPerfStart("presence_render", { reason: String(reason || "presence") });
-    updatePresenceRender();
-    markPerfEnd("presence_render", { reason: String(reason || "presence") });
-  });
+  pendingPresenceRenderReasons.add(String(reason || "presence"));
+  if (presenceRenderQueued) return;
+  presenceRenderQueued = true;
+  const run = () => {
+    presenceRenderQueued = false;
+    const reasons = Array.from(pendingPresenceRenderReasons);
+    pendingPresenceRenderReasons.clear();
+    const renderReason = reasons.join("+") || "presence";
+    markPerfStart("presence_render", { reason: renderReason });
+    try { updatePresenceRender(); }
+    catch (error) { console.warn("scheduled Presence render failed", error?.message || error); }
+    finally { markPerfEnd("presence_render", { reason: renderReason }); }
+  };
+  // Presence events must update an already-open background client without
+  // waiting for requestAnimationFrame, which browsers may suspend off-focus.
+  if (typeof queueMicrotask === "function") queueMicrotask(run);
+  else Promise.resolve().then(run);
 }
 
 function updatePresenceRender() {
@@ -189761,38 +190035,9 @@ function updatePresenceRender() {
     }
   });
 
-  const usersInActiveCall = new Set();
-  if (activeConversationId) {
-    if (isServerVoiceConversationById(activeConversationId)) {
-      getServerVoiceChannelOccupantIds(activeConversationId, {
-        triggerReason: "presence_active_now_filter",
-        callerFunction: "updatePresenceRender",
-      }).forEach((uid) => {
-        const normalized = normId(uid || "");
-        if (normalized) usersInActiveCall.add(normalized);
-      });
-    } else if (normId(callConversationId || "") === activeConversationId) {
-      getEffectiveGroupCallActiveUserIds(activeConversationId).forEach((uid) => {
-        const normalized = normId(uid || "");
-        if (normalized) usersInActiveCall.add(normalized);
-      });
-    }
-  }
-
-  // Enforce: Active Now only shows online/idle/focus/dnd entries.
+  // renderPresenceUI owns the exact Active Now rule: live friend + valid activity.
+  // Do not derive Online Now from the number of activity cards.
   if (activeNowEl && !shouldHideActiveNowInCall) {
-    const rows = Array.from(activeNowEl.querySelectorAll(".presenceRow"));
-    rows.forEach((row) => {
-      const rowUserId = normId(row.getAttribute("data-presence-user") || "");
-      const inActiveCall = !!(rowUserId && usersInActiveCall.has(rowUserId));
-      const stateText = String(row.querySelector(".presenceState")?.textContent || "").trim().toLowerCase();
-      const dotStatus = String(row.querySelector(".statusDot")?.getAttribute("data-status") || "").trim().toLowerCase();
-      const isActive = dotStatus === "online" || dotStatus === "idle" || dotStatus === "focus" || dotStatus === "dnd";
-      if (inActiveCall || !isActive || stateText === "offline" || stateText === "invisible") {
-        row.remove();
-      }
-    });
-
     const activeRows = activeNowEl.querySelectorAll(".presenceRow").length;
     const activeNowSignature = Array.from(activeNowEl.querySelectorAll(".presenceRow")).map((row) => {
       const uid = normId(row.getAttribute("data-presence-user") || "");
@@ -189806,8 +190051,6 @@ function updatePresenceRender() {
         count: activeRows,
       });
     }
-    if (!activeRows) activeNowEl.innerHTML = `<div class="hint">No one online right now.</div>`;
-    if (onlineCountEl) onlineCountEl.textContent = String(activeRows);
   }
 
   ensureMeStatusDot();
@@ -189817,6 +190060,26 @@ function updatePresenceRender() {
   refreshDmProfilePanel();
   renderTypingStatusOnUserCards({ reason: "presence-render" });
   tracePresenceRenderResult("updatePresenceRender");
+  const renderedOnlineFriendIds = getPresenceFriendDebugRows()
+    .filter((row) => row.includedInOnlineNow === true)
+    .map((row) => normalizePresenceUserId(row.friendUserId || row.userId || ""))
+    .filter(Boolean)
+    .sort();
+  const onlineUiSignature = renderedOnlineFriendIds.join("|");
+  if (onlineUiSignature !== lastPresenceOnlineUiSignature) {
+    lastPresenceOnlineUiSignature = onlineUiSignature;
+    lastPresenceOnlineUiAppliedAt = Date.now();
+    recordPresenceLiveDiagnosticEvent("ONLINE_UI_APPLIED", {
+      generation: presenceControllerGeneration,
+      status: "APPLIED",
+      userIds: renderedOnlineFriendIds,
+      count: renderedOnlineFriendIds.length,
+      source: "updatePresenceRender",
+    });
+  }
+  if (renderedOnlineFriendIds.length && Number(onlineCountEl?.textContent || 0) > 0) {
+    presenceLatencyTracker.mark("onlineUiAppliedAt");
+  }
   } finally {
     relationshipTracePhaseEnd(trace, traceLabel);
   }
@@ -189841,6 +190104,7 @@ async function startPresenceForAuthenticatedSession(reason = "auth-ready", suppl
       return false;
     }
   }
+  updatePresenceDiagnosticAuth(session);
   const authUserId = normId(session?.user?.id || "");
   const stateUserId = normId(state.user?.id || "");
   const accessToken = String(session?.access_token || "").trim();
@@ -189864,7 +190128,7 @@ async function startPresenceForAuthenticatedSession(reason = "auth-ready", suppl
   if (supabase?.realtime && typeof supabase.realtime.setAuth === "function") {
     await Promise.resolve(supabase.realtime.setAuth(accessToken));
   }
-  await startPresence();
+  await startPresence(session, { realtimeAuthApplied: true });
   return true;
 }
 
@@ -189888,6 +190152,50 @@ function schedulePresenceStartupAfterAuth(session = null, reason = "auth-state-c
   }, 0);
 }
 
+function clearPresenceForSignedOutSession(reason = "auth:signed_out") {
+  const previousPresenceIds = (presenceList || [])
+    .map((entry) => normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || ""))
+    .filter(Boolean);
+  updatePresenceDiagnosticAuth(null);
+  presenceLatencyTracker.clear();
+  recordPresenceLiveDiagnosticEvent("SNAPSHOT_CLEARED", {
+    generation: presenceControllerGeneration,
+    status: "SIGNED_OUT",
+    userIds: previousPresenceIds,
+    count: previousPresenceIds.length,
+    source: reason,
+  });
+  presenceSessionEpoch += 1;
+  preparedPresenceBootstrapGeneration = 0;
+  realtimeStartupBarrier.reset({ resolveWaiters: true, cancelWaiting: true });
+  pendingPresenceAuthStartup = null;
+  if (presenceAuthStartupTimer) {
+    clearTimeout(presenceAuthStartupTimer);
+    presenceAuthStartupTimer = 0;
+  }
+  const targetPresence = presence;
+  presence = null;
+  presenceOwnerUserId = "";
+  presenceList = [];
+  if (state.me) state.me.activity = null;
+  spotifyActivityController?.stop?.({ clearActivity: false, reason: "spotify_signed_out" });
+  connectedAccountsState.spotifyPlayback = null;
+  effectiveGameActivity = null;
+  presenceControllerGeneration += 1;
+  lastPresenceActiveNowSignature = "";
+  lastPresenceOnlineUiSignature = null;
+  lastPresenceOnlineUiAppliedAt = 0;
+  schedulePresenceRender(reason);
+  try { renderWidgets(); } catch (_) {}
+  if (!targetPresence || typeof targetPresence.stop !== "function") return;
+  void Promise.resolve(targetPresence.stop()).catch((error) => {
+    logPresenceStartupLifecycle("signed out cleanup failed", {
+      reason,
+      error: getSafeAuthErrorCode(error, "presence_signed_out_cleanup"),
+    }, { error: true });
+  });
+}
+
 function startPresenceAuthStateListener() {
   if (presenceAuthStateSubscription) return;
   if (!supabase?.auth || typeof supabase.auth.onAuthStateChange !== "function") return;
@@ -189895,11 +190203,30 @@ function startPresenceAuthStateListener() {
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       const authUserId = normId(session?.user?.id || "");
       const hasAccessToken = !!String(session?.access_token || "").trim();
+      updatePresenceDiagnosticAuth(session);
+      if (String(event || "").toUpperCase() === "TOKEN_REFRESHED") {
+        recordPresenceLiveDiagnosticEvent("TOKEN_REFRESHED", {
+          generation: presenceControllerGeneration,
+          status: "AUTH_READY",
+          userIds: [authUserId],
+          source: "auth",
+        });
+        if (getSpotifyConnectedAccount() && shouldPollSpotifyActivity()) {
+          void getSpotifyActivityController().start({
+            immediate: true,
+            reason: "auth-token-refreshed",
+          });
+        }
+      }
       logPresenceStartupLifecycle("auth state", {
         event: String(event || ""),
         authUserId,
         hasAccessToken,
       });
+      if (String(event || "").toUpperCase() === "SIGNED_OUT") {
+        clearPresenceForSignedOutSession("auth:signed_out");
+        return;
+      }
       if (!authUserId || !hasAccessToken) return;
       schedulePresenceStartupAfterAuth(session, "auth:" + String(event || "session"));
     });
@@ -189911,9 +190238,37 @@ function startPresenceAuthStateListener() {
   }
 }
 
-async function startPresence() {
+function bindPresenceVisibilityRefreshOnce() {
+  if (presenceVisibilityListenerBound || typeof document === "undefined") return;
+  presenceVisibilityListenerBound = true;
+  document.addEventListener("visibilitychange", () => {
+    if (!presence || document.visibilityState !== "visible") return;
+    const healthy = realtimeConnectionHealth.checkConnection("visibility:visible");
+    if (healthy) presence.reconcile?.("visibility-visible");
+    void runProfileSyncFallback();
+    void refreshCurrentUserPresenceStatusFromAccount({ reason: "visibility" });
+  });
+}
+
+function bindDesktopPresenceShutdownOnce() {
+  if (desktopPresenceShutdownListenerBound) return;
+  const bridge = typeof getDesktopBridge === "function" ? getDesktopBridge() : null;
+  if (!bridge || typeof bridge.onPresenceShutdownRequested !== "function") return;
+  desktopPresenceShutdownListenerBound = true;
+  bridge.onPresenceShutdownRequested(async () => {
+    try {
+      await presence?.stop?.({ deadlineMs: 1200 });
+    } catch (_) {
+      // The main process owns a second deadline, so quit can never hang here.
+    } finally {
+      try { await bridge.completePresenceShutdown?.(); } catch (_) {}
+    }
+  });
+}
+
+async function startPresence(suppliedSession = null, { realtimeAuthApplied = false } = {}) {
   if (presenceStartInFlight) return presenceStartInFlight;
-  const startTask = startPresenceOnce();
+  const startTask = startPresenceOnce(suppliedSession, { realtimeAuthApplied });
   presenceStartInFlight = startTask;
   try {
     return await startTask;
@@ -189922,7 +190277,8 @@ async function startPresence() {
   }
 }
 
-async function startPresenceOnce() {
+async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied = false } = {}) {
+  const sessionEpochAtStart = presenceSessionEpoch;
   const authUserId = normId(state.user?.id || "");
   logPresenceStartupLifecycle("start requested", {
     authUserId,
@@ -189944,18 +190300,6 @@ async function startPresenceOnce() {
   if (presenceStopInFlight) {
     try { await presenceStopInFlight; } catch (_) {}
   }
-  if (presence && presenceOwnerUserId === nextPresenceOwnerUserId) {
-    logPresenceLiveDebug("restart existing presence system", { userId: nextPresenceOwnerUserId });
-    try { await presence.start?.(); } catch (error) {
-      logPresenceLiveDebug("restart existing presence system failed", {
-        userId: nextPresenceOwnerUserId,
-        error: getSafeAuthErrorCode(error, "presence_restart"),
-      });
-      throw error;
-    }
-    try { await presence.refresh?.(); } catch (_) {}
-    return;
-  }
   if (presence && presenceOwnerUserId && presenceOwnerUserId !== nextPresenceOwnerUserId && typeof presence.stop === "function") {
     try { await presence.stop(); } catch (_) {}
     presence = null;
@@ -189966,17 +190310,22 @@ async function startPresenceOnce() {
   let presenceAuthSessionExists = false;
   let presenceAuthSessionUserId = "";
   let presenceRealtimeTokenAvailable = false;
-  let presenceRealtimeAuthApplied = false;
+  let presenceRealtimeAuthApplied = realtimeAuthApplied === true;
   try {
-    const { data } = await supabase.auth.getSession();
-    const token = String(data?.session?.access_token || "").trim();
-    presenceAuthSessionExists = !!data?.session?.user?.id;
-    presenceAuthSessionUserId = normalizePresenceUserId(data?.session?.user?.id || "");
+    let session = suppliedSession;
+    if (!session) {
+      const { data } = await supabase.auth.getSession();
+      session = data?.session || null;
+    }
+    updatePresenceDiagnosticAuth(session);
+    const token = String(session?.access_token || "").trim();
+    presenceAuthSessionExists = !!session?.user?.id;
+    presenceAuthSessionUserId = normalizePresenceUserId(session?.user?.id || "");
     presenceRealtimeTokenAvailable = !!token;
     logPresenceLiveDebug("auth ready", {
-      userId: normId(data?.session?.user?.id || state.user?.id || ""),
+      userId: normId(session?.user?.id || state.user?.id || ""),
     });
-    if (token && supabase?.realtime && typeof supabase.realtime.setAuth === "function") {
+    if (!presenceRealtimeAuthApplied && token && supabase?.realtime && typeof supabase.realtime.setAuth === "function") {
       await Promise.resolve(supabase.realtime.setAuth(token));
       presenceRealtimeAuthApplied = true;
     }
@@ -189985,6 +190334,41 @@ async function startPresenceOnce() {
       userId: normId(state.user?.id || ""),
       error: String(error?.message || error || "unknown"),
     });
+  }
+
+  if (
+    sessionEpochAtStart !== presenceSessionEpoch
+    || !presenceAuthSessionExists
+    || !presenceRealtimeTokenAvailable
+    || !presenceRealtimeAuthApplied
+    || presenceAuthSessionUserId !== nextPresenceOwnerUserId
+  ) {
+    logPresenceStartupLifecycle("start deferred until authenticated realtime", {
+      authUserId,
+      sessionUserId: presenceAuthSessionUserId,
+      sessionExists: presenceAuthSessionExists,
+      realtimeTokenAvailable: presenceRealtimeTokenAvailable,
+      realtimeAuthApplied: presenceRealtimeAuthApplied,
+      currentEpoch: presenceSessionEpoch,
+      requestedEpoch: sessionEpochAtStart,
+    });
+    return false;
+  }
+
+  // Apply the latest JWT before reusing the canonical channel. In particular,
+  // TOKEN_REFRESHED must not return early with a channel still authorized by
+  // the previous access token.
+  if (presence && presenceOwnerUserId === nextPresenceOwnerUserId) {
+    logPresenceLiveDebug("restart existing presence system", { userId: nextPresenceOwnerUserId });
+    try { await presence.start?.(); } catch (error) {
+      logPresenceLiveDebug("restart existing presence system failed", {
+        userId: nextPresenceOwnerUserId,
+        error: getSafeAuthErrorCode(error, "presence_restart"),
+      });
+      throw error;
+    }
+    try { await presence.refresh?.(); } catch (_) {}
+    return true;
   }
 
   const bootStatusSource = readPresenceStatusValue(state.me?.status)
@@ -190000,6 +190384,11 @@ async function startPresenceOnce() {
   });
 
   const controllerGeneration = ++presenceControllerGeneration;
+  let bootstrapGeneration = preparedPresenceBootstrapGeneration > 0
+    ? preparedPresenceBootstrapGeneration
+    : realtimeStartupBarrier.beginBootstrap(`presence-controller:${controllerGeneration}`);
+  let presenceChannelGenerationForBarrier = 0;
+  preparedPresenceBootstrapGeneration = 0;
   const currentProfileId = normalizePresenceUserId(state.me?.id || state.me?.user_id || state.me?.userId || "");
   const activeIdentityIds = Array.from(new Set([
     normalizePresenceUserId(state.user?.id || ""),
@@ -190024,13 +190413,16 @@ async function startPresenceOnce() {
     realtimeAuthAppliedBeforeSubscribe: presenceRealtimeAuthApplied,
     sharedSupabaseClient: true,
   });
+  if (sessionEpochAtStart !== presenceSessionEpoch) return false;
   presenceOwnerUserId = nextPresenceOwnerUserId;
   let nextPresenceController = null;
   nextPresenceController = createPresenceSystem({
     supabase,
     getMe: () => getMePresencePayload(),
+    getAuthenticatedUserId: () => state.user?.id || "",
     manageReconnectExternally: true,
     onTrace: (stage, details = {}) => {
+      recordPresenceTraceForLiveDiagnostics(stage, details, controllerGeneration);
       logAltaraPresenceTrace(stage, {
         controllerGeneration,
         currentController: presence === nextPresenceController,
@@ -190039,13 +190431,118 @@ async function startPresenceOnce() {
         currentProfileId: normalizePresenceUserId(state.me?.id || state.me?.user_id || state.me?.userId || ""),
         ...details,
       });
+      const currentController = presence === nextPresenceController
+        && presenceOwnerUserId === nextPresenceOwnerUserId
+        && controllerGeneration === presenceControllerGeneration;
+      const currentChannelGeneration = details?.currentGeneration !== false
+        && details?.currentChannel !== false;
+      if (!currentController || !currentChannelGeneration) return;
+      if (stage === "CHANNEL_CREATE" || stage === "SUBSCRIBE_START") {
+        const tracedChannelGeneration = Math.max(0, Number(details?.channelGeneration || 0));
+        if (tracedChannelGeneration && tracedChannelGeneration !== presenceChannelGenerationForBarrier) {
+          if (presenceChannelGenerationForBarrier) {
+            bootstrapGeneration = preparedPresenceBootstrapGeneration > 0
+              ? preparedPresenceBootstrapGeneration
+              : realtimeStartupBarrier.beginBootstrap(
+                  `presence-channel:${controllerGeneration}:${tracedChannelGeneration}`,
+                );
+            preparedPresenceBootstrapGeneration = 0;
+          }
+          presenceChannelGenerationForBarrier = tracedChannelGeneration;
+        }
+      }
+      if (stage === "SUBSCRIBE_START") {
+        presenceLatencyTracker.mark("presenceSubscribeStartAt");
+        realtimeStartupBarrier.markSubscribing(bootstrapGeneration);
+        return;
+      }
+      if (stage === "SUBSCRIBE_STATUS") {
+        const status = String(details?.status || "").trim().toUpperCase();
+        if (status === "SUBSCRIBED") {
+          const barrierSnapshot = realtimeStartupBarrier.getBootstrapSnapshot();
+          if (
+            barrierSnapshot.state === "degraded"
+            && Number(barrierSnapshot.currentPresenceGeneration || 0) === Number(bootstrapGeneration || 0)
+          ) {
+            bootstrapGeneration = realtimeStartupBarrier.beginBootstrap(
+              `presence-sdk-rejoin:${controllerGeneration}:${presenceChannelGenerationForBarrier}`,
+            );
+          }
+          presenceLatencyTracker.mark("presenceSubscribedAt");
+          realtimeStartupBarrier.markSubscribed(bootstrapGeneration);
+          realtimeConnectionHealth.notePresenceStage("SUBSCRIBED");
+        }
+        else if (["TIMED_OUT", "CHANNEL_ERROR", "CLOSED"].includes(status)) {
+          realtimeStartupBarrier.markDegraded(bootstrapGeneration);
+          realtimeConnectionHealth.notePresenceStage("UNHEALTHY");
+        }
+        return;
+      }
+      if (stage === "TRACK_CALL") {
+        presenceLatencyTracker.mark("trackStartAt");
+        if (!realtimeStartupBarrier.getBootstrapSnapshot().gateValidForCurrentGeneration) {
+          realtimeStartupBarrier.markTracking(bootstrapGeneration);
+        }
+        return;
+      }
+      if (stage === "TRACK_RESULT") {
+        const trackResult = String(details?.rawResult || "").trim().toLowerCase();
+        if (
+          trackResult === "ok"
+          && details?.currentGeneration === true
+          && details?.currentTrackEpoch === true
+        ) {
+          presenceLatencyTracker.mark("trackOkAt");
+          const releasedCurrentGeneration = realtimeStartupBarrier.markReady(bootstrapGeneration);
+          realtimeConnectionHealth.notePresenceStage("TRACK_OK");
+          if (releasedCurrentGeneration && realtimeSubscriptionsNeedResumeAfterPresenceReady) {
+            queueMicrotask(() => {
+              resumeAltaraRealtimeSubscriptionsAfterPresenceReady(bootstrapGeneration);
+            });
+          }
+        }
+        else if (trackResult && trackResult !== "undefined") {
+          realtimeStartupBarrier.markDegraded(bootstrapGeneration);
+        }
+        return;
+      }
+      if (
+        stage === "RAW_PRESENCE_STATE"
+        || (stage === "PRESENCE_EVENT" && String(details?.eventType || "").toLowerCase() === "sync")
+      ) {
+        presenceLatencyTracker.mark("firstSyncAt");
+        const reconnectWasInFlight = realtimeConnectionHealth.getSnapshot().reconnectInFlight;
+        const recoveryReady = realtimeConnectionHealth.notePresenceStage("SYNC");
+        if (reconnectWasInFlight && recoveryReady) {
+          recordPresenceLiveDiagnosticEvent("RECONNECT_OK", {
+            generation: controllerGeneration,
+            status: "SYNCED",
+            source: stage === "RAW_PRESENCE_STATE" ? "raw-presence-state" : "realtime-heartbeat",
+          });
+        }
+        return;
+      }
+      if (stage === "PRESENCE_NORMALIZED_STATE") {
+        const ownUserId = normalizePresenceUserId(state.user?.id || "");
+        const hasRemotePresence = (Array.isArray(details?.onlineIds) ? details.onlineIds : [])
+          .some((userId) => normalizePresenceUserId(userId) && normalizePresenceUserId(userId) !== ownUserId);
+        if (hasRemotePresence) presenceLatencyTracker.mark("firstRemotePresenceAt");
+      }
     },
     onStatus: (status, meta = {}) => {
       if (presence !== nextPresenceController || presenceOwnerUserId !== nextPresenceOwnerUserId) return;
       recordAltaraRealtimeStatus(status, { source: meta?.source || "presence", error: meta?.error || null });
     },
-    onPresenceList: (list) => {
+    onPresenceList: (list, snapshotMeta = {}) => {
       if (presence !== nextPresenceController || presenceOwnerUserId !== nextPresenceOwnerUserId) {
+        recordPresenceLiveDiagnosticEvent("STALE_GENERATION_IGNORED", {
+          generation: controllerGeneration,
+          status: "STALE",
+          userIds: (Array.isArray(list) ? list : [])
+            .map((entry) => normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || ""))
+            .filter(Boolean),
+          count: Array.isArray(list) ? list.length : 0,
+        });
         logAltaraPresenceTrace("STALE_SNAPSHOT_IGNORED", {
           controllerGeneration,
           currentController: false,
@@ -190055,6 +190552,21 @@ async function startPresenceOnce() {
         return;
       }
       presenceList = list || [];
+      const snapshotUserIds = presenceList
+        .map((entry) => normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || ""))
+        .filter(Boolean);
+      const snapshotSessionCounts = Object.fromEntries(presenceList.map((entry) => [
+        normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || ""),
+        Math.max(0, Number(entry?.live_session_count || entry?.liveSessionCount || 0)),
+      ]).filter(([id]) => !!id));
+      recordPresenceLiveDiagnosticEvent(snapshotUserIds.length ? "SNAPSHOT_APPLIED" : "SNAPSHOT_CLEARED", {
+        generation: controllerGeneration,
+        status: snapshotUserIds.length ? "APPLIED" : "EMPTY",
+        userIds: snapshotUserIds,
+        count: snapshotUserIds.length,
+        sessionCountsByUserId: snapshotSessionCounts,
+        source: String(snapshotMeta?.source || "onPresenceList"),
+      });
       logPresenceDebug("presence sync received", {
         userId: normId(state.user?.id || ""),
         count: presenceList.length,
@@ -190123,8 +190635,9 @@ async function startPresenceOnce() {
       logAltaraPresenceTrace("FRIEND_MATCH_DEBUG", friendMatchDetails);
       logAltaraPresenceTrace("FRIEND_MATCH", friendMatchDetails);
       logPresenceLiveDebug("normalization bridge", {
-        rawPresenceStateKeys: Array.isArray(runtime.rawPresenceStateKeys) ? runtime.rawPresenceStateKeys : [],
-        rawPresenceMetas: Array.isArray(runtime.rawPresencePayloadsCompact) ? runtime.rawPresencePayloadsCompact : [],
+        rawPresenceStateUserIds: Array.isArray(runtime.rawPresenceStateUserIds) ? runtime.rawPresenceStateUserIds : [],
+        rawPresenceMetaCount: Number(runtime.rawPresenceMetaCount || 0),
+        rawPresenceSessionCountsByUserId: runtime.rawPresenceSessionCountsByUserId || {},
         normalizedPresenceUserIds,
         currentUserId,
         knownFriendIds,
@@ -190155,19 +190668,11 @@ async function startPresenceOnce() {
   presence = nextPresenceController;
 
   await presence.start();
+  bindPresenceVisibilityRefreshOnce();
+  bindDesktopPresenceShutdownOnce();
 
   const searchInputEl = document.getElementById("searchInput");
   searchInputEl?.addEventListener("input", updatePresenceRender);
-
-  document.addEventListener("visibilitychange", () => {
-    if (!presence || document.visibilityState !== "visible") return;
-    const nextStatus = resolveMyPresenceStatus(state.me);
-    state.me.status = nextStatus;
-    setMyStatus(nextStatus);
-    void presence.setStatus(nextStatus);
-    void runProfileSyncFallback();
-    void refreshCurrentUserPresenceStatusFromAccount({ reason: "visibility" });
-  });
 
   await presence.setStatus(persisted);
 }
@@ -190240,6 +190745,54 @@ async function startPresenceOnce() {
     return;
   }
   markPerfEnd("auth_ready", { ok: true });
+  presenceLatencyTracker.reset("authenticated-cold-boot");
+  presenceLatencyTracker.mark("authReadyAt");
+  const authenticatedBootUserId = normId(state.user?.id || "");
+  const cachedUserMetadata = state.user?.user_metadata && typeof state.user.user_metadata === "object"
+    ? state.user.user_metadata
+    : {};
+  state.me = {
+    ...(state.me || {}),
+    id: normId(state.me?.id || "") || authenticatedBootUserId,
+    username: String(state.me?.username || cachedUserMetadata.username || "user"),
+    display_name: String(
+      state.me?.display_name
+      || cachedUserMetadata.display_name
+      || state.me?.username
+      || cachedUserMetadata.username
+      || "User"
+    ),
+  };
+  state.me.status = resolveMyPresenceStatus(state.me);
+  const presenceBootSessionPromise = Promise.resolve().then(async () => {
+    const { data } = await supabase.auth.getSession();
+    const currentSession = data?.session || bootSession || null;
+    return normId(currentSession?.user?.id || "") === authenticatedBootUserId
+      && !!String(currentSession?.access_token || "").trim()
+      ? currentSession
+      : null;
+  }).catch(() => (
+    normId(bootSession?.user?.id || "") === authenticatedBootUserId
+      && !!String(bootSession?.access_token || "").trim()
+      ? bootSession
+      : null
+  ));
+  const presenceBootProfilePromise = awaitWithTimeout(
+    getMyProfile(authenticatedBootUserId),
+    1200,
+    "getMyProfile fast boot"
+  );
+  const presenceBootFriendsPromise = rpcWithTimeout("list_my_friends");
+  const presenceBootModerationPromise = awaitWithTimeout(
+    refreshMyModerationState({ timeoutMs: PROFILE_BOOT_TIMEOUT_MS }),
+    PROFILE_BOOT_TIMEOUT_MS + 1000,
+    "initial moderation state"
+  );
+  void presenceBootProfilePromise.catch(() => {});
+  void presenceBootFriendsPromise.catch(() => {});
+  void presenceBootModerationPromise.catch(() => {});
+  let realtimeBootAuthReady = false;
+  let presenceBootJoinQueued = false;
   forceRenderBootSafeShell("auth-ready");
   restorePendingYouTubeConnect();
   bindConnectionsDeepLinkEventsOnce();
@@ -190263,6 +190816,8 @@ async function startPresenceOnce() {
   setAppLanguage(readStoredAppLanguage(), { persist: false, rerender: false, syncForm: false });
   bindAltaraPlusDesktopBillingEventsOnce();
   bindSpotifyConnectionCallbackEventsOnce();
+  const initialConnectedAccountsPromise = refreshConnectedAccounts({ force: true, silent: true })
+    .catch(() => []);
   const shouldHandleAltaraPlusReturnSignals = shouldRefreshAltaraPlusFromWindowLocation();
   const initialAltaraPlusRefreshPromise = Promise.resolve()
     .then(() => refreshCurrentUserAltaraPlusStatus({
@@ -190275,11 +190830,7 @@ async function startPresenceOnce() {
 
   let initialModerationState = state.moderationState || normalizeUserModerationStateRow({ user_id: state.user.id });
   try {
-    initialModerationState = await awaitWithTimeout(
-      refreshMyModerationState({ timeoutMs: PROFILE_BOOT_TIMEOUT_MS }),
-      PROFILE_BOOT_TIMEOUT_MS + 1000,
-      "initial moderation state"
-    );
+    initialModerationState = await presenceBootModerationPromise;
   } catch (error) {
     console.warn("initial moderation state failed", error?.message || error);
   }
@@ -190291,6 +190842,31 @@ async function startPresenceOnce() {
   } catch (error) {
     console.warn("initial moderation gate failed", error?.message || error);
   }
+  try {
+    const presenceBootSession = await presenceBootSessionPromise;
+    if (presenceBootSession) {
+      presenceBootJoinQueued = await startPresenceForAuthenticatedSession(
+        "app-boot-priority",
+        presenceBootSession,
+      );
+      realtimeBootAuthReady = presenceBootJoinQueued === true;
+    }
+  } catch (error) {
+    logPresenceStartupLifecycle("init error", {
+      reason: "app-boot-priority",
+      error: getSafeAuthErrorCode(error, "presence_start"),
+    }, { error: true });
+  }
+  startPresenceAuthStateListener();
+  void presenceBootFriendsPromise.then((friendsResult) => {
+    if (
+      friendsResult?.error
+      || normId(state.user?.id || "") !== authenticatedBootUserId
+      || !Array.isArray(friendsResult?.data)
+    ) return;
+    state.friends = hydrateRelationshipRowsFromCache(friendsResult.data);
+    schedulePresenceRender("boot_friend_ids_ready");
+  }).catch(() => {});
   consumeDmE2eeLoginSyncNotice();
   void initRtcConfigFromDesktop().catch((error) => recordAltaraBootEvent("optional_task_error", { task: "rtc_config", message: error?.message || error || "unknown" }));
   void refreshRtcTurnCredentials({ force: false });
@@ -190339,7 +190915,7 @@ async function startPresenceOnce() {
   scheduleAltaraBootLoadingWatchdog("initial-refresh");
   const initialRefreshPromise = Promise.resolve()
     .then(() => awaitWithTimeout(
-      refresh(),
+      refresh({ prefetchedFriendsPromise: presenceBootFriendsPromise }),
       RPC_SOFT_TIMEOUT_MS + 4000,
       "initial refresh"
     ))
@@ -190357,11 +190933,7 @@ async function startPresenceOnce() {
 
   try {
     recordAltaraBootEvent("required_task_start", { task: "profile_fast_hydration" });
-    state.me = await awaitWithTimeout(
-      getMyProfile(state.user.id),
-      1200,
-      "getMyProfile fast boot"
-    );
+    state.me = await presenceBootProfilePromise;
     state.me.name_color = normalizeNameColor(state.me.name_color);
     state.me.call_tile_color = normalizeCallTileColor(state.me.call_tile_color);
     state.me.status = resolveMyPresenceStatus(state.me);
@@ -190421,7 +190993,7 @@ async function startPresenceOnce() {
     return false;
   });
   void handleSpotifyConnectionReturnFromLocation().catch(() => false);
-  void refreshConnectedAccounts({ force: true, silent: true }).catch(() => []);
+  void initialConnectedAccountsPromise;
 
   void ensureDmFeatureCaps()
     .then((caps) => {
@@ -190492,23 +191064,29 @@ async function startPresenceOnce() {
   void consumeServerInviteFromUrlIfPresent({ showFeedback: true }).catch(() => false);
   void consumePendingExternalServerInviteCodeIfPresent({ showFeedback: true }).catch(() => false);
 
-  const realtimeBootAuthReady = !isAltaraDefinitivelyOffline()
-    ? await refreshAltaraRealtimeAuthForReconnect("app-boot")
-    : false;
+  if (!realtimeBootAuthReady && !isAltaraDefinitivelyOffline()) {
+    realtimeBootAuthReady = await refreshAltaraRealtimeAuthForReconnect("app-boot-fallback");
+  }
+  if (realtimeBootAuthReady && !presenceBootJoinQueued) {
+    try {
+      // The shared client barrier is already closed. Presence is the only
+      // private topic whose subscribe call can pass before its TRACK_OK.
+      presenceBootJoinQueued = await startPresenceForAuthenticatedSession("app-boot-fallback");
+    } catch (error) {
+      logPresenceStartupLifecycle("init error", {
+        reason: "app-boot-fallback",
+        error: getSafeAuthErrorCode(error, "presence_start"),
+      }, { error: true });
+    }
+  }
+  // Factories may run in any order: every private subscribe below is enforced
+  // by the singleton barrier, with critical revocation topics drained first.
   startDmPrivacyAuthStateListener();
   startFriendRequestsAuthStateListener();
   startServerRoleInvalidationAuthStateListener();
-  startPresenceAuthStateListener();
   if (realtimeBootAuthReady) {
-    startGlobalCallListener();
-    startGlobalGroupDmCallStateListener();
-    startGlobalDmMessageListener();
-    startGlobalBotChannelMessageListener();
-    startGlobalDmMembershipListener();
+    startRequiredCallRealtimeSubscriptions();
     startGroupDmRevocationBroadcastListener();
-    startGlobalConversationListener();
-    startGlobalServerChannelTableListener();
-    startGlobalServerRoleTablesListener();
     startGlobalProfileListener();
   } else if (!isAltaraDefinitivelyOffline()) {
     scheduleAltaraConnectionRetry("app-boot-realtime-auth");
@@ -190518,8 +191096,6 @@ async function startPresenceOnce() {
   if (realtimeBootAuthReady) {
     void refreshMessageRequestsAndSidebar("app_boot", { force: true }).catch(() => {});
     scheduleConversationMessagePrefetch("app_boot");
-    startGlobalModerationActionListener();
-    startGlobalUserBlocksListener();
   }
   startFriendRequestsSyncFallback();
   startCurrentUserPresenceStatusSyncFallback();
@@ -190561,12 +191137,14 @@ async function startPresenceOnce() {
       message: error?.message || error || "unknown",
     });
   });
-  void startPresenceForAuthenticatedSession("app-boot").catch((error) => {
-    logPresenceStartupLifecycle("init error", {
-      reason: "app-boot",
-      error: getSafeAuthErrorCode(error, "presence_start"),
-    }, { error: true });
-  });
+  if (!presenceBootJoinQueued) {
+    void startPresenceForAuthenticatedSession("app-boot-fallback").catch((error) => {
+      logPresenceStartupLifecycle("init error", {
+        reason: "app-boot-fallback",
+        error: getSafeAuthErrorCode(error, "presence_start"),
+      }, { error: true });
+    });
+  }
   window.setTimeout(() => {
     if (!isAltaraDefinitivelyOffline()) void syncWidgetTodoFromCloud({ force: false }).catch(() => false);
     try { startWidgetReminderMonitor(); } catch (_) {}

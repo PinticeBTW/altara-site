@@ -360,3 +360,21 @@ export async function leaveCallChannel(context, { unsubscribe = true } = {}) {
     } catch (_) {}
   }
 }
+
+export function discardCallChannelForRecovery(context) {
+  if (!context || context.closed) return false;
+  context.closed = true;
+  context.joined = false;
+  context.lastPresencePayload = null;
+  context.presenceMembers = [];
+  context.presenceSynced = false;
+  context.lastPresenceSyncAt = 0;
+  context.subscribed = false;
+  context.subscribePromise = null;
+  channelRegistry.delete(context.channelName);
+  if (!context.serverMediated) {
+    try { void Promise.resolve(context.channel?.unsubscribe?.()).catch(() => {}); } catch (_) {}
+    try { void Promise.resolve(context.supabaseClient?.removeChannel?.(context.channel)).catch(() => {}); } catch (_) {}
+  }
+  return true;
+}
