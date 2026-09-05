@@ -13,7 +13,7 @@ import {
   WindowsDownloadOption,
 } from "../components/site-chrome";
 import { ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER } from "../lib/altara-download-platform";
-import { ALTARA_SITE_LINUX_INSTALLERS_MARKER } from "../lib/altara-linux-release";
+import { ALTARA_SITE_LINUX_INSTALLERS_MARKER, fetchLatestLinuxRelease, fetchLatestWindowsRelease } from "../lib/altara-linux-release";
 
 export const metadata: Metadata = {
   title: "Desktop downloads",
@@ -49,7 +49,11 @@ function firstValue(value: string | string[] | undefined) {
 }
 
 export default async function DownloadsPage({ searchParams }: DownloadsPageProps) {
-  const params = await searchParams;
+  const [params, windowsRelease, linuxRelease] = await Promise.all([
+    searchParams,
+    fetchLatestWindowsRelease().catch(() => null),
+    fetchLatestLinuxRelease().catch(() => null),
+  ]);
   const platform = firstValue(params.platform);
   const status = firstValue(params.status);
   const notice =
@@ -76,7 +80,7 @@ export default async function DownloadsPage({ searchParams }: DownloadsPageProps
               <span className="gradient-text">want to hang out.</span>
             </h1>
             <p>
-              ALTARA 0.1.127 is available for manual installation on Windows and Linux x64. Linux offers AppImage,
+              Download the latest stable ALTARA release for Windows and Linux x64. Linux offers AppImage,
               DEB, and a portable fallback; browser access is open too, and macOS
               is planned next.
             </p>
@@ -94,8 +98,8 @@ export default async function DownloadsPage({ searchParams }: DownloadsPageProps
 
             <article className="linux-help-card download-chooser-panel">
               <div className="cta-platforms download-chooser-platforms">
-                <WindowsDownloadOption />
-                <LinuxDownloadOption />
+                <WindowsDownloadOption version={windowsRelease?.version} />
+                <LinuxDownloadOption version={linuxRelease?.version} />
                 <BrowserDownloadOption />
                 <MacDownloadOption />
               </div>

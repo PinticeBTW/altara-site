@@ -352,9 +352,9 @@ test("smart and explicit routes share resolvers without redirect loops", async (
     source("app/api/download/windows/route.ts"),
     source("app/api/download/linux/route.ts"),
   ]);
-  assert.match(smartRoute, /createManualWindowsArtifactRedirectResponse/);
-  assert.match(smartRoute, /createManualLinuxArtifactRedirectResponse\("debian"\)/);
-  assert.match(smartRoute, /createManualLinuxArtifactRedirectResponse\("application"\)/);
+  assert.match(smartRoute, /createWindowsArtifactRedirectResponse/);
+  assert.match(smartRoute, /createLinuxArtifactRedirectResponse\("debian"\)/);
+  assert.match(smartRoute, /createLinuxArtifactRedirectResponse\("application"\)/);
   assert.match(smartRoute, /request\.headers/);
   assert.doesNotMatch(smartRoute, /searchParams|request\.url/);
   assert.doesNotMatch(windowsRoute, /["']\/download["']/);
@@ -386,11 +386,11 @@ test("Linux is active and its truthful preview copy remains visible", async () =
   ]);
   const combined = `${chrome}\n${home}\n${chooser}`;
   const linuxOption = chrome.match(
-    /export function LinuxDownloadOption\(\)[\s\S]*?(?=export function WindowsDownloadOption)/,
+    /export function LinuxDownloadOption\([^]*?\) \{[\s\S]*?(?=export function WindowsDownloadOption)/,
   )?.[0];
   assert.ok(linuxOption);
   assert.match(combined, /Download for Linux/);
-  assert.match(combined, /0\.1\.127 · Linux x64 · Manual installation/);
+  assert.match(combined, /Latest stable · /);
   assert.match(combined, /portable tar\.gz fallback/i);
   assert.doesNotMatch(linuxOption, /platform-btn-disabled/);
 });

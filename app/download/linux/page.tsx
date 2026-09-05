@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import {
   ALTARA_GITHUB_RELEASES_URL,
+  fetchLatestLinuxRelease,
   ALTARA_SITE_LINUX_DOWNLOAD_MARKER,
   ALTARA_SITE_LINUX_INSTALLERS_MARKER,
 } from "../../lib/altara-linux-release";
@@ -34,9 +35,9 @@ const statusMessages: Record<string, string> = {
   "debian-unavailable":
     "The DEB and same-release portable fallback could not be resolved right now.",
   "appimage-unavailable":
-    "The matching AppImage is not available in the selected manual release. Check another format or the release page.",
+    "The matching AppImage is not available in the latest stable release. Check another format or the release page.",
   "deb-unavailable":
-    "The matching DEB is not available in the selected manual release. Check another format or the release page.",
+    "The matching DEB is not available in the latest stable release. Check another format or the release page.",
   "portable-unavailable":
     "The matching portable archive could not be resolved right now.",
   "readme-unavailable":
@@ -50,7 +51,10 @@ function firstValue(value: string | string[] | undefined) {
 }
 
 export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps) {
-  const status = firstValue((await searchParams).status);
+  const [params, release] = await Promise.all([
+    searchParams, fetchLatestLinuxRelease().catch(() => null),
+  ]);
+  const status = firstValue(params.status);
   const statusMessage = status ? statusMessages[status] : undefined;
 
   return (
@@ -65,7 +69,7 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
           <div className="blob blob-2" />
           <div className="container">
             <span className="eyebrow">
-              <span className="dot" /> Linux x64 · 0.1.127 · Manual installation
+              <span className="dot" /> Linux x64 · {release?.version ?? "Latest stable release"}
             </span>
             <h1>
               Choose the Linux package
@@ -81,14 +85,14 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
               <a
                 href={LINUX_DEB_DOWNLOAD_URL}
                 className="btn btn-primary"
-                aria-label="Download ALTARA 0.1.127 DEB for Linux amd64"
+                aria-label={`Download ALTARA${release ? ` ${release.version}` : ""} DEB for Linux amd64`}
               >
                 Install for Ubuntu / Debian
               </a>
               <a
                 href={LINUX_APPIMAGE_DOWNLOAD_URL}
                 className="btn btn-secondary"
-                aria-label="Download ALTARA 0.1.127 AppImage for Linux x64"
+                aria-label={`Download ALTARA${release ? ` ${release.version}` : ""} AppImage for Linux x64`}
               >
                 Download AppImage
               </a>
@@ -126,9 +130,8 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
                   <code>{"sudo apt install ./<filename>.deb"}</code>
                 </pre>
                 <p className="linux-help-note">
-                  Install 0.1.127 manually through the normal system authorization
-                  and package-manager flow. This release does not enable
-                  automatic updates. It is not a silent update.
+                  Install the DEB through the normal system authorization
+                  and package-manager flow. It is not a silent update.
                 </p>
                 <a href={LINUX_DEB_DOWNLOAD_URL} className="btn btn-primary">
                   Download DEB
@@ -151,8 +154,8 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
 ./<filename>.AppImage`}</code>
                 </pre>
                 <p className="linux-help-note">
-                  Install this 0.1.127 AppImage manually. Automatic updates are
-                  not enabled by this download. Desktop menu integration is not claimed
+                  Make the AppImage executable before its first launch.
+                  Desktop menu integration is not claimed
                   or installed automatically.
                 </p>
                 <a href={LINUX_APPIMAGE_DOWNLOAD_URL} className="btn btn-secondary">
@@ -223,7 +226,7 @@ sudo apt install -y libnss3 libnspr4 libasound2`}</code>
                 <p>
                   These packages are unsigned. Checksums verify file integrity, not publisher identity. Full instructions are included in{" "}
                   <code>{"README-LINUX-<version>.txt"}</code>. The README and
-                  checksum links resolve from the same explicitly selected 0.1.127 manual release as
+                  checksum links resolve from the same latest stable release as
                   the application packages.
                 </p>
                 <div className="linux-file-links">

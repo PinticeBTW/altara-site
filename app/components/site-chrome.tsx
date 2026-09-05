@@ -36,7 +36,7 @@ function Brand() {
   );
 }
 
-export function LinuxDownloadOption() {
+export function LinuxDownloadOption({ version }: { version?: string } = {}) {
   return (
     <a
       href={LINUX_DOWNLOAD_URL}
@@ -59,18 +59,18 @@ export function LinuxDownloadOption() {
       </span>
       <span className="platform-copy">
         <span className="platform-name">Download for Linux</span>
-        <span className="platform-detail">0.1.127 · Linux x64 · Manual installation</span>
+        <span className="platform-detail">{version ? `${version} · ` : "Latest stable · "}Linux x64</span>
       </span>
     </a>
   );
 }
 
-export function WindowsDownloadOption() {
+export function WindowsDownloadOption({ version }: { version?: string } = {}) {
   return (
     <a
       href={WINDOWS_DOWNLOAD_URL}
       className="platform-btn"
-      aria-label="Download ALTARA 0.1.127 for Windows — manual installation"
+      aria-label={`Download ALTARA${version ? ` ${version}` : ""} for Windows`}
     >
       <span className="platform-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="currentColor">
@@ -79,7 +79,7 @@ export function WindowsDownloadOption() {
       </span>
       <span className="platform-copy">
         <span className="platform-name">Download for Windows</span>
-        <span className="platform-detail">0.1.127 · Manual installation</span>
+        <span className="platform-detail">{version ?? "Latest stable release"}</span>
       </span>
     </a>
   );
@@ -253,7 +253,7 @@ export function SiteFooter() {
         <div className="footer-wordmark">ALTARA</div>
         <div className="footer-bottom">
           <span>&copy; 2026 ALTARA. Made by friends, for friends.</span>
-          <span>v0.1.127 &middot; pintice</span>
+          <span>ALTARA &middot; pintice</span>
         </div>
       </div>
     </footer>

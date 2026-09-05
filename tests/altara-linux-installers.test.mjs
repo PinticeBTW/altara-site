@@ -280,10 +280,10 @@ test("explicit route sources cannot loop through the smart /download route", asy
       "app/api/download/linux/portable/route.ts",
     ].map(source),
   );
-  assert.match(routeSources[0], /createManualLinuxArtifactRedirectResponse\("application"\)/);
-  assert.match(routeSources[1], /createManualLinuxArtifactRedirectResponse\("appimage"\)/);
-  assert.match(routeSources[2], /createManualLinuxArtifactRedirectResponse\("deb"\)/);
-  assert.match(routeSources[3], /createManualLinuxArtifactRedirectResponse\("portable"\)/);
+  assert.match(routeSources[0], /createLinuxArtifactRedirectResponse\("application"\)/);
+  assert.match(routeSources[1], /createLinuxArtifactRedirectResponse\("appimage"\)/);
+  assert.match(routeSources[2], /createLinuxArtifactRedirectResponse\("deb"\)/);
+  assert.match(routeSources[3], /createLinuxArtifactRedirectResponse\("portable"\)/);
   for (const route of routeSources) {
     assert.doesNotMatch(route, /["']\/download["']/);
     assert.match(route, /export const revalidate = 0/);
