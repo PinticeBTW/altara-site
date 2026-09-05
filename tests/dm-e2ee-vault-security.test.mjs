@@ -196,7 +196,8 @@ test("production app shell owns the exact hardened Vault module and recovery-fir
   const moduleSource = (await readFile(path.join(repositoryRoot, "public", "app", "lib", "dmE2ee.js"), "utf8")).replace(/\r\n/g, "\n");
   assert.equal(
     createHash("sha256").update(moduleSource).digest("hex"),
-    "adb26deb110453df5d00391bf24c26d486f7d26752f30ae2f89511bad16dcf63",
+    // Frozen approved 0.1.127 Windows/Linux/web shared source.
+    "bdf4ded477300cb201dbbd7d2eb970576dda1a30fc4737645e96ef92ed15d14a",
   );
   const indexSource = await readFile(path.join(repositoryRoot, "public", "app", "index.html"), "utf8");
   assert.match(indexSource, /<script\s+type="module"\s+src="\/app\/app\.js[^"]*"><\/script>/);

@@ -219,7 +219,6 @@ function bindSpotifyProgressVisibilityListener() {
   visibilityListenerBound = true;
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") sharedSpotifyProgressTicker.stop();
-    else sharedSpotifyProgressTicker.sync();
   });
 }
 

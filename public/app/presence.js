@@ -92,7 +92,9 @@ export function createPresenceSystem({
 
   function isPresenceLiveDebugEnabled() {
     try {
-      return globalThis.localStorage?.getItem?.("altara.debug.presence") === "1";
+      if (globalThis.__ALTARA_VERBOSE_TRACE__ === true) return true;
+      const raw = String(globalThis.localStorage?.getItem?.("altara.debug.verboseTrace") || "").trim().toLowerCase();
+      return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
     } catch (_) {
       return false;
     }

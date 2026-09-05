@@ -76,7 +76,7 @@ export default async function DownloadsPage({ searchParams }: DownloadsPageProps
               <span className="gradient-text">want to hang out.</span>
             </h1>
             <p>
-              ALTARA is available for Windows and Linux x64. Linux offers AppImage,
+              ALTARA 0.1.127 is available for manual installation on Windows and Linux x64. Linux offers AppImage,
               DEB, and a portable fallback; browser access is open too, and macOS
               is planned next.
             </p>

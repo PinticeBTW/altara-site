@@ -382,7 +382,7 @@ export async function requireAuth(redirectUrl, options = {}) {
 export async function getMyProfile(uid) {
   const id = String(uid || "").trim();
   if (!id) return {};
-  let optionalColumns = [];
+  let optionalColumns = [...PROFILE_OPTIONAL_SELECT_COLUMNS];
   let lastError = null;
 
   for (let i = 0; i < 4; i += 1) {

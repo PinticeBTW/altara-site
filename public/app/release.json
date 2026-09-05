@@ -1,0 +1,15 @@
+{
+  "version": "0.1.127",
+  "distribution": "manual-desktop-and-web",
+  "sharedSourceSha256": {
+    "app.js": "6c4060f3fd0e1694c09ce7086766c7b863bf78e05bfadff5943c8d5233ca7467",
+    "callManager.js": "e8d85b4f1909c053113833f3dc48f809ba1bee58574f5be5c7dd9eb96aadd7dc",
+    "callShared.js": "98d3098eae6e19e1b6db94588c55d619d87fc9cf2f808dd93258dbaebf7340da",
+    "lib/serverVoiceLiveKit.js": "3d8efe6751800cfc7682fe88700b5aedc702bd7b9e35d4137b2e56d8dba9d49a",
+    "lib/serverVoiceLocalExitFence.js": "e44968770b2494146e22acfcc0f412384cadccc6378d6d14ad434b31987a0395",
+    "lib/serverVoiceMediaState.js": "d1847e9584d4516377b6e8314362c77b074a81ae5bd2d68b95d7a13b6d3775d1",
+    "lib/serverVoiceStagePresence.js": "5dcbe050b28912df1179e218222011bb9614ee307b120655dc4ab4a9a551b74b",
+    "lib/altaraSfx.js": "79bfc2a136f189107d919c834198110fb9bfc7e6d71a38231f70fd8c5f8b9472",
+    "lib/dmE2ee.js": "bdf4ded477300cb201dbbd7d2eb970576dda1a30fc4737645e96ef92ed15d14a"
+  }
+}

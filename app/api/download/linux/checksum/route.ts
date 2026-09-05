@@ -1,7 +1,7 @@
-import { createLinuxArtifactRedirectResponse } from "../../../../lib/altara-linux-release";
+import { createManualLinuxArtifactRedirectResponse } from "../../../../lib/altara-linux-release";
 
 export const revalidate = 0;
 
 export async function GET() {
-  return createLinuxArtifactRedirectResponse("checksum");
+  return createManualLinuxArtifactRedirectResponse("checksum");
 }

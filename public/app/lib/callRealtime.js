@@ -1,7 +1,7 @@
 import { supabase } from "../supabaseClient.js";
 
 const SIGNAL_EVENT = "signal";
-const SUBSCRIBE_TIMEOUT_MS = 10000;
+const TERMINAL_SUBSCRIBE_STATUSES = new Set(["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"]);
 const VALID_SIGNAL_TYPES = new Set([
   "offer",
   "answer",
@@ -95,6 +95,17 @@ function readPresenceMembers(channel) {
   return members;
 }
 
+function applyPresenceSnapshot(context, { notify = true } = {}) {
+  if (!context || context.closed) return [];
+  context.presenceMembers = context.serverMediated ? [] : readPresenceMembers(context.channel);
+  context.presenceSynced = true;
+  context.lastPresenceSyncAt = Date.now();
+  if (notify) {
+    invokeCallback(context.onPresenceSync, context.presenceMembers.slice(), context);
+  }
+  return context.presenceMembers.slice();
+}
+
 function invokeCallback(callback, ...args) {
   if (typeof callback !== "function") return;
   try {
@@ -102,6 +113,52 @@ function invokeCallback(callback, ...args) {
   } catch (error) {
     console.error("callRealtime callback failed", error);
   }
+}
+
+function createSubscriptionError(status = "CHANNEL_ERROR", category = "subscribe_failed") {
+  const normalizedStatus = String(status || "CHANNEL_ERROR").trim().toUpperCase() || "CHANNEL_ERROR";
+  const error = new Error(`callRealtime: subscribe failed (${normalizedStatus})`);
+  error.name = "CallRealtimeSubscriptionError";
+  error.code = category;
+  error.status = normalizedStatus;
+  return error;
+}
+
+function cleanupNativeChannel(context) {
+  if (!context || context.serverMediated) return;
+  try { void Promise.resolve(context.channel?.unsubscribe?.()).catch(() => {}); } catch (_) {}
+  try { void Promise.resolve(context.supabaseClient?.removeChannel?.(context.channel)).catch(() => {}); } catch (_) {}
+}
+
+function retireCallChannel(context, {
+  error = null,
+  cleanupNative = true,
+  failureCategory = null,
+} = {}) {
+  if (!context) return false;
+  const wasClosed = context.closed === true;
+  const pendingReject = context.subscribeReject;
+  context.closed = true;
+  context.joined = false;
+  context.lastPresencePayload = null;
+  context.presenceMembers = [];
+  context.presenceSynced = false;
+  context.lastPresenceSyncAt = 0;
+  context.subscribed = false;
+  context.subscribePromise = null;
+  context.subscribeResolve = null;
+  context.subscribeReject = null;
+  context.subscriptionGeneration += 1;
+  context.cleanupCompleted = true;
+  if (failureCategory) context.lastFailureCategory = failureCategory;
+  if (channelRegistry.get(context.channelName) === context) {
+    channelRegistry.delete(context.channelName);
+  }
+  if (typeof pendingReject === "function") {
+    pendingReject(error || createSubscriptionError("CLOSED", "subscribe_cancelled"));
+  }
+  if (cleanupNative) cleanupNativeChannel(context);
+  return !wasClosed;
 }
 
 function getTargetUserId(signal) {
@@ -170,42 +227,71 @@ async function waitForSubscription(context) {
     context.subscribed = true;
     return context;
   }
+  if (context.subscribed && context.status === "SUBSCRIBED") {
+    const barrierRecord = context.channel?.__altaraStartupBarrierRecord || null;
+    const barrierStatus = String(barrierRecord?.subscribeStatus || "").trim().toUpperCase();
+    if (!barrierRecord?.cancelled && !TERMINAL_SUBSCRIBE_STATUSES.has(barrierStatus)) return context;
+    const error = createSubscriptionError(barrierStatus || "CLOSED", "stale_subscription");
+    retireCallChannel(context, {
+      error,
+      cleanupNative: true,
+      failureCategory: "stale_subscription",
+    });
+    throw error;
+  }
   if (context.subscribePromise) return context.subscribePromise;
 
-  context.subscribePromise = new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error(`callRealtime: subscribe timeout for ${context.channelName}`));
-    }, SUBSCRIBE_TIMEOUT_MS);
-
+  const subscriptionGeneration = context.subscriptionGeneration + 1;
+  context.subscriptionGeneration = subscriptionGeneration;
+  context.subscribeAttempt += 1;
+  context.lastSubscribeRequestedAt = Date.now();
+  context.lastSubscribeStatus = "REQUESTED";
+  context.cleanupCompleted = false;
+  const currentPromise = new Promise((resolve, reject) => {
+    context.subscribeResolve = resolve;
+    context.subscribeReject = reject;
     context.channel.subscribe((status) => {
+      if (context.closed) return;
+      const normalizedStatus = String(status || "").trim().toUpperCase() || "UNKNOWN";
       context.status = status;
+      context.lastSubscribeStatus = normalizedStatus;
+      context.lastSubscribeStatusAt = Date.now();
       invokeCallback(context.onStatus, status, context);
 
-      if (settled) return;
-      if (status === "SUBSCRIBED") {
-        settled = true;
-        clearTimeout(timer);
-        resolve(context);
+      if (subscriptionGeneration !== context.subscriptionGeneration) return;
+      if (normalizedStatus === "SUBSCRIBED") {
+        context.subscribed = true;
+        context.lastFailureCategory = null;
+        const settle = context.subscribeResolve;
+        context.subscribePromise = null;
+        context.subscribeResolve = null;
+        context.subscribeReject = null;
+        if (typeof settle === "function") settle(context);
         return;
       }
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        settled = true;
-        clearTimeout(timer);
-        reject(new Error(`callRealtime: subscribe failed (${status}) for ${context.channelName}`));
+      if (TERMINAL_SUBSCRIBE_STATUSES.has(normalizedStatus)) {
+        const category = normalizedStatus === "TIMED_OUT" ? "subscribe_timeout" : "subscribe_failed";
+        retireCallChannel(context, {
+          error: createSubscriptionError(normalizedStatus, category),
+          cleanupNative: true,
+          failureCategory: category,
+        });
       }
     });
   });
+  context.subscribePromise = currentPromise;
 
   try {
-    await context.subscribePromise;
-    context.subscribed = true;
+    await currentPromise;
     return context;
   } catch (error) {
-    context.subscribePromise = null;
-    context.subscribed = false;
+    if (!context.closed && subscriptionGeneration === context.subscriptionGeneration) {
+      retireCallChannel(context, {
+        error,
+        cleanupNative: true,
+        failureCategory: String(error?.code || "subscribe_failed"),
+      });
+    }
     throw error;
   }
 }
@@ -242,7 +328,12 @@ export async function createCallChannel({
     existing.onStatus = onStatus;
     existing.onError = onError;
     existing.serverMediatedSend = serverMediatedSend;
-    return waitForSubscription(existing);
+    const ready = await waitForSubscription(existing);
+    // Replaying the full snapshot matters when an observer attaches to an
+    // already-subscribed channel after private-call grace discovery. Presence
+    // observation must not require this client to call track().
+    applyPresenceSnapshot(ready);
+    return ready;
   }
 
   const channel = serverMediated
@@ -250,7 +341,10 @@ export async function createCallChannel({
     : supabaseClient.channel(channelName, {
         config: {
           private: privateChannel === true,
-          broadcast: { self: false, ack: false },
+          // Shutdown waits on the graceful-leave send before retiring this
+          // channel. Server acknowledgement makes that wait meaningful and
+          // prevents a fire-and-forget X-close signal from being discarded.
+          broadcast: { self: false, ack: true },
           presence: { key: userId },
         },
       });
@@ -277,6 +371,15 @@ export async function createCallChannel({
     status: "INITIAL",
     subscribed: false,
     subscribePromise: null,
+    subscribeResolve: null,
+    subscribeReject: null,
+    subscribeAttempt: 0,
+    subscriptionGeneration: 0,
+    lastSubscribeRequestedAt: null,
+    lastSubscribeStatusAt: null,
+    lastSubscribeStatus: "INITIAL",
+    lastFailureCategory: null,
+    cleanupCompleted: false,
     joined: false,
     closed: false,
     supabaseClient,
@@ -285,7 +388,52 @@ export async function createCallChannel({
   if (!serverMediated) bindChannelHandlers(context);
   channelRegistry.set(channelName, context);
   if (serverMediated) invokeCallback(context.onStatus, "SUBSCRIBED", context);
-  return waitForSubscription(context);
+  const ready = await waitForSubscription(context);
+  // Supabase also emits an initial `sync`; this immediate read closes the
+  // subscribe/render race and the later authoritative sync still reconciles
+  // any state that arrived after SUBSCRIBED.
+  applyPresenceSnapshot(ready);
+  return ready;
+}
+
+export async function ensureCallChannelReady(context) {
+  if (!context || context.closed) throw new Error("callRealtime: invalid channel context");
+  const ready = await waitForSubscription(context);
+  applyPresenceSnapshot(ready);
+  return ready;
+}
+
+export function replayCallChannelPresence(context) {
+  return applyPresenceSnapshot(context);
+}
+
+export function getCallChannelDiagnostics(context) {
+  if (!context) return null;
+  const barrierRecord = context.channel?.__altaraStartupBarrierRecord || null;
+  const nativeState = String(
+    barrierRecord?.subscribeStatus
+    || context.channel?.state
+    || context.lastSubscribeStatus
+    || context.status
+    || "UNKNOWN"
+  ).trim().toUpperCase() || "UNKNOWN";
+  return {
+    signallingTopicFamily: context.conversationType === "dm" ? "private_dm" : "group_call",
+    desiredSubscription: barrierRecord
+      ? barrierRecord.cancelled !== true && barrierRecord.descriptor?.desired !== false
+      : !context.closed,
+    nativeSubscriptionState: nativeState,
+    lastSubscribeStartedAt: Number(barrierRecord?.startedAt || context.lastSubscribeRequestedAt || 0) || null,
+    lastSubscribeStatus: String(context.lastSubscribeStatus || context.status || "UNKNOWN").trim().toUpperCase(),
+    subscribeAttempt: Number(context.subscribeAttempt || 0),
+    subscriptionGeneration: Number(barrierRecord?.descriptor?.generation || context.subscriptionGeneration || 0),
+    retryScheduled: !!(
+      barrierRecord?.descriptor?.retryTimer
+      || (Number(barrierRecord?.notBeforeAt || 0) > Date.now())
+    ),
+    lastFailureCategory: context.lastFailureCategory || null,
+    cleanupCompleted: context.cleanupCompleted === true,
+  };
 }
 
 export async function joinCallChannel(context, presenceMeta = {}) {
@@ -343,38 +491,21 @@ export async function leaveCallChannel(context, { unsubscribe = true } = {}) {
 
   if (!unsubscribe) return;
 
-  context.closed = true;
-  context.presenceMembers = [];
-  context.presenceSynced = false;
-  context.lastPresenceSyncAt = 0;
-  context.subscribed = false;
-  context.subscribePromise = null;
-  channelRegistry.delete(context.channelName);
+  retireCallChannel(context, {
+    error: createSubscriptionError("CLOSED", "subscribe_cancelled"),
+    cleanupNative: false,
+  });
 
   if (!context.serverMediated) {
-    try {
-      await context.channel.unsubscribe();
-    } catch (_) {}
-    try {
-      context.supabaseClient.removeChannel(context.channel);
-    } catch (_) {}
+    try { await context.channel.unsubscribe(); } catch (_) {}
+    try { context.supabaseClient.removeChannel(context.channel); } catch (_) {}
   }
 }
 
 export function discardCallChannelForRecovery(context) {
   if (!context || context.closed) return false;
-  context.closed = true;
-  context.joined = false;
-  context.lastPresencePayload = null;
-  context.presenceMembers = [];
-  context.presenceSynced = false;
-  context.lastPresenceSyncAt = 0;
-  context.subscribed = false;
-  context.subscribePromise = null;
-  channelRegistry.delete(context.channelName);
-  if (!context.serverMediated) {
-    try { void Promise.resolve(context.channel?.unsubscribe?.()).catch(() => {}); } catch (_) {}
-    try { void Promise.resolve(context.supabaseClient?.removeChannel?.(context.channel)).catch(() => {}); } catch (_) {}
-  }
-  return true;
+  return retireCallChannel(context, {
+    error: createSubscriptionError("CLOSED", "subscribe_cancelled"),
+    cleanupNative: true,
+  });
 }

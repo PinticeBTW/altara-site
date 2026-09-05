@@ -1289,6 +1289,19 @@ export function createServerVoiceCameraLayer({
     localCaptureStream = stream;
     localCaptureTrack = track;
     localCaptureTrackSid = "";
+    const capturedDeviceId = normalizeId(track.getSettings?.()?.deviceId || "");
+    if (
+      resolvedPreferredDeviceId
+      && capturedDeviceId
+      && capturedDeviceId !== resolvedPreferredDeviceId
+    ) {
+      emit("camera.preferred_device_fallback", {
+        triggerReason: normalizedTriggerReason,
+        callerFunction: "startCamera",
+        selectedAttempt: captureAttemptLabel || "fallback_device",
+        recoveryAttempted: true,
+      });
+    }
     emit("camera.local_capture_started", {
       triggerReason: normalizedTriggerReason,
       callerFunction: "startCamera",
@@ -1311,6 +1324,12 @@ export function createServerVoiceCameraLayer({
     }
 
     localTrackEndedHandler = () => {
+      emit("camera.local_track_ended", {
+        triggerReason: "local_track_ended",
+        callerFunction: "localTrackEndedHandler",
+        trackId: normalizeId(localCaptureTrack?.id || "") || null,
+        trackSid: normalizeId(localCaptureTrackSid || "") || null,
+      });
       void stopCamera({
         triggerReason: "local_track_ended",
         callerFunction: "localTrackEndedHandler",

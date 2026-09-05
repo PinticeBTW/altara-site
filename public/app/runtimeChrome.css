@@ -1,0 +1,60 @@
+/* Runtime UI baseline: explicit Electron hit-testing and shared window chrome. */
+.authInstallWelcomeOverlay,
+.authInstallWelcomeOverlay__card,
+.authInstallWelcomeOverlay__cta,
+.desktopInstallWelcomeOverlay,
+.desktopInstallWelcomeOverlay__card,
+.desktopInstallWelcomeOverlay__cta {
+  -webkit-app-region: no-drag !important;
+}
+
+.authInstallWelcomeOverlay__grain {
+  pointer-events: none !important;
+}
+
+.authInstallWelcomeOverlay__card,
+.authInstallWelcomeOverlay__cta,
+.desktopInstallWelcomeOverlay__card,
+.desktopInstallWelcomeOverlay__cta {
+  pointer-events: auto !important;
+}
+
+body.desktop-native-titlebar-overlay .desktopWindowControls {
+  z-index: 2147483000;
+  pointer-events: auto;
+  -webkit-app-region: no-drag !important;
+}
+
+body.desktop-native-titlebar-overlay .desktopWindowControls,
+body.desktop-native-titlebar-overlay .desktopWindowControls * {
+  -webkit-app-region: no-drag !important;
+}
+
+body.authPage.desktop-native-titlebar-overlay .desktopWindowControls--auth {
+  display: inline-flex;
+}
+
+body.authPage.desktop-native-titlebar-overlay .desktopWindowControls--auth.hidden {
+  display: none !important;
+}
+
+body.authPage.desktop-native-titlebar-overlay .authDesktopDragRegion {
+  right: 114px;
+}
+
+body.authPage.desktop-native-titlebar-overlay .authLangDock {
+  right: 124px;
+}
+
+/* Keep the native drag strip out of the persistent server rail without moving
+   the rail or disabling window dragging over the rest of the titlebar. */
+body:not(.authPage).desktop-native-titlebar-overlay .desktopTitlebarDragRegion {
+  left: var(--left-rail-column-width, 82px);
+}
+
+body:not(.authPage).desktop-native-titlebar-overlay :is(
+  .leftDockGroups,
+  .leftDockGroups *
+) {
+  -webkit-app-region: no-drag !important;
+}

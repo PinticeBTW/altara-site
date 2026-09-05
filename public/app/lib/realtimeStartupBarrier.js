@@ -44,13 +44,14 @@ export function classifyRealtimeStartupTopic(topic = "", { privateChannel = true
   if (!privateChannel) return "public";
   if (normalizedTopic === PRESENCE_TOPIC) return "presence";
   if (
-    /^altara:user:[^:]+:(?:gdm-events|server-role-invalidation)$/i.test(normalizedTopic)
+    /^altara:user:[^:]+:(?:gdm-events|server-role-invalidation|call-events)$/i.test(normalizedTopic)
     || /^server-membership-events:/i.test(normalizedTopic)
     || /^user-membership:/i.test(normalizedTopic)
     || /^global-dm-privacy-events:/i.test(normalizedTopic)
     || /^dm-privacy:/i.test(normalizedTopic)
     || /^server-voice-moderation-states:/i.test(normalizedTopic)
     || /^server_voice_v2:/i.test(normalizedTopic)
+    || /^call:dm_/i.test(normalizedTopic)
   ) return "critical";
   return "optional";
 }
@@ -64,7 +65,7 @@ export function classifyRealtimeTopicFamily(topic = "") {
   if (/^server-profile:/i.test(value)) return "serverProfile";
   if (
     /^(?:user-membership|server-membership-events):/i.test(value)
-    || /^altara:user:[^:]+:(?:gdm-events|server-role-invalidation)$/i.test(value)
+    || /^altara:user:[^:]+:(?:gdm-events|server-role-invalidation|call-events)$/i.test(value)
   ) return "security";
   if (/^(?:dm:|dm-reaction-events:|dm-privacy:)/i.test(value)) return "conversation";
   if (/^(?:active-server-|server-invites-settings:|server-voice-|server_voice_)/i.test(value)) return "serverContext";
@@ -456,6 +457,16 @@ export function createRealtimeStartupBarrier({
       return;
     }
     if (!TERMINAL_SUBSCRIBE_STATUSES.has(normalizedStatus)) return;
+    if (record.cancelled === true || record.intentionalClose === true) {
+      // An application/context teardown is not a failed authorization attempt.
+      // Keeping it in the retry ledger can delay a same-topic reopen and can
+      // push an optional active-DM topic into the session cooldown.
+      if (record.preserveDesiredOnCancel !== true) {
+        topicRetryState.delete(record.topic);
+        failedTopics.delete(record.topic);
+      }
+      return;
+    }
     if (record.retryFailureNoted === true) return;
     record.retryFailureNoted = true;
     const previous = topicRetryState.get(record.topic) || { attempt: 0, nextAllowedAt: 0 };
@@ -503,9 +514,12 @@ export function createRealtimeStartupBarrier({
     }
     if (normalizedStatus !== "CLOSED") {
       const expectedDescriptor = desiredSubscriptions.get(record.topic);
+      // Mark this before the feature callback runs. Some controllers retire
+      // their channel synchronously from CHANNEL_ERROR/TIMED_OUT; that removal
+      // must preserve the failure/backoff just recorded here.
+      record.preserveDesiredOnCancel = true;
       const detach = () => {
         if (desiredSubscriptions.get(record.topic) !== expectedDescriptor || expectedDescriptor?.record !== record) return;
-        record.preserveDesiredOnCancel = true;
         try {
           if (installedClient && typeof installedClient.removeChannel === "function") {
             void Promise.resolve(installedClient.removeChannel(expectedDescriptor.channel)).catch(() => {});
@@ -604,6 +618,16 @@ export function createRealtimeStartupBarrier({
         }
         if (error) {
           record.errorCode = String(error?.code || error?.message || error || "channel_error").slice(0, 120);
+        }
+        const currentDescriptor = desiredSubscriptions.get(record.topic);
+        const ownsCurrentDescriptor = currentDescriptor === descriptor && descriptor.record === record;
+        if (!ownsCurrentDescriptor) {
+          // A late status from a retired/superseded channel may be useful to
+          // its feature callback, but it must never mutate the replacement's
+          // desired state, generation, or retry/cooldown ledger.
+          releaseAuthorizationSlot(record);
+          if (typeof callback === "function") callback(nextStatus, error);
+          return;
         }
         descriptor.state = record.subscribeStatus.toLowerCase();
         descriptor.lastStatus = record.subscribeStatus;
@@ -1024,6 +1048,30 @@ export function createRealtimeStartupBarrier({
     return removed;
   }
 
+  function retireDesiredTopic(topicInput = "") {
+    const topic = normalizeTopic(topicInput);
+    if (!topic || topic === PRESENCE_TOPIC) return false;
+    const descriptor = desiredSubscriptions.get(topic) || null;
+    const record = descriptor?.record || null;
+    if (record) {
+      record.preserveDesiredOnCancel = false;
+      record.intentionalClose = true;
+      record.cancelled = true;
+      record.waiting = false;
+      if (!record.startedAt) record.subscribeStatus = "CANCELLED";
+      removeQueuedRecord(record);
+      releaseAuthorizationSlot(record);
+    }
+    if (descriptor) {
+      descriptor.desired = false;
+      descriptor.state = "cancelled";
+      desiredSubscriptions.delete(topic);
+    }
+    topicRetryState.delete(topic);
+    failedTopics.delete(topic);
+    return !!(descriptor || record);
+  }
+
   return Object.freeze({
     install,
     activate,
@@ -1031,6 +1079,7 @@ export function createRealtimeStartupBarrier({
     invalidateCurrentGeneration: (nextReason = "presence-unhealthy") => revokeReadiness(PRESENCE_BOOTSTRAP_STATES.DEGRADED, nextReason),
     suspendNonPresenceChannels,
     pruneSuspendedDesiredSubscriptions,
+    retireDesiredTopic,
     markSubscribing,
     markSubscribed,
     markTracking,

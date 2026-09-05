@@ -4,6 +4,7 @@ export const DM_E2EE_MESSAGE_MODE = "dm_e2ee_v1";
 export const DM_E2EE_CONTENT_PLACEHOLDER = "[ALTARA_DM_E2EE_V1]";
 export const DM_E2EE_CIPHER_ALG = "AES-GCM-256";
 export const DM_E2EE_CIPHER_VERSION = 1;
+export const DM_E2EE_DECRYPTED_CONTENT_KIND = "text";
 export const DM_E2EE_BACKUP_VERSION = 1;
 export const DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH = 6;
 export const DM_E2EE_BACKUP_PASSWORD_SOURCE_ACCOUNT_LOGIN = "account_login";
@@ -36,6 +37,9 @@ const RECOVERY_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const RECOVERY_KEY_GROUP_SIZE = 4;
 const RECOVERY_KEY_GROUP_COUNT = 8;
 const encoder = new TextEncoder();
+const fatalUtf8Decoder = new TextDecoder("utf-8", { fatal: true });
+const TRUSTED_DM_E2EE_TEXT_STATE = Symbol("altara.trustedDmE2eeTextState");
+const TRUSTED_DM_E2EE_TEXT_TOKEN = Object.freeze({ type: "dm-e2ee-text-v1" });
 const decoder = new TextDecoder();
 const identityCache = new Map();
 const publicKeyCacheByUserId = new Map();
@@ -1391,15 +1395,64 @@ async function deriveConversationAesKey({
 }
 
 function buildUnavailableRow(row = {}, reason = "unavailable") {
-  return {
+  const unavailable = {
     ...row,
     content: "Vault message unavailable on this device.",
     e2eeState: reason,
   };
+  delete unavailable.e2eeContentKind;
+  return unavailable;
 }
 
 export function isEncryptedDmMessageRow(row = {}) {
   return String(row?.message_mode || "").trim().toLowerCase() === DM_E2EE_MESSAGE_MODE;
+}
+
+function isSupportedDmE2eeV1CipherRow(row = {}, conversationId = "") {
+  const convId = normalizeId(conversationId);
+  const rowConvId = normalizeId(row?.conversation_id || "");
+  return isEncryptedDmMessageRow(row)
+    && (!rowConvId || rowConvId === convId)
+    && String(row?.content || "") === DM_E2EE_CONTENT_PLACEHOLDER
+    && String(row?.cipher_alg || "").trim() === DM_E2EE_CIPHER_ALG
+    && Number(row?.cipher_version || 0) === DM_E2EE_CIPHER_VERSION
+    && !!String(row?.ciphertext || "").trim()
+    && !!String(row?.cipher_iv || "").trim()
+    && !!normalizeId(row?.user_id || "")
+    && !!normalizeId(row?.sender_key_id || "")
+    && !!normalizeId(row?.recipient_key_id || "");
+}
+
+function markTrustedDmE2eeText(row = {}, text = "") {
+  const next = {
+    ...row,
+    content: String(text),
+    e2eeState: "ready",
+    e2eeContentKind: DM_E2EE_DECRYPTED_CONTENT_KIND,
+  };
+  Object.defineProperty(next, TRUSTED_DM_E2EE_TEXT_STATE, {
+    configurable: true,
+    enumerable: true,
+    writable: false,
+    value: Object.freeze({
+      token: TRUSTED_DM_E2EE_TEXT_TOKEN,
+      text: String(text),
+    }),
+  });
+  return next;
+}
+
+export function getTrustedDmE2eeText(row = {}) {
+  if (!isEncryptedDmMessageRow(row)) return null;
+  const state = row?.[TRUSTED_DM_E2EE_TEXT_STATE];
+  if (
+    String(row?.e2eeState || "").trim().toLowerCase() !== "ready"
+    || row?.e2eeContentKind !== DM_E2EE_DECRYPTED_CONTENT_KIND
+    || !state
+    || state.token !== TRUSTED_DM_E2EE_TEXT_TOKEN
+    || typeof state.text !== "string"
+  ) return null;
+  return state.text;
 }
 
 export async function getDmE2eeIdentityState({ userId, force = false } = {}) {
@@ -2406,6 +2459,8 @@ export async function decryptDmMessageRows({
 
   const encryptedRows = inputRows.filter((row) => isEncryptedDmMessageRow(row));
   if (!encryptedRows.length) return inputRows;
+  const encryptedRowsNeedingDecrypt = encryptedRows.filter((row) => getTrustedDmE2eeText(row) === null);
+  if (!encryptedRowsNeedingDecrypt.length) return inputRows;
 
   const localIdentity = await ensureDmE2eeIdentity({ userId: myUserId });
   if (localIdentity?.status !== "ready") {
@@ -2422,7 +2477,8 @@ export async function decryptDmMessageRows({
     ));
   }
 
-  const remoteKeyIds = Array.from(new Set(encryptedRows.map((row) => (
+  const supportedEncryptedRows = encryptedRowsNeedingDecrypt.filter((row) => isSupportedDmE2eeV1CipherRow(row, convId));
+  const remoteKeyIds = Array.from(new Set(supportedEncryptedRows.map((row) => (
     normalizeId(
       normalizeId(row?.user_id || "") === myUserId
         ? row?.recipient_key_id
@@ -2434,6 +2490,8 @@ export async function decryptDmMessageRows({
 
   return Promise.all(inputRows.map(async (row) => {
     if (!isEncryptedDmMessageRow(row)) return row;
+    if (getTrustedDmE2eeText(row) !== null) return row;
+    if (!isSupportedDmE2eeV1CipherRow(row, convId)) return buildUnavailableRow(row, "invalid_schema");
 
     const remoteKeyId = normalizeId(
       normalizeId(row?.user_id || "") === myUserId
@@ -2459,11 +2517,8 @@ export async function decryptDmMessageRows({
         aesKey,
         base64UrlToBytes(row?.ciphertext || "")
       );
-      return {
-        ...row,
-        content: new TextDecoder().decode(plaintextBuffer),
-        e2eeState: "ready",
-      };
+      const plaintext = fatalUtf8Decoder.decode(plaintextBuffer);
+      return markTrustedDmE2eeText(row, plaintext);
     } catch (_) {
       return buildUnavailableRow(row, "decryption_failed");
     }

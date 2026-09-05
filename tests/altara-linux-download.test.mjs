@@ -269,7 +269,7 @@ test("produces a temporary safe redirect for the valid Linux asset", async () =>
 
   const route = await source("app/api/download/linux/route.ts");
   assert.match(route, /export const revalidate = 0/);
-  assert.match(route, /createLinuxArtifactRedirectResponse\("application"\)/);
+  assert.match(route, /createManualLinuxArtifactRedirectResponse\("application"\)/);
 });
 
 test("Linux website buttons target the server-side resolver", async () => {
@@ -292,7 +292,7 @@ test("Linux copy presents AppImage and DEB while keeping tar manual-only", async
   ]);
   const combined = `${chrome}\n${help}`;
   assert.match(combined, /Download for Linux/);
-  assert.match(combined, /Linux x64 Preview · AppImage preferred/);
+  assert.match(combined, /0\.1\.127 · Linux x64 · Manual installation/);
   assert.match(combined, /Install for Ubuntu \/ Debian/);
   assert.match(combined, /Portable fallback · Manual setup · Advanced users/);
   assert.match(combined, /Manual updates are required for the portable tar\.gz/);
@@ -308,7 +308,7 @@ test("the generic CTA stays on /download while Windows has an explicit resolver"
   assert.match(chrome, /DOWNLOAD_URL\s*=\s*"\/download"/);
   assert.match(chrome, /WINDOWS_DOWNLOAD_URL\s*=\s*"\/api\/download\/windows"/);
   assert.match(smartRoute, /createPlatformAwareDownloadResponse/);
-  assert.match(windowsRoute, /createWindowsArtifactRedirectResponse/);
+  assert.match(windowsRoute, /createManualWindowsArtifactRedirectResponse/);
 });
 
 test("/try source behavior remains unchanged across platform line endings", async () => {

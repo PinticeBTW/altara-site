@@ -34,9 +34,9 @@ const statusMessages: Record<string, string> = {
   "debian-unavailable":
     "The DEB and same-release portable fallback could not be resolved right now.",
   "appimage-unavailable":
-    "The matching AppImage is not available in the latest release yet. The portable fallback remains available.",
+    "The matching AppImage is not available in the selected manual release. Check another format or the release page.",
   "deb-unavailable":
-    "The matching DEB is not available in the latest release yet. The portable fallback remains available.",
+    "The matching DEB is not available in the selected manual release. Check another format or the release page.",
   "portable-unavailable":
     "The matching portable archive could not be resolved right now.",
   "readme-unavailable":
@@ -65,7 +65,7 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
           <div className="blob blob-2" />
           <div className="container">
             <span className="eyebrow">
-              <span className="dot" /> Linux x64 Preview
+              <span className="dot" /> Linux x64 · 0.1.127 · Manual installation
             </span>
             <h1>
               Choose the Linux package
@@ -81,14 +81,14 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
               <a
                 href={LINUX_DEB_DOWNLOAD_URL}
                 className="btn btn-primary"
-                aria-label="Download the latest ALTARA DEB for Linux amd64"
+                aria-label="Download ALTARA 0.1.127 DEB for Linux amd64"
               >
                 Install for Ubuntu / Debian
               </a>
               <a
                 href={LINUX_APPIMAGE_DOWNLOAD_URL}
                 className="btn btn-secondary"
-                aria-label="Download the latest ALTARA AppImage for Linux x64"
+                aria-label="Download ALTARA 0.1.127 AppImage for Linux x64"
               >
                 Download AppImage
               </a>
@@ -126,9 +126,9 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
                   <code>{"sudo apt install ./<filename>.deb"}</code>
                 </pre>
                 <p className="linux-help-note">
-                  ALTARA can check and download a newer DEB. Installing it uses
-                  the normal system authorization and package-manager flow; it
-                  is not a silent update.
+                  Install 0.1.127 manually through the normal system authorization
+                  and package-manager flow. This release does not enable
+                  automatic updates. It is not a silent update.
                 </p>
                 <a href={LINUX_DEB_DOWNLOAD_URL} className="btn btn-primary">
                   Download DEB
@@ -151,8 +151,9 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
 ./<filename>.AppImage`}</code>
                 </pre>
                 <p className="linux-help-note">
-                  The packaged AppImage supports ALTARA update checks. Desktop
-                  menu integration is not claimed or installed automatically.
+                  Install this 0.1.127 AppImage manually. Automatic updates are
+                  not enabled by this download. Desktop menu integration is not claimed
+                  or installed automatically.
                 </p>
                 <a href={LINUX_APPIMAGE_DOWNLOAD_URL} className="btn btn-secondary">
                   Download AppImage
@@ -220,9 +221,9 @@ sudo apt install -y libnss3 libnspr4 libasound2`}</code>
                 </span>
                 <h2>Verify the same release.</h2>
                 <p>
-                  Full instructions are included in{" "}
+                  These packages are unsigned. Checksums verify file integrity, not publisher identity. Full instructions are included in{" "}
                   <code>{"README-LINUX-<version>.txt"}</code>. The README and
-                  checksum links resolve from the same latest stable release as
+                  checksum links resolve from the same explicitly selected 0.1.127 manual release as
                   the application packages.
                 </p>
                 <div className="linux-file-links">

@@ -9,6 +9,7 @@ import {
   sendCallSignal as broadcastCallSignal,
   leaveCallChannel as leaveRealtimeCallChannel,
 } from "./lib/callRealtime.js";
+import { ALTARA_SFX_CUE_REGISTRY, resolveAltaraSfxAssetFromDocument } from "./lib/altaraSfx.js";
 
 /* -------------------------
    Small helpers
@@ -30,13 +31,23 @@ export function esc(s){
 const RTC_CONFIG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
 const SFX = {
-  ring: new Audio("./sfx/ring.mp3"),
-  incoming: new Audio("./sfx/incoming.mp3"),
-  hangup: new Audio("./sfx/hangup.mp3"),
+  ring: new Audio(resolveAltaraSfxAssetFromDocument("private_call_outgoing_loop", import.meta.url)),
+  incoming: new Audio(resolveAltaraSfxAssetFromDocument("private_call_incoming_loop", import.meta.url)),
+  accept: new Audio(resolveAltaraSfxAssetFromDocument("private_call_accept", import.meta.url)),
+  decline: new Audio(resolveAltaraSfxAssetFromDocument("private_call_decline", import.meta.url)),
+  end: new Audio(resolveAltaraSfxAssetFromDocument("private_call_end", import.meta.url)),
 };
-for (const a of Object.values(SFX)){
+const SFX_CUES = {
+  ring: "private_call_outgoing_loop",
+  incoming: "private_call_incoming_loop",
+  accept: "private_call_accept",
+  decline: "private_call_decline",
+  end: "private_call_end",
+};
+for (const [name, a] of Object.entries(SFX)){
   a.preload = "auto";
-  a.loop = false;
+  a.loop = ALTARA_SFX_CUE_REGISTRY[SFX_CUES[name]].loop;
+  a.volume = ALTARA_SFX_CUE_REGISTRY[SFX_CUES[name]].volume;
 }
 
 let audioUnlocked = false;
@@ -44,10 +55,7 @@ function unlockAudioOnce(){
   if (audioUnlocked) return;
   audioUnlocked = true;
   for (const a of Object.values(SFX)){
-    try{
-      a.volume = 0.0001;
-      a.play().then(()=>{ a.pause(); a.currentTime = 0; a.volume = 1; }).catch(()=>{});
-    }catch(_){}
+    try { a.load(); } catch (_) {}
   }
 }
 window.addEventListener("pointerdown", unlockAudioOnce, { once:true });
@@ -458,6 +466,7 @@ async function onCallSignal(sig){
 
         pendingOffer = null;
         await sendCallSignal("hangup", { reason:"declined" }, sig.from_user_id, conversationId);
+        playSfx("decline");
         onCallUiUpdate?.(getPublicState());
       };
     }
@@ -471,6 +480,8 @@ async function onCallSignal(sig){
     try{
       clearTimers();
       await callPc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      stopSfx("ring");
+      playSfx("accept");
     }catch(e){
       console.error(e);
     }
@@ -493,6 +504,9 @@ async function onCallSignal(sig){
   if (kind === "hangup" || kind === "cancel" || kind === "missed"){
     showOverlay(false);
     pendingOffer = null;
+    if (kind === "hangup" && String(payload?.reason || "").toLowerCase() === "declined") {
+      playSfx("decline");
+    }
     await endCall("📴 A chamada terminou.");
     onCallUiUpdate?.(getPublicState());
     return;
@@ -569,6 +583,7 @@ export async function answer(){
     await callPc.setLocalDescription(answer);
 
     await sendCallSignal("answer", { sdp: answer }, callOtherUserId, callConversationId);
+    playSfx("accept");
 
     pendingOffer = null;
     stopSfx("incoming");
@@ -593,9 +608,10 @@ export async function hangup(reason="manual"){
 }
 
 export async function endCall(msg=null){
+  const wasEstablished = inCall;
   stopSfx("ring");
   stopSfx("incoming");
-  playSfx("hangup");
+  if (wasEstablished) playSfx("end");
   await releaseActiveCallChannel();
 
   cleanupPeer();

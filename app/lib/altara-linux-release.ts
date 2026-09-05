@@ -1,3 +1,5 @@
+import { ALTARA_MANUAL_RELEASE, ALTARA_MANUAL_ASSETS } from "./altara-manual-release.ts";
+
 export const ALTARA_SITE_LINUX_DOWNLOAD_MARKER = "altara-site-linux-download-v1";
 export const ALTARA_SITE_LINUX_INSTALLERS_MARKER =
   "altara-site-linux-installers-v2";
@@ -122,7 +124,7 @@ function parseReleaseAsset(value: unknown): GitHubReleaseAsset | null {
   };
 }
 
-function parseStableRelease(payload: unknown) {
+function parseRelease(payload: unknown, manual: boolean) {
   if (!isRecord(payload)) {
     fail("malformed_release");
   }
@@ -134,11 +136,15 @@ function parseStableRelease(payload: unknown) {
     fail("malformed_release");
   }
 
-  if (payload.prerelease === true) {
-    fail("prerelease_release");
-  }
-  if (payload.prerelease !== false) {
-    fail("malformed_release");
+  if (manual) {
+    if (payload.id !== ALTARA_MANUAL_RELEASE.id ||
+        payload.tag_name !== ALTARA_MANUAL_RELEASE.tag ||
+        payload.html_url !== ALTARA_MANUAL_RELEASE.htmlUrl ||
+        payload.url !== ALTARA_MANUAL_RELEASE.apiUrl ||
+        payload.prerelease !== true) fail("unapproved_manual_release");
+  } else {
+    if (payload.prerelease === true) fail("prerelease_release");
+    if (payload.prerelease !== false) fail("malformed_release");
   }
 
   const version = normalizeReleaseVersion(payload.tag_name);
@@ -158,7 +164,20 @@ function parseStableRelease(payload: unknown) {
     fail("malformed_release");
   }
 
-  const assets = payload.assets.map(parseReleaseAsset);
+  if (manual) {
+    for (const asset of payload.assets) {
+      if (!isRecord(asset) || typeof asset.name !== "string") fail("malformed_release");
+      const expected = ALTARA_MANUAL_ASSETS[asset.name];
+      if (expected && (asset.state !== "uploaded" || asset.size !== expected.size ||
+          asset.digest !== expected.digest || asset.size === 0)) fail("unverified_manual_asset");
+    }
+  }
+  // Manual downloads can select only the uploaded, reviewed asset inventory.
+  // Unrelated assets (including update feeds) are never a manual fallback.
+  const assets = payload.assets
+    .filter((asset) => !manual || (isRecord(asset) && typeof asset.name === "string" &&
+      Object.hasOwn(ALTARA_MANUAL_ASSETS, asset.name)))
+    .map(parseReleaseAsset);
   if (assets.some((asset) => asset === null)) {
     fail("malformed_release");
   }
@@ -226,8 +245,8 @@ function selectReleaseAsset(
   };
 }
 
-export function resolveLinuxRelease(payload: unknown): LinuxReleaseArtifacts {
-  const release = parseStableRelease(payload);
+function resolveLinuxReleaseData(payload: unknown, manual: boolean): LinuxReleaseArtifacts {
+  const release = parseRelease(payload, manual);
   const { assets: validAssets, publishedAt, tagName, version } = release;
   const appImage = selectReleaseAsset(
     validAssets,
@@ -292,8 +311,8 @@ export function resolveLinuxRelease(payload: unknown): LinuxReleaseArtifacts {
   };
 }
 
-export function resolveWindowsRelease(payload: unknown): WindowsReleaseArtifacts {
-  const release = parseStableRelease(payload);
+function resolveWindowsReleaseData(payload: unknown, manual: boolean): WindowsReleaseArtifacts {
+  const release = parseRelease(payload, manual);
   const { assets, publishedAt, tagName, version } = release;
   const applicationFilename = `Altara.Setup.${version}.exe`;
   const matches = assets.filter(
@@ -334,7 +353,7 @@ export async function fetchLatestLinuxRelease(
   fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch,
 ): Promise<LinuxReleaseArtifacts> {
   return resolveLinuxRelease(
-    await fetchLatestStableReleasePayload(fetchImplementation),
+    await fetchReleasePayload(fetchImplementation),
   );
 }
 
@@ -342,12 +361,13 @@ export async function fetchLatestWindowsRelease(
   fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch,
 ): Promise<WindowsReleaseArtifacts> {
   return resolveWindowsRelease(
-    await fetchLatestStableReleasePayload(fetchImplementation),
+    await fetchReleasePayload(fetchImplementation),
   );
 }
 
-async function fetchLatestStableReleasePayload(
+async function fetchReleasePayload(
   fetchImplementation: LinuxReleaseFetch,
+  manual = false,
 ): Promise<unknown> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
@@ -362,11 +382,11 @@ async function fetchLatestStableReleasePayload(
 
   let response: Response;
   try {
-    response = await fetchImplementation(ALTARA_GITHUB_RELEASE_API_URL, {
+    response = await fetchImplementation(manual ? ALTARA_MANUAL_RELEASE.tagApiUrl : ALTARA_GITHUB_RELEASE_API_URL, {
       headers,
       next: {
         revalidate: ALTARA_RELEASE_CACHE_SECONDS,
-        tags: ["altara-latest-stable-release"],
+        tags: [manual ? "altara-manual-release-0.1.127" : "altara-latest-stable-release"],
       },
     });
   } catch {
@@ -403,13 +423,14 @@ function temporaryRedirect(destination: string, body: string) {
   });
 }
 
-export async function createLinuxArtifactRedirectResponse(
+async function createLinuxRedirectResponse(
   artifactKind: LinuxArtifactKind,
   fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch,
   logger: Pick<Console, "error"> = console,
+  manual = false,
 ): Promise<Response> {
   try {
-    const release = await fetchLatestLinuxRelease(fetchImplementation);
+    const release = manual ? await fetchManualLinuxRelease(fetchImplementation) : await fetchLatestLinuxRelease(fetchImplementation);
     const artifact = {
       application: release.application,
       debian: release.deb ?? release.portable,
@@ -441,12 +462,13 @@ export async function createLinuxArtifactRedirectResponse(
   }
 }
 
-export async function createWindowsArtifactRedirectResponse(
+async function createWindowsRedirectResponse(
   fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch,
   logger: Pick<Console, "error"> = console,
+  manual = false,
 ): Promise<Response> {
   try {
-    const release = await fetchLatestWindowsRelease(fetchImplementation);
+    const release = manual ? await fetchManualWindowsRelease(fetchImplementation) : await fetchLatestWindowsRelease(fetchImplementation);
     return temporaryRedirect(
       release.application.url,
       "Redirecting to the latest ALTARA Windows installer.",
@@ -459,4 +481,37 @@ export async function createWindowsArtifactRedirectResponse(
       "The ALTARA Windows download is temporarily unavailable.",
     );
   }
+}
+
+// Stable resolution remains strict. Only the explicitly selected website download
+// release may use the separately validated manual/prerelease contract.
+export function resolveLinuxRelease(payload: unknown): LinuxReleaseArtifacts {
+  return resolveLinuxReleaseData(payload, false);
+}
+export function resolveWindowsRelease(payload: unknown): WindowsReleaseArtifacts {
+  return resolveWindowsReleaseData(payload, false);
+}
+export function resolveManualLinuxRelease(payload: unknown): LinuxReleaseArtifacts {
+  return resolveLinuxReleaseData(payload, true);
+}
+export function resolveManualWindowsRelease(payload: unknown): WindowsReleaseArtifacts {
+  return resolveWindowsReleaseData(payload, true);
+}
+export async function fetchManualLinuxRelease(fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch) {
+  return resolveManualLinuxRelease(await fetchReleasePayload(fetchImplementation, true));
+}
+export async function fetchManualWindowsRelease(fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch) {
+  return resolveManualWindowsRelease(await fetchReleasePayload(fetchImplementation, true));
+}
+export function createLinuxArtifactRedirectResponse(kind: LinuxArtifactKind, fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch, logger: Pick<Console, "error"> = console) {
+  return createLinuxRedirectResponse(kind, fetchImplementation, logger, false);
+}
+export function createWindowsArtifactRedirectResponse(fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch, logger: Pick<Console, "error"> = console) {
+  return createWindowsRedirectResponse(fetchImplementation, logger, false);
+}
+export function createManualLinuxArtifactRedirectResponse(kind: LinuxArtifactKind, fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch, logger: Pick<Console, "error"> = console) {
+  return createLinuxRedirectResponse(kind, fetchImplementation, logger, true);
+}
+export function createManualWindowsArtifactRedirectResponse(fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch, logger: Pick<Console, "error"> = console) {
+  return createWindowsRedirectResponse(fetchImplementation, logger, true);
 }

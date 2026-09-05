@@ -1,6 +1,15 @@
+import {
+  getPrivateUploadReferenceId,
+  normalizePrivateUploadReference,
+  normalizeTrustedAttachmentDeliveryUrl,
+  normalizeTrustedUploadDeliveryUrl,
+} from "./messageMediaPolicy.js";
+
 const TRUSTED_UPLOAD_FUNCTION = "altara-upload-authorize";
 const PRIVATE_UPLOAD_REFERENCE_PREFIX = "altara-private-upload:";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const TRUSTED_ATTACHMENT_DELIVERY_STATE = Symbol("altara.trustedAttachmentDeliveryState");
+const TRUSTED_ATTACHMENT_DELIVERY_TOKEN = Object.freeze({ type: "trusted-attachment-delivery" });
 
 function safeString(value, max = 512) {
   return String(value == null ? "" : value).trim().slice(0, max);
@@ -10,6 +19,111 @@ function trustedUploadError(code = "upload_authority_failed", message = "Upload 
   const error = new Error(message);
   error.code = safeString(code, 96) || "upload_authority_failed";
   return error;
+}
+
+function getSupabaseOrigin(supabase) {
+  try {
+    return new URL(String(supabase?.supabaseUrl || "").trim()).origin;
+  } catch (_) {
+    return "";
+  }
+}
+
+function markTrustedAttachmentDeliveryRow(row, entries = [], supabaseOrigin = "") {
+  if (!row || typeof row !== "object") return row;
+  const normalizedEntries = (Array.isArray(entries) ? entries : []).filter((entry) => (
+    entry
+    && UUID_RE.test(String(entry.uploadId || ""))
+    && normalizePrivateUploadReference(entry.referenceUrl || "")
+    && normalizeTrustedAttachmentDeliveryUrl(entry.url || "", { supabaseOrigin })
+  ));
+  if (!normalizedEntries.length) return row;
+  Object.defineProperty(row, TRUSTED_ATTACHMENT_DELIVERY_STATE, {
+    configurable: true,
+    enumerable: true,
+    writable: false,
+    value: Object.freeze({
+      token: TRUSTED_ATTACHMENT_DELIVERY_TOKEN,
+      supabaseOrigin,
+      entries: Object.freeze(normalizedEntries.map((entry) => Object.freeze({ ...entry }))),
+    }),
+  });
+  return row;
+}
+
+function collectTrustedAttachmentDeliveryEntries(value, supabaseOrigin, out = []) {
+  if (!value || typeof value !== "object") return out;
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectTrustedAttachmentDeliveryEntries(entry, supabaseOrigin, out));
+    return out;
+  }
+
+  const uploadId = safeString(value.uploadId || value.upload_id, 64).toLowerCase()
+    || getPrivateUploadReferenceId(value.referenceUrl || value.reference_url || "");
+  const referenceUrl = normalizePrivateUploadReference(
+    value.referenceUrl || value.reference_url || trustedPrivateUploadReference(uploadId),
+  );
+  const url = normalizeTrustedAttachmentDeliveryUrl(value.url || value.originalUrl || value.original_url || "", { supabaseOrigin });
+  if (UUID_RE.test(uploadId) && referenceUrl === trustedPrivateUploadReference(uploadId) && url) {
+    out.push({ uploadId, referenceUrl, url, purpose: "main" });
+  }
+
+  const previewUploadId = safeString(value.previewUploadId || value.preview_upload_id, 64).toLowerCase()
+    || getPrivateUploadReferenceId(value.previewReferenceUrl || value.preview_reference_url || "");
+  const previewReferenceUrl = normalizePrivateUploadReference(
+    value.previewReferenceUrl || value.preview_reference_url || trustedPrivateUploadReference(previewUploadId),
+  );
+  const previewUrl = normalizeTrustedAttachmentDeliveryUrl(value.previewUrl || value.preview_url || "", { supabaseOrigin });
+  if (UUID_RE.test(previewUploadId) && previewReferenceUrl === trustedPrivateUploadReference(previewUploadId) && previewUrl) {
+    out.push({ uploadId: previewUploadId, referenceUrl: previewReferenceUrl, url: previewUrl, purpose: "preview" });
+  }
+
+  Object.values(value).forEach((entry) => {
+    if (entry && typeof entry === "object") collectTrustedAttachmentDeliveryEntries(entry, supabaseOrigin, out);
+  });
+  return out;
+}
+
+export function markTrustedAttachmentDeliveryFromDescriptors(row, descriptors = [], {
+  supabaseOrigin = "",
+} = {}) {
+  const entries = collectTrustedAttachmentDeliveryEntries(descriptors, supabaseOrigin, []);
+  return markTrustedAttachmentDeliveryRow(row, entries, supabaseOrigin);
+}
+
+export function resolveTrustedAttachmentDeliveryUrl(row, attachment = {}, {
+  preview = false,
+} = {}) {
+  const state = row?.[TRUSTED_ATTACHMENT_DELIVERY_STATE];
+  if (!state || state.token !== TRUSTED_ATTACHMENT_DELIVERY_TOKEN) return "";
+  const purpose = preview ? "preview" : "main";
+  const rawUrl = preview
+    ? (attachment?.previewUrl || attachment?.preview_url || "")
+    : (attachment?.url || attachment?.originalUrl || attachment?.original_url || "");
+  const candidate = normalizeTrustedAttachmentDeliveryUrl(rawUrl, { supabaseOrigin: state.supabaseOrigin });
+  if (!candidate) return "";
+
+  const explicitId = safeString(
+    preview
+      ? (attachment?.previewUploadId || attachment?.preview_upload_id || "")
+      : (attachment?.uploadId || attachment?.upload_id || ""),
+    64,
+  ).toLowerCase();
+  const explicitReferenceId = getPrivateUploadReferenceId(
+    preview
+      ? (attachment?.previewReferenceUrl || attachment?.preview_reference_url || "")
+      : (attachment?.referenceUrl || attachment?.reference_url || ""),
+  );
+  if (explicitId && !UUID_RE.test(explicitId)) return "";
+  if (explicitId && explicitReferenceId && explicitId !== explicitReferenceId) return "";
+  const requiredId = explicitId || explicitReferenceId;
+
+  const match = state.entries.find((entry) => (
+    entry.purpose === purpose
+    && entry.url === candidate
+    && (!requiredId || entry.uploadId === requiredId)
+  ));
+  return match?.url || "";
 }
 
 function unwrapFunctionPayload(data) {
@@ -102,10 +216,10 @@ export async function uploadViaTrustedAuthority({
     action: "complete",
     upload_id: uploadId,
   });
-  const referenceUrl = safeString(completed.reference_url, 160)
-    || trustedPrivateUploadReference(uploadId);
-  const publicUrl = safeString(completed.public_url, 4096);
-  const downloadUrl = safeString(completed.download_url, 4096);
+  const referenceUrl = trustedPrivateUploadReference(uploadId);
+  const supabaseOrigin = getSupabaseOrigin(supabase);
+  const publicUrl = normalizeTrustedUploadDeliveryUrl(completed.public_url, { supabaseOrigin, uploadContext: context });
+  const downloadUrl = normalizeTrustedUploadDeliveryUrl(completed.download_url, { supabaseOrigin, uploadContext: context });
   const displayUrl = publicUrl || downloadUrl;
   if (!displayUrl) {
     throw trustedUploadError("upload_delivery_unavailable", "The uploaded file could not be verified for delivery.");
@@ -196,17 +310,19 @@ export async function hydrateTrustedAttachmentRows({ supabase, rows } = {}) {
   } catch (_) {
     return list;
   }
+  const supabaseOrigin = getSupabaseOrigin(supabase);
   const byId = new Map();
   (Array.isArray(payload.items) ? payload.items : []).forEach((entry) => {
     const id = safeString(entry?.upload_id, 64).toLowerCase();
-    const url = safeString(entry?.download_url, 4096);
+    const url = normalizeTrustedAttachmentDeliveryUrl(entry?.download_url, { supabaseOrigin });
     if (UUID_RE.test(id) && url) byId.set(id, { ...entry, download_url: url });
   });
 
   return parsedRows.map(({ row, parsed }) => {
     if (!parsed || !row || typeof row !== "object") return row;
     const hydrated = applyTrustedDownloadUrls(parsed, byId);
-    return { ...row, content: JSON.stringify(hydrated) };
+    const nextRow = { ...row, content: JSON.stringify(hydrated) };
+    return markTrustedAttachmentDeliveryFromDescriptors(nextRow, hydrated, { supabaseOrigin });
   });
 }
 

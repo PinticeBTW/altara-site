@@ -1,4 +1,11 @@
 import { DisconnectReason, Room, RoomEvent, Track } from "../node_modules/livekit-client/dist/livekit-client.esm.mjs";
+import {
+  parseNativeScreenshareCompanionIdentity,
+} from "./liveKitTechnicalParticipant.js";
+
+function isNativeScreenshareCompanionIdentity(participant = null) {
+  return !!parseNativeScreenshareCompanionIdentity(participant?.identity || "");
+}
 
 function normalizeId(value) {
   return String(value || "").trim();
@@ -24,6 +31,17 @@ function safeParseJsonObject(value) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function monotonicNow() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function normalizeConnectionQuality(value) {
+  const quality = String(value || "unknown").trim().toLowerCase();
+  return ["excellent", "good", "poor", "lost"].includes(quality) ? quality : "unknown";
 }
 
 function dedupeStringList(values = []) {
@@ -109,6 +127,7 @@ function baseParticipantState(userId, participant = null, { local = false } = {}
     participantSids: local ? dedupeStringList([participant?.sid || ""]) : [],
     participantSidCount: local ? 1 : 0,
     connectionState: "disconnected",
+    connectionQuality: normalizeConnectionQuality(participant?.connectionQuality),
     audioSubscribed: false,
     audioAttached: false,
     audioLive: false,
@@ -146,7 +165,11 @@ function buildInitialSnapshot({
     roomUrl: String(url || "").trim() || "",
     mediaMode: String(mediaMode || "").trim() || "audio_only",
     connectionState: "disconnected",
+    connectionQuality: "unknown",
     connectionStateChangedAt: nowIso(),
+    roomConnectStartedAt: null,
+    signalConnectedAt: null,
+    roomConnectResolvedAt: null,
     connectedAt: null,
     reconnectedAt: null,
     disconnectedAt: null,
@@ -160,6 +183,7 @@ function buildInitialSnapshot({
     local: {
       userId: normalizeId(localUserId || ""),
       roomConnected: false,
+      connectionQuality: "unknown",
       audioTrackCreated: false,
       audioTrackCreatedAt: null,
       audioTrackPublished: false,
@@ -187,6 +211,22 @@ function safeInvoke(callback, payload = null) {
   }
 }
 
+const SERVER_VOICE_LIVEKIT_ROOM_OPTIONS = Object.freeze({
+  // ALTARA owns the video elements instead of using LiveKit's attach()
+  // dimension observer, so automatic adaptive-stream sizing is intentionally
+  // disabled. Screen publications request HIGH explicitly when watched.
+  adaptiveStream: false,
+  // Screen share uses simulcast; do not keep encoding unused layers when the
+  // SFU has no subscriber for them.
+  dynacast: true,
+  disconnectOnPageLeave: false,
+  stopLocalTrackOnUnpublish: true,
+});
+
+export function createServerVoiceLiveKitRoom() {
+  return new Room({ ...SERVER_VOICE_LIVEKIT_ROOM_OPTIONS });
+}
+
 export function createServerVoiceLiveKitController({
   conversationId = "",
   localUserId = "",
@@ -205,17 +245,20 @@ export function createServerVoiceLiveKitController({
   onAudioTrackMuteStateChanged = () => {},
   onDataReceived = () => {},
   onMoved = () => {},
+  onParticipantConnected = () => {},
+  onParticipantDisconnected = () => {},
   onParticipantMetadataChanged = () => {},
   onParticipantAttributesChanged = () => {},
+  onReconnected = () => {},
+  onLocalTrackPublished = () => {},
+  onPublicationTiming = () => {},
+  onHandlerTiming = () => {},
+  onConnectionQualityChanged = () => {},
+  roomInstance = null,
 } = {}) {
   const convId = normalizeId(conversationId || "");
   const meId = normalizeId(localUserId || "");
-  const room = new Room({
-    adaptiveStream: false,
-    dynacast: false,
-    disconnectOnPageLeave: false,
-    stopLocalTrackOnUnpublish: true,
-  });
+  const room = roomInstance || createServerVoiceLiveKitRoom();
   const snapshot = buildInitialSnapshot({
     conversationId: convId,
     localUserId: meId,
@@ -230,6 +273,12 @@ export function createServerVoiceLiveKitController({
   let bindingsActive = false;
   let disconnectRequested = false;
   let publishedAudioTrack = null;
+  let publishedAudioPublication = null;
+  let activeMicrophonePublicationTiming = null;
+  let deferredSnapshotTimer = null;
+  let snapshotEmitCount = 0;
+  const boundRoomEventHandlers = [];
+
   const participantPresenceRuntimeByUser = new Map();
   const remoteAudioRuntimeByUser = new Map();
   const participantRuntimeHistoryByUser = new Map();
@@ -249,9 +298,61 @@ export function createServerVoiceLiveKitController({
   }
 
   function emitSnapshot() {
+    snapshotEmitCount += 1;
     snapshot.lastUpdatedAt = nowIso();
     snapshot.local.lastUpdatedAt = nowIso();
     safeInvoke(onSnapshot, safeClone(snapshot));
+  }
+
+  function scheduleSnapshotEmit() {
+    if (deferredSnapshotTimer != null) return false;
+    deferredSnapshotTimer = setTimeout(() => {
+      deferredSnapshotTimer = null;
+      if (disconnectRequested) return;
+      emitSnapshot();
+    }, 0);
+    return true;
+  }
+
+  function bindRoomEvent(event, handler) {
+    const wrapped = (...args) => {
+      const startedAt = typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+      const snapshotCountBefore = snapshotEmitCount;
+      try {
+        return handler(...args);
+      } finally {
+        const finishedAt = typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
+        const timingEntry = {
+          event: String(event || "unknown"),
+          callback: "serverVoiceLiveKitController",
+          durationMs: Math.max(0, finishedAt - startedAt),
+          snapshotRequested: snapshotEmitCount !== snapshotCountBefore,
+        };
+        if (String(event) === String(RoomEvent.LocalTrackPublished)) {
+          if (activeMicrophonePublicationTiming) {
+            activeMicrophonePublicationTiming.localTrackPublishedHandlerMs = timingEntry.durationMs;
+          }
+          setTimeout(() => safeInvoke(onHandlerTiming, timingEntry), 0);
+        } else {
+          safeInvoke(onHandlerTiming, timingEntry);
+        }
+      }
+    };
+    boundRoomEventHandlers.push({ event, wrapped });
+    room.on(event, wrapped);
+  }
+
+  function unbindRoomEvents() {
+    if (deferredSnapshotTimer != null) clearTimeout(deferredSnapshotTimer);
+    deferredSnapshotTimer = null;
+    boundRoomEventHandlers.splice(0).forEach(({ event, wrapped }) => {
+      try { room.off?.(event, wrapped); } catch (_) {}
+    });
+    bindingsActive = false;
   }
 
   function getParticipantPresenceRuntime(userId, { create = false } = {}) {
@@ -531,6 +632,7 @@ export function createServerVoiceLiveKitController({
   }
 
   function syncParticipantPresenceState(userId, participant = null, { local = false } = {}) {
+    if (!local && isNativeScreenshareCompanionIdentity(participant)) return null;
     const uid = normalizeId(userId || participant?.identity || "");
     if (!uid) return null;
     const participantState = snapshot.participantsByUser[uid] || baseParticipantState(uid, participant, { local });
@@ -552,6 +654,7 @@ export function createServerVoiceLiveKitController({
   }
 
   function getParticipantState(userId, participant = null, { local = false } = {}) {
+    if (!local && isNativeScreenshareCompanionIdentity(participant)) return null;
     const uid = normalizeId(userId || participant?.identity || "");
     if (!uid) return null;
     const existing = snapshot.participantsByUser[uid] || baseParticipantState(uid, participant, { local });
@@ -575,6 +678,7 @@ export function createServerVoiceLiveKitController({
     snapshot.connectionState = normalized;
     snapshot.connectionStateChangedAt = nowIso();
     snapshot.connected = normalized === "connected";
+    if (snapshot.connected && !snapshot.connectedAt) snapshot.connectedAt = nowIso();
     snapshot.reconnecting = normalized === "reconnecting" || normalized === "signalreconnecting";
     snapshot.local.roomConnected = snapshot.connected;
     Object.values(snapshot.participantsByUser).forEach((participantState) => {
@@ -639,38 +743,67 @@ export function createServerVoiceLiveKitController({
     if (bindingsActive) return;
     bindingsActive = true;
 
-    room.on(RoomEvent.ConnectionStateChanged, (state) => {
+    bindRoomEvent(RoomEvent.ConnectionStateChanged, (state) => {
       syncConnectionState(state);
       log("room.connection_state", { state: snapshot.connectionState || null });
       emitSnapshot();
     });
 
-    room.on(RoomEvent.Reconnecting, () => {
+    bindRoomEvent(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+      const uid = normalizeId(participant?.identity || "");
+      const normalizedQuality = normalizeConnectionQuality(quality);
+      if (!uid) return;
+      const participantState = getParticipantState(uid, participant);
+      if (!participantState) return;
+      participantState.connectionQuality = normalizedQuality;
+      participantState.lastUpdatedAt = nowIso();
+      if (participant === room.localParticipant || uid === meId) {
+        snapshot.connectionQuality = normalizedQuality;
+        snapshot.local.connectionQuality = normalizedQuality;
+      }
+      safeInvoke(onConnectionQualityChanged, {
+        userId: uid,
+        local: participant === room.localParticipant || uid === meId,
+        quality: normalizedQuality,
+      });
+    });
+
+    bindRoomEvent(RoomEvent.SignalConnected, () => {
+      snapshot.signalConnectedAt = snapshot.signalConnectedAt || nowIso();
+      log("room.signal_connected", {});
+      emitSnapshot();
+    });
+
+    bindRoomEvent(RoomEvent.Reconnecting, () => {
       snapshot.joinPhase = "reconnecting";
       syncConnectionState("reconnecting");
       log("room.reconnecting", {});
       emitSnapshot();
     });
 
-    room.on(RoomEvent.Reconnected, () => {
+    bindRoomEvent(RoomEvent.Reconnected, () => {
       snapshot.joinPhase = snapshot.local.audioTrackPublished ? "media_ready" : "room_connected";
       snapshot.reconnectedAt = nowIso();
       snapshot.lastError = null;
       syncConnectionState("connected");
       syncLocalParticipantPermission("room_reconnected");
       log("room.reconnected", {});
+      safeInvoke(onReconnected, {
+        conversationId: convId,
+        roomName: String(snapshot.roomName || roomName || "").trim(),
+      });
       emitSnapshot();
     });
 
-    room.on(RoomEvent.ParticipantPermissionsChanged, (_previousPermissions, participant) => {
+    bindRoomEvent(RoomEvent.ParticipantPermissionsChanged, (_previousPermissions, participant) => {
       const uid = normalizeId(participant?.identity || "");
       if (participant !== room.localParticipant && uid !== meId) return;
       syncLocalParticipantPermission("permissions_changed");
       emitSnapshot();
     });
 
-    room.on(RoomEvent.ParticipantConnected, (participant) => {
-      const uid = normalizeId(participant?.identity || (publication?.isLocal ? meId : ""));
+    bindRoomEvent(RoomEvent.ParticipantConnected, (participant) => {
+      const uid = normalizeId(participant?.identity || "");
       const participantSid = normalizeId(participant?.sid || "");
       const previousState = uid ? (snapshot.participantsByUser[uid] || null) : null;
       const previousSids = dedupeStringList(previousState?.participantSids || []);
@@ -697,6 +830,12 @@ export function createServerVoiceLiveKitController({
       recordParticipantRuntimeEvent(uid, "connected", {
         participantSid: participantSid || null,
       });
+      safeInvoke(onParticipantConnected, {
+        conversationId: convId,
+        participant,
+        userId: uid,
+        participantSid: participantSid || null,
+      });
       if (duplicateParticipantIdentity || (presenceRuntime?.activeSids || []).length > 1) {
         log("participant.duplicate_identity_detected", {
           peerUserId: participantState.userId || null,
@@ -708,7 +847,8 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.ParticipantMetadataChanged, (metadata, participant) => {
+    bindRoomEvent(RoomEvent.ParticipantMetadataChanged, (metadata, participant) => {
+      if (isNativeScreenshareCompanionIdentity(participant)) return;
       const uid = normalizeId(participant?.identity || "");
       const participantState = getParticipantState(uid, participant, { local: uid === meId });
       if (participantState) {
@@ -726,7 +866,8 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.ParticipantAttributesChanged, (changedAttributes, participant) => {
+    bindRoomEvent(RoomEvent.ParticipantAttributesChanged, (changedAttributes, participant) => {
+      if (isNativeScreenshareCompanionIdentity(participant)) return;
       const uid = normalizeId(participant?.identity || "");
       const participantState = getParticipantState(uid, participant, { local: uid === meId });
       const attributes = participant?.attributes && typeof participant.attributes === "object" ? { ...participant.attributes } : {};
@@ -748,8 +889,8 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.ParticipantDisconnected, (participant) => {
-      const uid = normalizeId(participant?.identity || (publication?.isLocal ? meId : ""));
+    bindRoomEvent(RoomEvent.ParticipantDisconnected, (participant) => {
+      const uid = normalizeId(participant?.identity || "");
       const participantSid = normalizeId(participant?.sid || "");
       const presenceRuntime = updateParticipantPresenceRuntime(uid, participant, { connected: false });
       const participantState = getParticipantState(uid, participant);
@@ -767,11 +908,19 @@ export function createServerVoiceLiveKitController({
       recordParticipantRuntimeEvent(uid, "disconnected", {
         participantSid: participantSid || null,
       });
+      safeInvoke(onParticipantDisconnected, {
+        conversationId: convId,
+        participant,
+        userId: uid,
+        participantSid: participantSid || null,
+        presentInRoom: !!participantState.presentInRoom,
+      });
       emitSnapshot();
     });
 
-    room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    bindRoomEvent(RoomEvent.TrackSubscribed, (track, publication, participant) => {
       if (track?.kind !== "audio") return;
+      if (isNativeScreenshareCompanionIdentity(participant)) return;
       const uid = normalizeId(participant?.identity || "");
       updateParticipantPresenceRuntime(uid, participant, { connected: true });
       const mediaTrack = track?.mediaStreamTrack || null;
@@ -823,7 +972,8 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.TrackPublished, (publication, participant) => {
+    bindRoomEvent(RoomEvent.TrackPublished, (publication, participant) => {
+      if (isNativeScreenshareCompanionIdentity(participant)) return;
       const uid = normalizeId(participant?.identity || "");
       getParticipantState(uid, participant);
       log("track.remote.published", {
@@ -834,8 +984,9 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+    bindRoomEvent(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
       if (track?.kind !== "audio") return;
+      if (isNativeScreenshareCompanionIdentity(participant)) return;
       const uid = normalizeId(participant?.identity || "");
       const mediaTrack = track?.mediaStreamTrack || null;
       const trackId = normalizeId(mediaTrack?.id || track?.sid || "");
@@ -869,7 +1020,7 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.TrackSubscriptionFailed, (trackSid, participant, reason) => {
+    bindRoomEvent(RoomEvent.TrackSubscriptionFailed, (trackSid, participant, reason) => {
       const participantState = getParticipantState(participant?.identity || "", participant);
       if (participantState) {
         participantState.lastError = {
@@ -889,8 +1040,9 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.TrackMuted, (publication, participant) => {
+    bindRoomEvent(RoomEvent.TrackMuted, (publication, participant) => {
       if (publication?.kind !== "audio") return;
+      if (isNativeScreenshareCompanionIdentity(participant)) return;
       const uid = normalizeId(participant?.identity || "");
       if (uid && uid !== meId) {
         upsertRemoteAudioRuntime(uid, {
@@ -920,8 +1072,9 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.TrackUnmuted, (publication, participant) => {
+    bindRoomEvent(RoomEvent.TrackUnmuted, (publication, participant) => {
       if (publication?.kind !== "audio") return;
+      if (isNativeScreenshareCompanionIdentity(participant)) return;
       const uid = normalizeId(participant?.identity || "");
       if (uid && uid !== meId) {
         upsertRemoteAudioRuntime(uid, {
@@ -951,8 +1104,12 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.LocalTrackPublished, (publication, participant) => {
+    bindRoomEvent(RoomEvent.LocalTrackPublished, (publication, participant) => {
       if (publication?.kind !== "audio") return;
+      if (activeMicrophonePublicationTiming && !activeMicrophonePublicationTiming.localTrackPublishedEventAt) {
+        activeMicrophonePublicationTiming.localTrackPublishedEventAt = monotonicNow();
+      }
+      publishedAudioPublication = publication || publishedAudioPublication;
       const participantState = getParticipantState(meId, participant, { local: true });
       if (!participantState) return;
       snapshot.local.audioTrackPublished = true;
@@ -974,10 +1131,16 @@ export function createServerVoiceLiveKitController({
         inputDeviceId: snapshot.local.inputDeviceId || "default",
         outputDeviceId: snapshot.local.outputDeviceId || "default",
       });
-      emitSnapshot();
+      safeInvoke(onLocalTrackPublished, {
+        conversationId: convId,
+        participant,
+        publication,
+        trackSid: snapshot.local.audioTrackSid,
+      });
+      scheduleSnapshotEmit();
     });
 
-    room.on(RoomEvent.ActiveSpeakersChanged, (participants) => {
+    bindRoomEvent(RoomEvent.ActiveSpeakersChanged, (participants) => {
       const activeSpeakerIds = new Set(
         (Array.isArray(participants) ? participants : [])
           .map((participant) => normalizeId(participant?.identity || ""))
@@ -997,7 +1160,7 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
+    bindRoomEvent(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
       safeInvoke(onDataReceived, {
         payload,
         participant,
@@ -1007,7 +1170,7 @@ export function createServerVoiceLiveKitController({
       });
     });
 
-    room.on(RoomEvent.Moved, (roomName, token) => {
+    bindRoomEvent(RoomEvent.Moved, (roomName, token) => {
       const nextRoomName = String(roomName || "").trim();
       if (nextRoomName) snapshot.roomName = nextRoomName;
       snapshot.joinPhase = "room_moved";
@@ -1023,7 +1186,7 @@ export function createServerVoiceLiveKitController({
       emitSnapshot();
     });
 
-    room.on(RoomEvent.Disconnected, (reason) => {
+    bindRoomEvent(RoomEvent.Disconnected, (reason) => {
       const disconnectReasonCode = Number.isFinite(Number(reason)) ? Number(reason) : null;
       const disconnectReasonName = disconnectReasonCode == null
         ? String(reason || "room_disconnected").trim() || "room_disconnected"
@@ -1071,6 +1234,19 @@ export function createServerVoiceLiveKitController({
     });
   }
 
+  async function prepareConnection() {
+    if (typeof room.prepareConnection !== "function") {
+      return { supported: false, prepared: false, reason: "sdk_prepare_connection_unavailable" };
+    }
+    const startedAt = Date.now();
+    try {
+      await room.prepareConnection(url, token);
+      return { supported: true, prepared: true, startedAt, finishedAt: Date.now(), reason: "prepared" };
+    } catch (_) {
+      return { supported: true, prepared: false, startedAt, finishedAt: Date.now(), reason: "prepare_failed" };
+    }
+  }
+
   async function connect() {
     if (!convId || !meId || !url || !token) {
       throw new Error("Missing LiveKit connection parameters.");
@@ -1080,6 +1256,7 @@ export function createServerVoiceLiveKitController({
     snapshot.disconnectRequested = false;
     snapshot.lastError = null;
     snapshot.joinPhase = "room_connecting";
+    snapshot.roomConnectStartedAt = nowIso();
     snapshot.lastDisconnect = null;
     syncConnectionState("connecting");
     log("room.connect_started", {});
@@ -1089,6 +1266,7 @@ export function createServerVoiceLiveKitController({
         autoSubscribe: autoSubscribe !== false,
         maxRetries: 3,
       });
+      snapshot.roomConnectResolvedAt = nowIso();
     } catch (error) {
       const details = setUnexpectedFailure("room_connect", error);
       snapshot.joinPhase = "room_connect_failed";
@@ -1121,6 +1299,44 @@ export function createServerVoiceLiveKitController({
     outputDeviceId = "default",
   } = {}) {
     if (!track) throw new Error("Missing microphone track.");
+    const publicationTiming = {
+      wrapperStartedAt: monotonicNow(),
+      sdkInvocationAt: 0,
+      sdkPromiseDoneAt: 0,
+      wrapperDoneAt: 0,
+      localTrackPublishedEventAt: 0,
+      localTrackPublishedHandlerMs: null,
+      muteStateSyncStartedAt: 0,
+      muteStateSyncDoneAt: 0,
+      inputTrackReused: true,
+      existingPublicationReused: false,
+      result: "pending",
+    };
+    const reportPublicationTiming = () => {
+      publicationTiming.wrapperDoneAt = publicationTiming.wrapperDoneAt || monotonicNow();
+      safeInvoke(onPublicationTiming, {
+        wrapperMs: Math.max(0, publicationTiming.wrapperDoneAt - publicationTiming.wrapperStartedAt),
+        preSdkMs: publicationTiming.sdkInvocationAt
+          ? Math.max(0, publicationTiming.sdkInvocationAt - publicationTiming.wrapperStartedAt)
+          : null,
+        sdkPublishMs: publicationTiming.sdkPromiseDoneAt && publicationTiming.sdkInvocationAt
+          ? Math.max(0, publicationTiming.sdkPromiseDoneAt - publicationTiming.sdkInvocationAt)
+          : null,
+        localTrackPublishedEventOffsetMs: publicationTiming.localTrackPublishedEventAt && publicationTiming.sdkInvocationAt
+          ? Math.max(0, publicationTiming.localTrackPublishedEventAt - publicationTiming.sdkInvocationAt)
+          : null,
+        localTrackPublishedHandlerMs: publicationTiming.localTrackPublishedHandlerMs,
+        postSdkMs: publicationTiming.sdkPromiseDoneAt
+          ? Math.max(0, publicationTiming.wrapperDoneAt - publicationTiming.sdkPromiseDoneAt)
+          : null,
+        muteStateSyncMs: publicationTiming.muteStateSyncDoneAt && publicationTiming.muteStateSyncStartedAt
+          ? Math.max(0, publicationTiming.muteStateSyncDoneAt - publicationTiming.muteStateSyncStartedAt)
+          : null,
+        inputTrackReused: publicationTiming.inputTrackReused === true,
+        existingPublicationReused: publicationTiming.existingPublicationReused === true,
+        result: publicationTiming.result,
+      });
+    };
     const previousTrack = publishedAudioTrack;
     snapshot.local.audioTrackCreated = true;
     snapshot.local.audioTrackCreatedAt = snapshot.local.audioTrackCreatedAt || nowIso();
@@ -1136,14 +1352,15 @@ export function createServerVoiceLiveKitController({
       participantState.audioMuted = !!micMuted;
       participantState.lastUpdatedAt = nowIso();
     }
-    emitSnapshot();
-
     if (
       previousTrack
       && previousTrack === track
       && snapshot.local.audioTrackPublished
       && snapshot.local.audioTrackSid
     ) {
+      publicationTiming.existingPublicationReused = true;
+      publicationTiming.result = "reused";
+      reportPublicationTiming();
       return null;
     }
 
@@ -1161,13 +1378,18 @@ export function createServerVoiceLiveKitController({
     let publication = null;
     publishedAudioTrack = track;
     snapshot.lastError = null;
+    publicationTiming.sdkInvocationAt = monotonicNow();
+    activeMicrophonePublicationTiming = publicationTiming;
     try {
       publication = await room.localParticipant.publishTrack(track, {
         source: Track.Source.Microphone,
         stopOnMute: false,
         dtx: false,
       });
+      publicationTiming.sdkPromiseDoneAt = monotonicNow();
     } catch (error) {
+      publicationTiming.sdkPromiseDoneAt = monotonicNow();
+      publicationTiming.result = "failed";
       const details = setUnexpectedFailure("track_local_publish", error);
       snapshot.joinPhase = "publish_audio_failed";
       log("track.local.publish_failed", {
@@ -1175,8 +1397,12 @@ export function createServerVoiceLiveKitController({
         trackId: snapshot.local.audioTrackId || null,
       });
       emitSnapshot();
+      activeMicrophonePublicationTiming = null;
+      reportPublicationTiming();
       throw error;
     }
+    activeMicrophonePublicationTiming = null;
+    publishedAudioPublication = publication || null;
 
     snapshot.local.audioTrackPublished = true;
     snapshot.local.audioTrackPublishedAt = nowIso();
@@ -1192,7 +1418,21 @@ export function createServerVoiceLiveKitController({
       participantState.audioMuted = !!micMuted;
       participantState.lastUpdatedAt = nowIso();
     }
-    emitSnapshot();
+    publicationTiming.muteStateSyncStartedAt = monotonicNow();
+    try {
+      await setMicrophoneMuted(!!micMuted, {
+        reason: "publish_microphone",
+        snapshotMode: "deferred",
+      });
+      publicationTiming.muteStateSyncDoneAt = monotonicNow();
+    } catch (error) {
+      publicationTiming.muteStateSyncDoneAt = monotonicNow();
+      publicationTiming.result = "mute_state_failed";
+      reportPublicationTiming();
+      throw error;
+    }
+    publicationTiming.result = "published";
+    reportPublicationTiming();
     return publication;
   }
 
@@ -1218,6 +1458,7 @@ export function createServerVoiceLiveKitController({
       }
     }
     publishedAudioTrack = null;
+    publishedAudioPublication = null;
     snapshot.local.audioTrackPublished = false;
     snapshot.local.audioTrackSid = null;
     snapshot.local.audioTrackId = null;
@@ -1257,6 +1498,9 @@ export function createServerVoiceLiveKitController({
 
   async function updateLocalParticipantAttributes(attributes = {}) {
     if (typeof room.localParticipant?.setAttributes !== "function") return false;
+    const previousAttributes = {
+      ...(snapshot.participantsByUser[meId]?.attributes || {}),
+    };
     const safeAttributes = {};
     Object.entries(attributes || {}).forEach(([key, value]) => {
       safeAttributes[String(key)] = String(value ?? "");
@@ -1264,10 +1508,61 @@ export function createServerVoiceLiveKitController({
     await room.localParticipant.setAttributes(safeAttributes);
     const participantState = getParticipantState(meId, room.localParticipant, { local: true });
     if (participantState) {
-      participantState.attributes = safeAttributes;
+      participantState.attributes = {
+        ...previousAttributes,
+        ...(participantState.attributes || {}),
+        ...(room.localParticipant?.attributes || {}),
+        ...safeAttributes,
+      };
       participantState.lastUpdatedAt = nowIso();
     }
     emitSnapshot();
+    return true;
+  }
+
+  async function setMicrophoneMuted(muted = false, {
+    reason = "local_control",
+    snapshotMode = "immediate",
+  } = {}) {
+    const nextMuted = !!muted;
+    const publication = publishedAudioPublication
+      || room.localParticipant?.getTrackPublication?.(Track.Source.Microphone)
+      || null;
+    const publicationTrack = publication?.track || null;
+    let usedLiveKitMute = false;
+    if (publication) {
+      const method = nextMuted ? "mute" : "unmute";
+      const currentMuted = typeof publication?.isMuted === "boolean"
+        ? publication.isMuted
+        : (typeof publicationTrack?.isMuted === "boolean" ? publicationTrack.isMuted : null);
+      if (currentMuted === nextMuted) {
+        usedLiveKitMute = true;
+      } else if (typeof publication[method] === "function") {
+        await publication[method]();
+        usedLiveKitMute = true;
+      } else if (typeof publicationTrack?.[method] === "function") {
+        await publicationTrack[method]();
+        usedLiveKitMute = true;
+      }
+    }
+    if (!usedLiveKitMute && publishedAudioTrack && "enabled" in publishedAudioTrack) {
+      publishedAudioTrack.enabled = !nextMuted;
+    }
+    snapshot.local.micMuted = nextMuted;
+    snapshot.local.lastUpdatedAt = nowIso();
+    const participantState = getParticipantState(meId, room.localParticipant, { local: true });
+    if (participantState) {
+      participantState.audioMuted = nextMuted;
+      participantState.lastUpdatedAt = nowIso();
+    }
+    log("track.local.mute_state_applied", {
+      muted: nextMuted,
+      reason: String(reason || "local_control").trim() || "local_control",
+      publicationAvailable: !!publication,
+      usedLiveKitMute,
+    });
+    if (snapshotMode === "deferred") scheduleSnapshotEmit();
+    else emitSnapshot();
     return true;
   }
 
@@ -1404,6 +1699,46 @@ export function createServerVoiceLiveKitController({
     return room.localParticipant.publishData(data, options);
   }
 
+  async function observeMicrophoneOutboundRtp({
+    timeoutMs = 1500,
+    pollIntervalMs = 120,
+    isCurrent = () => true,
+  } = {}) {
+    const localTrack = publishedAudioPublication?.track || null;
+    if (!localTrack || typeof localTrack.getRTCStatsReport !== "function") {
+      return { observed: false, reason: "public_track_stats_unavailable", observedAt: 0 };
+    }
+    const startedAt = Date.now();
+    const deadlineAt = startedAt + Math.max(100, Math.min(3000, Number(timeoutMs || 1500)));
+    const delayMs = Math.max(50, Math.min(500, Number(pollIntervalMs || 120)));
+    while (Date.now() <= deadlineAt) {
+      if (!safeInvoke(isCurrent)) {
+        return { observed: false, reason: "stale_generation", observedAt: 0 };
+      }
+      let report = null;
+      try {
+        report = await localTrack.getRTCStatsReport();
+      } catch (_) {
+        return { observed: false, reason: "stats_read_failed", observedAt: 0 };
+      }
+      let outboundAudioSeen = false;
+      report?.forEach?.((stat) => {
+        if (
+          stat?.type === "outbound-rtp"
+          && stat?.isRemote !== true
+          && (stat?.kind === "audio" || stat?.mediaType === "audio")
+          && (Number(stat?.bytesSent || 0) > 0 || Number(stat?.packetsSent || 0) > 0)
+        ) outboundAudioSeen = true;
+      });
+      if (outboundAudioSeen) {
+        return { observed: true, reason: "outbound_rtp", observedAt: Date.now() };
+      }
+      if (Date.now() >= deadlineAt) break;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    return { observed: false, reason: "outbound_rtp_timeout", observedAt: 0 };
+  }
+
   async function disconnect({ reason = "manual" } = {}) {
     disconnectRequested = true;
     snapshot.disconnectRequested = true;
@@ -1429,6 +1764,8 @@ export function createServerVoiceLiveKitController({
       });
       emitSnapshot();
       throw error;
+    } finally {
+      unbindRoomEvents();
     }
   }
 
@@ -1473,11 +1810,14 @@ export function createServerVoiceLiveKitController({
     joinAttemptId: snapshot.joinAttemptId || null,
     conversationId: convId,
     room,
+    prepareConnection,
     connect,
     disconnect,
     publishMicrophone,
     unpublishMicrophone,
+    setMicrophoneMuted,
     publishData,
+    observeMicrophoneOutboundRtp,
     updateLocalParticipantMetadata,
     updateLocalParticipantAttributes,
     getLocalParticipantPermission,

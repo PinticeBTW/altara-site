@@ -59,7 +59,7 @@ export function LinuxDownloadOption() {
       </span>
       <span className="platform-copy">
         <span className="platform-name">Download for Linux</span>
-        <span className="platform-detail">Linux x64 Preview · AppImage preferred</span>
+        <span className="platform-detail">0.1.127 · Linux x64 · Manual installation</span>
       </span>
     </a>
   );
@@ -70,7 +70,7 @@ export function WindowsDownloadOption() {
     <a
       href={WINDOWS_DOWNLOAD_URL}
       className="platform-btn"
-      aria-label="Download the latest stable ALTARA installer for Windows"
+      aria-label="Download ALTARA 0.1.127 for Windows — manual installation"
     >
       <span className="platform-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="currentColor">
@@ -79,7 +79,7 @@ export function WindowsDownloadOption() {
       </span>
       <span className="platform-copy">
         <span className="platform-name">Download for Windows</span>
-        <span className="platform-detail">Latest stable installer</span>
+        <span className="platform-detail">0.1.127 · Manual installation</span>
       </span>
     </a>
   );
@@ -253,7 +253,7 @@ export function SiteFooter() {
         <div className="footer-wordmark">ALTARA</div>
         <div className="footer-bottom">
           <span>&copy; 2026 ALTARA. Made by friends, for friends.</span>
-          <span>v1.0 &middot; pintice</span>
+          <span>v0.1.127 &middot; pintice</span>
         </div>
       </div>
     </footer>

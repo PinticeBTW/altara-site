@@ -2655,8 +2655,9 @@
 
         <div class="field">
           <label for="serverCreateName">Server Name</label>
-          <input id="serverCreateName" class="input" placeholder="My server" maxlength="60" />
+          <input id="serverCreateName" class="input" placeholder="My server" minlength="2" maxlength="60" autocomplete="off" />
         </div>
+        <div id="serverCreateStatus" class="hint" role="status" aria-live="polite" hidden></div>
       </div>
 
       <div class="serverCreateFooter">
@@ -3290,15 +3291,21 @@
 
   <!-- CALL OVERLAY (incoming call) -->
   <div id="globalCallOverlay" class="callOverlay" aria-hidden="true" style="display:none;">
-    <div class="callOverlayCard">
-      <div id="globalCallTitle" class="callOverlayTitle">&#x1F4DE; Chamada a entrar</div>
-      <div id="globalCallSub" class="callOverlaySub">De: ...</div>
-      <div id="globalCallHint" class="callOverlayHint">Podes atender daqui.</div>
-      <div class="rowInline">
-        <button id="globalCallDecline" class="btn danger">Decline</button>
-        <button id="globalCallAccept" class="btn primary">Accept</button>
+    <section class="callOverlayCard" role="dialog" aria-modal="false" aria-labelledby="globalCallTitle" aria-describedby="globalCallHint">
+      <div class="callOverlayIdentity">
+        <div id="globalCallAvatar" class="callOverlayAvatar" aria-hidden="true"></div>
+        <div class="callOverlayCopy">
+          <div id="globalCallTitle" class="callOverlayTitle">Incoming call</div>
+          <div id="globalCallSub" class="callOverlaySub">...</div>
+        </div>
+        <span class="callOverlayRing" aria-hidden="true"></span>
       </div>
-    </div>
+      <div id="globalCallHint" class="callOverlayHint">Private call</div>
+      <div class="callOverlayActions">
+        <button id="globalCallDecline" class="btn danger" type="button">Decline</button>
+        <button id="globalCallAccept" class="btn callOverlayAccept" type="button">Accept</button>
+      </div>
+    </section>
   </div>
   <!-- CALL STAGE -->
   <div id="callStage" class="callStage" aria-hidden="true" hidden>
@@ -3331,6 +3338,11 @@
           <div id="callStageAvatar" class="avatarBig"></div>
           <div id="callStageLabel" class="callStageLabel">amigo</div>
         </div>
+        <div id="callShareStage" class="callShareStage" hidden aria-hidden="true">
+          <div id="callParticipantFocusPrimary" class="callParticipantFocusPrimary" hidden aria-hidden="true"></div>
+          <div id="callMultiSharePrimary" class="callMultiSharePrimary" hidden aria-hidden="true"></div>
+          <aside id="callShareRail" class="callShareRail" aria-label="Participantes"></aside>
+        </div>
         <aside id="serverVoiceDebugOverlay" class="serverVoiceDebugOverlay" hidden aria-hidden="true">
           <div class="serverVoiceDebugOverlay__head">
             <span class="serverVoiceDebugOverlay__title">Server Voice Inspector</span>
@@ -3354,7 +3366,7 @@
           <button id="gridRemoteAux" class="stageGridTile" type="button" hidden>
             <video id="callRemoteAuxGridVideo" class="stageGridVideo" autoplay muted playsinline></video>
             <div id="callRemoteAuxGridAvatar" class="stageGridAvatar"></div>
-            <div id="callRemoteAuxGridLabel" class="stageGridLabel">amigo � C�mara</div>
+            <div id="callRemoteAuxGridLabel" class="stageGridLabel">amigo · Câmara</div>
           </button>
           <button id="gridSelf" class="stageGridTile" type="button">
             <video id="callSelfGridVideo" class="stageGridVideo" autoplay muted playsinline></video>
@@ -3364,7 +3376,7 @@
           <button id="gridSelfAux" class="stageGridTile" type="button" hidden>
             <video id="callSelfAuxGridVideo" class="stageGridVideo" autoplay muted playsinline></video>
             <div id="callSelfAuxGridAvatar" class="stageGridAvatar"></div>
-            <div id="callSelfAuxGridLabel" class="stageGridLabel">Tu � C�mara</div>
+            <div id="callSelfAuxGridLabel" class="stageGridLabel">Tu · Câmara</div>
           </button>
         </div>
         <button id="btnFullscreenStage" class="btn ghost callCtrlBtn callStageViewportFsBtn" type="button" title="Fullscreen" aria-label="Fullscreen">
@@ -3377,6 +3389,10 @@
             </svg>
           </span>
           <span class="sr-only">Fullscreen</span>
+        </button>
+        <button id="btnExitCallFocus" class="btn ghost callStageFocusExitBtn" type="button" title="Back to call layout" aria-label="Back to call layout" hidden>
+          <span aria-hidden="true">&#8592;</span>
+          <span>Back</span>
         </button>
       </div>
 
@@ -3393,7 +3409,7 @@
         <button id="tileRemoteAux" class="participantTile" type="button" hidden>
           <video id="callRemoteAuxThumb" class="participantVideo" autoplay muted playsinline></video>
           <div id="callRemoteAuxAvatar" class="participantAvatar"></div>
-          <div id="callRemoteAuxLabel" class="participantLabel">amigo � C�mara</div>
+          <div id="callRemoteAuxLabel" class="participantLabel">amigo · Câmara</div>
         </button>
         <button id="tileSelf" class="participantTile" type="button">
           <video id="callSelfThumb" class="participantVideo" autoplay muted playsinline></video>
@@ -3403,12 +3419,20 @@
         <button id="tileSelfAux" class="participantTile" type="button" hidden>
           <video id="callSelfAuxThumb" class="participantVideo" autoplay muted playsinline></video>
           <div id="callSelfAuxAvatar" class="participantAvatar"></div>
-          <div id="callSelfAuxLabel" class="participantLabel">Tu � C�mara</div>
+          <div id="callSelfAuxLabel" class="participantLabel">Tu · Câmara</div>
         </button>
       </div>
 
       <div id="dmStageResizeGrip" class="dmStageResizeGrip" title="Arrasta para mudar o tamanho"></div>
       <div class="callStageControls">
+        <button id="btnCallPreviewJoin" class="btn callStagePreviewJoin" type="button" title="Entrar na chamada" aria-label="Entrar na chamada" hidden>
+          <span class="callStagePreviewJoin__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M6 4h4l2 5-3 2a14 14 0 0 0 4 4l2-3 5 2v4c0 1.1-.9 2-2 2C10.3 20 4 13.7 4 6c0-1.1.9-2 2-2z"></path>
+            </svg>
+          </span>
+          <span>Entrar</span>
+        </button>
         <div class="callStageControls__group" role="group" aria-label="Audio">
           <button id="btnMicToggle" class="btn ghost callCtrlBtn" type="button" title="Mute" aria-label="Mute">
             <span class="callCtrlBtn__icon" aria-hidden="true">
@@ -3560,6 +3584,7 @@
             <path d="M12 7v8"></path>
           </svg>
         </span>
+        <span class="callMiniBtn__resumeText" hidden>Entrar</span>
         <span class="sr-only">Abrir chamada</span>
       </button>
       <button id="btnMicToggleSmall" class="btn ghost callMiniBtn" type="button" title="Silenciar microfone" aria-label="Silenciar microfone">
@@ -3739,6 +3764,7 @@
             <div class="desktopSharePickerServerVoiceControls__group" role="group" aria-label="Stream quality">
               <button class="desktopSharePickerQualityBtn is-active" type="button" data-desktop-share-server-quality="720p">720p</button>
               <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-server-quality="1080p">1080p</button>
+              <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-server-quality="1440p">1440p</button>
               <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-server-quality="2160p">4K</button>
               <button class="desktopSharePickerQualityBtn" type="button" data-desktop-share-server-quality="source">Source / Native</button>
             </div>
@@ -3751,7 +3777,6 @@
         <div class="desktopSharePickerFooter__actions">
           <button id="desktopSharePickerCancelBtn" class="btn ghost" type="button" data-desktop-share-cancel="1">Cancel</button>
           <button id="desktopSharePickerStopBtn" class="btn danger" type="button" data-desktop-share-act="stop" hidden>Stop Streaming</button>
-          <button id="desktopSharePickerStartBtn" class="btn primary" type="button" data-desktop-share-act="confirm" hidden>Start Streaming</button>
         </div>
       </div>
     </div>
