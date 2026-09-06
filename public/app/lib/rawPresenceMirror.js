@@ -98,6 +98,41 @@ function sectionEntries(section = {}) {
   return Object.entries(section);
 }
 
+function comparableProtocolMeta(meta = {}) {
+  const normalized = { ...meta };
+  delete normalized.phx_ref;
+  delete normalized.presence_ref;
+  delete normalized.phx_ref_prev;
+  delete normalized.presence_ref_prev;
+  return JSON.stringify(stableValue(normalized));
+}
+
+// Phoenix 0.4.5 syncState aliases newPresence and replaces its metas with
+// joinedMetas before the app's raw listener runs. Recover only that exact
+// truncation pattern from this packet's synchronous public SDK snapshot.
+export function selectSynchronousPresenceFullState(rawState = {}, officialState = {}, knownState = {}) {
+  const raw = normalizeStateInput(unwrapProtocolPayload(rawState));
+  const official = normalizeStateInput(officialState);
+  const known = normalizeStateInput(knownState);
+  if (raw.size !== official.size) return rawState;
+  let recovered = false;
+  for (const [key, rawMetas] of raw) {
+    const officialMetas = official.get(key);
+    if (!officialMetas || rawMetas.size > officialMetas.size) return rawState;
+    for (const [identity, meta] of rawMetas) {
+      const sdkMeta = officialMetas.get(identity);
+      if (!identity.startsWith("ref:") || !sdkMeta || comparableProtocolMeta(meta) !== comparableProtocolMeta(sdkMeta)) return rawState;
+    }
+    for (const [identity, sdkMeta] of officialMetas) {
+      if (rawMetas.has(identity)) continue;
+      const previous = known.get(key)?.get(identity);
+      if (!identity.startsWith("ref:") || !previous || comparableProtocolMeta(previous) !== comparableProtocolMeta(sdkMeta)) return rawState;
+      recovered = true;
+    }
+  }
+  return recovered ? officialState : rawState;
+}
+
 export function createRawPresenceMirror() {
   let mirror = new Map();
 
@@ -121,6 +156,7 @@ export function createRawPresenceMirror() {
     const diff = unwrapProtocolPayload(payload);
     const joinedUserIds = new Set();
     const leftUserIds = new Set();
+    const removedUserIds = new Set();
     const joinedPresenceKeys = [];
     const leftPresenceKeys = [];
     let joinedMetaCount = 0;
@@ -152,9 +188,15 @@ export function createRawPresenceMirror() {
       leftPresenceKeys.push(presenceKey);
       const current = mirror.get(presenceKey);
       for (const meta of metas) {
-        current?.delete(metaIdentity(meta));
-        const userId = metaUserId(meta);
+        const identity = metaIdentity(meta);
+        const previous = current?.get(identity);
+        current?.delete(identity);
+        const removedUserId = metaUserId(previous);
+        const userId = removedUserId || metaUserId(meta);
         if (userId) leftUserIds.add(userId);
+        // Only a matched stored session can end that user's grace. Keep the
+        // received ids for diagnostics without granting unknown refs authority.
+        if (removedUserId) removedUserIds.add(removedUserId);
         leftMetaCount += 1;
       }
       if (current && current.size === 0) mirror.delete(presenceKey);
@@ -168,6 +210,7 @@ export function createRawPresenceMirror() {
       leftPresenceKeys: Array.from(new Set(leftPresenceKeys)).sort(),
       joinedUserIds: Array.from(joinedUserIds).sort(),
       leftUserIds: Array.from(leftUserIds).sort(),
+      removedUserIds: Array.from(removedUserIds).sort(),
       ...getSummary(),
     };
   }

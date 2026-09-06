@@ -3139,6 +3139,8 @@ export function createServerVoiceScreenshareLayer({
   localUserId = "",
   logger = () => {},
   onStateChanged = () => {},
+  onConversationChanged = () => {},
+  shouldSubscribeToParticipant = () => true,
   openSourcePicker = null,
   prepareDesktopCapture = null,
   clearPreparedDesktopCapture = null,
@@ -3153,6 +3155,7 @@ export function createServerVoiceScreenshareLayer({
   normalizeCapturePreferencesForEntitlement = null,
   resolveStageViewport = null,
   onRemoteTrackReady = null,
+  onRemoteShareViewingStopped = () => {},
   autoWatchRemoteShares = false,
   performanceDiagnosticsEnabled = false,
   serverStartTraceEnabled = false,
@@ -3161,7 +3164,7 @@ export function createServerVoiceScreenshareLayer({
   remotePresentationTimeoutMs = SCREENSHARE_REMOTE_PRESENTATION_TIMEOUT_MS,
   remotePresentationRetryLimit = SCREENSHARE_REMOTE_PRESENTATION_RETRY_LIMIT,
 } = {}) {
-  const convId = normalizeId(conversationId || "");
+  let convId = normalizeId(conversationId || "");
   const meId = normalizeId(localUserId || "");
   const isPrivateOneToOne = privateOneToOne === true;
   const readPresentationTitle = (record = null) => {
@@ -3183,6 +3186,11 @@ export function createServerVoiceScreenshareLayer({
 
   let room = null;
   let roomBound = false;
+  let remoteViewingActive = false;
+  const remoteViewerScope = globalThis.crypto?.randomUUID?.()
+    || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  let remoteShareInstanceSequence = 0;
+  const retiredRemoteAudioPublications = new WeakSet();
   const shareRecordsByKey = new Map();
   const remoteWatchedShareKeys = new Set();
   let localShareKey = "";
@@ -3428,7 +3436,7 @@ export function createServerVoiceScreenshareLayer({
     const timer = setTimeout(() => {
       remotePresentationTimersByShareKey.delete(shareKey);
       const record = shareRecordsByKey.get(shareKey) || null;
-      if (!isRemoteShareRecord(record)) return;
+      if (!isRemoteShareRecordWatched(record)) return;
       if (record.presentationState === "first_frame") return;
       const attempt = Math.max(0, Number(record.presentationRetryAttempt || 0));
       if (attempt < boundedRemotePresentationRetryLimit && record.publication) {
@@ -3441,7 +3449,7 @@ export function createServerVoiceScreenshareLayer({
         try { record.publication.setSubscribed?.(false); } catch (_) {}
         Promise.resolve().then(() => {
           const current = shareRecordsByKey.get(shareKey) || null;
-          if (!current || current !== record) return;
+          if (!current || current !== record || !isRemoteShareRecordWatched(current)) return;
           applyRemotePublicationSubscription(current, true, {
             triggerReason: "remote_presentation_timeout_retry",
             callerFunction: "scheduleRemotePresentationTimeout",
@@ -3461,10 +3469,7 @@ export function createServerVoiceScreenshareLayer({
         retryAttempt: attempt,
         timeoutMs: boundedRemotePresentationTimeoutMs,
       });
-      removeShareRecordByKey(shareKey, {
-        triggerReason: "remote_presentation_timeout",
-        callerFunction: "scheduleRemotePresentationTimeout",
-      });
+      emitStateChanged("remote_presentation_timeout", "scheduleRemotePresentationTimeout");
     }, boundedRemotePresentationTimeoutMs);
     remotePresentationTimersByShareKey.set(shareKey, timer);
   }
@@ -5097,13 +5102,102 @@ export function createServerVoiceScreenshareLayer({
     return !!(record && !record.isLocal);
   }
 
+  function isShareRecordAllowed(record = null) {
+    if (!record) return false;
+    if (record.isLocal) return true;
+    const identity = normalizeId(record.publisherIdentity || record.ownerUserId || "");
+    const participant = room?.remoteParticipants?.get?.(identity);
+    if (!roomBound || !remoteViewingActive || !participant || participant !== record.publisherParticipant
+      || normalizeId(participant.sid || "") !== record.publisherSessionId) return false;
+    if (participant.trackPublications?.get?.(record.trackSid) !== record.publication) return false;
+    if (record.technicalCompanion && (!record.ownerParticipant
+      || room?.remoteParticipants?.get?.(record.ownerUserId) !== record.ownerParticipant
+      || normalizeId(record.ownerParticipant.sid || "") !== record.ownerParticipantSid
+      || resolveNativeScreenshareCompanion(participant)?.ownerUserId !== record.ownerUserId)) return false;
+    return safeInvoke(shouldSubscribeToParticipant, participant) === true;
+  }
+
+  function isScreenAudioPublication(publication = null) {
+    return String(publication?.source || "").toLowerCase() === String(Track.Source.ScreenShareAudio);
+  }
+
+  function associatedRemoteScreenAudio(record = null) {
+    if (!isRemoteShareRecord(record) || !isShareRecordAllowed(record)) return [];
+    // The existing publisher contract has no shared audio/video nonce. Only an
+    // unambiguous active share in the same owner session can own human audio.
+    const candidates = Array.from(shareRecordsByKey.values()).filter((candidate) => (
+      !candidate.isLocal && candidate.ownerUserId === record.ownerUserId && isShareRecordAllowed(candidate)
+    ));
+    if (candidates.length !== 1 || candidates[0].key !== record.key) return [];
+    const publishers = [record.publisherParticipant];
+    if (record.technicalCompanion) {
+      const owner = room?.remoteParticipants?.get?.(record.ownerUserId);
+      if (owner && owner === record.ownerParticipant && normalizeId(owner.sid || "") === record.ownerParticipantSid
+        && safeInvoke(shouldSubscribeToParticipant, owner) === true) publishers.push(owner);
+    }
+    return publishers.flatMap((participant) => Array.from(participant?.trackPublications?.values?.() || [])
+      .filter((publication) => isScreenAudioPublication(publication) && !retiredRemoteAudioPublications.has(publication))
+      .map((publication) => ({ publication, participant })));
+  }
+
+  function isRemoteScreenTrackWatched(publication = null, participant = null) {
+    if (!roomBound || !remoteViewingActive || !publication || !participant
+      || room?.remoteParticipants?.get?.(participant.identity) !== participant
+      || participant.trackPublications?.get?.(publication.trackSid) !== publication) return false;
+    return Array.from(shareRecordsByKey.values()).some((record) => {
+      if (!isRemoteShareRecordWatched(record)) return false;
+      if (isScreenSharePublication(publication, publication.track)) return record.publication === publication;
+      return isScreenAudioPublication(publication) && associatedRemoteScreenAudio(record)
+        .some((entry) => entry.publication === publication && entry.participant === participant);
+    });
+  }
+
+  function stopRemoteShareMedia(record, { retireAudio = false } = {}) {
+    if (!isRemoteShareRecord(record)) return;
+    const audio = record.associatedAudio || [];
+    remoteWatchedShareKeys.delete(record.key);
+    record.watchRevision = Number(record.watchRevision || 0) + 1;
+    clearRemotePresentationTimer(record.key);
+    safeInvoke(onRemoteShareViewingStopped, {
+      key: record.key,
+      ownerUserId: record.ownerUserId,
+      audioTrackIds: audio.map(({ publication }) => normalizeId(publication.track?.mediaStreamTrack?.id || "")).filter(Boolean),
+      audioTrackSids: audio.map(({ publication }) => normalizeId(publication.trackSid || "")).filter(Boolean),
+    });
+    detachRemoteVideoElement(record);
+    for (const publication of [record.publication, ...audio.map((entry) => entry.publication)]) {
+      if (!publication) continue;
+      try { if (publication.isDesired !== false) publication.setSubscribed?.(false); } catch (_) {}
+      try { publication.track?.detach?.().forEach?.((element) => { element.pause?.(); element.srcObject = null; }); } catch (_) {}
+    }
+    if (retireAudio) audio.forEach(({ publication }) => retiredRemoteAudioPublications.add(publication));
+    record.associatedAudio = [];
+  }
+
+  function reconcileRemoteShares({ triggerReason = "remote_share_reconcile" } = {}) {
+    let changed = false;
+    for (const record of shareRecordsByKey.values()) {
+      if (record.isLocal) continue;
+      if (!isShareRecordAllowed(record) && remoteWatchedShareKeys.has(record.key)) {
+        stopRemoteShareMedia(record);
+        clearShareTrackByKey(record.key);
+        changed = true;
+      } else {
+        applyRemotePublicationSubscription(record, isRemoteShareRecordWatched(record), { triggerReason });
+      }
+    }
+    if (changed) emitStateChanged(triggerReason, "reconcileRemoteShares");
+    return changed;
+  }
+
   function isRemoteShareRecordWatched(record = null) {
     if (!isRemoteShareRecord(record)) return true;
+    if (!isShareRecordAllowed(record)) return false;
     return remoteWatchedShareKeys.has(normalizeId(record?.key || ""));
   }
 
   function buildShareStateFromRecord(record = null) {
-    if (!record || !record.ownerUserId) return null;
+    if (!record || !record.ownerUserId || !isShareRecordAllowed(record)) return null;
     const remote = isRemoteShareRecord(record);
     const subscribed = remote
       ? !!(record?.publication?.isSubscribed ?? record?.subscribed)
@@ -5116,6 +5210,13 @@ export function createServerVoiceScreenshareLayer({
       isLocal: !!record.isLocal,
       isRemote: remote,
       isWatched: watched,
+      viewerState: !remote ? "watching" : (!watched ? "available"
+        : (["presentation_timeout", "subscription_failed"].includes(record.presentationState) ? "failed"
+          : (["interrupted", "track_unsubscribed"].includes(record.presentationState) ? "interrupted"
+            : (record.presentationState === "first_frame" ? "watching" : "connecting")))),
+      publisherIdentity: record.publisherIdentity || "",
+      publisherSessionId: record.publisherSessionId || "",
+      logicalInstanceId: record.key,
       isSubscribed: subscribed,
       hasPublication: !!record.publication,
       track: record.track || null,
@@ -5161,7 +5262,30 @@ export function createServerVoiceScreenshareLayer({
     };
   }
 
+  // Bounded development evidence distinguishes subscriber loss from publication end.
+  function recordLocalPublicationBoundary(reason) {
+    if (!performanceDiagnosticsEnabled) return;
+    const entry = {
+      at: globalThis.performance?.now?.() || 0,
+      reason: String(reason || "state_changed"),
+      attempt: localShareAttempt,
+      roomState: String(room?.state || "detached"),
+      captureState: String(localCaptureTrack?.readyState || "absent"),
+      publicationPresent: Array.from(room?.localParticipant?.trackPublications?.values?.() || [])
+        .some((publication) => !!localCaptureTrack && publication?.track?.mediaStreamTrack === localCaptureTrack),
+      localRecordPresent: !!(localShareKey && shareRecordsByKey.has(localShareKey)),
+      localPreviewPresent: !!(localShareKey && uiRefsByShareKey.get(localShareKey)?.video?.isConnected),
+      remoteParticipantCount: Number(room?.remoteParticipants?.size || 0),
+    };
+    const entries = mediaDiagnostics.localPublicationBoundaries || [];
+    const previous = entries.at(-1);
+    if (previous && Object.keys(entry).every((key) => key === "at" || previous[key] === entry[key])) return;
+    entries.push(entry);
+    mediaDiagnostics.localPublicationBoundaries = entries.slice(-24);
+  }
+
   function emitStateChanged(triggerReason = "state_changed", callerFunction = "screenshare_layer") {
+    recordLocalPublicationBoundary(triggerReason);
     safeInvoke(onStateChanged, {
       ...buildState(),
       triggerReason: String(triggerReason || "").trim() || "state_changed",
@@ -5219,17 +5343,27 @@ export function createServerVoiceScreenshareLayer({
     if (!isRemoteShareRecord(remoteRecord)) return;
     const publication = remoteRecord?.publication || null;
     if (!publication) return;
-    const wantSubscribed = !!subscribed;
-    try {
-      if (typeof publication.setSubscribed === "function") {
-        publication.setSubscribed(wantSubscribed);
-      }
-    } catch (_) {}
-    try {
-      if (typeof publication.setEnabled === "function") {
-        publication.setEnabled(wantSubscribed);
-      }
-    } catch (_) {}
+    const wantSubscribed = !!subscribed && isRemoteShareRecordWatched(remoteRecord);
+    const previousAudio = remoteRecord.associatedAudio || [];
+    const nextAudio = associatedRemoteScreenAudio(remoteRecord);
+    remoteRecord.associatedAudio = nextAudio;
+    const removedAudio = previousAudio.filter((entry) => !nextAudio.some((candidate) => candidate.publication === entry.publication));
+    if (removedAudio.length) safeInvoke(onRemoteShareViewingStopped, {
+      key: "",
+      audioOnly: true,
+      ownerUserId: remoteRecord.ownerUserId,
+      audioTrackIds: removedAudio.map(({ publication: audio }) => normalizeId(audio.track?.mediaStreamTrack?.id || "")).filter(Boolean),
+      audioTrackSids: removedAudio.map(({ publication: audio }) => normalizeId(audio.trackSid || "")).filter(Boolean),
+    });
+    for (const entry of previousAudio) {
+      if (nextAudio.some((candidate) => candidate.publication === entry.publication)) continue;
+      try { entry.publication.setSubscribed?.(false); } catch (_) {}
+      try { entry.publication.track?.detach?.(); } catch (_) {}
+    }
+    for (const candidate of [publication, ...nextAudio.map((entry) => entry.publication)]) {
+      try { if (candidate.isDesired !== wantSubscribed) candidate.setSubscribed?.(wantSubscribed); } catch (_) {}
+      try { if (wantSubscribed && candidate.isEnabled === false) candidate.setEnabled?.(true); } catch (_) {}
+    }
     if (wantSubscribed) {
       const receiveContract = applyRemoteScreenshareReceiveContract(publication, {
         previousSignature: remoteRecord.receiveContractSignature || "",
@@ -5360,6 +5494,12 @@ export function createServerVoiceScreenshareLayer({
       ownerUserId: uid,
       ownerDisplayName: sanitizeCallVisibleName(ownerDisplayName, isLocal ? "You" : "User"),
       publisherIdentity: normalizeId(publisherIdentity || existing?.publisherIdentity || uid),
+      publisherParticipant: existing?.publisherParticipant || room?.remoteParticipants?.get?.(normalizeId(publisherIdentity || uid)) || null,
+      publisherSessionId: existing?.publisherSessionId || normalizeId(room?.remoteParticipants?.get?.(normalizeId(publisherIdentity || uid))?.sid || ""),
+      ownerParticipant: existing?.ownerParticipant || room?.remoteParticipants?.get?.(uid) || null,
+      ownerParticipantSid: existing?.ownerParticipantSid || normalizeId(room?.remoteParticipants?.get?.(uid)?.sid || ""),
+      watchRevision: Number(existing?.watchRevision || 0),
+      associatedAudio: existing?.associatedAudio || [],
       technicalCompanion: technicalCompanion === true || existing?.technicalCompanion === true,
       isLocal: !!isLocal,
       publication: nextPublication,
@@ -5406,12 +5546,30 @@ export function createServerVoiceScreenshareLayer({
     const videoElement = remoteRecord?.attachedVideoElement || null;
     if (!liveKitTrack || !videoElement) return false;
     remoteRecord.attachedVideoElement = null;
+    const current = shareRecordsByKey.get(remoteRecord.key);
+    if (current && current !== remoteRecord && current.attachedVideoElement === videoElement
+      && (current.liveKitTrack !== liveKitTrack
+        || Number(current.watchRevision || 0) !== Number(remoteRecord.watchRevision || 0))) return false;
     try { liveKitTrack.detach?.(videoElement); } catch (_) {
       try { videoElement.srcObject = null; } catch (_) {}
     }
     try { videoElement.pause?.(); } catch (_) {}
+    try { videoElement.srcObject = null; } catch (_) {}
     videoElement.removeAttribute?.("data-livekit-screenshare-track-id");
     return true;
+  }
+
+  function isCurrentRemoteVideoAttachment(record = null, videoElement = null) {
+    const liveKitTrack = record?.liveKitTrack || null;
+    const mediaTrack = liveKitTrack?.mediaStreamTrack || null;
+    if (!videoElement || !mediaTrack || record?.attachedVideoElement !== videoElement
+      || String(mediaTrack.readyState || "").toLowerCase() === "ended") return false;
+    const owner = videoElement.__altaraRemoteSharePlaybackOwner;
+    if (!owner || owner.key !== record.key || owner.revision !== Number(record.watchRevision || 0)
+      || owner.liveKitTrack !== liveKitTrack || owner.mediaTrack !== mediaTrack) return false;
+    if (record.publication?.track !== liveKitTrack) return false;
+    if (Array.isArray(liveKitTrack.attachedElements) && !liveKitTrack.attachedElements.includes(videoElement)) return false;
+    return videoElement.srcObject?.getVideoTracks?.().includes(mediaTrack) === true;
   }
 
   function scheduleRemoteStageRefresh(record = null, delayMs = 140) {
@@ -5419,7 +5577,7 @@ export function createServerVoiceScreenshareLayer({
     const expectedKey = normalizeId(record?.key || "");
     remoteStageRefreshTimer = setTimeout(() => {
       remoteStageRefreshTimer = null;
-      if (expectedKey && !shareRecordsByKey.has(expectedKey)) return;
+      if (expectedKey && !isRemoteShareRecordWatched(shareRecordsByKey.get(expectedKey))) return;
       emitStateChanged("remote_track_first_frame_ready", "scheduleRemoteStageRefresh");
     }, Math.max(0, Number(delayMs) || 0));
   }
@@ -5427,7 +5585,18 @@ export function createServerVoiceScreenshareLayer({
   function attachRemoteVideoElementImmediately(record = null) {
     const remoteRecord = record && typeof record === "object" ? record : null;
     const liveKitTrack = remoteRecord?.liveKitTrack || null;
-    if (!isRemoteShareRecord(remoteRecord) || !liveKitTrack) return null;
+    if (!isRemoteShareRecord(remoteRecord) || !liveKitTrack || !isRemoteShareRecordWatched(remoteRecord)) return null;
+    if (remoteRecord.publication?.track !== liveKitTrack) return null;
+    const mediaTrack = liveKitTrack.mediaStreamTrack;
+    const watchRevision = Number(remoteRecord.watchRevision || 0);
+    const getCurrentPresentation = () => {
+      const current = shareRecordsByKey.get(remoteRecord.key);
+      return current && current.publication === remoteRecord.publication
+        && current.publication?.track === liveKitTrack
+        && current.liveKitTrack === liveKitTrack && Number(current.watchRevision || 0) === watchRevision
+        && liveKitTrack.mediaStreamTrack === mediaTrack
+        && isRemoteShareRecordWatched(current) ? current : null;
+    };
     mediaDiagnostics.remoteAttachAttemptedAt = timestampNow();
     mediaDiagnostics.remoteAttachFailureReason = null;
     mediaDiagnostics.remoteAttachFunctionPath = [
@@ -5450,8 +5619,27 @@ export function createServerVoiceScreenshareLayer({
       mediaDiagnostics.remoteAttachFailureReason = "canonical_video_not_available";
       return null;
     }
+    const alreadyAttached = isCurrentRemoteVideoAttachment(remoteRecord, video);
+    const previousOwner = video.__altaraRemoteSharePlaybackOwner;
+    if (!alreadyAttached && previousOwner?.liveKitTrack && previousOwner.liveKitTrack !== liveKitTrack) {
+      // Transfer this element only; the previous SDK track may still own other views.
+      try { previousOwner.liveKitTrack.detach?.(video); } catch (_) {}
+      if (!getCurrentPresentation()) return null;
+    }
+    const playbackOwner = { key: remoteRecord.key, revision: watchRevision, liveKitTrack, mediaTrack };
+    video.__altaraRemoteSharePlaybackOwner = playbackOwner;
+    const isCurrentPresentation = () => {
+      const current = getCurrentPresentation();
+      return !!current && video.__altaraRemoteSharePlaybackOwner === playbackOwner
+        && isCurrentRemoteVideoAttachment(current, video);
+    };
+    const releaseStalePlayback = () => {
+      if (video.__altaraRemoteSharePlaybackOwner !== playbackOwner) return;
+      try { liveKitTrack.detach?.(video); } catch (_) {}
+      try { video.pause?.(); video.srcObject = null; } catch (_) {}
+    };
 
-    if (remoteRecord.attachedVideoElement !== video) {
+    if (!alreadyAttached) {
       let attached = null;
       try { attached = attachRemoteScreenshareTrack(liveKitTrack, video); } catch (_) { attached = null; }
       if (!attached) {
@@ -5487,7 +5675,8 @@ export function createServerVoiceScreenshareLayer({
     }
 
     const markFirstFrame = () => {
-      if (remoteRecord.attachedVideoElement !== video || remoteRecord.presentationState === "first_frame") return;
+      if (!isCurrentPresentation()) return;
+      if (getCurrentPresentation().presentationState === "first_frame") return;
       mediaDiagnostics.remoteFirstFrameAt = timestampNow();
       markRemotePresentationBoundary(remoteRecord, "first_frame");
       clearRemotePresentationTimer(remoteRecord.key);
@@ -5505,21 +5694,29 @@ export function createServerVoiceScreenshareLayer({
       video.addEventListener?.("loadeddata", markFirstFrame, { once: true });
     }
     video.addEventListener?.("loadedmetadata", () => {
-      if (remoteRecord.presentationState !== "first_frame") {
+      if (!isCurrentPresentation()) return;
+      if (getCurrentPresentation().presentationState !== "first_frame") {
         markRemotePresentationBoundary(remoteRecord, "loadedmetadata");
       }
     }, { once: true });
     video.addEventListener?.("playing", () => {
-      if (remoteRecord.presentationState !== "first_frame") {
+      if (!isCurrentPresentation()) return;
+      if (getCurrentPresentation().presentationState !== "first_frame") {
         markRemotePresentationBoundary(remoteRecord, "playing");
       }
     }, { once: true });
     try {
       video.play?.().then?.(() => {
-        if (remoteRecord.presentationState !== "first_frame") {
+        if (!isCurrentPresentation()) { releaseStalePlayback(); return; }
+        if (getCurrentPresentation().presentationState !== "first_frame") {
           markRemotePresentationBoundary(remoteRecord, "playing");
         }
-      }).catch?.(() => {});
+      }).catch?.(() => {
+        if (!isCurrentPresentation()) return;
+        if (getCurrentPresentation().presentationState === "first_frame") return;
+        markRemotePresentationBoundary(remoteRecord, "subscription_failed");
+        emitStateChanged("remote_playback_failed", "attachRemoteVideoElementImmediately");
+      });
     } catch (_) {}
     scheduleRemoteStageRefresh(remoteRecord, 140);
     safeInvoke(onRemoteTrackReady, {
@@ -5541,10 +5738,7 @@ export function createServerVoiceScreenshareLayer({
     const existing = shareRecordsByKey.get(normalizedKey) || null;
     if (!existing) return false;
     clearRemotePresentationTimer(normalizedKey);
-    if (isRemoteShareRecord(existing)) {
-      remoteWatchedShareKeys.delete(normalizedKey);
-      detachRemoteVideoElement(existing);
-    }
+    if (isRemoteShareRecord(existing)) stopRemoteShareMedia(existing, { retireAudio: true });
     shareRecordsByKey.delete(normalizedKey);
     clearShareUiByKey(normalizedKey);
     if (localShareKey === normalizedKey) localShareKey = "";
@@ -5593,7 +5787,10 @@ export function createServerVoiceScreenshareLayer({
     const normalizedKey = normalizeId(key);
     if (!normalizedKey) return false;
     const record = shareRecordsByKey.get(normalizedKey) || null;
-    if (!isRemoteShareRecord(record)) return false;
+    if (!isRemoteShareRecord(record) || !isShareRecordAllowed(record)) return false;
+    if (remoteWatchedShareKeys.has(normalizedKey)) return true;
+    record.watchRevision = Number(record.watchRevision || 0) + 1;
+    record.presentationState = "subscription_requested";
     remoteWatchedShareKeys.add(normalizedKey);
     applyRemotePublicationSubscription(record, true, {
       triggerReason,
@@ -5604,6 +5801,7 @@ export function createServerVoiceScreenshareLayer({
     const nextRecord = {
       ...record,
       track: streamBundle?.mediaTrack || record.track || null,
+      liveKitTrack: track || record.liveKitTrack || null,
       trackId: normalizeId(streamBundle?.mediaTrack?.id || record.track?.id || record.trackId || ""),
       stream: streamBundle?.stream || record.stream || null,
       watched: true,
@@ -5611,6 +5809,7 @@ export function createServerVoiceScreenshareLayer({
       updatedAt: Date.now(),
     };
     shareRecordsByKey.set(normalizedKey, nextRecord);
+    if (track) attachRemoteVideoElementImmediately(nextRecord);
     if (focusActive) {
       selectActiveShare(normalizedKey, {
         triggerReason,
@@ -5631,11 +5830,7 @@ export function createServerVoiceScreenshareLayer({
     if (!normalizedKey) return false;
     const record = shareRecordsByKey.get(normalizedKey) || null;
     if (!isRemoteShareRecord(record)) return false;
-    remoteWatchedShareKeys.delete(normalizedKey);
-    applyRemotePublicationSubscription(record, false, {
-      triggerReason,
-      callerFunction,
-    });
+    stopRemoteShareMedia(record);
     const nextRecord = clearShareTrackByKey(normalizedKey, {
       preserveUpdatedAt: false,
     });
@@ -5660,7 +5855,18 @@ export function createServerVoiceScreenshareLayer({
     const trackId = normalizeId(mediaTrack?.id || track?.sid || "");
     const trackSid = normalizeId(publication?.trackSid || track?.sid || "");
     if (!uid) return "";
-    return `remote:${uid}:${trackSid || trackId}`;
+    const participant = room?.remoteParticipants?.get?.(uid);
+    if (!participant) return "";
+    const existing = Array.from(shareRecordsByKey.values()).find((record) => (
+      !record.isLocal && record.publisherIdentity === uid && record.publisherParticipant === participant
+      && record.publisherSessionId === normalizeId(participant.sid || "")
+      && record.publication === publication
+    ));
+    if (existing) return existing.key;
+    if (!publication || participant.trackPublications?.get?.(trackSid) !== publication) return "";
+    // Presentation keys follow the existing lowercase UI contract; publisher
+    // identity/SID fields and publication ownership comparisons remain exact.
+    return `remote:${meId}:${remoteViewerScope}:${uid}:${normalizeId(participant.sid || "session")}:${++remoteShareInstanceSequence}`.toLowerCase();
   }
 
   function removeRemoteShareRecordByTrack({
@@ -7451,6 +7657,7 @@ export function createServerVoiceScreenshareLayer({
   async function stopShare({
     triggerReason = "manual_toggle",
   } = {}) {
+    recordLocalPublicationBoundary(`stop_requested:${String(triggerReason || "manual_toggle")}`);
     emit("screenshare.stop_requested", {
       triggerReason: String(triggerReason || "").trim() || "manual_toggle",
       localShareActive: !!(localShareKey && shareRecordsByKey.has(localShareKey)),
@@ -7515,12 +7722,26 @@ export function createServerVoiceScreenshareLayer({
     triggerReason = "room_track_published",
     callerFunction = "handleRemoteTrackPublished",
   } = {}) {
+    if (!remoteViewingActive || room?.remoteParticipants?.get?.(participant?.identity) !== participant) return;
+    if (isScreenAudioPublication(publication)) {
+      reconcileRemoteShares({ triggerReason });
+      if (!isRemoteScreenTrackWatched(publication, participant)) {
+        try { publication.setSubscribed?.(false); } catch (_) {}
+      }
+      return;
+    }
     if (String(publication?.kind || "").trim().toLowerCase() !== "video") return;
     if (!isScreenSharePublication(publication, publication?.track || null)) return;
     const remoteParticipant = resolveRemoteShareParticipant(participant);
     const uid = remoteParticipant?.ownerUserId || "";
     const publisherIdentity = remoteParticipant?.publisherIdentity || "";
     if (!uid || !publisherIdentity || publisherIdentity === meId) return;
+    for (const record of Array.from(shareRecordsByKey.values())) {
+      if (!record.isLocal && record.publisherIdentity === publisherIdentity
+        && (record.publisherParticipant !== participant || record.publisherSessionId !== normalizeId(participant.sid || ""))) {
+        removeShareRecordByKey(record.key, { triggerReason: "publisher_session_replaced" });
+      }
+    }
     const recordKey = resolveRemoteShareRecordKey({
       participantIdentity: publisherIdentity,
       publication,
@@ -7529,7 +7750,7 @@ export function createServerVoiceScreenshareLayer({
     if (!recordKey) return;
     const trackSid = normalizeId(publication?.trackSid || publication?.track?.sid || "");
     const existing = shareRecordsByKey.get(recordKey) || null;
-    const shouldWatch = !!autoWatchRemoteShares || !!(existing && isRemoteShareRecordWatched(existing));
+    const shouldWatch = !!(existing && isRemoteShareRecordWatched(existing));
     const streamBundle = shouldWatch ? createVideoStreamFromTrack(publication?.track || null) : null;
     const record = upsertShareRecord({
       key: recordKey,
@@ -7550,6 +7771,7 @@ export function createServerVoiceScreenshareLayer({
     markRemotePresentationBoundary(record, "publication_discovered", {
       trackSid: trackSid || null,
     });
+    reconcileRemoteShares({ triggerReason: "publication_discovered" });
     if (!isRemoteShareRecordWatched(record)) {
       applyRemotePublicationSubscription(record, false, {
         triggerReason,
@@ -7593,12 +7815,29 @@ export function createServerVoiceScreenshareLayer({
     triggerReason = "room_track_subscribed",
     callerFunction = "handleRemoteTrackSubscribed",
   } = {}) {
+    if (!remoteViewingActive || room?.remoteParticipants?.get?.(participant?.identity) !== participant) {
+      try { track?.detach?.(); } catch (_) {}
+      return;
+    }
+    if (isScreenAudioPublication(publication)) {
+      if (!isRemoteScreenTrackWatched(publication, participant)) {
+        try { publication.setSubscribed?.(false); } catch (_) {}
+        try { track?.detach?.(); } catch (_) {}
+      }
+      return;
+    }
     if (String(track?.kind || "").trim().toLowerCase() !== "video") return;
     if (!isScreenSharePublication(publication, track)) return;
     const remoteParticipant = resolveRemoteShareParticipant(participant);
     const uid = remoteParticipant?.ownerUserId || "";
     const publisherIdentity = remoteParticipant?.publisherIdentity || "";
     if (!uid || !publisherIdentity || publisherIdentity === meId) return;
+    if (!isRemoteScreenTrackWatched(publication, participant)
+      || (publication?.track && publication.track !== track)) {
+      try { publication?.setSubscribed?.(false); } catch (_) {}
+      try { track?.detach?.().forEach?.((element) => { element.pause?.(); element.srcObject = null; }); } catch (_) {}
+      return;
+    }
     const remotePerformanceMarker = performanceDiagnosticsEnabled
       ? parseScreensharePerformanceTrackName(publication?.trackName || "")
       : null;
@@ -7628,7 +7867,7 @@ export function createServerVoiceScreenshareLayer({
       isLocal: false,
       trackSid,
       publication,
-      watched: autoWatchRemoteShares ? true : null,
+      watched: null,
       keepTrackOnNull: true,
       notifyStateChange: false,
     });
@@ -7730,6 +7969,13 @@ export function createServerVoiceScreenshareLayer({
     triggerReason = "room_track_unsubscribed",
     callerFunction = "handleRemoteTrackUnsubscribed",
   } = {}) {
+    if (isScreenAudioPublication(publication)) {
+      if (!isRemoteScreenTrackWatched(publication, participant)) {
+        try { publication.setSubscribed?.(false); } catch (_) {}
+        try { track?.detach?.(); } catch (_) {}
+      }
+      return;
+    }
     if (String(track?.kind || "").trim().toLowerCase() !== "video") return;
     if (!isScreenSharePublication(publication, track)) return;
     const remoteParticipant = resolveRemoteShareParticipant(participant);
@@ -7744,6 +7990,13 @@ export function createServerVoiceScreenshareLayer({
     if (!recordKey) return;
     const trackSid = normalizeId(publication?.trackSid || track?.sid || "");
     const existing = shareRecordsByKey.get(recordKey) || null;
+    if (!existing) return;
+    // SDK replacements normally unsubscribe first. A delayed callback from an
+    // older RemoteTrack must not clear the newer attachment on the same SID.
+    if (existing.publication !== publication || existing.publisherParticipant !== participant
+      || (existing.liveKitTrack && existing.liveKitTrack !== track)
+      || (publication?.track && publication.track !== track)) return;
+    existing.presentationState = "track_unsubscribed";
     const placeholderRecord = existing || upsertShareRecord({
       key: recordKey,
       ownerUserId: uid,
@@ -7779,6 +8032,13 @@ export function createServerVoiceScreenshareLayer({
     triggerReason = "room_track_unpublished",
     callerFunction = "handleRemoteTrackUnpublished",
   } = {}) {
+    if (isScreenAudioPublication(publication)) {
+      reconcileRemoteShares({ triggerReason });
+      if (!isRemoteScreenTrackWatched(publication, participant)) {
+        try { publication.setSubscribed?.(false); } catch (_) {}
+      }
+      return;
+    }
     if (String(publication?.kind || "").trim().toLowerCase() !== "video") return;
     if (!isScreenSharePublication(publication, publication?.track || null)) return;
     const remoteParticipant = resolveRemoteShareParticipant(participant);
@@ -7810,18 +8070,61 @@ export function createServerVoiceScreenshareLayer({
   function handleParticipantDisconnected(participant) {
     const uid = normalizeId(participant?.identity || "");
     if (!uid) return;
+    const current = room?.remoteParticipants?.get?.(uid);
+    if (current && current !== participant) return;
     removeRemoteShareRecordsByParticipant(uid, {
       triggerReason: "participant_disconnected",
     });
+    for (const record of Array.from(shareRecordsByKey.values())) {
+      if (record.technicalCompanion && record.ownerParticipant === participant) {
+        removeShareRecordByKey(record.key, { triggerReason: "share_owner_disconnected" });
+      }
+    }
     emitStateChanged("participant_disconnected", "handleParticipantDisconnected");
   }
 
   function handleRoomDisconnected() {
+    remoteViewingActive = false;
     clearRemoteShareRecords({
       triggerReason: "room_disconnected",
       callerFunction: "handleRoomDisconnected",
     });
     emitStateChanged("room_disconnected", "handleRoomDisconnected");
+  }
+
+  function handleRemoteShareAuthorityChanged() {
+    reconcileRemoteShares({ triggerReason: "participant_authority_changed" });
+  }
+
+  function handleRemoteShareReconnecting() {
+    for (const record of shareRecordsByKey.values()) {
+      if (isRemoteShareRecordWatched(record)) record.presentationState = "interrupted";
+    }
+    emitStateChanged("room_reconnecting", "handleRemoteShareReconnecting");
+  }
+
+  function handleRemoteShareConnected() {
+    if (!remoteViewingActive || String(room?.state || "") !== "connected") return;
+    // Initial publications are present in the Room after connect, but the SDK
+    // does not forward their TrackPublished events while it is Connecting.
+    hydrateExistingRemoteShares();
+    reconcileRemoteShares({ triggerReason: "room_connected" });
+    emitStateChanged("room_connected", "handleRemoteShareConnected");
+  }
+
+  function handleRemoteShareReconnected() {
+    if (!remoteViewingActive) return;
+    hydrateExistingRemoteShares();
+    reconcileRemoteShares({ triggerReason: "room_reconnected" });
+    emitStateChanged("room_reconnected", "handleRemoteShareReconnected");
+  }
+
+  function handleRemoteShareSubscriptionFailed(trackSid, participant) {
+    for (const record of shareRecordsByKey.values()) {
+      if (record.publisherParticipant !== participant || record.trackSid !== normalizeId(trackSid)) continue;
+      if (isRemoteShareRecordWatched(record)) record.presentationState = "subscription_failed";
+    }
+    emitStateChanged("subscription_failed", "handleRemoteShareSubscriptionFailed");
   }
 
   function hydrateExistingRemoteShares() {
@@ -7856,8 +8159,16 @@ export function createServerVoiceScreenshareLayer({
       try { room.off(RoomEvent.TrackUnpublished, handleRemoteTrackUnpublished); } catch (_) {}
       try { room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected); } catch (_) {}
       try { room.off(RoomEvent.Disconnected, handleRoomDisconnected); } catch (_) {}
+      try { room.off(RoomEvent.ParticipantMetadataChanged, handleRemoteShareAuthorityChanged); } catch (_) {}
+      try { room.off(RoomEvent.ParticipantAttributesChanged, handleRemoteShareAuthorityChanged); } catch (_) {}
+      try { room.off(RoomEvent.ParticipantPermissionsChanged, handleRemoteShareAuthorityChanged); } catch (_) {}
+      try { room.off(RoomEvent.Reconnecting, handleRemoteShareReconnecting); } catch (_) {}
+      try { room.off(RoomEvent.Connected, handleRemoteShareConnected); } catch (_) {}
+      try { room.off(RoomEvent.Reconnected, handleRemoteShareReconnected); } catch (_) {}
+      try { room.off(RoomEvent.TrackSubscriptionFailed, handleRemoteShareSubscriptionFailed); } catch (_) {}
       roomBound = false;
     }
+    clearRemoteShareRecords({ triggerReason: "room_replaced" });
     room = nextRoom;
     room.on(RoomEvent.TrackPublished, handleRemoteTrackPublished);
     room.on(RoomEvent.TrackSubscribed, handleRemoteTrackSubscribed);
@@ -7867,7 +8178,15 @@ export function createServerVoiceScreenshareLayer({
     room.on(RoomEvent.TrackUnpublished, handleRemoteTrackUnpublished);
     room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
     room.on(RoomEvent.Disconnected, handleRoomDisconnected);
+    room.on(RoomEvent.ParticipantMetadataChanged, handleRemoteShareAuthorityChanged);
+    room.on(RoomEvent.ParticipantAttributesChanged, handleRemoteShareAuthorityChanged);
+    room.on(RoomEvent.ParticipantPermissionsChanged, handleRemoteShareAuthorityChanged);
+    room.on(RoomEvent.Reconnecting, handleRemoteShareReconnecting);
+    room.on(RoomEvent.Connected, handleRemoteShareConnected);
+    room.on(RoomEvent.Reconnected, handleRemoteShareReconnected);
+    room.on(RoomEvent.TrackSubscriptionFailed, handleRemoteShareSubscriptionFailed);
     roomBound = true;
+    remoteViewingActive = true;
     hydrateExistingRemoteShares();
     emitStateChanged("room_bound", "bindRoom");
   }
@@ -7975,7 +8294,9 @@ export function createServerVoiceScreenshareLayer({
     if (!shareRecord?.key) return null;
     const refs = ensureUiForShare(stageViewport, shareRecord);
     if (!refs) return null;
-    const shouldShow = !!(enabled && shareRecord.stream);
+    const watched = shareRecord.isLocal || isRemoteShareRecordWatched(shareRecord);
+    const shouldShow = !!(enabled && (shareRecord.stream || (!shareRecord.isLocal && shareRecord.publication)));
+    refs.panel.setAttribute("data-share-watched", watched ? "1" : "0");
     const liveKitRemoteAttached = !!refs.video.getAttribute("data-livekit-screenshare-track-id");
     const videoAdoptedByStageTile = !!refs.video.closest?.(".stageGridTile, .participantTile");
 
@@ -7996,7 +8317,12 @@ export function createServerVoiceScreenshareLayer({
       return { refs, visible: false };
     }
 
-    if (!shareRecord.isLocal && shareRecord.liveKitTrack && shareRecord.attachedVideoElement !== refs.video) {
+    if (!shareRecord.isLocal && !watched) {
+      detachRemoteVideoElement(shareRecord);
+      try { refs.video.pause?.(); refs.video.srcObject = null; } catch (_) {}
+      return { refs, visible: shouldShow };
+    }
+    if (!shareRecord.isLocal && shareRecord.liveKitTrack && !isCurrentRemoteVideoAttachment(shareRecord, refs.video)) {
       attachRemoteVideoElementImmediately(shareRecord);
     }
     const usesImmediateRemoteVideo = !!(
@@ -8011,7 +8337,9 @@ export function createServerVoiceScreenshareLayer({
     } else if (refs.video.srcObject !== shareRecord.stream) {
       refs.video.srcObject = shareRecord.stream;
     }
-    try { refs.video.play?.().catch?.(() => {}); } catch (_) {}
+    if (shareRecord.isLocal) {
+      try { refs.video.play?.().catch?.(() => {}); } catch (_) {}
+    }
     return { refs, visible: true };
   }
 
@@ -8024,8 +8352,9 @@ export function createServerVoiceScreenshareLayer({
     if (!stageViewport || typeof document === "undefined") return;
     // Remote ScreenShare media is owned exclusively by the LiveKit attach()
     // path inside renderShareRecord; render() only reconciles presentation.
+    reconcileRemoteShares({ triggerReason });
     const state = buildState();
-    const records = Array.from(shareRecordsByKey.values());
+    const records = Array.from(shareRecordsByKey.values()).filter(isShareRecordAllowed);
     const activeKeys = new Set(records.map((record) => normalizeId(record?.key || "")).filter(Boolean));
     const rendered = records.map((record) => renderShareRecord(record, stageViewport, enabled)).filter(Boolean);
     for (const [key, refs] of uiRefsByShareKey.entries()) {
@@ -8077,6 +8406,8 @@ export function createServerVoiceScreenshareLayer({
     clearUiState = true,
     triggerReason = "detach",
   } = {}) {
+    clearRemoteShareRecords({ triggerReason });
+    remoteViewingActive = false;
     if (stopLocalShare) {
       try {
         await stopShareGuarded({ triggerReason });
@@ -8095,6 +8426,13 @@ export function createServerVoiceScreenshareLayer({
       try { room.off(RoomEvent.TrackUnpublished, handleRemoteTrackUnpublished); } catch (_) {}
       try { room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected); } catch (_) {}
       try { room.off(RoomEvent.Disconnected, handleRoomDisconnected); } catch (_) {}
+      try { room.off(RoomEvent.ParticipantMetadataChanged, handleRemoteShareAuthorityChanged); } catch (_) {}
+      try { room.off(RoomEvent.ParticipantAttributesChanged, handleRemoteShareAuthorityChanged); } catch (_) {}
+      try { room.off(RoomEvent.ParticipantPermissionsChanged, handleRemoteShareAuthorityChanged); } catch (_) {}
+      try { room.off(RoomEvent.Reconnecting, handleRemoteShareReconnecting); } catch (_) {}
+      try { room.off(RoomEvent.Connected, handleRemoteShareConnected); } catch (_) {}
+      try { room.off(RoomEvent.Reconnected, handleRemoteShareReconnected); } catch (_) {}
+      try { room.off(RoomEvent.TrackSubscriptionFailed, handleRemoteShareSubscriptionFailed); } catch (_) {}
     }
     roomBound = false;
     room = null;
@@ -8257,10 +8595,25 @@ export function createServerVoiceScreenshareLayer({
     });
   }
 
+  // The app calls this only for an accepted same-Room logical move.
+  // Keep publications, bindings and media state; the caller commits UI once.
+  function retargetConversation(conversationId = "") {
+    const nextId = normalizeId(conversationId || "");
+    if (!nextId) return false;
+    if (nextId === convId) return true;
+    convId = nextId;
+    safeInvoke(onConversationChanged, nextId);
+    reconcileRemoteShares({ triggerReason: "conversation_retargeted" });
+    return true;
+  }
+
   return {
-    conversationId: convId,
+    get conversationId() { return convId; },
+    retargetConversation,
     localUserId: meId,
     bindRoom,
+    isRemoteScreenTrackWatched,
+    reconcileRemoteShares,
     startShare: startShareGuarded,
     startBrowserShareFromUserGesture,
     stopShare: stopShareGuarded,
@@ -8355,7 +8708,7 @@ export function createServerVoiceScreenshareLayer({
       return buildState();
     },
     getPresentations() {
-      return Array.from(shareRecordsByKey.values()).map((record) => {
+      return Array.from(shareRecordsByKey.values()).filter(isShareRecordAllowed).map((record) => {
         const refs = uiRefsByShareKey.get(normalizeId(record?.key || "")) || null;
         return {
           key: record?.key || "",
@@ -8367,11 +8720,22 @@ export function createServerVoiceScreenshareLayer({
         };
       });
     },
+    getLocalVideoElement({ trackId = "" } = {}) {
+      const record = localShareKey ? shareRecordsByKey.get(localShareKey) : null;
+      if (!record?.isLocal || !record.stream || !isShareRecordAllowed(record)) return null;
+      if (trackId && ![record.trackId, record.trackSid, record.track?.id].includes(normalizeId(trackId))) return null;
+      const refs = ensureUiForShare(resolveStageViewport?.(), record);
+      if (!refs?.video) return null;
+      // The publisher preview is local, muted and independent of viewer consent.
+      if (refs.video.srcObject !== record.stream) refs.video.srcObject = record.stream;
+      return refs.video;
+    },
     getRemoteVideoElement({ trackId = "", trackSid = "" } = {}) {
       const expectedTrackId = normalizeId(trackId || "");
       const expectedTrackSid = normalizeId(trackSid || "");
       const record = Array.from(shareRecordsByKey.values()).find((candidate) => (
         isRemoteShareRecord(candidate)
+        && isRemoteShareRecordWatched(candidate)
         && (
           (!expectedTrackId && !expectedTrackSid)
           || (expectedTrackId && [candidate.trackId, candidate.track?.id, candidate.liveKitTrack?.mediaStreamTrack?.id]
@@ -8380,7 +8744,7 @@ export function createServerVoiceScreenshareLayer({
         )
       )) || null;
       if (!record) return null;
-      if (!record.attachedVideoElement?.isConnected) {
+      if (!record.attachedVideoElement?.isConnected || !isCurrentRemoteVideoAttachment(record, record.attachedVideoElement)) {
         attachRemoteVideoElementImmediately(record);
       }
       applyRemotePublicationSubscription(record, true, {
@@ -8449,6 +8813,7 @@ export function createServerVoiceScreenshareLayer({
       return {
         serverStartTrace: cloneServerStartTrace(),
         shareState: localShareLifecycleState,
+        localPublicationBoundaries: (mediaDiagnostics.localPublicationBoundaries || []).map((entry) => ({ ...entry })),
         sourcePickerType: mediaDiagnostics.sourcePickerType,
         sourceAcquisitionPath: mediaDiagnostics.sourceAcquisitionPath,
         pickerOutcome: mediaDiagnostics.pickerOutcome,

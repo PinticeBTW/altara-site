@@ -158,8 +158,10 @@ export function createServerVoiceCameraLayer({
   localUserId = "",
   logger = () => {},
   onStateChanged = () => {},
+  onConversationChanged = () => {},
+  shouldSubscribeToParticipant = () => true,
 } = {}) {
-  const convId = normalizeId(conversationId || "");
+  let convId = normalizeId(conversationId || "");
   const meId = normalizeId(localUserId || "");
 
   let room = null;
@@ -330,8 +332,14 @@ export function createServerVoiceCameraLayer({
     return normalizeId(getLocalCameraPublication()?.track?.getSettings?.()?.deviceId || "");
   }
 
+  function isRemoteCameraRecordAllowed(record = null) {
+    const identity = normalizeId(record?.participantIdentity || record?.userId || "");
+    const participant = room?.remoteParticipants?.get?.(identity) || { identity };
+    return safeInvoke(shouldSubscribeToParticipant, participant) === true;
+  }
+
   function buildState() {
-    const cameraStates = listRemoteCameraRecords().map((record) => ({
+    const cameraStates = listRemoteCameraRecords().filter(isRemoteCameraRecordAllowed).map((record) => ({
       key: normalizeId(record.key || ""),
       userId: normalizeId(record.userId || ""),
       participantIdentity: normalizeId(record.participantIdentity || record.userId || ""),
@@ -1757,7 +1765,7 @@ export function createServerVoiceCameraLayer({
   function getRemoteVideoTracksByUser() {
     const byUser = new Map();
     const recordsByUser = new Map();
-    listRemoteCameraRecords().forEach((record) => {
+    listRemoteCameraRecords().filter(isRemoteCameraRecordAllowed).forEach((record) => {
       const userId = normalizeId(record?.userId || "");
       if (!userId) return;
       if (!recordsByUser.has(userId)) recordsByUser.set(userId, []);
@@ -1888,8 +1896,20 @@ export function createServerVoiceCameraLayer({
     emitStateChanged("detached", "detach");
   }
 
+  // The app calls this only for an accepted same-Room logical move.
+  // Keep publications, bindings and media state; the caller commits UI once.
+  function retargetConversation(conversationId = "") {
+    const nextId = normalizeId(conversationId || "");
+    if (!nextId) return false;
+    if (nextId === convId) return true;
+    convId = nextId;
+    safeInvoke(onConversationChanged, nextId);
+    return true;
+  }
+
   return {
-    conversationId: convId,
+    get conversationId() { return convId; },
+    retargetConversation,
     localUserId: meId,
     bindRoom,
     startCamera,

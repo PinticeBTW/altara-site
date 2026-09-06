@@ -442,6 +442,15 @@ export function normalizeCallIssue(error = null, {
   if (pickerCancelled) {
     return expectedIssue("screen_share_cancelled", "Screen sharing cancelled", diagnostics);
   }
+  if (cleanIdentifier(error?.message) === "private_call_participant_busy"
+      || markers.includes("private_call_participant_busy")) {
+    return warningIssue(
+      "private_call_participant_busy",
+      "Call busy",
+      "The call service refused a conflicting call operation. Try again after it finishes.",
+      { ...diagnostics, expected: true },
+    );
+  }
   if (explicitlyExpected || normalCallOutcome || requestedLeave) {
     if (isScreenShare && hasToken(contextToken, ["track_ended", "share_ended", "stop_share"])) {
       return expectedIssue("screen_share_ended", "Screen sharing ended", diagnostics);

@@ -53,6 +53,8 @@ function patchAppShell(html) {
   );
   out = out.replace(/src=(["'])(?:\.\/)?build\/icon\.jpg\1/g, 'src="/app/build/icon.jpg"');
   out = out.replace(/href=(["'])(?:\.\/)?build\/icon\.png\1/g, 'href="/app/build/icon.png"');
+  out = out.replace(/(src|href)=(["'])(?:\.\/)?assets\/brand\/([^"']+)\2/g, '$1="/app/assets/brand/$3"');
+  out = out.replace(/href=(["'])(?:\.\/)?build\/icon\.ico\1/g, 'href="/app/build/icon.ico"');
   return out;
 }
 
@@ -63,6 +65,8 @@ function patchAuthPage(html) {
   out = out.replace(/src=(["'])(?:\.\/)?build\/icon\.jpg\1/g, 'src="/app/build/icon.jpg"');
   out = out.replace(/src=(["'])(?:\.\/)?(login|register|profile)\.js\1/g, 'src="/app/$2.js"');
   out = out.replace(/href=(["'])\.\/(login|register|profile|index)\.html\1/g, 'href="/app/$2.html"');
+  out = out.replace(/(src|href)=(["'])(?:\.\/)?assets\/brand\/([^"']+)\2/g, '$1="/app/assets/brand/$3"');
+  out = out.replace(/href=(["'])(?:\.\/)?build\/icon\.ico\1/g, 'href="/app/build/icon.ico"');
   return out;
 }
 

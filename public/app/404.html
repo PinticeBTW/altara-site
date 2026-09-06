@@ -4,6 +4,8 @@
 <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>altara</title>
+  <link rel="icon" href="/app/build/icon.ico" sizes="any" />
+  <link rel="icon" href="/app/assets/brand/LOGO%20ALTARA%20BRANCO.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/app/style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -395,9 +397,9 @@
               if (!key.toLowerCase().includes("-auth-token")) continue;
               const parsed = JSON.parse(store.getItem(key) || "null");
               const uid = String(
-                parsed?.user?.id ||
-                parsed?.currentSession?.user?.id ||
-                parsed?.session?.user?.id ||
+                parsed?.userá.id ||
+                parsed?.currentSession?.userá.id ||
+                parsed?.session?.userá.id ||
                 ""
               ).trim();
               if (/^[0-9a-f-]{32,}$/i.test(uid)) return uid;
@@ -903,8 +905,8 @@
               <div id="dmTitle" class="dmTitle">DM</div>
               <span id="dmPrivacyBadge" class="dmPrivacyBadge hidden" hidden></span>
               <button id="btnDmPrivacy" class="dmPrivacyOptInBtn hidden" type="button" style="display:none;">
-                <span id="btnDmPrivacyLabel">Request Vault</span>
-                <span id="btnDmPrivacySrOnly" class="sr-only">Request Vault</span>
+                <span id="btnDmPrivacyLabel">Segurança</span>
+                <span id="btnDmPrivacySrOnly" class="sr-only">Segurança da conversa</span>
               </button>
             </div>
             <div id="callStatus" class="dmSub" style="display:none;"></div>
@@ -1656,8 +1658,8 @@
               <div class="settingsPrivacyModeHeader">
                 <div class="settingsPrivacyModeMark" aria-hidden="true">V</div>
                 <div class="settingsPrivacyModeCopy">
-                  <div id="settingsSectionDmE2eeBackup" class="settingsSectionTitle">ALTARA Vault</div>
-                  <div id="settingsDmE2eeBackupHint" class="settingsHint">End-to-end encrypted DMs for maximum privacy. ALTARA cannot recover Vault messages without your recovery password, recovery key, or trusted device.</div>
+                  <div id="settingsSectionDmE2eeBackup" class="settingsSectionTitle">Mensagens encriptadas</div>
+                  <div id="settingsDmE2eeBackupHint" class="settingsHint">Texto de conversas diretas encriptado de ponta a ponta. Anexos não são suportados neste modo; eventos de sistema e chamadas são separados.</div>
                 </div>
                 <div id="settingsDmE2eeBackupModePill" class="settingsStatusPill" data-status="loading">Checking</div>
               </div>
@@ -1680,7 +1682,7 @@
                   <strong id="settingsDmE2eeBackupDeviceStatusValue" data-status="loading">Checking</strong>
                 </div>
               </div>
-              <div id="settingsDmE2eeBackupRecoveryKeyMissing" class="settingsPrivacyCallout is-warning" hidden>Recovery Key is not set up. Create a new Vault Recovery backup to generate one.</div>
+              <div id="settingsDmE2eeBackupRecoveryKeyMissing" class="settingsPrivacyCallout is-warning" hidden>A recuperação por palavra-passe é suficiente. Não precisa de gerar um código para usar mensagens encriptadas.</div>
               <details id="settingsDmE2eeBackupHowItWorks" class="settingsPrivacyDetails">
                 <summary id="settingsDmE2eeBackupHowItWorksSummary">How Vault recovery works</summary>
                 <div id="settingsDmE2eeBackupHowItWorksBody">
@@ -1713,11 +1715,11 @@
                   <div id="settingsDmE2eeBackupRestoreHint" class="settingsHint">Use the recovery password or Recovery Key you saved on another device.</div>
                 </div>
                 <div id="settingsDmE2eeBackupSetupWrap" class="settingsColumn" hidden>
-                  <button id="btnSettingsDmE2eeSetupNewKey" class="btn ghost" type="button">Set up Vault on this device</button>
+                  <button id="btnSettingsDmE2eeSetupNewKey" class="btn ghost" type="button">Configurar mensagens encriptadas</button>
                 </div>
                 <div class="settingsColumn">
                   <button id="btnSettingsDmE2eeBackupRefresh" class="btn ghost" type="button">Refresh Vault status</button>
-                  <div id="settingsDmE2eeBackupLimitations" class="settingsHint">Save your Vault Recovery Password and Recovery Key somewhere safe. Before uninstalling ALTARA, make sure Vault Recovery is set up and your Recovery Key is saved.</div>
+                  <div id="settingsDmE2eeBackupLimitations" class="settingsHint">Guarde a palavra-passe e qualquer código de recuperação existente. Sem dispositivos autorizados nem métodos de recuperação, não será possível recuperar as mensagens encriptadas.</div>
                 </div>
               </div>
             </div>
@@ -3824,7 +3826,7 @@
     <div class="desktopUpdatingOverlay__card" role="status" aria-live="assertive" aria-atomic="true">
       <div class="desktopUpdatingOverlay__brand">ALTARA</div>
       <div class="desktopUpdatingOverlay__logo" aria-hidden="true">
-        <img id="desktopUpdatingOverlayLogo" class="desktopUpdatingOverlay__logoImg" src="/app/build/icon.jpg" alt="" loading="eager" />
+        <img id="desktopUpdatingOverlayLogo" class="desktopUpdatingOverlay__logoImg" src="/app/assets/brand/LOGO%20ALTARA%20BRANCO.svg" alt="" loading="eager" />
       </div>
       <div id="desktopUpdatingOverlayTitle" class="desktopUpdatingOverlay__title">Updating Altara...</div>
       <div id="desktopUpdatingOverlayText" class="desktopUpdatingOverlay__text">Applying update. Please wait a moment.</div>

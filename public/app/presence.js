@@ -1,6 +1,6 @@
 // presence.js
 // Supabase Realtime Presence (Discord-like)
-import { createRawPresenceMirror } from "./lib/rawPresenceMirror.js";
+import { createRawPresenceMirror, selectSynchronousPresenceFullState } from "./lib/rawPresenceMirror.js";
 
 export function createPresenceSystem({
   supabase,
@@ -71,6 +71,7 @@ export function createPresenceSystem({
   let shutdownUnsubscribeResult = "";
   const rawPresenceMirror = createRawPresenceMirror();
   let rawStateSeenForGeneration = false;
+  let synchronousOfficialPresenceSnapshot = null;
   let rawStateCount = 0;
   let rawDiffCount = 0;
   let rawJoinCount = 0;
@@ -618,7 +619,7 @@ export function createPresenceSystem({
   function schedulePendingTrackRequest() {
     if (!pendingTrackRequest || pendingTrackTimer || trackInFlight) return;
     const elapsed = Date.now() - Math.max(0, Number(lastTrackSentAt || 0));
-    const delayMs = Math.max(0, PRESENCE_TRACK_MIN_INTERVAL_MS - elapsed);
+    const delayMs = pendingTrackRequest.force ? 0 : Math.max(0, PRESENCE_TRACK_MIN_INTERVAL_MS - elapsed);
     pendingTrackTimer = setTimeout(() => {
       pendingTrackTimer = null;
       const request = pendingTrackRequest;
@@ -761,6 +762,9 @@ export function createPresenceSystem({
 
   async function trackNow(statusOverride = "", { force = false } = {}) {
     if (!started || !channel || channelStatus !== "SUBSCRIBED") return null;
+    const ownerChannel = channel;
+    const ownerGeneration = trackGeneration;
+    const ownerTrackEpoch = subscribedTrackEpoch;
     try {
       const built = buildTrackPayload(statusOverride);
       if (!built) return null;
@@ -780,13 +784,16 @@ export function createPresenceSystem({
         return trackInFlight;
       }
       const elapsed = nowMs - Math.max(0, Number(lastTrackSentAt || 0));
-      if (lastTrackSentAt && elapsed < PRESENCE_TRACK_MIN_INTERVAL_MS) {
+      if (force !== true && lastTrackSentAt && elapsed < PRESENCE_TRACK_MIN_INTERVAL_MS) {
         storePendingTrackRequest(statusOverride, force);
         schedulePendingTrackRequest();
         return "queued";
       }
 
       clearPendingTrackTimer();
+      // This payload incorporates the latest status and activity. A queued
+      // refresh from before it must not replay an older status afterwards.
+      pendingTrackRequest = null;
       const targetChannel = channel;
       const targetGeneration = trackGeneration;
       const targetTrackEpoch = subscribedTrackEpoch;
@@ -879,6 +886,10 @@ export function createPresenceSystem({
         schedulePendingTrackRequest();
       }
     } catch (e) {
+      if (!started || ownerChannel !== channel || ownerGeneration !== trackGeneration || ownerTrackEpoch !== subscribedTrackEpoch) {
+        tracePresence("STALE_GENERATION_IGNORED", { channelGeneration: ownerGeneration, currentGeneration: trackGeneration, reason: "track-error" });
+        return null;
+      }
       lastPresenceError = String(e?.message || e || "unknown");
       lastTrackResult = "error";
       tracePresence("TRACK_RESULT", {
@@ -1052,11 +1063,9 @@ export function createPresenceSystem({
     ]));
   }
 
-  function applyPresenceGrace(rawLiveSessionsByUserId = new Map(), rawState = {}, source = "presence-sync") {
+  function applyPresenceGrace(rawLiveSessionsByUserId = new Map(), rawState = {}, source = "presence-sync", authoritativeLeaveUserIds = []) {
     const nowMs = Date.now();
-    const authoritativeLeave = String(source || "")
-      .split("+")
-      .some((part) => part.trim().toLowerCase().includes("leave"));
+    const authoritativeLeaves = new Set(authoritativeLeaveUserIds);
     const viewerUserId = getOwnUserId();
     const rawPayloadCount = getRawPayloadCount(rawState);
     const rawPresenceKeys = Object.keys(rawState || {});
@@ -1104,10 +1113,10 @@ export function createPresenceSystem({
     const effective = cloneLiveSessionsMap(rawLiveSessionsByUserId);
     for (const [userId, sessions] of lastLiveSessionSnapshotByUserId.entries()) {
       if (effective.has(userId)) continue;
-      if (authoritativeLeave) {
+      if (authoritativeLeaves.has(userId)) {
         // A server Presence LEAVE is already the authoritative disconnect
         // decision. Remove the final session immediately; if another session
-        // remains it is still present in rawLiveSessionsByUserId above.
+        // remains it is still present above. Other users' grace is unaffected.
         lastLiveSessionSnapshotByUserId.delete(userId);
         lastSeenLiveAtByUserId.delete(userId);
         continue;
@@ -1285,7 +1294,7 @@ export function createPresenceSystem({
     return false;
   }
 
-  function applyCanonicalPresenceState(reason = "canonical-presence", targetChannel = channel, expectedGeneration = trackGeneration) {
+  function applyCanonicalPresenceState(reason = "canonical-presence", targetChannel = channel, expectedGeneration = trackGeneration, authoritativeLeaveUserIds = []) {
     try {
       if (!isCurrentPresenceGeneration(targetChannel, expectedGeneration, reason)) return;
       const st = rawPresenceMirror.toState();
@@ -1298,7 +1307,7 @@ export function createPresenceSystem({
       lastAuthoritativeReconcileReason = String(reason || "presence-sync");
       lastEmittedRawPayloadCount = rawSummary.payloadCount;
       const rawLiveSessionsByUserId = buildLiveSessionsByUserId(st);
-      const nextLiveSessionsByUserId = applyPresenceGrace(rawLiveSessionsByUserId, st, reason);
+      const nextLiveSessionsByUserId = applyPresenceGrace(rawLiveSessionsByUserId, st, reason, authoritativeLeaveUserIds);
       lastLiveSessionsByUserId = nextLiveSessionsByUserId;
       const requestedSource = lastCanonicalPresenceSource;
       lastCanonicalPresenceSource = resolveCanonicalPresenceSource(nextLiveSessionsByUserId, requestedSource);
@@ -1361,6 +1370,7 @@ export function createPresenceSystem({
   function reconcilePresenceFromChannel(reason = "official-presence", targetChannel = channel, expectedGeneration = trackGeneration) {
     if (!isCurrentPresenceGeneration(targetChannel, expectedGeneration, reason)) return;
     const officialState = readOfficialPresenceState(targetChannel);
+    if (reason === "presence-sync") captureSynchronousOfficialPresenceSnapshot(targetChannel, expectedGeneration, officialState);
     traceRawPresenceState(reason, targetChannel);
     // Before the first raw full state, official Presence remains a compatible
     // secondary source. Once presence_state arrives, the wire mirror is the
@@ -1376,16 +1386,25 @@ export function createPresenceSystem({
   function handleRawPresenceState(payload = {}, targetChannel = channel, expectedGeneration = trackGeneration) {
     const reason = "raw-presence-state";
     if (!isCurrentPresenceGeneration(targetChannel, expectedGeneration, reason)) return;
+    const officialSnapshot = synchronousOfficialPresenceSnapshot;
+    synchronousOfficialPresenceSnapshot = null;
+    const completeState = rawStateSeenForGeneration
+      && officialSnapshot?.targetChannel === targetChannel
+      && officialSnapshot.expectedGeneration === expectedGeneration
+      && officialSnapshot.rawRevision === rawStateCount + rawDiffCount
+      ? selectSynchronousPresenceFullState(payload, officialSnapshot.state, rawPresenceMirror.toState())
+      : payload;
     const observedAt = Date.now();
     rawStateSeenForGeneration = true;
     rawStateCount += 1;
     lastRawStateAt = observedAt;
     lastSyncAt = observedAt;
-    const result = rawPresenceMirror.replace(payload);
-    lastCanonicalPresenceSource = "raw-mirror";
+    const result = rawPresenceMirror.replace(completeState);
+    lastCanonicalPresenceSource = completeState === payload ? "raw-mirror" : "official-sdk";
     tracePresence("RAW_PRESENCE_STATE", {
       channelGeneration: expectedGeneration,
       reason,
+      recoveredSynchronousSdkSnapshot: completeState !== payload,
       userIds: result.userIds,
       count: result.sessionCount,
       sessionCountsByUserId: getSessionCounts(buildLiveSessionsByUserId(rawPresenceMirror.toState())),
@@ -1403,6 +1422,7 @@ export function createPresenceSystem({
   function handleRawPresenceDiff(payload = {}, targetChannel = channel, expectedGeneration = trackGeneration) {
     const reason = "raw-presence-diff";
     if (!isCurrentPresenceGeneration(targetChannel, expectedGeneration, reason)) return;
+    synchronousOfficialPresenceSnapshot = null;
     const observedAt = Date.now();
     rawDiffCount += 1;
     lastRawDiffAt = observedAt;
@@ -1454,27 +1474,60 @@ export function createPresenceSystem({
       mirrorSessionCount: result.sessionCount,
     });
     compareOfficialAndRawPresence(targetChannel, reason);
-    applyCanonicalPresenceState(reasons.join("+") || reason, targetChannel, expectedGeneration);
+    applyCanonicalPresenceState(reasons.join("+") || reason, targetChannel, expectedGeneration, result.removedUserIds);
   }
 
-  function applyOfficialIncrementalPresence(eventType = "join", payload = {}, targetChannel = channel, expectedGeneration = trackGeneration) {
+  function applyOfficialIncrementalPresence(eventType = "join", payload = {}, targetChannel = channel, expectedGeneration = trackGeneration, observedRawRevision = null) {
     const normalizedEvent = String(eventType || "").trim().toLowerCase();
     const reason = `official-${normalizedEvent || "presence"}`;
     if (!isCurrentPresenceGeneration(targetChannel, expectedGeneration, reason)) return false;
+    if (rawStateSeenForGeneration && observedRawRevision === null) {
+      // The SDK emits join/leave while reconciling a raw state/diff, before
+      // our wire callback receives that same packet. Let the wire update win
+      // atomically. If no raw packet arrives, retain the SDK-only fallback.
+      const rawRevision = rawStateCount + rawDiffCount;
+      const applyFallback = () => {
+        if (!isCurrentPresenceGeneration(targetChannel, expectedGeneration, reason)) return;
+        if (rawRevision !== rawStateCount + rawDiffCount) return;
+        applyOfficialIncrementalPresence(eventType, payload, targetChannel, expectedGeneration, rawRevision);
+      };
+      if (typeof queueMicrotask === "function") queueMicrotask(applyFallback);
+      else Promise.resolve().then(applyFallback);
+      return true;
+    }
     const keys = getPresenceEventKeys(payload);
     const presenceKey = keys[0] || "";
     const source = normalizedEvent === "leave" ? payload?.leftPresences : payload?.newPresences;
     const metas = normalizePresencePayloadList(source);
     if (!presenceKey || !metas.length) return false;
-    if (normalizedEvent === "leave") {
-      rawPresenceMirror.applyDiff({ leaves: { [presenceKey]: { metas } } });
-    } else {
-      rawPresenceMirror.applyDiff({ joins: { [presenceKey]: { metas } } });
-    }
+    const result = normalizedEvent === "leave"
+      ? rawPresenceMirror.applyDiff({ leaves: { [presenceKey]: { metas } } })
+      : rawPresenceMirror.applyDiff({ joins: { [presenceKey]: { metas } } });
     lastCanonicalPresenceSource = "official-sdk";
     compareOfficialAndRawPresence(targetChannel, reason);
-    applyCanonicalPresenceState(reason, targetChannel, expectedGeneration);
+    applyCanonicalPresenceState(reason, targetChannel, expectedGeneration, result.removedUserIds);
     return true;
+  }
+
+  function captureSynchronousOfficialPresenceSnapshot(targetChannel, expectedGeneration, officialState) {
+    // In the pinned SDK, sync runs inside the same raw packet callback before
+    // our listener. This marker is single-use and cannot survive this turn.
+    try {
+      const snapshot = {
+        targetChannel,
+        expectedGeneration,
+        rawRevision: rawStateCount + rawDiffCount,
+        state: JSON.parse(JSON.stringify(officialState)),
+      };
+      synchronousOfficialPresenceSnapshot = snapshot;
+      const expire = () => {
+        if (synchronousOfficialPresenceSnapshot === snapshot) synchronousOfficialPresenceSnapshot = null;
+      };
+      if (typeof queueMicrotask === "function") queueMicrotask(expire);
+      else Promise.resolve().then(expire);
+    } catch (_) {
+      synchronousOfficialPresenceSnapshot = null;
+    }
   }
 
   function queueAuthoritativeReconcile(reason, targetChannel = channel, expectedGeneration = trackGeneration) {
@@ -1523,6 +1576,7 @@ export function createPresenceSystem({
     trackGeneration += 1;
     rawPresenceMirror.clear();
     rawStateSeenForGeneration = false;
+    synchronousOfficialPresenceSnapshot = null;
     lastCanonicalPresenceSource = "raw-mirror";
     lastOfficialVsRawMismatchSignature = "";
     const sessionId = getSessionId(me || {});
@@ -1799,6 +1853,7 @@ export function createPresenceSystem({
     lastTrackPayload = null;
     rawPresenceMirror.clear();
     rawStateSeenForGeneration = false;
+    synchronousOfficialPresenceSnapshot = null;
     lastCanonicalPresenceSource = "raw-mirror";
     lastOfficialVsRawMismatchSignature = "";
     lastRawPresenceState = {};
@@ -1864,8 +1919,10 @@ export function createPresenceSystem({
   async function setStatus(status) {
     if (!channel) return;
     try {
-      currentStatus = normalizeManualStatus(status || currentStatus || "online");
-      await trackNow(currentStatus);
+      const nextStatus = normalizeManualStatus(status || currentStatus || "online");
+      const changed = nextStatus !== currentStatus;
+      currentStatus = nextStatus;
+      await trackNow(currentStatus, { force: changed });
     } catch (e) {
       onError?.(e);
     }
@@ -1921,7 +1978,7 @@ export function createPresenceSystem({
     }));
   }
 
-  function getDebugSnapshot() {
+  function getDebugSnapshot(options = {}) {
     const raw = rawPresenceMirror.toState();
     const rawLiveMap = buildLiveSessionsByUserId(raw || {});
     const liveMap = lastLiveSessionsByUserId && lastLiveSessionsByUserId.size
@@ -1931,11 +1988,22 @@ export function createPresenceSystem({
       .filter(([userId, sessions]) => resolveUserPresenceFromSessions(userId, sessions).effectiveStatus !== "offline")
       .map(([userId]) => userId)
       .sort();
+    const observedAt = Date.now();
+    const freshnessUserIds = Array.from(new Set(Array.isArray(options?.freshnessUserIds) ? options.freshnessUserIds : [])).slice(0, 256);
+    const remoteFreshnessByUserId = Object.fromEntries(freshnessUserIds.map((userId) => {
+      const seenAt = Number(lastSeenLiveAtByUserId.get(userId) || 0);
+      const ageMs = seenAt ? Math.max(0, observedAt - seenAt) : null;
+      return [userId, {
+        ageMs,
+        remainingMs: ageMs === null ? null : Math.max(0, REMOTE_PRESENCE_GRACE_MS - ageMs),
+      }];
+    }));
     return {
       presenceChannelName: PRESENCE_CHANNEL_NAME,
       presenceHeartbeatMs: null,
       scheduledPresenceTrackHeartbeatEnabled: false,
       remotePresenceGraceMs: REMOTE_PRESENCE_GRACE_MS,
+      remoteFreshnessByUserId,
       channelTopic: getChannelTopic(channel),
       channelPrivate: true,
       presenceEnabled: true,

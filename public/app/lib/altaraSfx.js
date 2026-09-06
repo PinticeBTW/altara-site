@@ -222,6 +222,8 @@ export function createAltaraSfxPlayer({
     try { record.audio.pause?.(); } catch (_) {}
     try { record.audio.currentTime = 0; } catch (_) {}
     try { record.unregister?.(); } catch (_) {}
+    record.resolveCancellation?.();
+    record.resolveCancellation = null;
     trace(record.cue, "cancelled", {
       ...record.details,
       reason,
@@ -267,10 +269,21 @@ export function createAltaraSfxPlayer({
       warm,
       cancelled: false,
       unregister: null,
+      resolveCancellation: null,
     };
+    const cancelled = new Promise((resolve) => { record.resolveCancellation = resolve; });
+    if (options?.replaceOwner === true && record.ownerKey) {
+      for (const previous of Array.from(activePlays)) {
+        if (previous.ownerKey === record.ownerKey) cancelPlay(previous, "owner_replaced");
+      }
+    }
     const cancel = () => cancelPlay(record, "owner_cancelled");
     if (typeof options?.registerCancellation === "function") {
       try { record.unregister = options.registerCancellation(cancel); } catch (_) {}
+    }
+    if (record.cancelled) {
+      try { record.unregister?.(); } catch (_) {}
+      return { played: false, cancelled: true, method: "none", failureCategory: "stale_owner" };
     }
     try {
       audio.currentTime = 0;
@@ -280,7 +293,8 @@ export function createAltaraSfxPlayer({
         try { record.unregister?.(); } catch (_) {}
       }, { once: true });
       const pending = audio.play?.();
-      if (pending?.then) await pending;
+      // A pending play() must not keep its caller waiting after cancellation.
+      if (pending?.then) await Promise.race([pending, cancelled]);
       if (record.cancelled || !isCurrent()) {
         cancelPlay(record, "stale_owner");
         return { played: false, cancelled: true, method: "html_audio", failureCategory: "stale_owner" };
@@ -295,6 +309,10 @@ export function createAltaraSfxPlayer({
         playbackStartedAt: Date.now(),
       };
     } catch (error) {
+      if (record.cancelled || !isCurrent()) {
+        cancelPlay(record, "stale_owner");
+        return { played: false, cancelled: true, method: "html_audio", failureCategory: "stale_owner" };
+      }
       activePlays.delete(record);
       try { record.unregister?.(); } catch (_) {}
       const raw = lower(error?.name || error?.message);

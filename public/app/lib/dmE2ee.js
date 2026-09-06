@@ -47,9 +47,41 @@ const publicKeyCacheById = new Map();
 const derivedKeyCache = new Map();
 const keyBackupCacheByUserId = new Map();
 const keyBackupMethodsCacheByUserId = new Map();
+const identitySetupInFlightByUserId = new Map();
+let dmE2eeSessionGeneration = 0;
 let idbPromise = null;
 const DM_E2EE_DIAGNOSTICS_ENABLED = false;
 const DM_E2EE_DIAGNOSTICS_STORAGE_KEY = "altara.debug.dm_e2ee";
+
+export function clearDmE2eeMemory() {
+  dmE2eeSessionGeneration += 1;
+  identityCache.clear();
+  publicKeyCacheByUserId.clear();
+  publicKeyCacheById.clear();
+  derivedKeyCache.clear();
+  keyBackupCacheByUserId.clear();
+  keyBackupMethodsCacheByUserId.clear();
+  identitySetupInFlightByUserId.clear();
+}
+
+function assertDmE2eeOperationCurrent(operationGeneration) {
+  if (operationGeneration !== dmE2eeSessionGeneration) {
+    throw createDmE2eeSetupError("dm_e2ee_operation_cancelled", "The encrypted-message operation belongs to a previous session.");
+  }
+}
+
+function withDmE2eeIdentityLock(userId, operationGeneration, run) {
+  const ownedRun = () => {
+    assertDmE2eeOperationCurrent(operationGeneration);
+    return run();
+  };
+  // Web Locks coordinate the existing IndexedDB identity across same-origin
+  // tabs. Separate origins/devices still require the supported recovery flow.
+  if (typeof navigator !== "undefined" && navigator.locks?.request) {
+    return navigator.locks.request(`altara-dm-e2ee-identity:${userId}`, { mode: "exclusive" }, ownedRun);
+  }
+  return Promise.resolve().then(ownedRun);
+}
 
 function normalizeId(value = "") {
   return String(value || "").trim();
@@ -113,6 +145,7 @@ function classifyDmE2eeSetupError(error, fallback = "unknown_error") {
     || code === "local_private_key_store_failed"
     || code === "local_private_key_corrupt"
     || code === "dm_e2ee_recovery_required"
+    || code === "dm_e2ee_operation_cancelled"
     || code === "public_key_upload_failed"
     || code === "rpc_error"
     || code === "auth_missing"
@@ -568,7 +601,8 @@ async function readIdentityEnvelopeFromStore(db, storeName, userId) {
   return { found: result !== undefined && result !== null, record: result || null };
 }
 
-async function persistHardenedIdentityRecord(record = {}) {
+async function persistHardenedIdentityRecord(record = {}, operationGeneration = dmE2eeSessionGeneration) {
+  assertDmE2eeOperationCurrent(operationGeneration);
   const normalized = normalizeIdentityRecord(record);
   if (!normalized || !isEcdhPrivateKey(normalized.privateKey, { requireNonExtractable: true })) {
     throw createDmE2eeSetupError(
@@ -578,6 +612,7 @@ async function persistHardenedIdentityRecord(record = {}) {
   }
   await verifyIdentityKeyPair(normalized.privateKey, normalized.publicKeyJwk);
   const db = await openIdentityDb();
+  assertDmE2eeOperationCurrent(operationGeneration);
   const tx = db.transaction(IDENTITY_STORE, "readwrite");
   const committed = transactionToPromise(tx);
   await requestToPromise(tx.objectStore(IDENTITY_STORE).put({
@@ -591,6 +626,7 @@ async function persistHardenedIdentityRecord(record = {}) {
   }));
   await committed;
 
+  assertDmE2eeOperationCurrent(operationGeneration);
   const readback = await readIdentityEnvelopeFromStore(db, IDENTITY_STORE, normalized.userId);
   if (!readback.found) {
     throw createDmE2eeSetupError(
@@ -600,6 +636,7 @@ async function persistHardenedIdentityRecord(record = {}) {
   }
   validateHardenedStorageEnvelope(readback.record);
   const verified = await importStoredIdentityEnvelope(readback.record, normalized.userId);
+  assertDmE2eeOperationCurrent(operationGeneration);
   if (verified.migrated || !isEcdhPrivateKey(verified.identity.privateKey, { requireNonExtractable: true })) {
     throw createDmE2eeSetupError(
       "local_private_key_store_failed",
@@ -609,9 +646,10 @@ async function persistHardenedIdentityRecord(record = {}) {
   return verified.identity;
 }
 
-async function removeLegacyIdentityRecords(userId) {
+async function removeLegacyIdentityRecords(userId, operationGeneration = dmE2eeSessionGeneration) {
   const uid = normalizeId(userId);
   const db = await openIdentityDb();
+  assertDmE2eeOperationCurrent(operationGeneration);
   if (db.objectStoreNames.contains(LEGACY_IDENTITY_STORE)) {
     const tx = db.transaction(LEGACY_IDENTITY_STORE, "readwrite");
     const committed = transactionToPromise(tx);
@@ -626,6 +664,7 @@ async function removeLegacyIdentityRecords(userId) {
     }
   }
 
+  assertDmE2eeOperationCurrent(operationGeneration);
   const legacyLocal = readLocalStorageIdentityEnvelope(uid);
   if (legacyLocal.found) {
     try {
@@ -643,9 +682,10 @@ async function removeLegacyIdentityRecords(userId) {
   }
 }
 
-async function finalizeHardenedIdentity(record = {}) {
-  const persisted = await persistHardenedIdentityRecord(record);
-  await removeLegacyIdentityRecords(persisted.userId);
+async function finalizeHardenedIdentity(record = {}, operationGeneration = dmE2eeSessionGeneration) {
+  const persisted = await persistHardenedIdentityRecord(record, operationGeneration);
+  await removeLegacyIdentityRecords(persisted.userId, operationGeneration);
+  assertDmE2eeOperationCurrent(operationGeneration);
   identityCache.set(persisted.userId, persisted);
   derivedKeyCache.clear();
   return persisted;
@@ -713,12 +753,14 @@ async function readLegacyIdentityForRecoveryProvisioning(userId) {
   return null;
 }
 
-async function readIdentityRecord(userId) {
+async function readIdentityRecord(userId, operationGeneration = dmE2eeSessionGeneration) {
   const uid = normalizeId(userId);
   if (!uid) return null;
   try {
     const db = await openIdentityDb();
+    assertDmE2eeOperationCurrent(operationGeneration);
     const hardened = await readIdentityEnvelopeFromStore(db, IDENTITY_STORE, uid);
+    assertDmE2eeOperationCurrent(operationGeneration);
     if (hardened.found) {
       validateHardenedStorageEnvelope(hardened.record);
       const imported = await importStoredIdentityEnvelope(hardened.record, uid);
@@ -726,23 +768,25 @@ async function readIdentityRecord(userId) {
         throw createDmE2eeSetupError("local_private_key_corrupt", "The hardened Vault identity unexpectedly contains an exportable key.");
       }
       const identity = imported.identity;
-      await removeLegacyIdentityRecords(uid);
+      await removeLegacyIdentityRecords(uid, operationGeneration);
+      assertDmE2eeOperationCurrent(operationGeneration);
       identityCache.set(uid, identity);
       return identity;
     }
 
     const legacyIndexedDb = await readIdentityEnvelopeFromStore(db, LEGACY_IDENTITY_STORE, uid);
+    assertDmE2eeOperationCurrent(operationGeneration);
     if (legacyIndexedDb.found) {
       await requireRecoveryProvisioningForLegacyMigration(legacyIndexedDb.record, uid);
       const imported = await importStoredIdentityEnvelope(legacyIndexedDb.record, uid);
-      return finalizeHardenedIdentity(imported.identity);
+      return finalizeHardenedIdentity(imported.identity, operationGeneration);
     }
 
     const legacyLocal = readLocalStorageIdentityEnvelope(uid);
     if (legacyLocal.found) {
       await requireRecoveryProvisioningForLegacyMigration(legacyLocal.record, uid);
       const imported = await importStoredIdentityEnvelope(legacyLocal.record, uid);
-      return finalizeHardenedIdentity(imported.identity);
+      return finalizeHardenedIdentity(imported.identity, operationGeneration);
     }
     return null;
   } catch (error) {
@@ -755,9 +799,9 @@ async function readIdentityRecord(userId) {
   }
 }
 
-async function writeIdentityRecord(record = {}) {
+async function writeIdentityRecord(record = {}, operationGeneration = dmE2eeSessionGeneration) {
   try {
-    return await finalizeHardenedIdentity(record);
+    return await finalizeHardenedIdentity(record, operationGeneration);
   } catch (error) {
     logDmE2ee("indexeddb_identity_write_failed", {
       userId: normalizeId(record?.userId || record?.user_id || ""),
@@ -777,6 +821,7 @@ async function provisionNewIdentityWithRecovery({
   password,
   passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
   includeRecoveryKey = true,
+  operationGeneration = dmE2eeSessionGeneration,
 } = {}) {
   const uid = normalizeId(userId);
   let pair = null;
@@ -800,6 +845,7 @@ async function provisionNewIdentityWithRecovery({
       ["deriveBits"]
     );
     await verifyIdentityKeyPair(privateKey, publicKeyJwk);
+    assertDmE2eeOperationCurrent(operationGeneration);
     pair = null;
 
     const draftIdentity = {
@@ -817,11 +863,12 @@ async function provisionNewIdentityWithRecovery({
       password,
       passwordSource,
       includeRecoveryKey,
+      operationGeneration,
     });
     privateKeyJwk = null;
 
-    const persisted = await writeIdentityRecord(draftIdentity);
-    const keyRow = await upsertMyKeyRow(publicKeyJwk);
+    const persisted = await writeIdentityRecord(draftIdentity, operationGeneration);
+    const keyRow = await upsertMyKeyRow(publicKeyJwk, { userId: uid, operationGeneration });
     const readyIdentity = await writeIdentityRecord({
       ...persisted,
       status: "ready",
@@ -829,7 +876,7 @@ async function provisionNewIdentityWithRecovery({
       keyVersion: keyRow.keyVersion,
       keyAlgorithm: keyRow.keyAlgorithm,
       publicKeyJwk: keyRow.publicKeyJwk,
-    });
+    }, operationGeneration);
     return {
       ...readyIdentity,
       recoveryKey: String(backup?.recoveryKey || ""),
@@ -846,6 +893,7 @@ async function migrateLegacyIdentityWithRecovery({
   password,
   passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
   includeRecoveryKey = true,
+  operationGeneration = dmE2eeSessionGeneration,
 } = {}) {
   const uid = normalizeId(userId);
   let prepared = await readLegacyIdentityForRecoveryProvisioning(uid);
@@ -856,7 +904,8 @@ async function migrateLegacyIdentityWithRecovery({
     );
   }
   try {
-    const activeKeyRow = await fetchActiveKeyRowForUser(uid, { force: true });
+    assertDmE2eeOperationCurrent(operationGeneration);
+    const activeKeyRow = await fetchActiveKeyRowForUser(uid, { force: true, operationGeneration });
     if (activeKeyRow && !publicKeysMatch(activeKeyRow.publicKeyJwk, prepared.identity.publicKeyJwk)) {
       throw createDmE2eeSetupError(
         "local_private_key_corrupt",
@@ -869,11 +918,12 @@ async function migrateLegacyIdentityWithRecovery({
       password,
       passwordSource,
       includeRecoveryKey,
+      operationGeneration,
     });
     prepared.recoveryPrivateKeyJwk = null;
 
-    const persisted = await writeIdentityRecord(prepared.identity);
-    const resolvedKeyRow = activeKeyRow || await upsertMyKeyRow(persisted.publicKeyJwk);
+    const persisted = await writeIdentityRecord(prepared.identity, operationGeneration);
+    const resolvedKeyRow = activeKeyRow || await upsertMyKeyRow(persisted.publicKeyJwk, { userId: uid, operationGeneration });
     const readyIdentity = await writeIdentityRecord({
       ...persisted,
       status: "ready",
@@ -881,7 +931,7 @@ async function migrateLegacyIdentityWithRecovery({
       keyVersion: resolvedKeyRow.keyVersion,
       keyAlgorithm: resolvedKeyRow.keyAlgorithm,
       publicKeyJwk: resolvedKeyRow.publicKeyJwk,
-    });
+    }, operationGeneration);
     return {
       ...readyIdentity,
       recoveryKey: String(backup?.recoveryKey || ""),
@@ -1057,6 +1107,7 @@ async function persistIdentityBackupFromPrivateJwk({
   password,
   passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
   includeRecoveryKey = null,
+  operationGeneration = dmE2eeSessionGeneration,
 } = {}) {
   const uid = normalizeId(identity?.userId || "");
   const rawPassword = String(password ?? "");
@@ -1071,6 +1122,8 @@ async function persistIdentityBackupFromPrivateJwk({
     );
   }
 
+  assertDmE2eeOperationCurrent(operationGeneration);
+  const existingMethodRows = await fetchOwnBackupMethodRows(uid, { force: true, operationGeneration });
   let backupPlaintext = null;
   let passwordEncrypted = null;
   let recoveryKeyEncrypted = null;
@@ -1099,6 +1152,7 @@ async function persistIdentityBackupFromPrivateJwk({
     backupPlaintext = null;
   }
 
+  assertDmE2eeOperationCurrent(operationGeneration);
   const nowIso = new Date().toISOString();
   const methodPayloads = [
     {
@@ -1122,10 +1176,16 @@ async function persistIdentityBackupFromPrivateJwk({
     .upsert(methodPayloads, { onConflict: "user_id,method,backup_version" })
     .select(BACKUP_METHOD_SELECT_COLUMNS);
   if (methodError) throw methodError;
+  assertDmE2eeOperationCurrent(operationGeneration);
   const methodRows = (Array.isArray(methodData) ? methodData : [])
     .map((row) => normalizeBackupMethodRow(row))
     .filter(Boolean);
-  keyBackupMethodsCacheByUserId.set(uid, methodRows);
+  // A password-only rewrap leaves the valid recovery-key method untouched.
+  const savedMethods = [
+    ...existingMethodRows.filter((row) => !methodRows.some((saved) => saved.method === row.method)),
+    ...methodRows,
+  ];
+  keyBackupMethodsCacheByUserId.set(uid, savedMethods);
 
   const payload = {
     user_id: uid,
@@ -1146,19 +1206,20 @@ async function persistIdentityBackupFromPrivateJwk({
     .select(BACKUP_SELECT_COLUMNS)
     .single();
   if (error) throw error;
+  assertDmE2eeOperationCurrent(operationGeneration);
 
   const row = normalizeBackupRow(data);
   if (row) {
     row.hasPasswordMethod = true;
-    row.hasRecoveryKeyMethod = methodRows.some((methodRow) => methodRow.method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY);
-    row.methods = methodRows.map((methodRow) => methodRow.method);
-    if (generatedRecoveryKey) row.recoveryKey = generatedRecoveryKey;
+    row.hasRecoveryKeyMethod = savedMethods.some((methodRow) => methodRow.method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY);
+    row.methods = savedMethods.map((methodRow) => methodRow.method);
   }
   keyBackupCacheByUserId.set(uid, row || null);
-  return row;
+  return row && generatedRecoveryKey ? { ...row, recoveryKey: generatedRecoveryKey } : row;
 }
 
-async function fetchActiveKeyRowForUser(userId, { force = false } = {}) {
+async function fetchActiveKeyRowForUser(userId, { force = false, operationGeneration = dmE2eeSessionGeneration } = {}) {
+  assertDmE2eeOperationCurrent(operationGeneration);
   const uid = normalizeId(userId);
   if (!uid) return null;
   if (!force && publicKeyCacheByUserId.has(uid)) return publicKeyCacheByUserId.get(uid) || null;
@@ -1171,13 +1232,15 @@ async function fetchActiveKeyRowForUser(userId, { force = false } = {}) {
     .limit(1)
     .maybeSingle();
   if (error) throw error;
+  assertDmE2eeOperationCurrent(operationGeneration);
   const row = normalizeKeyRow(data);
   publicKeyCacheByUserId.set(uid, row || null);
   if (row) publicKeyCacheById.set(row.id, row);
   return row;
 }
 
-async function fetchOwnBackupRow(userId, { force = false } = {}) {
+async function fetchOwnBackupRow(userId, { force = false, operationGeneration = dmE2eeSessionGeneration } = {}) {
+  assertDmE2eeOperationCurrent(operationGeneration);
   const uid = normalizeId(userId);
   if (!uid) return null;
   if (!force && keyBackupCacheByUserId.has(uid)) return keyBackupCacheByUserId.get(uid) || null;
@@ -1200,6 +1263,7 @@ async function fetchOwnBackupRow(userId, { force = false } = {}) {
       });
       throw error;
     }
+    assertDmE2eeOperationCurrent(operationGeneration);
     const row = normalizeBackupRow(data);
     keyBackupCacheByUserId.set(uid, row || null);
     logDmE2ee(row ? "backup_found" : "backup_missing", {
@@ -1219,7 +1283,8 @@ async function fetchOwnBackupRow(userId, { force = false } = {}) {
   }
 }
 
-async function fetchOwnBackupMethodRows(userId, { force = false } = {}) {
+async function fetchOwnBackupMethodRows(userId, { force = false, operationGeneration = dmE2eeSessionGeneration } = {}) {
+  assertDmE2eeOperationCurrent(operationGeneration);
   const uid = normalizeId(userId);
   if (!uid) return [];
   if (!force && keyBackupMethodsCacheByUserId.has(uid)) {
@@ -1231,6 +1296,7 @@ async function fetchOwnBackupMethodRows(userId, { force = false } = {}) {
     .eq("user_id", uid)
     .eq("backup_version", DM_E2EE_BACKUP_VERSION);
   if (error) throw error;
+  assertDmE2eeOperationCurrent(operationGeneration);
   const rows = (Array.isArray(data) ? data : [])
     .map((row) => normalizeBackupMethodRow(row))
     .filter(Boolean);
@@ -1238,13 +1304,14 @@ async function fetchOwnBackupMethodRows(userId, { force = false } = {}) {
   return rows;
 }
 
-async function fetchOwnBackupMethodRow(userId, method = DM_E2EE_BACKUP_METHOD_PASSWORD, { force = false } = {}) {
+async function fetchOwnBackupMethodRow(userId, method = DM_E2EE_BACKUP_METHOD_PASSWORD, { force = false, operationGeneration = dmE2eeSessionGeneration } = {}) {
   const wantedMethod = normalizeBackupMethod(method);
-  const rows = await fetchOwnBackupMethodRows(userId, { force });
+  const rows = await fetchOwnBackupMethodRows(userId, { force, operationGeneration });
   return rows.find((row) => row.method === wantedMethod) || null;
 }
 
-async function fetchKeyRowsByIds(keyIds = []) {
+async function fetchKeyRowsByIds(keyIds = [], operationGeneration = dmE2eeSessionGeneration) {
+  assertDmE2eeOperationCurrent(operationGeneration);
   const wanted = Array.from(new Set((Array.isArray(keyIds) ? keyIds : []).map((value) => normalizeId(value)).filter(Boolean)));
   if (!wanted.length) return [];
   const missing = wanted.filter((id) => !publicKeyCacheById.has(id));
@@ -1254,6 +1321,7 @@ async function fetchKeyRowsByIds(keyIds = []) {
       .select("id, user_id, key_version, key_algorithm, public_key_jwk, revoked_at, created_at, updated_at")
       .in("id", missing);
     if (error) throw error;
+    assertDmE2eeOperationCurrent(operationGeneration);
     (Array.isArray(data) ? data : []).forEach((row) => {
       const normalized = normalizeKeyRow(row);
       if (!normalized) return;
@@ -1267,7 +1335,8 @@ async function fetchKeyRowsByIds(keyIds = []) {
   return wanted.map((id) => publicKeyCacheById.get(id)).filter(Boolean);
 }
 
-async function upsertMyKeyRow(publicKeyJwk) {
+async function upsertMyKeyRow(publicKeyJwk, { userId = "", operationGeneration = dmE2eeSessionGeneration } = {}) {
+  assertDmE2eeOperationCurrent(operationGeneration);
   if (!normalizePublicKeyJwk(publicKeyJwk)) {
     throw createDmE2eeSetupError("invalid_public_key", "Invalid DM public key.");
   }
@@ -1276,8 +1345,12 @@ async function upsertMyKeyRow(publicKeyJwk) {
     p_key_algorithm: KEY_ALGORITHM,
   });
   if (error) throw createDmE2eeSetupError("public_key_upload_failed", "Could not upload the DM public key.", error);
+  assertDmE2eeOperationCurrent(operationGeneration);
   const row = normalizeKeyRow(Array.isArray(data) ? data[0] : data);
   if (!row) throw createDmE2eeSetupError("public_key_upload_failed", "Could not persist DM public key.");
+  if ((userId && row.userId !== userId) || !publicKeysMatch(row.publicKeyJwk, publicKeyJwk)) {
+    throw createDmE2eeSetupError("public_key_upload_failed", "The public identity response belongs to a different account or key.");
+  }
   publicKeyCacheByUserId.set(row.userId, row);
   publicKeyCacheById.set(row.id, row);
   return row;
@@ -1357,7 +1430,9 @@ async function deriveConversationAesKey({
   localIdentity,
   remoteKeyRow,
   conversationId,
+  operationGeneration = dmE2eeSessionGeneration,
 }) {
+  assertDmE2eeOperationCurrent(operationGeneration);
   const cacheKey = [
     normalizeId(localIdentity?.keyId || localIdentity?.userId || ""),
     normalizeId(remoteKeyRow?.id || ""),
@@ -1390,6 +1465,7 @@ async function deriveConversationAesKey({
     false,
     ["encrypt", "decrypt"]
   );
+  assertDmE2eeOperationCurrent(operationGeneration);
   derivedKeyCache.set(cacheKey, aesKey);
   return aesKey;
 }
@@ -1456,6 +1532,7 @@ export function getTrustedDmE2eeText(row = {}) {
 }
 
 export async function getDmE2eeIdentityState({ userId, force = false } = {}) {
+  const operationGeneration = dmE2eeSessionGeneration;
   const uid = normalizeId(userId);
   if (!uid) {
     return {
@@ -1466,8 +1543,9 @@ export async function getDmE2eeIdentityState({ userId, force = false } = {}) {
   }
 
   try {
-    const localIdentity = await readIdentityRecord(uid);
-    const remoteKeyRow = await fetchActiveKeyRowForUser(uid, { force });
+    const localIdentity = await readIdentityRecord(uid, operationGeneration);
+    const remoteKeyRow = await fetchActiveKeyRowForUser(uid, { force, operationGeneration });
+    assertDmE2eeOperationCurrent(operationGeneration);
     logDmE2ee("identity_state_checked", {
       userId: uid,
       localKeyPresent: !!localIdentity,
@@ -1536,7 +1614,8 @@ export async function getDmE2eeIdentityState({ userId, force = false } = {}) {
   }
 }
 
-export async function ensureDmE2eeIdentity({ userId } = {}) {
+export async function ensureDmE2eeIdentity({ userId, operationGeneration = dmE2eeSessionGeneration } = {}) {
+  assertDmE2eeOperationCurrent(operationGeneration);
   const uid = normalizeId(userId);
   if (!uid) return { status: "error", error: new Error("Missing userId for DM E2EE") };
   const cached = identityCache.get(uid);
@@ -1544,7 +1623,7 @@ export async function ensureDmE2eeIdentity({ userId } = {}) {
 
   let localIdentity = null;
   try {
-    localIdentity = await readIdentityRecord(uid);
+    localIdentity = await readIdentityRecord(uid, operationGeneration);
   } catch (error) {
     if (String(error?.code || error?.reason || "") === "dm_e2ee_recovery_required") {
       return { status: "migration_requires_recovery", userId: uid, error };
@@ -1554,8 +1633,10 @@ export async function ensureDmE2eeIdentity({ userId } = {}) {
 
   let remoteKeyRow = null;
   try {
-    remoteKeyRow = await fetchActiveKeyRowForUser(uid, { force: false });
+    remoteKeyRow = await fetchActiveKeyRowForUser(uid, { force: false, operationGeneration });
+    assertDmE2eeOperationCurrent(operationGeneration);
   } catch (error) {
+    if (operationGeneration !== dmE2eeSessionGeneration) return { status: "error", userId: uid, error };
     if (localIdentity) {
       const fallback = { ...localIdentity, status: "ready" };
       identityCache.set(uid, fallback);
@@ -1576,7 +1657,7 @@ export async function ensureDmE2eeIdentity({ userId } = {}) {
       };
     }
     if (!remoteKeyRow) {
-      remoteKeyRow = await upsertMyKeyRow(localIdentity.publicKeyJwk);
+      remoteKeyRow = await upsertMyKeyRow(localIdentity.publicKeyJwk, { userId: uid, operationGeneration });
     }
     const readyIdentity = {
       ...localIdentity,
@@ -1585,7 +1666,8 @@ export async function ensureDmE2eeIdentity({ userId } = {}) {
       keyVersion: Number(remoteKeyRow?.keyVersion || localIdentity.keyVersion || 1) || 1,
       keyAlgorithm: String(remoteKeyRow?.keyAlgorithm || localIdentity.keyAlgorithm || KEY_ALGORITHM),
     };
-    await writeIdentityRecord(readyIdentity);
+    await writeIdentityRecord(readyIdentity, operationGeneration);
+    assertDmE2eeOperationCurrent(operationGeneration);
     return readyIdentity;
   }
 
@@ -1610,12 +1692,30 @@ export async function ensureDmE2eeIdentity({ userId } = {}) {
   };
 }
 
-export async function setupDmE2eeIdentityForCurrentDevice({
+export function setupDmE2eeIdentityForCurrentDevice(options = {}) {
+  const uid = normalizeId(options.userId);
+  const operationGeneration = dmE2eeSessionGeneration;
+  if (!uid) return Promise.resolve({ status: "error", error: new Error("Missing userId for DM E2EE setup") });
+  const pending = identitySetupInFlightByUserId.get(uid);
+  if (pending) return pending;
+  const request = withDmE2eeIdentityLock(uid, operationGeneration, async () => {
+    const result = await setupDmE2eeIdentityUnderLock({ ...options, operationGeneration });
+    assertDmE2eeOperationCurrent(operationGeneration);
+    return result;
+  }).catch((error) => ({ status: "error", userId: uid, error })).finally(() => {
+    if (identitySetupInFlightByUserId.get(uid) === request) identitySetupInFlightByUserId.delete(uid);
+  });
+  identitySetupInFlightByUserId.set(uid, request);
+  return request;
+}
+
+async function setupDmE2eeIdentityUnderLock({
   userId,
   forceNew = false,
   backupPassword = "",
   passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
   includeRecoveryKey = true,
+  operationGeneration = dmE2eeSessionGeneration,
 } = {}) {
   const uid = normalizeId(userId);
   if (!uid) return { status: "error", error: new Error("Missing userId for DM E2EE setup") };
@@ -1631,7 +1731,7 @@ export async function setupDmE2eeIdentityForCurrentDevice({
 
   let localIdentity = null;
   try {
-    localIdentity = await readIdentityRecord(uid);
+    localIdentity = await readIdentityRecord(uid, operationGeneration);
   } catch (error) {
     if (String(error?.code || error?.reason || "") === "dm_e2ee_recovery_required") {
       try {
@@ -1640,6 +1740,7 @@ export async function setupDmE2eeIdentityForCurrentDevice({
           password: backupPassword,
           passwordSource,
           includeRecoveryKey,
+          operationGeneration,
         });
       } catch (migrationError) {
         return { status: "error", userId: uid, error: migrationError };
@@ -1648,7 +1749,7 @@ export async function setupDmE2eeIdentityForCurrentDevice({
     return { status: "error", userId: uid, error };
   }
 
-  const remoteKeyRow = await fetchActiveKeyRowForUser(uid, { force: true });
+  const remoteKeyRow = await fetchActiveKeyRowForUser(uid, { force: true, operationGeneration });
   if (localIdentity) {
     if (remoteKeyRow && !publicKeysMatch(remoteKeyRow.publicKeyJwk, localIdentity.publicKeyJwk)) {
       return {
@@ -1660,7 +1761,7 @@ export async function setupDmE2eeIdentityForCurrentDevice({
         ),
       };
     }
-    const keyRow = remoteKeyRow || await upsertMyKeyRow(localIdentity.publicKeyJwk);
+    const keyRow = remoteKeyRow || await upsertMyKeyRow(localIdentity.publicKeyJwk, { userId: uid, operationGeneration });
     return writeIdentityRecord({
       ...localIdentity,
       status: "ready",
@@ -1668,10 +1769,11 @@ export async function setupDmE2eeIdentityForCurrentDevice({
       keyVersion: keyRow.keyVersion,
       keyAlgorithm: keyRow.keyAlgorithm,
       publicKeyJwk: keyRow.publicKeyJwk,
-    });
+    }, operationGeneration);
   }
 
-  const backupMeta = await getDmE2eeKeyBackupMetadata({ userId: uid, force: true });
+  const backupMeta = await getDmE2eeKeyBackupMetadata({ userId: uid, force: true, operationGeneration });
+  assertDmE2eeOperationCurrent(operationGeneration);
   if (remoteKeyRow || backupMeta) {
     return {
       status: "missing_local_private",
@@ -1689,6 +1791,7 @@ export async function setupDmE2eeIdentityForCurrentDevice({
       password: backupPassword,
       passwordSource,
       includeRecoveryKey,
+      operationGeneration,
     });
   } catch (error) {
     return { status: "error", userId: uid, error };
@@ -1699,21 +1802,22 @@ export async function getActiveDmE2eePeerKey(userId, { force = false } = {}) {
   return fetchActiveKeyRowForUser(userId, { force });
 }
 
-export async function getDmE2eeKeyBackupMetadata({ userId, force = false } = {}) {
+export async function getDmE2eeKeyBackupMetadata({ userId, force = false, operationGeneration = dmE2eeSessionGeneration } = {}) {
   const uid = normalizeId(userId);
   let methodRows = [];
   let methodsError = null;
   try {
-    methodRows = await fetchOwnBackupMethodRows(uid, { force });
+    methodRows = await fetchOwnBackupMethodRows(uid, { force, operationGeneration });
   } catch (error) {
     methodsError = error;
   }
   const passwordMethod = methodRows.find((row) => row.method === DM_E2EE_BACKUP_METHOD_PASSWORD) || null;
   const recoveryKeyMethod = methodRows.find((row) => row.method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY) || null;
-  const legacyRow = await fetchOwnBackupRow(uid, { force }).catch((error) => {
+  const legacyRow = await fetchOwnBackupRow(uid, { force, operationGeneration }).catch((error) => {
     if (!methodsError) throw error;
     return null;
   });
+  assertDmE2eeOperationCurrent(operationGeneration);
   if (methodsError && !legacyRow) throw methodsError;
   const row = passwordMethod || recoveryKeyMethod || legacyRow || null;
   if (row) {
@@ -1737,6 +1841,7 @@ export async function createDmE2eeKeyBackup({
   passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
   includeRecoveryKey = null,
 } = {}) {
+  const operationGeneration = dmE2eeSessionGeneration;
   const uid = normalizeId(userId);
   const rawPassword = String(password ?? "");
   const resolvedPasswordSource =
@@ -1750,7 +1855,7 @@ export async function createDmE2eeKeyBackup({
     );
   }
 
-  const identity = await ensureDmE2eeIdentity({ userId: uid });
+  const identity = await ensureDmE2eeIdentity({ userId: uid, operationGeneration });
   if (identity?.status !== "ready") {
     throw createBackupError(
       identity?.status === "missing_local_private"
@@ -1784,6 +1889,7 @@ export async function createDmE2eeKeyBackup({
       password: rawPassword,
       passwordSource: resolvedPasswordSource,
       includeRecoveryKey,
+      operationGeneration,
     });
     const hardenedPrivateKey = await crypto.subtle.importKey(
       "jwk",
@@ -1792,7 +1898,8 @@ export async function createDmE2eeKeyBackup({
       false,
       ["deriveBits"]
     );
-    await writeIdentityRecord({ ...identity, privateKey: hardenedPrivateKey });
+    await writeIdentityRecord({ ...identity, privateKey: hardenedPrivateKey }, operationGeneration);
+    assertDmE2eeOperationCurrent(operationGeneration);
     return row;
   } finally {
     privateKeyJwk = null;
@@ -2034,7 +2141,16 @@ export async function syncDmE2eeBackupWithLoginPassword({
   };
 }
 
-export async function rewrapDmE2eeKeyBackup({
+export function rewrapDmE2eeKeyBackup(options = {}) {
+  const operationGeneration = dmE2eeSessionGeneration;
+  return withDmE2eeIdentityLock(normalizeId(options.userId), operationGeneration, async () => {
+    const row = await rewrapDmE2eeKeyBackupUnderLock({ ...options, operationGeneration });
+    assertDmE2eeOperationCurrent(operationGeneration);
+    return row;
+  });
+}
+
+async function rewrapDmE2eeKeyBackupUnderLock({
   userId,
   currentPassword = "",
   currentRecoveryKey = "",
@@ -2042,6 +2158,7 @@ export async function rewrapDmE2eeKeyBackup({
   newPassword,
   passwordSource = DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
   includeRecoveryKey = true,
+  operationGeneration = dmE2eeSessionGeneration,
 } = {}) {
   const uid = normalizeId(userId);
   const resolvedCurrentMethod = normalizeBackupMethod(
@@ -2072,7 +2189,7 @@ export async function rewrapDmE2eeKeyBackup({
     );
   }
 
-  const identity = await ensureDmE2eeIdentity({ userId: uid });
+  const identity = await ensureDmE2eeIdentity({ userId: uid, operationGeneration });
   if (identity?.status !== "ready") {
     throw createBackupError("dm_e2ee_backup_identity_unavailable", "The local Vault identity is unavailable.");
   }
@@ -2084,10 +2201,10 @@ export async function rewrapDmE2eeKeyBackup({
   try {
     let backupRow = null;
     if (resolvedCurrentMethod === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY) {
-      backupRow = await fetchOwnBackupMethodRow(uid, DM_E2EE_BACKUP_METHOD_RECOVERY_KEY, { force: true });
+      backupRow = await fetchOwnBackupMethodRow(uid, DM_E2EE_BACKUP_METHOD_RECOVERY_KEY, { force: true, operationGeneration });
     } else {
-      backupRow = await fetchOwnBackupMethodRow(uid, DM_E2EE_BACKUP_METHOD_PASSWORD, { force: true }).catch(() => null);
-      if (!backupRow) backupRow = await fetchOwnBackupRow(uid, { force: true });
+      backupRow = await fetchOwnBackupMethodRow(uid, DM_E2EE_BACKUP_METHOD_PASSWORD, { force: true, operationGeneration }).catch(() => null);
+      if (!backupRow) backupRow = await fetchOwnBackupRow(uid, { force: true, operationGeneration });
     }
     if (!backupRow) {
       throw createBackupError("dm_e2ee_backup_missing", "No Vault Recovery backup was found for this account.");
@@ -2175,7 +2292,7 @@ export async function rewrapDmE2eeKeyBackup({
     if (!publicKeysMatch(identity.publicKeyJwk, publicKeyJwk)) {
       throw createBackupError("dm_e2ee_backup_identity_mismatch", "This Vault Recovery backup does not match the local protected identity.");
     }
-    const activeKeyRow = await fetchActiveKeyRowForUser(uid, { force: true });
+    const activeKeyRow = await fetchActiveKeyRowForUser(uid, { force: true, operationGeneration });
     if (activeKeyRow && !publicKeysMatch(activeKeyRow.publicKeyJwk, publicKeyJwk)) {
       throw createBackupError("dm_e2ee_backup_identity_mismatch", "This Vault Recovery backup does not match the active account identity.");
     }
@@ -2186,6 +2303,7 @@ export async function rewrapDmE2eeKeyBackup({
       password: nextPassword,
       passwordSource: resolvedPasswordSource,
       includeRecoveryKey,
+      operationGeneration,
     });
     logDmE2ee("backup_rewrapped", {
       userId: uid,
@@ -2203,11 +2321,21 @@ export async function rewrapDmE2eeKeyBackup({
   }
 }
 
-export async function restoreDmE2eeKeyBackup({
+export function restoreDmE2eeKeyBackup(options = {}) {
+  const operationGeneration = dmE2eeSessionGeneration;
+  return withDmE2eeIdentityLock(normalizeId(options.userId), operationGeneration, async () => {
+    const identity = await restoreDmE2eeKeyBackupUnderLock({ ...options, operationGeneration });
+    assertDmE2eeOperationCurrent(operationGeneration);
+    return identity;
+  });
+}
+
+async function restoreDmE2eeKeyBackupUnderLock({
   userId,
   password,
   recoveryKey = "",
   method = "",
+  operationGeneration = dmE2eeSessionGeneration,
 } = {}) {
   const uid = normalizeId(userId);
   const rawPassword = String(password ?? "");
@@ -2225,11 +2353,11 @@ export async function restoreDmE2eeKeyBackup({
   try {
     let backupRow = null;
     if (restoreMethod === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY) {
-      backupRow = await fetchOwnBackupMethodRow(uid, DM_E2EE_BACKUP_METHOD_RECOVERY_KEY, { force: true });
+      backupRow = await fetchOwnBackupMethodRow(uid, DM_E2EE_BACKUP_METHOD_RECOVERY_KEY, { force: true, operationGeneration });
     } else {
-      backupRow = await fetchOwnBackupMethodRow(uid, DM_E2EE_BACKUP_METHOD_PASSWORD, { force: true })
+      backupRow = await fetchOwnBackupMethodRow(uid, DM_E2EE_BACKUP_METHOD_PASSWORD, { force: true, operationGeneration })
         .catch(() => null);
-      if (!backupRow) backupRow = await fetchOwnBackupRow(uid, { force: true });
+      if (!backupRow) backupRow = await fetchOwnBackupRow(uid, { force: true, operationGeneration });
     }
     if (!backupRow) {
       throw createBackupError(
@@ -2332,7 +2460,7 @@ export async function restoreDmE2eeKeyBackup({
       }
       await verifyIdentityKeyPair(privateKey, publicKeyJwk);
 
-      const activeKeyRow = await fetchActiveKeyRowForUser(uid, { force: true });
+      const activeKeyRow = await fetchActiveKeyRowForUser(uid, { force: true, operationGeneration });
       if (activeKeyRow && !publicKeysMatch(activeKeyRow.publicKeyJwk, publicKeyJwk)) {
         throw createBackupError(
           "dm_e2ee_backup_identity_mismatch",
@@ -2347,8 +2475,8 @@ export async function restoreDmE2eeKeyBackup({
         keyAlgorithm: KEY_ALGORITHM,
         publicKeyJwk,
         privateKey,
-      });
-      const resolvedKeyRow = activeKeyRow || await upsertMyKeyRow(publicKeyJwk);
+      }, operationGeneration);
+      const resolvedKeyRow = activeKeyRow || await upsertMyKeyRow(publicKeyJwk, { userId: uid, operationGeneration });
       if (!activeKeyRow) {
         persistedIdentity = await writeIdentityRecord({
           ...persistedIdentity,
@@ -2356,8 +2484,9 @@ export async function restoreDmE2eeKeyBackup({
           keyVersion: resolvedKeyRow.keyVersion,
           keyAlgorithm: resolvedKeyRow.keyAlgorithm,
           publicKeyJwk: resolvedKeyRow.publicKeyJwk,
-        });
+        }, operationGeneration);
       }
+      assertDmE2eeOperationCurrent(operationGeneration);
       logDmE2ee("local_key_persisted", {
         userId: uid,
         keyVersion: Number(persistedIdentity?.keyVersion || 0) || 0,
@@ -2393,6 +2522,7 @@ export async function buildEncryptedDmMessagePayload({
   otherUserId,
   content,
 } = {}) {
+  const operationGeneration = dmE2eeSessionGeneration;
   const convId = normalizeId(conversationId);
   const senderUserId = normalizeId(userId);
   const peerUserId = normalizeId(otherUserId);
@@ -2401,7 +2531,8 @@ export async function buildEncryptedDmMessagePayload({
     throw new Error("Vault payload missing conversation or participant ids.");
   }
 
-  const localIdentity = await ensureDmE2eeIdentity({ userId: senderUserId });
+  const localIdentity = await ensureDmE2eeIdentity({ userId: senderUserId, operationGeneration });
+  assertDmE2eeOperationCurrent(operationGeneration);
   if (localIdentity?.status !== "ready") {
     logDmE2ee("send_blocked_missing_local_key", {
       userId: senderUserId,
@@ -2413,7 +2544,7 @@ export async function buildEncryptedDmMessagePayload({
       : "Could not initialize DM encryption on this device.");
   }
 
-  const peerKeyRow = await getActiveDmE2eePeerKey(peerUserId);
+  const peerKeyRow = await fetchActiveKeyRowForUser(peerUserId, { operationGeneration });
   if (!peerKeyRow) {
     throw new Error("The recipient has not finished setting up Vault yet.");
   }
@@ -2422,6 +2553,7 @@ export async function buildEncryptedDmMessagePayload({
     localIdentity,
     remoteKeyRow: peerKeyRow,
     conversationId: convId,
+    operationGeneration,
   });
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertextBuffer = await crypto.subtle.encrypt(
@@ -2435,6 +2567,7 @@ export async function buildEncryptedDmMessagePayload({
     encoder.encode(plaintext)
   );
 
+  assertDmE2eeOperationCurrent(operationGeneration);
   return {
     message_mode: DM_E2EE_MESSAGE_MODE,
     content: DM_E2EE_CONTENT_PLACEHOLDER,
@@ -2452,6 +2585,7 @@ export async function decryptDmMessageRows({
   conversationId,
   rows = [],
 } = {}) {
+  const operationGeneration = dmE2eeSessionGeneration;
   const myUserId = normalizeId(userId);
   const convId = normalizeId(conversationId);
   const inputRows = Array.isArray(rows) ? rows : [];
@@ -2462,7 +2596,8 @@ export async function decryptDmMessageRows({
   const encryptedRowsNeedingDecrypt = encryptedRows.filter((row) => getTrustedDmE2eeText(row) === null);
   if (!encryptedRowsNeedingDecrypt.length) return inputRows;
 
-  const localIdentity = await ensureDmE2eeIdentity({ userId: myUserId });
+  const localIdentity = await ensureDmE2eeIdentity({ userId: myUserId, operationGeneration });
+  assertDmE2eeOperationCurrent(operationGeneration);
   if (localIdentity?.status !== "ready") {
     logDmE2ee("decrypt_blocked_missing_local_key", {
       userId: myUserId,
@@ -2485,10 +2620,10 @@ export async function decryptDmMessageRows({
         : row?.sender_key_id
     )
   )).filter(Boolean)));
-  const remoteKeyRows = await fetchKeyRowsByIds(remoteKeyIds);
+  const remoteKeyRows = await fetchKeyRowsByIds(remoteKeyIds, operationGeneration);
   const remoteKeyMap = new Map(remoteKeyRows.map((row) => [row.id, row]));
 
-  return Promise.all(inputRows.map(async (row) => {
+  const decryptedRows = await Promise.all(inputRows.map(async (row) => {
     if (!isEncryptedDmMessageRow(row)) return row;
     if (getTrustedDmE2eeText(row) !== null) return row;
     if (!isSupportedDmE2eeV1CipherRow(row, convId)) return buildUnavailableRow(row, "invalid_schema");
@@ -2506,6 +2641,7 @@ export async function decryptDmMessageRows({
         localIdentity,
         remoteKeyRow,
         conversationId: convId,
+        operationGeneration,
       });
       const plaintextBuffer = await crypto.subtle.decrypt(
         {
@@ -2517,10 +2653,13 @@ export async function decryptDmMessageRows({
         aesKey,
         base64UrlToBytes(row?.ciphertext || "")
       );
+      assertDmE2eeOperationCurrent(operationGeneration);
       const plaintext = fatalUtf8Decoder.decode(plaintextBuffer);
       return markTrustedDmE2eeText(row, plaintext);
     } catch (_) {
       return buildUnavailableRow(row, "decryption_failed");
     }
   }));
+  assertDmE2eeOperationCurrent(operationGeneration);
+  return decryptedRows;
 }

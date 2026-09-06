@@ -80,7 +80,7 @@
 })();
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY, realtimeConnectionHealth, realtimeStartupBarrier } from "./supabaseClient.js";
 realtimeStartupBarrier.activate();
-import { createPresenceLatencyTracker } from "./lib/presenceLatency.js";
+import { createPresenceLatencyTracker, createPresenceTransitionRecorder } from "./lib/presenceLatency.js";
 import { createPrivateCallAcceptPipelineTracker } from "./lib/privateCallAcceptPipeline.js";
 import { createPrivateCallInboxController } from "./lib/privateCallInbox.js";
 import { createPrivateCallDeclineLifecycle } from "./lib/privateCallDeclineLifecycle.js";
@@ -293,10 +293,10 @@ import {
   DM_E2EE_BACKUP_METHOD_PASSWORD,
   DM_E2EE_BACKUP_METHOD_RECOVERY_KEY,
   DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
-  DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH,
   DM_E2EE_MESSAGE_MODE,
   buildEncryptedDmMessagePayload,
   createDmE2eeKeyBackup,
+  clearDmE2eeMemory,
   decryptDmMessageRows,
   ensureDmE2eeIdentity,
   getDmE2eeBackupPasswordSource,
@@ -1206,6 +1206,10 @@ function readAltaraOfflineComposerDraft(conversationId = "") {
 }
 
 function persistAltaraOfflineComposerDraft(conversationId = "", value = "") {
+  const input = document.getElementById("dmInput");
+  if (input?.dataset?.dmDraftRestorePending === "1"
+    && input.dataset.dmDraftUserId === normId(state.user?.id || "")
+    && input.dataset.dmDraftConversationId === normId(conversationId || "")) return false;
   const key = getAltaraOfflineDraftStorageKey(conversationId);
   if (!key) return false;
   const text = sanitizeComposerDraft(value);
@@ -1932,10 +1936,24 @@ async function startNormalBootHydration({ reason = "manual", lightweight = false
         recordAltaraBootEvent("normal_hydration_retry_done", { reason, ok: false, skipped: "no_user" });
         return { ok: false, skipped: "no_user" };
       }
+      const profileHydrationIntent = {
+        userId: normId(state.user.id),
+        sessionEpoch: presenceSessionEpoch,
+        sequence: meStatusIntentSequence,
+      };
+      const profileHydrationHadPendingStatus = isCurrentPresenceStatusIntent(meStatusPendingIntent);
       try {
-        const profile = await awaitWithTimeout(getMyProfile(state.user.id), 1600, "force normal boot profile");
+        const profile = await awaitWithTimeout(getMyProfile(profileHydrationIntent.userId), 1600, "force normal boot profile");
+        if (profileHydrationIntent.userId !== normId(state.user?.id || "")
+          || profileHydrationIntent.sessionEpoch !== presenceSessionEpoch) {
+          return { ok: false, skipped: "stale_session" };
+        }
         if (profile) {
-          state.me = profile;
+          const preserveManualStatus = profileHydrationHadPendingStatus
+            || !isCurrentPresenceStatusIntent(profileHydrationIntent)
+            || isCurrentPresenceStatusIntent(meStatusPendingIntent);
+          const currentManualStatus = resolveMyPresenceStatus(state.me);
+          state.me = preserveManualStatus ? { ...profile, status: currentManualStatus } : profile;
           state.me.name_color = normalizeNameColor(state.me.name_color);
           state.me.call_tile_color = normalizeCallTileColor(state.me.call_tile_color);
           state.me.status = resolveMyPresenceStatus(state.me);
@@ -1952,6 +1970,10 @@ async function startNormalBootHydration({ reason = "manual", lightweight = false
           applyMeStatusDot(state.me.status);
         }
       } catch (error) {
+        if (profileHydrationIntent.userId !== normId(state.user?.id || "")
+          || profileHydrationIntent.sessionEpoch !== presenceSessionEpoch) {
+          return { ok: false, skipped: "stale_session" };
+        }
         recordAltaraBootEvent("normal_hydration_profile_error", { reason, message: error?.message || error || "unknown" });
       }
       altaraBootDebugState.initialRefreshStarted = true;
@@ -7982,9 +8004,9 @@ function bindDesktopInboxUiOnce() {
       const requestKind = String(actionBtn.getAttribute("data-request-kind") || "friend").trim().toLowerCase();
       if (action === "accept" && requestId) {
         if (requestKind === "message") {
-          const result = await acceptMessageReq(requestId);
+          const result = await acceptMessageRequestForDmNavigation(requestId);
           if (result?.ok && result?.conversationId) {
-            await showDm(result.conversationId, { autoAnswerIfPending: true });
+            await showDm(result.conversationId, { autoAnswerIfPending: true, navigationIntent: result.navigationIntent });
           }
         } else {
           await acceptReq(requestId);
@@ -12154,14 +12176,15 @@ function resolveEffectivePresence(userId = "", options = {}) {
     : "";
   const manualStatus = normalizeManualPresenceStatus(
     explicitManualStatus
-    || entryManualStatus
     || selfManualStatus
+    || entryManualStatus
     || cachedManualStatus
     || "online"
   );
 
   const classification = classifyPresenceState({
     ...(entry && typeof entry === "object" ? entry : {}),
+    ...(isSelf ? { effective_status: manualStatus, effectiveStatus: manualStatus } : {}),
     manual_status: manualStatus,
     has_live_session: hasLiveSession,
     live_session_count: hasLiveSession
@@ -12200,6 +12223,7 @@ function resolveEffectivePresence(userId = "", options = {}) {
   const signature = [manualStatus, hasLiveSession ? "1" : "0", effectiveStatus, visibleToOthers ? "1" : "0", JSON.stringify(activity || null)].join("|");
   if (uid && presenceEffectiveStatusSignatureByUser.get(uid) !== signature) {
     presenceEffectiveStatusSignatureByUser.set(uid, signature);
+    recordPresenceResolvedObservation(uid, result, entry);
     logPresenceDebug("effective status changed", {
       userId: uid,
       manualStatus,
@@ -12448,6 +12472,11 @@ function cacheProfileRow(row, {
     if (fromTheme) next.status = fromTheme;
   }
   profileCache.set(id, next);
+  if (authoritativeIdentity && (Object.prototype.hasOwnProperty.call(row, "avatar_url")
+    || prevAvatarUrl !== resolveProfileAvatarUrl(next.avatar_url, "")
+    || prev.display_name !== next.display_name || prev.username !== next.username)) {
+    refreshServerVoiceParticipantIdentity(id, { retryFailed: true });
+  }
   try {
     if (id === String(state.user?.id || "").trim()) {
       if (isRealProfile(next)) myAccountPendingProfile = getCurrentMeProfileSnapshot(next);
@@ -30468,8 +30497,8 @@ function renderDmE2eeBackupSettingsUi() {
   const syncHint = document.getElementById("settingsAltaraSyncHint");
   if (syncHint) {
     syncHint.textContent = t(
-      "settings.security.dm_sync.hint",
-      "Your everyday DM mode. Protected, synced across devices, and recoverable if you lose access."
+      "settings.security.dm_sync.actual_scope",
+      "O modo Sync sincroniza o histórico através da conta. As mensagens deste modo não são encriptadas de ponta a ponta."
     );
   }
   const syncNote = document.getElementById("settingsAltaraSyncNote");
@@ -30494,19 +30523,19 @@ function renderDmE2eeBackupSettingsUi() {
   const info = settingsDmE2eeBackupState || {};
   const identityStatus = String(info.identityStatus || "unknown").trim().toLowerCase();
   const busy = !!(settingsDmE2eeBackupLoading || settingsDmE2eeBackupSaving || settingsDmE2eeBackupRestoring || settingsDmE2eeBackupSetupInFlight);
-  const canSave = identityStatus === "ready" && (!!info.exportable || !!info.hasBackup);
+  const canSave = !info.error && identityStatus === "ready" && (!!info.exportable || !!info.hasBackup);
   const canRestore = !!info.hasBackup && identityStatus !== "ready";
-  const canSetupNew = identityStatus === "migration_requires_recovery"
-    || (!info.hasBackup && identityStatus === "not_initialized");
+  const canSetupNew = !info.error && (identityStatus === "migration_requires_recovery"
+    || (!info.hasBackup && identityStatus === "not_initialized"));
 
   const sectionTitle = document.getElementById("settingsSectionDmE2eeBackup");
-  if (sectionTitle) sectionTitle.textContent = t("settings.security.dm_backup.section", "ALTARA Vault");
+  if (sectionTitle) sectionTitle.textContent = "Mensagens encriptadas";
 
   const hint = document.getElementById("settingsDmE2eeBackupHint");
   if (hint) {
     hint.textContent = t(
-      "settings.security.dm_backup.hint",
-      "End-to-end encrypted DMs for maximum privacy. ALTARA cannot recover Vault messages without your recovery password, recovery key, or trusted device."
+      "settings.security.dm_backup.text_scope",
+      "O texto das conversas diretas em modo encriptado é protegido de ponta a ponta. Anexos não são suportados nesse modo; eventos de sistema e chamadas têm tratamento separado."
     );
   }
 
@@ -30517,10 +30546,13 @@ function renderDmE2eeBackupSettingsUi() {
   if (modePill) {
     let pillText = t("settings.security.dm_backup.pill.not_setup", "Not set up");
     let pillTone = "missing";
-    if (settingsDmE2eeBackupLoading && !info.loaded) {
+    if (info.error) {
+      pillText = "Verificação indisponível";
+      pillTone = "warning";
+    } else if (settingsDmE2eeBackupLoading) {
       pillText = t("settings.security.dm_backup.pill.loading", "Checking");
       pillTone = "loading";
-    } else if (identityStatus === "ready" && info.hasBackup && info.hasRecoveryKeyMethod) {
+    } else if (identityStatus === "ready" && info.hasBackup) {
       pillText = t("settings.security.dm_backup.pill.ready", "Ready");
       pillTone = "ready";
     } else if (info.hasBackup) {
@@ -30568,7 +30600,7 @@ function renderDmE2eeBackupSettingsUi() {
     methodsStatus.textContent = tf(
       "settings.security.dm_backup.methods_status",
       {
-        password: info.hasBackup ? availableText : missingText,
+        password: info.hasPasswordMethod ? availableText : missingText,
         recoveryKey: info.hasRecoveryKeyMethod ? availableText : missingText,
       },
       "Recovery methods available: Password: {password}; Recovery Key: {recoveryKey}."
@@ -30576,8 +30608,8 @@ function renderDmE2eeBackupSettingsUi() {
   }
   const passwordStatus = document.getElementById("settingsDmE2eeBackupPasswordStatus");
   if (passwordStatus) {
-    passwordStatus.textContent = info.hasBackup ? t("settings.security.dm_backup.method_available_title", "Available") : t("settings.security.dm_backup.method_missing_title", "Not available");
-    passwordStatus.setAttribute("data-status", info.hasBackup ? "ready" : "missing");
+    passwordStatus.textContent = info.hasPasswordMethod ? t("settings.security.dm_backup.method_available_title", "Available") : t("settings.security.dm_backup.method_missing_title", "Not available");
+    passwordStatus.setAttribute("data-status", info.hasPasswordMethod ? "ready" : "missing");
   }
   const recoveryKeyStatus = document.getElementById("settingsDmE2eeBackupRecoveryKeyStatus");
   if (recoveryKeyStatus) {
@@ -30585,20 +30617,20 @@ function renderDmE2eeBackupSettingsUi() {
     recoveryKeyStatus.setAttribute("data-status", info.hasRecoveryKeyMethod ? "ready" : "missing");
   }
   const deviceStatus = document.getElementById("settingsDmE2eeBackupDeviceStatus");
-  const deviceStatusText = identityStatus === "ready"
+  const deviceStatusText = info.error ? "Este dispositivo: verificação indisponível. Os dados existentes foram preservados." : identityStatus === "ready"
     ? t("settings.security.dm_backup.device_ready", "This device: Vault set up on this device.")
     : t("settings.security.dm_backup.device_missing", "This device: Vault not set up on this device.");
   if (deviceStatus) deviceStatus.textContent = deviceStatusText;
   const deviceStatusValue = document.getElementById("settingsDmE2eeBackupDeviceStatusValue");
   if (deviceStatusValue) {
-    deviceStatusValue.textContent = identityStatus === "ready"
+    deviceStatusValue.textContent = info.error ? "Verificação indisponível" : identityStatus === "ready"
       ? t("settings.security.dm_backup.device_ready_short", "Vault ready")
       : t("settings.security.dm_backup.device_missing_short", "Not set up");
     deviceStatusValue.setAttribute("data-status", identityStatus === "ready" ? "ready" : "missing");
   }
   const keyMissing = document.getElementById("settingsDmE2eeBackupRecoveryKeyMissing");
   if (keyMissing) {
-    keyMissing.textContent = t("settings.security.dm_backup.recovery_key_missing", "Recovery Key is not set up. Create a new Vault Recovery backup to generate one.");
+    keyMissing.textContent = "A recuperação por palavra-passe está configurada. Não precisa de gerar um código para usar mensagens encriptadas.";
     keyMissing.hidden = !(info.hasBackup && !info.hasRecoveryKeyMethod);
   }
   const howSummary = document.getElementById("settingsDmE2eeBackupHowItWorksSummary");
@@ -30642,7 +30674,7 @@ function renderDmE2eeBackupSettingsUi() {
 
   const placeholder = tf(
     "settings.security.dm_backup.password_placeholder",
-    { min: DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH },
+    { min: DM_E2EE_NEW_PASSWORD_MIN_LENGTH },
     "At least {min} characters"
   );
   const passwordInput = document.getElementById("settingsDmE2eeBackupPassword");
@@ -30657,7 +30689,7 @@ function renderDmE2eeBackupSettingsUi() {
   }
 
   const saveWrap = document.getElementById("settingsDmE2eeBackupSaveWrap");
-  if (saveWrap) saveWrap.hidden = !(canSave || canSetupNew);
+  if (saveWrap) saveWrap.hidden = !canSave;
   const restoreWrap = document.getElementById("settingsDmE2eeBackupRestoreWrap");
   if (restoreWrap) restoreWrap.hidden = !canRestore;
   const setupWrap = document.getElementById("settingsDmE2eeBackupSetupWrap");
@@ -30683,7 +30715,7 @@ function renderDmE2eeBackupSettingsUi() {
   if (setupBtn) {
     setupBtn.textContent = settingsDmE2eeBackupSetupInFlight
       ? t("settings.security.dm_backup.setup_btn_busy", "Setting up...")
-      : t("settings.security.dm_backup.setup_btn", "Set up Vault on this device");
+      : "Configurar mensagens encriptadas";
     setupBtn.disabled = busy || !canSetupNew;
   }
   const restoreHint = document.getElementById("settingsDmE2eeBackupRestoreHint");
@@ -30849,195 +30881,153 @@ function showVaultRecoveryKeyOnce(recoveryKey = "", { isUpdate = false } = {}) {
   });
 }
 
-async function refreshDmE2eeBackupSettingsState({ force = false } = {}) {
-  if (!isDirectDmE2eeEnabled() || !DIRECT_DM_E2EE_KEY_BACKUP_UI_ENABLED) {
-    settingsDmE2eeBackupLoading = false;
-    settingsDmE2eeBackupState = {
-      loaded: true,
-      identityStatus: "runtime_disabled",
-      exportable: false,
-      hasBackup: false,
-      backupUpdatedAt: "",
-      backupPasswordSource: "",
-      hasRecoveryKeyMethod: false,
-      hasVaultConversation: false,
-      hasVaultMessages: false,
-      hasLocalVaultKey: false,
-      error: null,
-    };
-    renderDmE2eeBackupSettingsUi();
-    return settingsDmE2eeBackupState;
-  }
-  if (!state.user?.id) return settingsDmE2eeBackupState;
-  if (settingsDmE2eeBackupLoading && !force) return settingsDmE2eeBackupState;
-
+function refreshDmE2eeBackupSettingsState({ force = false } = {}) {
+  const owner = captureDmE2eeUiOwner();
+  if (!owner.isCurrent() || !isDirectDmE2eeEnabled() || !DIRECT_DM_E2EE_KEY_BACKUP_UI_ENABLED) return Promise.resolve(settingsDmE2eeBackupState);
+  if (settingsDmE2eeBackupRefreshPromise) return settingsDmE2eeBackupRefreshPromise;
   settingsDmE2eeBackupLoading = true;
   renderDmE2eeBackupSettingsUi();
-  try {
-    const [identityState, backupMeta, vaultRiskState] = await Promise.all([
-      getDmE2eeIdentityState({ userId: state.user.id, force }),
-      getDmE2eeKeyBackupMetadata({ userId: state.user.id, force }),
-      getCurrentUserVaultRiskState().catch(() => null),
-    ]);
-    settingsDmE2eeBackupState = {
-      loaded: true,
-      identityStatus: String(identityState?.status || "error"),
-      exportable: !!identityState?.localPrivateKeyExportable,
-      hasBackup: !!backupMeta,
-      backupUpdatedAt: String(backupMeta?.updatedAt || backupMeta?.createdAt || ""),
-      backupPasswordSource: getDmE2eeBackupPasswordSource(backupMeta),
-      hasRecoveryKeyMethod: !!backupMeta?.hasRecoveryKeyMethod,
-      hasVaultConversation: vaultRiskState?.hasVaultConversation === true,
-      hasVaultMessages: vaultRiskState?.hasVaultMessages === true,
-      hasLocalVaultKey: vaultRiskState?.hasLocalVaultKey === true,
-      error: backupMeta?.methodStorageError || (identityState?.status === "error" ? (identityState.error || new Error("DM E2EE state unavailable")) : null),
-    };
-  } catch (error) {
-    settingsDmE2eeBackupState = {
-      loaded: true,
-      identityStatus: "error",
-      exportable: false,
-      hasBackup: false,
-      backupUpdatedAt: "",
-      backupPasswordSource: "",
-      hasRecoveryKeyMethod: false,
-      hasVaultConversation: false,
-      hasVaultMessages: false,
-      hasLocalVaultKey: false,
-      error,
-    };
-  } finally {
-    settingsDmE2eeBackupLoading = false;
-    renderDmE2eeBackupSettingsUi();
-  }
-  return settingsDmE2eeBackupState;
+  const operation = (async () => {
+    try {
+      const [identityState, backupMeta, vaultRiskState] = await Promise.all([
+        getDmE2eeIdentityState({ userId: owner.userId, force }),
+        getDmE2eeKeyBackupMetadata({ userId: owner.userId, force }),
+        getCurrentUserVaultRiskState().catch(() => null),
+      ]);
+      if (!owner.isCurrent()) return null;
+      if (identityState?.status === "error") throw identityState.error || new Error("Não foi possível verificar as chaves.");
+      settingsDmE2eeBackupState = {
+        loaded: true, identityStatus: String(identityState?.status || "unknown"),
+        exportable: !!identityState?.localPrivateKeyExportable,
+        hasBackup: !!backupMeta, hasPasswordMethod: !!backupMeta?.hasPasswordMethod,
+        backupUpdatedAt: String(backupMeta?.updatedAt || backupMeta?.createdAt || ""),
+        backupPasswordSource: getDmE2eeBackupPasswordSource(backupMeta),
+        hasRecoveryKeyMethod: !!backupMeta?.hasRecoveryKeyMethod,
+        hasVaultConversation: vaultRiskState?.hasVaultConversation === true,
+        hasVaultMessages: vaultRiskState?.hasVaultMessages === true,
+        hasLocalVaultKey: vaultRiskState?.hasLocalVaultKey === true,
+        error: backupMeta?.methodStorageError || null,
+      };
+    } catch (error) {
+      // A failed read is not evidence that keys or backups disappeared.
+      if (owner.isCurrent()) settingsDmE2eeBackupState = { ...settingsDmE2eeBackupState, loaded: true, error };
+    } finally {
+      if (owner.isCurrent()) {
+        settingsDmE2eeBackupLoading = false;
+        settingsDmE2eeBackupRefreshPromise = null;
+        renderDmE2eeBackupSettingsUi();
+      }
+    }
+    return owner.isCurrent() ? settingsDmE2eeBackupState : null;
+  })();
+  settingsDmE2eeBackupRefreshPromise = operation;
+  return operation;
 }
 
-async function promptCurrentVaultRecoveryCredential() {
-  const useRecoveryKey = await requestAppConfirm(
-    t("settings.security.dm_backup.change_choose_method", "Verify the current Vault Recovery backup before replacing it."),
-    {
-      title: t("settings.security.dm_backup.update_btn", "Change recovery password"),
-      confirmText: t("settings.security.dm_backup.restore_method_recovery_key", "Recovery Key"),
-      cancelText: t("settings.security.dm_backup.restore_method_password", "Password"),
-    }
-  );
-  const method = useRecoveryKey ? DM_E2EE_BACKUP_METHOD_RECOVERY_KEY : DM_E2EE_BACKUP_METHOD_PASSWORD;
-  const credential = await requestAppPrompt(
-    method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY
-      ? t("settings.security.dm_backup.change_prompt_recovery_key", "Enter your current Recovery Key.")
-      : t("settings.security.dm_backup.change_prompt_password", "Enter your current Vault Recovery Password."),
-    {
-      title: t("settings.security.dm_backup.update_btn", "Change recovery password"),
-      label: getDmE2eeBackupRestoreLabel(method),
-      placeholder: getDmE2eeBackupRestorePlaceholder(method),
-      okText: t("dialog.confirm.continue", "Continue"),
-      cancelText: t("dialog.confirm.cancel", "Cancel"),
-      inputType: method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY ? "text" : "password",
-      requireValue: true,
-      maxLength: 4000,
-    }
-  );
-  if (credential === null) return null;
-  const normalizedCredential = method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY
-    ? normalizeDmE2eeRecoveryKeyInput(credential)
-    : String(credential || "");
-  if (!normalizedCredential) {
-    await showSecurityDialogMessage(getDmE2eeBackupRestoreRequiredMessage(method), { danger: true });
-    return null;
-  }
-  return { method, credential: normalizedCredential };
+function promptCurrentVaultRecoveryCredential() {
+  return promptDmE2eeRecoveryCredential({ changingPassword: true });
+}
+
+function promptDmE2eeRecoveryCredential({ changingPassword = false } = {}) {
+  const owner = captureDmE2eeUiOwner();
+  if (!owner.isCurrent()) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const modal = document.createElement("div");
+    modal.className = "modal altaraConfirmDialog";
+    modal.setAttribute("aria-hidden", "false");
+    modal.innerHTML = `<div class="modal__backdrop" data-vault-restore-cancel></div>
+      <form class="modalCard appConfirmModalCard altaraConfirmDialog__card" role="dialog" aria-modal="true" aria-labelledby="vaultRestoreTitle">
+        <div class="modalTop"><div class="modalTitle" id="vaultRestoreTitle">${changingPassword ? "Verificar recuperação atual" : "Recuperar mensagens encriptadas"}</div></div>
+        <div class="modal__body appConfirmModalBody">
+          <p>${changingPassword ? "Confirme um método de recuperação atual antes de alterar a palavra-passe. O código de recuperação existente continua válido." : "Este dispositivo ou navegador precisa de autorização. Use a palavra-passe das mensagens ou um código de recuperação já guardado para recuperar a mesma identidade desta conta."}</p>
+          <label class="vaultPasswordField">Método de recuperação<select class="input" name="method"><option value="password">Palavra-passe</option><option value="recovery_key">Código de recuperação</option></select></label>
+          <label class="vaultPasswordField"><span data-vault-credential-label>Palavra-passe das mensagens</span><input class="input" name="credential" type="password" autocomplete="current-password" maxlength="4000" required></label>
+        </div>
+        <div class="appConfirmModalActions"><button class="btn ghost" type="button" data-vault-restore-cancel>Cancelar</button><button class="btn primary" type="submit">Continuar</button></div>
+      </form>`;
+    const field = modal.querySelector('input[name="credential"]');
+    const methodField = modal.querySelector('select[name="method"]');
+    let finished = false;
+    const cleanup = (result) => {
+      if (finished) return;
+      finished = true;
+      field.value = "";
+      owner.signal.removeEventListener("abort", cancel);
+      modal.remove();
+      resolve(owner.isCurrent() ? result : null);
+    };
+    const cancel = () => cleanup(null);
+    owner.signal.addEventListener("abort", cancel, { once: true });
+    modal.addEventListener("click", (event) => { if (event.target?.closest?.("[data-vault-restore-cancel]")) cancel(); });
+    modal.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { event.preventDefault(); cancel(); }
+      if (event.key === "Tab") {
+        const focusable = Array.from(modal.querySelectorAll("select, input, button"));
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    });
+    methodField.addEventListener("change", () => {
+      field.value = "";
+      field.type = methodField.value === "recovery_key" ? "text" : "password";
+      field.autocomplete = methodField.value === "recovery_key" ? "off" : "current-password";
+      modal.querySelector("[data-vault-credential-label]").textContent = methodField.value === "recovery_key" ? "Código de recuperação" : "Palavra-passe das mensagens";
+    });
+    modal.querySelector("form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const method = normalizeDmE2eeBackupRestoreMethod(methodField.value);
+      const credential = method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY ? normalizeDmE2eeRecoveryKeyInput(field.value) : field.value;
+      if (credential) cleanup({ method, credential });
+    });
+    document.body.appendChild(modal);
+    field.focus();
+  });
 }
 
 async function saveDmE2eeBackupFromSettings() {
   if (!isDirectDmE2eeEnabled() || !DIRECT_DM_E2EE_KEY_BACKUP_UI_ENABLED) return;
-  if (!state.user?.id || settingsDmE2eeBackupSaving) return;
-  const passwordInput = document.getElementById("settingsDmE2eeBackupPassword");
-  const confirmInput = document.getElementById("settingsDmE2eeBackupPasswordConfirm");
-  const password = passwordInput instanceof HTMLInputElement ? String(passwordInput.value || "") : "";
-  const confirmPassword = confirmInput instanceof HTMLInputElement ? String(confirmInput.value || "") : "";
-
-  if (password.length < DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH) {
-    await showSecurityDialogMessage(
-      tf(
-        "settings.security.dm_backup.error_password_short",
-        { min: DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH },
-        "Use a Vault Recovery Password with at least {min} characters."
-      ),
-      { danger: true }
-    );
-    return;
-  }
-  if (password !== confirmPassword) {
-    await showSecurityDialogMessage(t("settings.security.dm_backup.error_password_match", "Vault Recovery Passwords do not match."), { danger: true });
-    return;
-  }
-
-  const changingExistingRecovery = !!settingsDmE2eeBackupState?.hasBackup;
-  let currentRecoveryCredential = null;
-  if (changingExistingRecovery && !settingsDmE2eeBackupState?.exportable) {
-    currentRecoveryCredential = await promptCurrentVaultRecoveryCredential();
-    if (!currentRecoveryCredential) return;
-  }
-  if (!changingExistingRecovery) {
-    const understood = await showVaultRecoveryResponsibilityNotice();
-    if (!understood) return;
-  }
-  if (changingExistingRecovery) {
-    const ok = await requestAppConfirm(
-      t("settings.security.dm_backup.change_warning", "Changing your Vault Recovery Password creates a new Recovery Key. Save the new key; the old Recovery Key will stop working."),
-      {
-        title: t("settings.security.dm_backup.update_btn", "Change recovery password"),
-        confirmText: t("dialog.confirm.ok", "Confirm"),
-        cancelText: t("dialog.confirm.cancel", "Cancel"),
-      }
-    );
-    if (!ok) return;
-  }
-
+  const owner = captureDmE2eeUiOwner();
+  if (!owner.isCurrent() || settingsDmE2eeBackupSaving || settingsDmE2eeBackupRestoring || directDmE2eeDeviceSetupInFlight || dmE2eeRestorePromptPromise) return;
   settingsDmE2eeBackupSaving = true;
   renderDmE2eeBackupSettingsUi();
   try {
-    const backupResult = currentRecoveryCredential
-      ? await rewrapDmE2eeKeyBackup({
-          userId: state.user.id,
-          currentMethod: currentRecoveryCredential.method,
-          currentPassword: currentRecoveryCredential.method === DM_E2EE_BACKUP_METHOD_PASSWORD ? currentRecoveryCredential.credential : "",
-          currentRecoveryKey: currentRecoveryCredential.method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY ? currentRecoveryCredential.credential : "",
-          newPassword: password,
-          passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
-          includeRecoveryKey: true,
-        })
-      : await createDmE2eeKeyBackup({
-          userId: state.user.id,
-          password,
-          passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
-          includeRecoveryKey: true,
-        });
-    if (backupResult?.recoveryKey) {
-      const savedKey = await showVaultRecoveryKeyOnce(backupResult.recoveryKey, { isUpdate: changingExistingRecovery });
-      if (!savedKey) return;
+    const password = String(document.getElementById("settingsDmE2eeBackupPassword")?.value || "");
+    const confirmation = String(document.getElementById("settingsDmE2eeBackupPasswordConfirm")?.value || "");
+    if (!isStrongDmE2eeSetupPassword(password)) throw new Error("Use uma palavra-passe dedicada com pelo menos 12 caracteres, não apenas números.");
+    if (password !== confirmation) throw new Error("As palavras-passe não coincidem.");
+    const backupMeta = await getDmE2eeKeyBackupMetadata({ userId: owner.userId, force: true });
+    assertDmE2eeUiOwner(owner);
+    if (backupMeta?.methodStorageError) throw backupMeta.methodStorageError;
+    const current = backupMeta ? await promptCurrentVaultRecoveryCredential() : null;
+    assertDmE2eeUiOwner(owner);
+    if (backupMeta && !current) return;
+    if (current) {
+      await rewrapDmE2eeKeyBackup({
+        userId: owner.userId, currentMethod: current.method,
+        currentPassword: current.method === DM_E2EE_BACKUP_METHOD_PASSWORD ? current.credential : "",
+        currentRecoveryKey: current.method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY ? current.credential : "",
+        newPassword: password, passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL, includeRecoveryKey: false,
+      });
+    } else {
+      await createDmE2eeKeyBackup({ userId: owner.userId, password, passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL, includeRecoveryKey: false });
     }
+    assertDmE2eeUiOwner(owner);
     clearDmE2eeBackupInputs({ clearRestore: false });
     await refreshDmE2eeBackupSettingsState({ force: true });
-    await showSecurityDialogMessage(t(
-      "settings.security.dm_backup.saved",
-      "Vault Recovery is ready. Use your password or saved Recovery Key to restore Vault messages on new devices."
-    ));
+    assertDmE2eeUiOwner(owner);
+    await showSecurityDialogMessage("Palavra-passe das mensagens guardada. Os métodos de recuperação existentes foram preservados.");
   } catch (error) {
-    const message = (isMissingTableError(error, "dm_e2ee_key_backup_methods") || isMissingTableError(error, "dm_e2ee_key_backups") || isMissingTableError(error, "dm_e2ee_user_key_backups"))
-      ? t("settings.security.dm_backup.status.sql_missing", "Vault Recovery SQL is missing. Apply the key backup patch and reload.")
-      : String(error?.message || error || "Could not save the Vault Recovery backup.");
-    await showSecurityDialogMessage(message, { danger: true });
+    if (owner.isCurrent() && !isVaultRecoveryCancelledError(error)) await showSecurityDialogMessage(String(error?.message || "Não foi possível guardar a palavra-passe."), { danger: true });
   } finally {
-    settingsDmE2eeBackupSaving = false;
-    renderDmE2eeBackupSettingsUi();
+    if (owner.isCurrent()) { settingsDmE2eeBackupSaving = false; renderDmE2eeBackupSettingsUi(); }
   }
 }
 
 async function restoreDmE2eeBackupFromSettings(options = {}) {
   if (!isDirectDmE2eeEnabled() || !DIRECT_DM_E2EE_KEY_BACKUP_UI_ENABLED) return false;
-  if (!state.user?.id || settingsDmE2eeBackupRestoring) return false;
+  const owner = captureDmE2eeUiOwner();
+  if (!owner.isCurrent() || settingsDmE2eeBackupRestoring || settingsDmE2eeBackupSaving || directDmE2eeDeviceSetupInFlight) return false;
   const restoreInput = document.getElementById("settingsDmE2eeBackupRestorePassword");
   const method = normalizeDmE2eeBackupRestoreMethod(options.method || getSelectedDmE2eeBackupRestoreMethod());
   const credential = Object.prototype.hasOwnProperty.call(options || {}, "credential")
@@ -31057,15 +31047,19 @@ async function restoreDmE2eeBackupFromSettings(options = {}) {
   renderDmE2eeBackupSettingsUi();
   try {
     await restoreDmE2eeKeyBackup({
-      userId: state.user.id,
+      userId: owner.userId,
       method,
       password: method === DM_E2EE_BACKUP_METHOD_PASSWORD ? credential : "",
       recoveryKey: method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY ? normalizedRecoveryKey : "",
     });
+    assertDmE2eeUiOwner(owner);
     dmE2eeBootstrapPromise = null;
-    await ensureDmE2eeBootstrapStarted({ force: true });
+    const restoredIdentity = await ensureDmE2eeBootstrapStarted({ force: true });
+    if (restoredIdentity?.status !== "ready") throw restoredIdentity?.error || new Error("Não foi possível validar a recuperação neste dispositivo. Os dados existentes foram preservados.");
+    assertDmE2eeUiOwner(owner);
     clearDmE2eeBackupInputs({ clearRestore: true });
     await refreshDmE2eeBackupSettingsState({ force: true });
+    assertDmE2eeUiOwner(owner);
     if (activeDmId && String(state.activeDm?.kind || "").trim().toLowerCase() === "dm") {
       void fetchMessages(activeDmId).catch((error) => {
         console.warn("refresh messages after dm key restore failed", error?.message || error);
@@ -31074,6 +31068,7 @@ async function restoreDmE2eeBackupFromSettings(options = {}) {
     await showSecurityDialogMessage(t("settings.security.dm_backup.restored", "Vault messages restored on this device."));
     return true;
   } catch (error) {
+    if (!owner.isCurrent()) return false;
     const code = String(error?.code || "").trim();
     const message = (isMissingTableError(error, "dm_e2ee_key_backup_methods") || isMissingTableError(error, "dm_e2ee_key_backups") || isMissingTableError(error, "dm_e2ee_user_key_backups"))
       ? t("settings.security.dm_backup.status.sql_missing", "Vault Recovery SQL is missing. Apply the key backup patch and reload.")
@@ -31083,102 +31078,34 @@ async function restoreDmE2eeBackupFromSettings(options = {}) {
     await showSecurityDialogMessage(message, { danger: true });
     return false;
   } finally {
-    settingsDmE2eeBackupRestoring = false;
-    renderDmE2eeBackupSettingsUi();
+    if (owner.isCurrent()) { settingsDmE2eeBackupRestoring = false; renderDmE2eeBackupSettingsUi(); }
   }
 }
 
 async function setupNewDmE2eeKeyFromSettings() {
-  if (!isDirectDmE2eeEnabled() || !DIRECT_DM_E2EE_KEY_BACKUP_UI_ENABLED) return;
-  if (!state.user?.id || settingsDmE2eeBackupSetupInFlight) return;
-  const passwordInput = document.getElementById("settingsDmE2eeBackupPassword");
-  const confirmInput = document.getElementById("settingsDmE2eeBackupPasswordConfirm");
-  const password = passwordInput instanceof HTMLInputElement ? String(passwordInput.value || "") : "";
-  const confirmPassword = confirmInput instanceof HTMLInputElement ? String(confirmInput.value || "") : "";
-  if (password.length < DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH) {
-    await showSecurityDialogMessage(tf(
-      "settings.security.dm_backup.error_password_short",
-      { min: DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH },
-      "Use a Vault Recovery Password with at least {min} characters."
-    ), { danger: true });
-    return;
-  }
-  if (password !== confirmPassword) {
-    await showSecurityDialogMessage(t("settings.security.dm_backup.error_password_match", "Vault Recovery Passwords do not match."), { danger: true });
-    return;
-  }
-  const understood = await showVaultRecoveryResponsibilityNotice();
-  if (!understood) return;
-  const ok = await requestAppConfirm(
-    t(
-      "settings.security.dm_backup.setup_new_confirm",
-      "Set up Vault on this device? Old Vault messages may stay unavailable unless you restore the original key with your recovery password or Recovery Key."
-    ),
-    {
-      title: t("settings.security.dm_backup.setup_btn", "Set up Vault on this device"),
-      confirmText: t("dialog.confirm.ok", "Confirm"),
-      cancelText: t("dialog.confirm.cancel", "Cancel"),
-    }
-  );
-  if (!ok) return;
-  settingsDmE2eeBackupSetupInFlight = true;
-  renderDmE2eeBackupSettingsUi();
-  try {
-    const identity = await setupDmE2eeIdentityForCurrentDevice({
-      userId: state.user.id,
-      forceNew: false,
-      backupPassword: password,
-      passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
-      includeRecoveryKey: true,
-    });
-    if (identity?.status !== "ready") {
-      throw identity?.error || new Error("Vault setup requires recovery or an existing identity restore.");
-    }
-    if (identity.recoveryKey) {
-      const savedKey = await showVaultRecoveryKeyOnce(identity.recoveryKey, { isUpdate: false });
-      if (!savedKey) return;
-    }
-    clearDmE2eeBackupInputs({ clearRestore: false });
-    dmE2eeBootstrapPromise = null;
-    await ensureDmE2eeBootstrapStarted({ force: true });
-    await refreshDmE2eeBackupSettingsState({ force: true });
-    await showSecurityDialogMessage(t("settings.security.dm_backup.setup_done", "Vault and encrypted recovery are set up on this device."));
-  } catch (error) {
-    await showSecurityDialogMessage(String(error?.message || error || "Could not set up Vault on this device."), { danger: true });
-  } finally {
-    settingsDmE2eeBackupSetupInFlight = false;
-    renderDmE2eeBackupSettingsUi();
-  }
+  const owner = captureDmE2eeUiOwner();
+  const result = await setupDirectDmEncryptionForCurrentDevice({ checkPeerKey: false });
+  if (!owner.isCurrent() || !result?.ok) return;
+  clearDmE2eeBackupInputs({ clearRestore: false });
+  await refreshDmE2eeBackupSettingsState({ force: true });
 }
 
-async function promptRestoreDmE2eeBackupFromDm() {
-  if (!state.user?.id) return false;
-  const useRecoveryKey = await requestAppConfirm(
-    t("dm.e2ee.restore.choose_method", "Restore with your Vault Recovery Password or Recovery Key."),
-    {
-      title: t("dm.e2ee.restore.title", "Restore Vault messages"),
-      confirmText: t("settings.security.dm_backup.restore_method_recovery_key", "Recovery Key"),
-      cancelText: t("settings.security.dm_backup.restore_method_password", "Password"),
+function promptRestoreDmE2eeBackupFromDm() {
+  const owner = captureDmE2eeUiOwner();
+  if (!owner.isCurrent()) return Promise.resolve(false);
+  if (dmE2eeRestorePromptPromise) return dmE2eeRestorePromptPromise;
+  if (settingsDmE2eeBackupSaving || settingsDmE2eeBackupRestoring || directDmE2eeDeviceSetupInFlight) return Promise.resolve(false);
+  const operation = (async () => {
+    try {
+      const result = await promptDmE2eeRecoveryCredential();
+      if (!owner.isCurrent() || !result) return false;
+      return await restoreDmE2eeBackupFromSettings({ ...result, source: "dm" });
+    } finally {
+      if (owner.isCurrent()) dmE2eeRestorePromptPromise = null;
     }
-  );
-  const method = useRecoveryKey ? DM_E2EE_BACKUP_METHOD_RECOVERY_KEY : DM_E2EE_BACKUP_METHOD_PASSWORD;
-  const credential = await requestAppPrompt(
-    method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY
-      ? t("dm.e2ee.restore.prompt_recovery_key", "Enter your Recovery Key to restore Vault messages on this device.")
-      : t("dm.e2ee.restore.prompt", "Enter your Vault Recovery Password to restore Vault messages on this device."),
-    {
-      title: t("dm.e2ee.restore.title", "Restore Vault messages"),
-      label: getDmE2eeBackupRestoreLabel(method),
-      placeholder: getDmE2eeBackupRestorePlaceholder(method),
-      okText: t("settings.security.dm_backup.restore_btn", "Restore Vault messages"),
-      cancelText: t("dialog.confirm.cancel", "Cancel"),
-      inputType: method === DM_E2EE_BACKUP_METHOD_RECOVERY_KEY ? "text" : "password",
-      requireValue: true,
-      maxLength: 4000,
-    }
-  );
-  if (credential === null) return false;
-  return restoreDmE2eeBackupFromSettings({ credential, method, source: "dm" });
+  })();
+  dmE2eeRestorePromptPromise = operation;
+  return operation;
 }
 function renderSecurityAccessUi() {
   const hasCode = !!settingsSecurityCodeHash;
@@ -33517,7 +33444,7 @@ function applyLanguageToStaticUi() {
   const btnDmCreateGroup = document.getElementById("btnDmCreateGroup");
   if (btnDmCreateGroup) { const lbl = t("dm.create_group", "Create Group DM"); btnDmCreateGroup.title = lbl; btnDmCreateGroup.setAttribute("aria-label", lbl); const sr = document.getElementById("btnDmCreateGroupSrOnly"); if (sr) sr.textContent = lbl; }
   const btnDmPrivacy = document.getElementById("btnDmPrivacy");
-  if (btnDmPrivacy) { const lbl = t("dm.privacy.enable_btn", "Request Vault"); btnDmPrivacy.title = lbl; btnDmPrivacy.setAttribute("aria-label", lbl); const sr = document.getElementById("btnDmPrivacySrOnly"); if (sr) sr.textContent = lbl; }
+  if (btnDmPrivacy) { const lbl = "Segurança da conversa"; btnDmPrivacy.title = lbl; btnDmPrivacy.setAttribute("aria-label", lbl); const sr = document.getElementById("btnDmPrivacySrOnly"); if (sr) sr.textContent = lbl; }
   const btnDmGroupEdit = document.getElementById("btnDmGroupEdit");
   if (btnDmGroupEdit) { const lbl = t("dm.edit_group", "Edit group"); btnDmGroupEdit.title = lbl; btnDmGroupEdit.setAttribute("aria-label", lbl); const sr = document.getElementById("btnDmGroupEditSrOnly"); if (sr) sr.textContent = lbl; }
   const btnDmGroupManage = document.getElementById("btnDmGroupManage");
@@ -34156,23 +34083,7 @@ function openProfileOverlay() {
   if (!p) return;
   settingsSecurityUnlocked = false;
   settingsSecurityRemoveVerificationPending = false;
-  settingsDmE2eeBackupLoading = false;
-  settingsDmE2eeBackupSaving = false;
-  settingsDmE2eeBackupRestoring = false;
-  settingsDmE2eeBackupSetupInFlight = false;
-  settingsDmE2eeBackupState = {
-    loaded: false,
-    identityStatus: "unknown",
-    exportable: false,
-    hasBackup: false,
-    backupUpdatedAt: "",
-    backupPasswordSource: "",
-    hasRecoveryKeyMethod: false,
-    hasVaultConversation: false,
-    hasVaultMessages: false,
-    hasLocalVaultKey: false,
-    error: null,
-  };
+  captureDmE2eeUiOwner();
   syncSecurityCodeStateFromUser(state.user, { preserveUnlock: false });
   syncOwnerReportsSettingsAccessUi();
   p.classList.remove("hidden");
@@ -41063,6 +40974,7 @@ const voiceV2MoveTimingTrace = [];
 const voiceV2SfxPlayedMoveNonces = new Set();
 const voiceV2SfxPlayedMoveNonceOrder = [];
 const serverVoiceMoveDeliveryByOperation = new Map();
+const SERVER_VOICE_MOVE_PENDING_LIMIT = 16;
 const serverVoiceMoveAppliedAckIds = new Set();
 const serverVoiceMoveAppliedAckOrder = [];
 const SERVER_VOICE_MOVE_ACK_DEADLINE_MS = 420;
@@ -41108,6 +41020,8 @@ const serverVoiceParticipantFlickerStateByUser = new Map();
 const serverVoiceParticipantFlickerTransitions = [];
 const serverVoiceStageProjectionByConversation = new Map();
 const serverVoicePresenceDiagnosticSignatureByKey = new Map();
+const serverVoicePresenceDiagnosticAliases = new Map();
+let serverVoicePresenceDiagnosticAliasSerial = 0;
 const serverVoiceV2StagePresenceExpiryTimerByConversation = new Map();
 const serverVoiceRestoredStatusExpiryTimerByConversation = new Map();
 let serverVoiceJoiningPresentation = null;
@@ -41568,16 +41482,43 @@ function getSafeServerVoiceTimingId(value = "") {
 
 function emitServerVoicePresenceDiagnostic(entry = {}) {
   if (!isServerVoiceTimingDiagnosticsEnabled()) return false;
+  const alias = (value) => {
+    if (!value) return null;
+    if (!serverVoicePresenceDiagnosticAliases.has(value)) {
+      serverVoicePresenceDiagnosticAliases.set(value, `p${++serverVoicePresenceDiagnosticAliasSerial}`);
+      while (serverVoicePresenceDiagnosticAliases.size > 200) serverVoicePresenceDiagnosticAliases.delete(serverVoicePresenceDiagnosticAliases.keys().next().value);
+    }
+    return serverVoicePresenceDiagnosticAliases.get(value);
+  };
+  const uid = normId(entry?.userId || "");
+  const sid = normId(entry?.serverId || "");
+  const member = serverVoiceV2MembersByUser.get(uid) || null;
+  const convId = normId(member?.conversationId || findServerChannelContextByChannelId(entry?.channelId, sid)?.channel?.conversationId || "");
+  const projection = serverVoiceStageProjectionByConversation.get(convId);
+  const sidebar = uid ? Array.from(document.querySelectorAll("[data-server-voice-member-id]"))
+    .find((node) => node.getAttribute("data-server-voice-member-id") === uid) : null;
+  const stage = uid ? Array.from(document.querySelectorAll("#callStage [data-call-grid-entry='1'][data-call-user-id]"))
+    .find((node) => node.getAttribute("data-call-user-id") === uid) : null;
+  const identity = uid && convId ? getGroupMemberIdentity(convId, uid) : null;
   const payload = {
     event: String(entry?.event || "transition").slice(0, 60),
     source: String(entry?.source || "membership").slice(0, 30),
     observerMode: String(entry?.observerMode || "outside-room").slice(0, 30),
     decision: String(entry?.decision || "dedupe").slice(0, 50),
-    generation: getSafeServerVoiceTimingId(entry?.generation),
-    serverId: getSafeServerVoiceTimingId(entry?.serverId),
-    channelId: getSafeServerVoiceTimingId(entry?.channelId),
-    userId: getSafeServerVoiceTimingId(entry?.userId),
-    sessionId: getSafeServerVoiceTimingId(entry?.sessionId),
+    generation: alias(entry?.generation),
+    serverId: alias(sid),
+    channelId: alias(entry?.channelId),
+    userId: alias(uid),
+    sessionId: alias(entry?.sessionId),
+    subscription: alias(serverVoiceOccupancyChannelByServerId.get(sid)),
+    assignmentRevision: alias(member?.assignmentNonce),
+    authoritativePresent: !!member,
+    membershipFresh: !!member && isServerVoiceV2MemberRowFresh(member),
+    projected: projection?.participantIds?.includes(uid) === true,
+    sidebarNode: !!sidebar,
+    stageNode: !!stage,
+    avatarSource: identity?.avatarSource || "fallback",
+    avatarStatus: (sidebar || stage)?.querySelector(".profileAvatarMediaClip.is-error") ? "load-error" : identity?.avatar ? "url-available" : "fallback",
     realtimeSubscriptionState: String(entry?.realtimeSubscriptionState || "").slice(0, 30) || null,
     membershipKnown: entry?.membershipKnown === true,
     transportKnown: entry?.transportKnown === true,
@@ -41622,6 +41563,15 @@ function emitServerVoicePresenceDiagnostic(entry = {}) {
     payload.transportKnown ? 1 : 0,
     payload.transportPresent ? 1 : 0,
     payload.graceActive ? 1 : 0,
+    payload.subscription,
+    payload.assignmentRevision,
+    payload.authoritativePresent,
+    payload.membershipFresh,
+    payload.projected,
+    payload.sidebarNode,
+    payload.stageNode,
+    payload.avatarSource,
+    payload.avatarStatus,
   ].join(":");
   const logicalKey = [payload.serverId, payload.channelId, payload.userId, payload.event].join(":");
   if (serverVoicePresenceDiagnosticSignatureByKey.get(logicalKey) === signatureKey) return false;
@@ -43441,6 +43391,9 @@ function createServerVoiceMoveOperationIdentity({
     operationId,
     operationKey: sanitizeServerVoiceMoveOperationKey(operationId),
     requestedAt: Number(requestedAt || 0) || Date.now(),
+    requestedPerfAt: getServerVoicePerfNow(),
+    ownerUserId: normId(state.user?.id || ""),
+    ownerSessionEpoch: presenceSessionEpoch,
     serverId: normId(serverId || existingRow?.serverId || currentServerVoiceV2Session?.serverId || ""),
     sourceChannelId: normId(sourceChannelId || existingRow?.channelId || ""),
     sourceConversationId: normId(sourceConversationId || existingRow?.conversationId || ""),
@@ -43479,6 +43432,8 @@ function buildServerVoiceMoveControlPayload(authority = {}, operation = {}) {
     move_id: moveId,
     operationId: moveId,
     operation_id: moveId,
+    assignmentNonce: row.assignment_nonce || row.assignmentNonce || authority.assignmentNonce || authority.assignment_nonce || moveId,
+    assignmentUpdatedAt: row.assignment_updated_at || row.assignmentUpdatedAt || authority.assignmentUpdatedAt || authority.assignment_updated_at || "",
     serverId: authority?.serverId || authority?.server_id || row?.server_id || operation?.serverId || "",
     server_id: authority?.serverId || authority?.server_id || row?.server_id || operation?.serverId || "",
     sourceChannelId: authority?.sourceChannelId || authority?.source_channel_id || operation?.sourceChannelId || "",
@@ -43515,25 +43470,72 @@ function rememberServerVoiceMoveAppliedAck(operationId = "") {
   return true;
 }
 
-function handleServerVoiceMoveApplicationAck(payload = {}) {
-  const operationId = getServerVoiceAuthoritativeMoveOperationId(payload);
-  if (!operationId) return false;
-  rememberServerVoiceMoveAppliedAck(operationId);
-  const pending = serverVoiceMoveDeliveryByOperation.get(operationId) || null;
-  if (!pending) return true;
-  if (pending.targetUserId && normId(payload?.targetUserId || payload?.target_user_id || "") !== pending.targetUserId) return false;
+function clearServerVoiceMoveDelivery(operationId, expected = null) {
+  const pending = serverVoiceMoveDeliveryByOperation.get(operationId);
+  if (!pending || (expected && pending !== expected)) return false;
   if (pending.timer) clearTimeout(pending.timer);
   if (pending.finalTimer) clearTimeout(pending.finalTimer);
   serverVoiceMoveDeliveryByOperation.delete(operationId);
+  return true;
+}
+
+function isServerVoiceMoveDeliveryCurrent(pending, { requireChannel = true } = {}) {
+  if (!pending || serverVoiceMoveDeliveryByOperation.get(pending.operationId) !== pending) return false;
+  if (pending.ownerUserId !== normId(state.user?.id || "") || pending.ownerSessionEpoch !== presenceSessionEpoch) return false;
+  const channel = serverVoiceOccupancyChannelByServerId.get(pending.serverId)
+    || (serverVoiceV2ControlPlaneServerId === pending.serverId ? serverVoiceV2ControlPlaneChannel : null);
+  return !requireChannel || !pending.channel || channel === pending.channel;
+}
+
+function handleServerVoiceMoveApplicationAck(payload = {}, { serverId = "", channel = null, ownerUserId = "", ownerSessionEpoch = null } = {}) {
+  const operationId = getServerVoiceAuthoritativeMoveOperationId(payload);
+  const pending = serverVoiceMoveDeliveryByOperation.get(operationId);
+  if (!pending || !["request", "delivery"].includes(pending.phase)) return false;
+  if (!isServerVoiceMoveDeliveryCurrent(pending, { requireChannel: false })) {
+    clearServerVoiceMoveDelivery(operationId, pending);
+    return false;
+  }
+  const currentChannel = serverVoiceOccupancyChannelByServerId.get(pending.serverId)
+    || (serverVoiceV2ControlPlaneServerId === pending.serverId ? serverVoiceV2ControlPlaneChannel : null);
+  // A replacement subscription may receive a valid ACK for this account's move.
+  // A callback owned by the removed subscription may not confirm it.
+  if ((channel && channel !== currentChannel)
+    || (ownerUserId && ownerUserId !== pending.ownerUserId)
+    || (ownerSessionEpoch !== null && ownerSessionEpoch !== pending.ownerSessionEpoch)) return false;
+  const row = payload?.row || {};
+  const ack = {
+    moveId: operationId, status: String(payload.status || ""),
+    serverId: normId(payload.serverId || payload.server_id || row.server_id || row.serverId || ""),
+    targetUserId: normId(payload.targetUserId || payload.target_user_id || row.user_id || row.userId || ""),
+    targetChannelId: normId(payload.targetChannelId || payload.target_channel_id || row.channel_id || row.channelId || ""),
+    membershipSessionId: String(payload.membershipSessionId || payload.membership_session_id || row.session_id || row.sessionId || "").trim(),
+    deliveryPath: String(payload.deliveryPath || payload.delivery_path || "broadcast"),
+  };
+  if (ack.status !== "applied"
+    || (serverId && normId(serverId) !== pending.serverId)
+    || ack.serverId !== pending.serverId || ack.targetUserId !== pending.targetUserId
+    || ack.targetChannelId !== pending.targetChannelId
+    || !ack.membershipSessionId
+    || (pending.membershipSessionId && ack.membershipSessionId !== pending.membershipSessionId)) return false;
+  if (pending.phase === "request") {
+    // Postgres can reach the target before the actor receives the RPC response.
+    // Retain one receipt only; validate it again against the authoritative row.
+    if (!pending.earlyAck) pending.earlyAck = ack;
+    return false;
+  }
+  if (ack.membershipSessionId !== pending.membershipSessionId) return false;
+  // Broadcast ACK is advisory application feedback, never membership authority.
+  rememberServerVoiceMoveAppliedAck(operationId);
+  clearServerVoiceMoveDelivery(operationId, pending);
+  if (voiceModerationUiOperationId === operationId) {
+    notifyServerVoiceModerationUi("Participant confirmed the move.", { moveOperationId: operationId });
+  }
   emitServerVoiceMoveDiagnostic({
     operationKey: pending.operationKey,
-    observerConvergenceMs: Math.max(0, Date.now() - pending.requestedAt),
-    deliveryPath: String(payload?.deliveryPath || payload?.delivery_path || "broadcast"),
+    observerConvergenceMs: Math.max(0, getServerVoicePerfNow() - pending.requestedPerfAt),
+    deliveryPath: ack.deliveryPath,
     fallbackUsed: pending.retryCount > 0,
     fallbackReason: pending.retryCount > 0 ? "application_ack_after_retry" : "",
-    tokenRequestCount: 0,
-    roomConnectAttemptCount: 0,
-    publicationCount: 0,
     result: "moved_client_applied_ack",
   });
   return true;
@@ -43542,7 +43544,14 @@ function handleServerVoiceMoveApplicationAck(payload = {}) {
 async function sendServerVoiceMoveApplicationAck(message = {}, { deliveryPath = "broadcast", force = false } = {}) {
   const operationId = getServerVoiceAuthoritativeMoveOperationId(message);
   const row = message?.row && typeof message.row === "object" ? message.row : {};
-  if (!operationId) return false;
+  const meId = normId(state.user?.id || "");
+  const member = getServerVoiceV2Member(meId);
+  const activeOperation = serverVoiceOperationLifecycle.getCurrent();
+  if (!operationId || !meId || !serverVoiceTransportController
+    || !["joining", "connected", "reconnecting"].includes(String(activeOperation?.phase || ""))
+    || !doesServerVoiceMoveSignalMatchMembership(message, member)
+    || normId(message?.targetUserId || message?.target_user_id || row?.user_id || row?.userId || "") !== meId
+    || String(member?.sessionId || member?.session_id || "") !== String(currentServerVoiceV2Session?.sessionId || "")) return false;
   const firstAck = rememberServerVoiceMoveAppliedAck(operationId);
   if (!firstAck && force !== true) return false;
   return broadcastServerVoiceV2ControlPlaneRow(
@@ -43567,55 +43576,68 @@ function scheduleServerVoiceMoveApplicationAckFallback({ operation = null, paylo
   const operationId = String(operation?.operationId || "").trim();
   const row = payload?.row && typeof payload.row === "object" ? payload.row : null;
   if (!operationId || !row || serverVoiceMoveAppliedAckIds.has(operationId)) return false;
-  const previous = serverVoiceMoveDeliveryByOperation.get(operationId) || null;
-  if (previous?.timer) clearTimeout(previous.timer);
-  if (previous?.finalTimer) clearTimeout(previous.finalTimer);
+  const ownerUserId = normId(operation?.ownerUserId || state.user?.id || "");
+  const ownerSessionEpoch = operation?.ownerSessionEpoch ?? presenceSessionEpoch;
+  if (ownerUserId !== normId(state.user?.id || "") || ownerSessionEpoch !== presenceSessionEpoch) return false;
+  const serverId = normId(row.server_id || row.serverId || operation.serverId || "");
+  const targetUserId = normId(row.user_id || row.userId || operation.targetUserId || "");
+  const earlyAck = serverVoiceMoveDeliveryByOperation.get(operationId)?.earlyAck || null;
+  for (const old of serverVoiceMoveDeliveryByOperation.values()) {
+    if (old.operationId === operationId || (old.serverId === serverId && old.targetUserId === targetUserId && old.phase === "delivery")) clearServerVoiceMoveDelivery(old.operationId, old);
+  }
+  if (serverVoiceMoveDeliveryByOperation.size >= SERVER_VOICE_MOVE_PENDING_LIMIT) return false;
   const pending = {
-    operationId,
-    operationKey: operation?.operationKey || sanitizeServerVoiceMoveOperationKey(operationId),
-    targetUserId: normId(operation?.targetUserId || payload?.targetUserId || payload?.target_user_id || ""),
-    requestedAt: Number(operation?.requestedAt || 0) || Date.now(),
-    retryCount: 0,
-    timer: null,
-    finalTimer: null,
+    operationId, phase: "delivery", ownerUserId, ownerSessionEpoch, serverId, targetUserId,
+    targetChannelId: normId(row.channel_id || row.channelId || operation.targetChannelId || ""),
+    membershipSessionId: String(row.session_id || row.sessionId || operation.membershipSessionId || "").trim(),
+    operationKey: operation.operationKey || sanitizeServerVoiceMoveOperationKey(operationId),
+    requestedPerfAt: Number.isFinite(operation.requestedPerfAt) ? operation.requestedPerfAt : getServerVoicePerfNow(),
+    channel: serverVoiceOccupancyChannelByServerId.get(serverId)
+      || (serverVoiceV2ControlPlaneServerId === serverId ? serverVoiceV2ControlPlaneChannel : null),
+    retryCount: 0, deadlineElapsed: false, timer: null, finalTimer: null,
   };
+  serverVoiceMoveDeliveryByOperation.set(operationId, pending);
+  if (earlyAck && handleServerVoiceMoveApplicationAck(earlyAck, { serverId })) return true;
   pending.timer = setTimeout(() => {
-    if (serverVoiceMoveAppliedAckIds.has(operationId)) return;
+    pending.timer = null;
+    if (!isServerVoiceMoveDeliveryCurrent(pending, { requireChannel: false })) {
+      clearServerVoiceMoveDelivery(operationId, pending);
+      return;
+    }
+    if (!isServerVoiceMoveDeliveryCurrent(pending)) return;
     pending.retryCount = 1;
     void broadcastServerVoiceV2ControlPlaneRow(row, "server_voice_v2_channel_changed", {
-      ...payload,
-      fallbackUsed: true,
-      fallback_used: true,
-      fallbackReason: "application_ack_timeout",
-      fallback_reason: "application_ack_timeout",
+      ...payload, fallbackUsed: true, fallback_used: true,
+      fallbackReason: "application_ack_timeout", fallback_reason: "application_ack_timeout",
     }).then((sent) => {
+      if (!isServerVoiceMoveDeliveryCurrent(pending)) return;
       emitServerVoiceMoveDiagnostic({
         operationKey: pending.operationKey,
-        eventDispatchMs: Math.max(0, Date.now() - pending.requestedAt),
+        eventDispatchMs: Math.max(0, getServerVoicePerfNow() - pending.requestedPerfAt),
         fallbackUsed: true,
         fallbackReason: sent ? "application_ack_timeout_retry_sent" : "application_ack_timeout_subscription_unavailable",
         deliveryPath: "broadcast",
-        tokenRequestCount: 0,
-        roomConnectAttemptCount: 0,
-        publicationCount: 0,
         result: sent ? "bounded_immediate_retry" : "bounded_retry_unavailable",
       });
     });
-    pending.finalTimer = setTimeout(() => {
-      serverVoiceMoveDeliveryByOperation.delete(operationId);
-      emitServerVoiceMoveDiagnostic({
-        operationKey: pending.operationKey,
-        fallbackUsed: true,
-        fallbackReason: "moved_client_ack_not_observed",
-        deliveryPath: "postgres",
-        tokenRequestCount: 0,
-        roomConnectAttemptCount: 0,
-        publicationCount: 0,
-        result: "ack_deadline_elapsed",
-      });
-    }, Math.max(100, SERVER_VOICE_MOVE_ACK_FINAL_DEADLINE_MS - SERVER_VOICE_MOVE_ACK_DEADLINE_MS));
   }, SERVER_VOICE_MOVE_ACK_DEADLINE_MS);
-  serverVoiceMoveDeliveryByOperation.set(operationId, pending);
+  pending.finalTimer = setTimeout(() => {
+    pending.finalTimer = null;
+    if (!isServerVoiceMoveDeliveryCurrent(pending, { requireChannel: false })) {
+      clearServerVoiceMoveDelivery(operationId, pending);
+      return;
+    }
+    // The notice deadline is not the lifetime of an application receipt.
+    // Keep this bounded record for a late ACK; no extra RPC/retry/timer.
+    pending.deadlineElapsed = true;
+    if (voiceModerationUiOperationId === operationId) {
+      notifyServerVoiceModerationUi("Move accepted; awaiting participant confirmation.", { moveOperationId: operationId });
+    }
+    emitServerVoiceMoveDiagnostic({
+      operationKey: pending.operationKey, fallbackUsed: true,
+      fallbackReason: "moved_client_ack_not_observed", deliveryPath: "postgres", result: "ack_deadline_elapsed",
+    });
+  }, SERVER_VOICE_MOVE_ACK_FINAL_DEADLINE_MS);
   return true;
 }
 
@@ -44208,7 +44230,31 @@ function hydrateServerVoiceV2MemberMediaState(row = {}, {
       userId: normalized.userId,
       sessionId: normalized.sessionId,
     });
+    const isLocalMove = normalized.userId === normId(state.user?.id || "");
+    const previousModeration = getServerVoiceModerationStateEntry(previous.conversationId, normalized.userId);
+    const carriedMute = isLocalMove && isServerVoiceSelfMuted(previous.conversationId);
+    const carriedDeafen = isLocalMove && isServerVoiceSelfDeafened(previous.conversationId);
+    const previousLock = isLocalMove ? getServerVoicePreServerLockState(previous.conversationId, normalized.userId) : null;
     removeCallParticipantAudioState(previous.conversationId, normalized.userId);
+    if (isLocalMove) {
+      if (carriedMute) serverVoiceSelfMuteByConversation.set(normalized.conversationId, true);
+      if (carriedDeafen) serverVoiceSelfDeafenByConversation.set(normalized.conversationId, true);
+      if (previousLock) serverVoicePreServerLockStateByUser.set(getServerVoicePreServerLockKey(normalized.conversationId, normalized.userId), {
+        ...previousLock, conversationId: normalized.conversationId,
+      });
+      if (previousModeration || carriedMute || carriedDeafen) {
+        const destination = serverVoiceModerationStateByConversation.get(normalized.conversationId) || new Map();
+        const existing = destination.get(normalized.userId);
+        if (!existing) destination.set(normalized.userId, {
+          ...(previousModeration || {}), conversationId: normalized.conversationId,
+          serverId: normalized.serverId, channelId: normalized.channelId, userId: normalized.userId,
+          micServerMuted: carriedMute || previousModeration?.micServerMuted === true,
+          deafServerMuted: carriedDeafen || previousModeration?.deafServerMuted === true,
+          source: "move_restriction_pending_authority",
+        });
+        serverVoiceModerationStateByConversation.set(normalized.conversationId, destination);
+      }
+    }
   }
   const mediaStateDecision = serverVoiceMediaStateOrderFence.acceptFallback({
     conversationId: normalized.conversationId,
@@ -44237,8 +44283,10 @@ function hydrateServerVoiceV2MemberMediaState(row = {}, {
     selfDeafened: effective?.hasSelfDeafened === true
       ? effective.selfDeafened
       : (mediaStateDecision.apply && normalized.hasSelfDeafened ? normalized.selfDeafened : null),
-    serverMuted: normalized.hasServerMuted ? normalized.serverMuted : null,
-    serverDeafened: normalized.hasServerDeafened ? normalized.serverDeafened : null,
+    serverMuted: normalized.userId === normId(state.user?.id || "") && isServerVoiceSelfMuted(normalized.conversationId)
+      ? true : (normalized.hasServerMuted ? normalized.serverMuted : null),
+    serverDeafened: normalized.userId === normId(state.user?.id || "") && isServerVoiceSelfDeafened(normalized.conversationId)
+      ? true : (normalized.hasServerDeafened ? normalized.serverDeafened : null),
     seenAt: observedAt,
   };
   if (
@@ -45035,6 +45083,16 @@ function deleteServerVoiceV2MemberRow(row = {}, reason = "delete", options = {})
   if (!userId) return false;
   const serverId = normId(row?.server_id || row?.serverId || serverVoiceV2MembersByUser.get(userId)?.serverId || "");
   const cached = serverVoiceV2MembersByUser.get(userId) || null;
+  const deletedSession = String(row?.session_id || row?.sessionId || "").trim();
+  const acceptedSession = String(cached?.sessionId || "").trim();
+  const deletedAssignment = normalizeServerVoiceV2MemberRow(row);
+  if (cached && (
+    (deletedSession && acceptedSession && deletedSession !== acceptedSession)
+    || (deletedAssignment.assignmentUpdatedAt && !isServerVoiceV2MemberRowNewer(deletedAssignment, cached))
+  )) {
+    emitServerVoicePresenceDiagnostic({ event: "membership-delete", source: reason, decision: "ignore-stale-session", serverId, userId, sessionId: deletedSession, membershipKnown: true });
+    return false;
+  }
   if (shouldBlockServerVoiceLocalExitMutation({
     ...cached,
     ...row,
@@ -45371,6 +45429,10 @@ function applyAuthoritativeServerVoiceOccupancySnapshot(serverId = "", rows = []
       || !isServerVoiceV2MemberRowFresh(row)
       || isServerVoiceV2AssignmentTerminallyLeft(row)
     ) return;
+    // Compare against accepted live evidence, not only duplicate rows within
+    // this response. A stale secondary snapshot cannot undo a newer assignment.
+    const accepted = cachedRowsBeforeSnapshot.get(row.userId) || null;
+    if (accepted && isServerVoiceV2MemberRowFresh(accepted) && !isServerVoiceV2MemberRowNewer(row, accepted)) row = accepted;
     const current = snapshotRows.get(row.userId) || null;
     if (!current || isServerVoiceV2MemberRowNewer(row, current)) snapshotRows.set(row.userId, row);
   });
@@ -45489,6 +45551,8 @@ async function loadServerVoiceV2ControlPlaneSnapshot(serverId = "", reason = "ma
     return serverVoiceOccupancyRefreshInFlightByServerId.get(sid);
   }
   const baselineGate = serverVoiceOccupancyBaselineGateByServerId.get(sid) || null;
+  const snapshotOwnerUserId = normId(state.user?.id || "");
+  const snapshotOwnerEpoch = presenceSessionEpoch;
   const baselineEpoch = Number(baselineGate?.getSnapshot?.()?.epoch || 0);
   baselineGate?.noteSnapshotStarted?.(baselineEpoch, Date.now());
   const requestRealtimeVersion = Number(serverVoiceOccupancyRealtimeVersionByServerId.get(sid) || 0);
@@ -45553,6 +45617,9 @@ async function loadServerVoiceV2ControlPlaneSnapshot(serverId = "", reason = "ma
       console.warn("[voice-v2-control] snapshot load failed", { serverId: sid, reason, ...lastError });
       return false;
     }
+
+    if (normId(state.user?.id || "") !== snapshotOwnerUserId || presenceSessionEpoch !== snapshotOwnerEpoch
+      || (serverVoiceOccupancyBaselineGateByServerId.get(sid) || null) !== baselineGate) return false;
 
     if (Number(serverVoiceOccupancyRealtimeVersionByServerId.get(sid) || 0) !== requestRealtimeVersion) {
       serverVoiceOccupancyStaleResponsesIgnored += 1;
@@ -45655,6 +45722,7 @@ async function resolveAuthoritativeServerVoiceMoveMembership(payload = {}) {
 function handleServerVoiceV2ControlBroadcast(payload = {}, options = {}) {
   const row = payload?.row || payload?.member || payload;
   const eventReceivedAt = Number(options?.eventReceivedAt || 0) || Date.now();
+  const receivedPerfAt = getServerVoicePerfNow();
   recordVoiceV2MoveTiming("broadcast_received", {
     moveId: payload?.moveId || payload?.move_id || row?.assignmentNonce || row?.assignment_nonce || "",
     assignmentNonce: payload?.assignmentNonce || payload?.assignment_nonce || row?.assignmentNonce || row?.assignment_nonce || "",
@@ -45700,13 +45768,21 @@ function handleServerVoiceV2ControlBroadcast(payload = {}, options = {}) {
     return;
   }
   if (isLocalAuthoritativeMove) {
+    const ownerUserId = normId(state.user?.id || "");
+    const ownerSessionEpoch = presenceSessionEpoch;
+    const ownerController = serverVoiceTransportController;
+    const ownerOperation = serverVoiceOperationLifecycle.getCurrent();
     void (async () => {
       const verifiedRow = await resolveAuthoritativeServerVoiceMoveMembership({ ...payload, row });
+      if (ownerUserId !== normId(state.user?.id || "") || ownerSessionEpoch !== presenceSessionEpoch
+        || !ownerController || ownerController !== serverVoiceTransportController
+        || !isServerVoiceJoinOperationCurrent(ownerOperation)
+        || activeSessionId !== String(currentServerVoiceV2Session?.sessionId || getServerVoiceV2LocalSessionId() || "").trim()) return;
       if (!verifiedRow) {
         emitServerVoiceMoveDiagnostic({
           operationKey: sanitizeServerVoiceMoveOperationKey(getServerVoiceAuthoritativeMoveOperationId({ ...payload, row })),
-          broadcastReceiveMs: Math.max(0, Date.now() - eventReceivedAt),
-          eventValidationMs: Math.max(0, Date.now() - eventReceivedAt),
+          broadcastReceiveMs: Math.max(0, getServerVoicePerfNow() - receivedPerfAt),
+          eventValidationMs: Math.max(0, getServerVoicePerfNow() - receivedPerfAt),
           deliveryPath: "broadcast",
           fallbackUsed: true,
           fallbackReason: "membership_authority_mismatch",
@@ -45733,7 +45809,7 @@ function handleServerVoiceV2ControlBroadcast(payload = {}, options = {}) {
   const rowApplied = upsertServerVoiceV2MemberRow(row, "broadcast", {
     eventReceivedAt: options?.eventReceivedAt,
   });
-  const observerConvergenceMs = Math.max(0, Date.now() - eventReceivedAt);
+  const observerConvergenceMs = Math.max(0, getServerVoicePerfNow() - receivedPerfAt);
   if (isAuthoritativeMove && !isLocalAuthoritativeMove) {
     emitServerVoiceMoveDiagnostic({
       observerConvergenceMs,
@@ -45857,11 +45933,17 @@ async function ensureServerVoiceV2ControlPlaneSubscription(serverId = "", option
   const baselineGate = createServerVoiceRealtimeBaselineGate();
   const subscriptionEpoch = baselineGate.begin({ startedAt: Date.now() });
   serverVoiceOccupancyBaselineGateByServerId.set(sid, baselineGate);
+  const ackOwnerUserId = normId(state.user?.id || "");
+  const ackOwnerSessionEpoch = presenceSessionEpoch;
+  const ownsSubscription = () => normId(state.user?.id || "") === ackOwnerUserId
+    && presenceSessionEpoch === ackOwnerSessionEpoch
+    && serverVoiceOccupancyBaselineGateByServerId.get(sid) === baselineGate;
   const controlChannel = supabase.channel(channelName, { config: { private: true, broadcast: { self: true, ack: true } } })
     .on("broadcast", { event: "server_voice_v2_channel_changed" }, (event) => measureServerVoiceLeavePaintWork(
       "membership:broadcast",
       "membership",
       () => {
+        if (!ownsSubscription()) return;
         const eventReceivedAt = Date.now();
         serverVoiceOccupancyRealtimeVersionByServerId.set(
           sid,
@@ -45871,7 +45953,7 @@ async function ensureServerVoiceV2ControlPlaneSubscription(serverId = "", option
       },
     ))
     .on("broadcast", { event: "server_voice_v2_move_ack" }, (event) => {
-      handleServerVoiceMoveApplicationAck(event?.payload || {});
+      handleServerVoiceMoveApplicationAck(event?.payload || {}, { serverId: sid, channel: controlChannel, ownerUserId: ackOwnerUserId, ownerSessionEpoch: ackOwnerSessionEpoch });
     })
     .on("postgres_changes", {
       event: "*",
@@ -45882,6 +45964,7 @@ async function ensureServerVoiceV2ControlPlaneSubscription(serverId = "", option
       "membership:postgres-change",
       "membership",
       () => {
+        if (!ownsSubscription()) return;
         const eventReceivedAt = Date.now();
         serverVoiceOccupancyRealtimeVersionByServerId.set(
           sid,
@@ -45952,6 +46035,7 @@ async function ensureServerVoiceV2ControlPlaneSubscription(serverId = "", option
       },
     ))
     .subscribe((status, error) => {
+      if (!ownsSubscription()) return;
       voiceV2DebugInfo("[voice-v2-control] subscription", { serverId: sid, status, message: error?.message || "" });
       const currentState = getServerVoiceOccupancyHydrationState(sid);
       serverVoiceOccupancyHydrationStateByServerId.set(sid, {
@@ -46352,7 +46436,7 @@ function getServerVoiceAuthoritativeMoveOperationId(payload = {}) {
     || payload?.row?.assignmentNonce
     || payload?.row?.assignment_nonce
     || "",
-  ).trim().slice(0, 120);
+  ).trim().slice(0, 160);
 }
 
 function claimServerVoiceAuthoritativeMoveOperation(payload = {}) {
@@ -46386,11 +46470,17 @@ function claimServerVoiceAuthoritativeMoveOperation(payload = {}) {
   while (serverVoiceAuthoritativeMoveOperationIds.size > 48) {
     serverVoiceAuthoritativeMoveOperationIds.delete(serverVoiceAuthoritativeMoveOperationIds.values().next().value);
   }
-  return Object.freeze({ key, operationId, generation, sessionId: sessionId || currentSessionId });
+  return Object.freeze({
+    key, operationId, generation, sessionId: sessionId || currentSessionId,
+    ownerUserId: normId(state.user?.id || ""),
+    serverId: normId(currentServerVoiceV2Session?.serverId || ""),
+  });
 }
 
 function isServerVoiceAuthoritativeMoveOperationCurrent(operation = null) {
   if (!operation) return false;
+  if (operation.ownerUserId !== normId(state.user?.id || "")) return false;
+  if (operation.serverId && operation.serverId !== normId(currentServerVoiceV2Session?.serverId || "")) return false;
   const current = serverVoiceOperationLifecycle.getCurrent() || null;
   if (!current || String(current.generation || "") !== operation.generation) return false;
   const currentByGeneration = serverVoiceAuthoritativeMoveOperationKeys.currentByGeneration;
@@ -46417,7 +46507,7 @@ function releaseServerVoiceAuthoritativeMoveOperation(operation = null) {
 
 function emitServerVoiceMoveDiagnostic(details = {}) {
   if (!isAltaraDevelopmentRuntime()) return;
-  const ms = (value) => (Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : null);
+  const ms = (value) => (value != null && value !== "" && Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : null);
   console.info("[server-voice-move]", {
     operationKey: String(details.operationKey || "").slice(0, 24) || null,
     inputToRequestMs: ms(details.inputToRequestMs ?? details.moderatorInputToRequestMs),
@@ -47073,6 +47163,7 @@ function reconcileVoiceV2Subscriptions(reason = "manual") {
   const result = serverVoiceTransportController.reconcileRemoteSubscriptions?.(({ participant }) => (
     shouldSubscribeToVoiceV2Participant(participant)
   ), { reason: String(reason || "manual") }) || null;
+  getActiveServerVoiceScreenshareLayer(currentServerVoiceV2Session.conversationId)?.reconcileRemoteShares?.({ triggerReason: String(reason || "manual") });
   voiceV2DebugInfo("[voice-v2] reconcile subscriptions", {
     reason,
     myChannelId: currentServerVoiceV2Session.voiceChannelId || "",
@@ -47421,6 +47512,28 @@ function getCurrentVoiceV2ChannelName() {
   return String(ctx?.channel?.name || currentServerVoiceV2Session?.channelName || "").trim();
 }
 
+function retargetActiveServerVoiceConversation(nextConversationId = "") {
+  const nextId = normId(nextConversationId || "");
+  const previousId = normId(serverVoiceTransportConversationId || "");
+  const controller = serverVoiceTransportController;
+  if (!nextId || !previousId || !controller || !isServerVoiceV2Enabled()) return false;
+  if (nextId === previousId) return true;
+  // A logical assignment keeps this Room, its listeners and every eligible
+  // publication. Retarget their existing context before any UI projection.
+  if (controller.retargetConversation?.(nextId) !== true) return false;
+  serverVoiceTransportConversationId = nextId;
+  if (serverVoiceCameraLayer && normId(serverVoiceCameraConversationId || "") === previousId) {
+    if (serverVoiceCameraLayer.retargetConversation?.(nextId) === true) serverVoiceCameraConversationId = nextId;
+  }
+  if (serverVoiceScreenshareLayer && normId(serverVoiceScreenshareConversationId || "") === previousId) {
+    if (serverVoiceScreenshareLayer.retargetConversation?.(nextId) === true) serverVoiceScreenshareConversationId = nextId;
+  }
+  const snapshot = controller.getSnapshot?.() || serverVoiceTransportSnapshotByConversation.get(previousId);
+  serverVoiceTransportSnapshotByConversation.delete(previousId);
+  if (snapshot) setServerVoiceTransportSnapshot(nextId, { ...snapshot, conversationId: nextId });
+  return true;
+}
+
 function commitVoiceV2ChannelAssignment(userId = "", assignment = {}, reason = "unknown", options = {}) {
   const targetUserId = normId(userId || assignment?.userId || "");
   const meId = normId(state.user?.id || "");
@@ -47512,6 +47625,9 @@ function commitVoiceV2ChannelAssignment(userId = "", assignment = {}, reason = "
       updatedAt: Date.now(),
     };
     if (conversationId) {
+      if (serverVoiceTransportController && serverVoiceTransportConversationId) {
+        retargetActiveServerVoiceConversation(conversationId);
+      }
       callConversationId = conversationId;
       if (isServerVoiceConversationById(activeDmId || "")) activeDmId = conversationId;
       if (state.activeDm && isServerVoiceConversationById(state.activeDm.conversationId || "")) {
@@ -48580,10 +48696,12 @@ function beginMainContentNavigationIntent({ reason = "main-navigation", serverId
     serverId,
     conversationId,
   });
-  return {
+  const navigationIntent = {
     openIntentSeq: dmOpenIntentSeq,
     navigationVersion,
   };
+  armDmComposerNavigationFocus(navigationIntent, conversationId);
+  return navigationIntent;
 }
 
 function isMainContentNavigationIntentCurrent(intent = null) {
@@ -48841,6 +48959,7 @@ async function openConversationById(conversationId, fallbackMeta = {}, options =
   const messageOpenToken = preflightIsServer ? null : beginDmMessageOpenGeneration(convId);
   if (!preflightIsServer) {
     primeDmOpeningShell(convId, preflightMeta, {
+      navigationIntent,
       reason: "open_conversation_immediate",
       pending: true,
       allowSnapshot: false,
@@ -48960,6 +49079,7 @@ async function openConversationById(conversationId, fallbackMeta = {}, options =
   }
   if (isOpenIntentStale() || openIntentSeq !== dmOpenIntentSeq) return false;
   primeDmOpeningShell(convId, state.activeDm || merged || {}, {
+    navigationIntent,
     reason: "open_conversation",
     pending: false,
     skipBroadServerRefresh: isServer,
@@ -48968,6 +49088,7 @@ async function openConversationById(conversationId, fallbackMeta = {}, options =
   if (isServer) recordServerNavigationPerfPhase(serverNavigationTraceId, "authorized_channel_shell_rendered", { conversationId: convId });
 
   const opened = await showDm(convId, {
+    navigationIntent,
     autoAnswerIfPending: true,
     reason: String(options?.reason || "open-conversation"),
     shellPrimed: true,
@@ -49020,18 +49141,18 @@ function isDesktopAsarRenderer() {
 }
 
 function getPreferredBrandLogoVariant() {
-  if (document.body?.classList?.contains("theme-mode-light")) return "black";
+  // The supplied BRANCO artwork is primary in every theme.
   return "default";
 }
 
 function getBrandLogoCandidates(variantInput = "default") {
   const variant = String(variantInput || "").trim().toLowerCase() === "black" ? "black" : "default";
   const baseNames = variant === "black" ? ["iconB", "icon"] : ["icon", "iconB"];
-  const candidates = [];
+  const candidates = [new URL(variant === "black"
+    ? "./assets/brand/LOGO%20ALTARA%20PRETO.svg"
+    : "./assets/brand/LOGO%20ALTARA%20BRANCO.svg", import.meta.url).href];
   const addCandidateSet = (baseName) => {
     if (!baseName) return;
-    candidates.push(`build/${baseName}.jpg`);
-    candidates.push(`./build/${baseName}.jpg`);
     candidates.push(`build/${baseName}.png`);
     candidates.push(`./build/${baseName}.png`);
     candidates.push(`build/${baseName}.ico`);
@@ -55414,6 +55535,7 @@ async function fetchConversationPrivacyRowDirect(conversationId = "", { reason =
 }
 
 async function refreshDmPrivacyMetaFromServer(conversationId = "", { rerender = true, source = "refetch" } = {}) {
+  const owner = captureDmE2eeUiOwner();
   const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
   if (!isDirectDmE2eeEnabled()) {
     if (convId) {
@@ -55447,6 +55569,7 @@ async function refreshDmPrivacyMetaFromServer(conversationId = "", { rerender = 
   }
 
   const { row, error } = await fetchConversationPrivacyRowDirect(convId, { reason: source });
+  assertDmE2eeUiOwner(owner);
   if (row) {
     const nextMeta = patchConversationPrivacyState(convId, {
       ...row,
@@ -55472,9 +55595,11 @@ async function refreshDmPrivacyMetaFromServer(conversationId = "", { rerender = 
 }
 
 async function fetchConversationPrivacyState(conversationId = "", { rerender = true, source = "fetch" } = {}) {
+  const owner = captureDmE2eeUiOwner();
   const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
   if (!convId) throw new Error("conversation_id_missing");
   const { row, error } = await fetchConversationPrivacyRowDirect(convId, { reason: source });
+  assertDmE2eeUiOwner(owner);
   if (!row) {
     throw error || new Error("conversation_privacy_state_unavailable");
   }
@@ -55517,9 +55642,12 @@ async function runDmPrivacyRpc(rpcName, payload = {}, {
   if (!isDirectDmE2eeEnabled()) {
     throw new Error(DM_PRIVATE_RUNTIME_DISABLED_STATUS_TEXT);
   }
+  const owner = captureDmE2eeUiOwner();
+  assertDmE2eeUiOwner(owner);
   const convId = normId(conversationId || "");
   const localStateBeforePatch = summarizeDmPrivacyMetaForDebug(getConversationDmPrivacyMeta(convId));
   const { data, error } = await rpcWithTimeout(rpcName, payload);
+  assertDmE2eeUiOwner(owner);
   if (error) {
     logDmPrivacyDebug("rpc result", {
       ...getDmPrivacyDebugContext(convId),
@@ -55551,6 +55679,7 @@ async function runDmPrivacyRpc(rpcName, payload = {}, {
   }
 
   await applyDmPrivacyRpcResult(result, convId, { action });
+  assertDmE2eeUiOwner(owner);
   return result;
 }
 
@@ -55711,16 +55840,20 @@ function clearDmRequestConfirmTimers(conversationId = "") {
 }
 
 function scheduleDmRequestConfirmFetches(conversationId = "", { rpcState = "", showFailureOnAllStandard = false } = {}) {
+  const owner = captureDmE2eeUiOwner();
+  if (!owner.isCurrent()) return;
   const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
   if (!convId) return;
   clearDmRequestConfirmTimers(convId);
   const normalizedRpcState = normalizeDmPrivacyState(rpcState || "standard");
   const observedStates = [];
   const timers = DM_PRIVACY_REQUEST_CONFIRM_DELAYS_MS.map((delayMs, index) => setTimeout(async () => {
+    if (!owner.isCurrent()) return;
     const attempt = index + 1;
     let dbState = "unavailable";
     try {
       const { row, error } = await fetchConversationPrivacyRowDirect(convId, { reason: "request-confirm-retry" });
+      if (!owner.isCurrent()) return;
       if (!row) throw error || new Error("conversation_privacy_state_unavailable");
       dbState = normalizeDmPrivacyState(row?.dm_privacy_state || row?.dmPrivacyState || "standard");
       observedStates.push(dbState);
@@ -55745,6 +55878,7 @@ function scheduleDmRequestConfirmFetches(conversationId = "", { rpcState = "", s
         kind: String(row?.kind || "dm").trim().toLowerCase() || "dm",
       }, { rerender: true, refreshKeys: true, source: "request-confirm-retry" });
     } catch (error) {
+      if (!owner.isCurrent()) return;
       observedStates.push("unavailable");
       logDmRequestDebug("confirm fetch attempt", {
         attempt,
@@ -55754,7 +55888,7 @@ function scheduleDmRequestConfirmFetches(conversationId = "", { rpcState = "", s
         error: String(error?.message || error || "unknown"),
       });
     } finally {
-      if (attempt === DM_PRIVACY_REQUEST_CONFIRM_DELAYS_MS.length) {
+      if (owner.isCurrent() && attempt === DM_PRIVACY_REQUEST_CONFIRM_DELAYS_MS.length) {
         dmPrivacyRequestConfirmTimersByConversation.delete(convId);
         const allStandard = observedStates.length > 0 && observedStates.every((stateValue) => stateValue === "standard");
         if (showFailureOnAllStandard && normalizedRpcState !== "private_requested" && allStandard) {
@@ -55786,6 +55920,8 @@ async function getDmRequestIdentityStateDebug(userId = "") {
 }
 
 async function runRequestDirectDmEncryptionRpc(conversationId = "", { attempt = 1 } = {}) {
+  const owner = captureDmE2eeUiOwner();
+  assertDmE2eeUiOwner(owner);
   const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
   logDmRequestDebug("rpc start", {
     conversationId: convId,
@@ -55795,6 +55931,7 @@ async function runRequestDirectDmEncryptionRpc(conversationId = "", { attempt = 
   const { data, error } = await rpcWithTimeout("request_direct_dm_encryption", {
     p_conversation_id: convId,
   });
+  assertDmE2eeUiOwner(owner);
   const result = (data && typeof data === "object" && !Array.isArray(data))
     ? data
     : (Array.isArray(data) && data[0] && typeof data[0] === "object" ? data[0] : {});
@@ -55871,59 +56008,8 @@ function isVaultRecoveryCancelledError(error = null) {
   return String(error?.code || error?.reason || "").trim().toLowerCase() === "vault_recovery_cancelled";
 }
 
-async function requestVaultRecoveryPasswordFromUser({ confirm = false, title = "", message = "" } = {}) {
-  const firstPassword = await requestAppPrompt(
-    message || t(
-      "dm.privacy.vault_recovery.password_prompt",
-      "Create a Vault Recovery Password. ALTARA cannot recover Vault messages if you forget it and lose your trusted devices."
-    ),
-    {
-      title: title || t("dm.privacy.vault_recovery.title", "Set up Vault Recovery"),
-      label: t("settings.security.dm_backup.password", "Vault Recovery Password"),
-      placeholder: t("settings.security.dm_backup.password", "Vault Recovery Password"),
-      okText: t("settings.security.dm_backup.create_btn", "Set up Vault Recovery"),
-      cancelText: t("dialog.confirm.cancel", "Cancel"),
-      inputType: "password",
-      requireValue: true,
-      maxLength: 4000,
-    }
-  );
-  if (firstPassword === null) return null;
-  if (String(firstPassword || "").length < DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH) {
-    await requestAppAlert(
-      tf(
-        "settings.security.dm_backup.error_password_short",
-        { min: DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH },
-        "Use a Vault Recovery Password with at least {min} characters."
-      ),
-      { title: t("dm.privacy.vault_recovery.title", "Set up Vault Recovery"), okText: "OK" }
-    );
-    return null;
-  }
-  if (!confirm) return String(firstPassword || "");
-
-  const confirmPassword = await requestAppPrompt(
-    t("dm.privacy.vault_recovery.confirm_prompt", "Confirm your Vault Recovery Password."),
-    {
-      title: t("dm.privacy.vault_recovery.title", "Set up Vault Recovery"),
-      label: t("settings.security.dm_backup.password_confirm", "Confirm Vault Recovery Password"),
-      placeholder: t("settings.security.dm_backup.password_confirm", "Confirm Vault Recovery Password"),
-      okText: t("dialog.confirm.ok", "Confirm"),
-      cancelText: t("dialog.confirm.cancel", "Cancel"),
-      inputType: "password",
-      requireValue: true,
-      maxLength: 4000,
-    }
-  );
-  if (confirmPassword === null) return null;
-  if (String(confirmPassword || "") !== String(firstPassword || "")) {
-    await requestAppAlert(t("settings.security.dm_backup.error_password_match", "Vault Recovery Passwords do not match."), {
-      title: t("dm.privacy.vault_recovery.title", "Set up Vault Recovery"),
-      okText: "OK",
-    });
-    return null;
-  }
-  return String(firstPassword || "");
+function requestVaultRecoveryPasswordFromUser() {
+  return promptVaultProvisioningPassword();
 }
 
 async function confirmVaultRequestForActiveConversation(conversationId = "") {
@@ -55934,7 +56020,7 @@ async function confirmVaultRequestForActiveConversation(conversationId = "") {
     "",
     t("dm.privacy.vault_request.bullet_consent", "- Both people must agree."),
     t("dm.privacy.vault_request.bullet_old", "- Old Sync messages remain as they are."),
-    t("dm.privacy.vault_request.bullet_new", "- New Vault messages are end-to-end encrypted."),
+    "- As novas mensagens de texto serão encriptadas de ponta a ponta. Anexos não são suportados neste modo.",
     t("dm.privacy.vault_request.bullet_restore", "- You can restore Vault messages on new devices using your recovery methods."),
   ].join("\n");
   return requestAppConfirm(body, {
@@ -55947,80 +56033,50 @@ async function confirmVaultRequestForActiveConversation(conversationId = "") {
 async function ensureVaultLocalIdentityRestoredBeforeSetup(conversationId = "") {
   const userId = normId(state.user?.id || "");
   if (!userId) return true;
+  const owner = captureDmE2eeUiOwner();
   const [identityState, backupMeta] = await Promise.all([
     getDmE2eeIdentityState({ userId, force: true }).catch((error) => ({ status: "error", error })),
-    getDmE2eeKeyBackupMetadata({ userId, force: true }).catch(() => null),
+    getDmE2eeKeyBackupMetadata({ userId, force: true }),
   ]);
+  assertDmE2eeUiOwner(owner);
+  if (identityState?.status === "error") throw identityState.error || new Error("Não foi possível verificar as chaves.");
   const identityStatus = String(identityState?.status || "").trim().toLowerCase();
   if (identityStatus !== "missing_local_private" || !backupMeta) return true;
 
-  const ok = await requestAppConfirm(
-    t(
-      "dm.privacy.vault_recovery.restore_before_request",
-      "This account already has a Vault key, but this device is missing it. Restore Vault messages before requesting Vault so older Vault messages stay readable."
-    ),
-    {
-      title: t("dm.e2ee.restore.title", "Restore Vault messages"),
-      confirmText: t("settings.security.dm_backup.restore_btn", "Restore Vault messages"),
-      cancelText: t("dialog.confirm.cancel", "Cancel"),
-    }
-  );
-  if (!ok) throw createVaultRecoveryCancelledError("restore-before-request");
   const restored = await promptRestoreDmE2eeBackupFromDm();
   if (!restored) throw createVaultRecoveryCancelledError("restore-before-request");
   return true;
 }
 
 async function ensureVaultRecoveryBackupReadyForRequest(conversationId = "") {
-  const userId = normId(state.user?.id || "");
-  if (!userId) throw createDmRequestFlowError("Sign in before requesting Vault.", "auth_missing", "recovery");
+  const owner = captureDmE2eeUiOwner();
+  assertDmE2eeUiOwner(owner);
+  const userId = owner.userId;
   const [identityState, backupMeta] = await Promise.all([
     getDmE2eeIdentityState({ userId, force: true }),
-    getDmE2eeKeyBackupMetadata({ userId, force: true }).catch(() => null),
+    getDmE2eeKeyBackupMetadata({ userId, force: true }),
   ]);
-  const identityStatus = String(identityState?.status || "").trim().toLowerCase();
-  if (identityStatus !== "ready") {
-    throw createDmRequestFlowError(getDmE2eeSetupFailureMessage(identityStatus || identityState?.error || "setup_failed"), identityStatus || "setup_failed", "recovery");
-  }
-  if (backupMeta?.hasRecoveryKeyMethod) return true;
-
-  const ok = await requestAppConfirm(
-    t(
-      "dm.privacy.vault_recovery.required_body",
-      "Before switching a DM to Vault, set up Vault Recovery. Vault messages cannot be restored by ALTARA. Recovery lets you restore them on new devices with your recovery password or Recovery Key."
-    ),
-    {
-      title: t("dm.privacy.vault_recovery.title", "Set up Vault Recovery"),
-      confirmText: t("settings.security.dm_backup.create_btn", "Set up Vault Recovery"),
-      cancelText: t("dialog.confirm.cancel", "Cancel"),
-    }
-  );
-  if (!ok) throw createVaultRecoveryCancelledError("recovery");
-
-  const understoodRecovery = await showVaultRecoveryResponsibilityNotice();
-  if (!understoodRecovery) throw createVaultRecoveryCancelledError("recovery-warning");
-
-  const password = await requestVaultRecoveryPasswordFromUser({ confirm: true });
+  assertDmE2eeUiOwner(owner);
+  if (identityState?.status !== "ready") throw identityState?.error || new Error(getDmE2eeSetupFailureMessage(identityState?.status || "error"));
+  // Password-only and legacy password backups are supported recovery methods.
+  if (backupMeta?.hasPasswordMethod || backupMeta?.hasRecoveryKeyMethod) return true;
+  if (backupMeta?.methodStorageError) throw backupMeta.methodStorageError;
+  if (!identityState.localPrivateKeyExportable) throw new Error("Este dispositivo mantém a sua chave protegida, mas não foi encontrado um backup recuperável. Conserve o acesso neste dispositivo e verifique os métodos de recuperação nas definições. Nenhuma chave foi substituída.");
+  const password = await promptVaultProvisioningPassword();
+  assertDmE2eeUiOwner(owner);
   if (password === null) throw createVaultRecoveryCancelledError("recovery");
-  const backupResult = await createDmE2eeKeyBackup({
-    userId,
-    password,
-    passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
-    includeRecoveryKey: true,
-  });
-  if (backupResult?.recoveryKey) {
-    const savedKey = await showVaultRecoveryKeyOnce(backupResult.recoveryKey);
-    if (!savedKey) throw createVaultRecoveryCancelledError("recovery-key");
-  }
-  clearDmE2eeBackupInputs({ clearRestore: true });
-  await refreshDmE2eeBackupSettingsState({ force: true }).catch(() => {});
-  showDmPrivacyToast(t("settings.security.dm_backup.saved", "Vault Recovery is ready. Use your password or saved Recovery Key to restore Vault messages on new devices."));
+  await createDmE2eeKeyBackup({ userId, password, passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL, includeRecoveryKey: false });
+  assertDmE2eeUiOwner(owner);
+  await refreshDmE2eeBackupSettingsState({ force: true });
+  assertDmE2eeUiOwner(owner);
+  showDmPrivacyToast("Mensagens encriptadas configuradas. A recuperação por palavra-passe está pronta.");
   return true;
 }
 
 async function requestPrivateDmForActiveConversation() {
   const convId = normId(activeDmId || state.activeDm?.conversationId || "");
   if (!convId || directDmPrivacyActionInFlight) return;
+  const owner = captureDmE2eeUiOwner();
   const currentUserId = normId(state.user?.id || "");
   const peerUserId = getActiveDirectDmPeerUserId();
   const localPrivacyState = normalizeDmPrivacyState(getConversationDmPrivacyMeta(convId).dmPrivacyState);
@@ -56034,19 +56090,23 @@ async function requestPrivateDmForActiveConversation() {
     peerUserId,
     localPrivacyState,
   });
-  const confirmed = await confirmVaultRequestForActiveConversation(convId);
-  if (!confirmed) return;
   setDirectDmPrivacyActionInFlight("request");
   try {
+    const confirmed = await confirmVaultRequestForActiveConversation(convId);
+    assertDmE2eeUiOwner(owner);
+    if (!confirmed) return;
     startActiveDmPrivacyListener(convId);
     step = "restore-before-request";
     await ensureVaultLocalIdentityRestoredBeforeSetup(convId);
+    assertDmE2eeUiOwner(owner);
 
     step = "setup";
     await setupDmRequestEncryptionKey(convId, { retry: false });
+    assertDmE2eeUiOwner(owner);
 
     step = "recovery";
     await ensureVaultRecoveryBackupReadyForRequest(convId);
+    assertDmE2eeUiOwner(owner);
 
     step = "rpc";
     try {
@@ -56056,8 +56116,8 @@ async function requestPrivateDmForActiveConversation() {
       if (rpcReason !== "missing_own_key") throw rpcError;
       step = "setup-retry";
       dmE2eeBootstrapPromise = null;
-      directDmE2eeDeviceSetupPromise = null;
       await setupDmRequestEncryptionKey(convId, { retry: true });
+    assertDmE2eeUiOwner(owner);
       step = "rpc-retry";
       await runRequestDirectDmEncryptionRpc(convId, { attempt: 2 });
     }
@@ -56065,6 +56125,7 @@ async function requestPrivateDmForActiveConversation() {
     const finalState = normalizeDmPrivacyState(getConversationDmPrivacyMeta(convId).dmPrivacyState);
     logDmRequestDebug("finished", { ok: true, finalState });
   } catch (error) {
+    if (!owner.isCurrent()) return;
     const safeReason = getDmRequestSafeReason(error);
     if (isVaultRecoveryCancelledError(error)) {
       logDmRequestDebug("failed", {
@@ -56086,8 +56147,6 @@ async function requestPrivateDmForActiveConversation() {
       || safeReason === "local_private_key_store_failed"
       || (safeReason === "timeout" && (step === "setup" || step === "setup-retry"));
     if (setupFailure) {
-      directDmE2eeDeviceSetupInFlight = false;
-      directDmE2eeDeviceSetupPromise = null;
       dmE2eeBootstrapPromise = null;
       setDmE2eeReadiness({
         status: "failed",
@@ -56116,23 +56175,27 @@ async function requestPrivateDmForActiveConversation() {
       okText: "OK",
     });
   } finally {
-    if (directDmPrivacyActionInFlight === "request") setDirectDmPrivacyActionInFlight("");
+    if (owner.isCurrent() && directDmPrivacyActionInFlight === "request") setDirectDmPrivacyActionInFlight("");
   }
 }
 
 async function acceptPrivateDmRequestForActiveConversation() {
   const convId = normId(activeDmId || state.activeDm?.conversationId || "");
   if (!convId || directDmPrivacyActionInFlight) return;
+  const owner = captureDmE2eeUiOwner();
   logDmPrivacyActionClicked("accept", convId);
   setDirectDmPrivacyActionInFlight("accept");
   try {
     startActiveDmPrivacyListener(convId);
     await ensureVaultLocalIdentityRestoredBeforeSetup(convId);
+    assertDmE2eeUiOwner(owner);
     const setup = await setupDirectDmEncryptionForCurrentDevice({ conversationId: convId, showError: false });
+    assertDmE2eeUiOwner(owner);
     if (setup?.ok !== true) {
       throw setup?.error || new Error(getDmE2eeSetupFailureMessage(setup?.reason || setup?.status || "unknown_error"));
     }
     await ensureVaultRecoveryBackupReadyForRequest(convId);
+    assertDmE2eeUiOwner(owner);
     await runDmPrivacyRpc("accept_direct_dm_encryption", {
       p_conversation_id: convId,
     }, {
@@ -56140,10 +56203,12 @@ async function acceptPrivateDmRequestForActiveConversation() {
       fallbackError: "Could not switch to Vault.",
       action: "accept",
     });
+    assertDmE2eeUiOwner(owner);
     void ensureDmE2eeBootstrapStarted({ force: true });
     const peerId = getActiveDirectDmPeerUserId();
     if (peerId) void refreshDirectDmPeerE2eeKeyStatus(convId, peerId, { force: true });
   } catch (error) {
+    if (!owner.isCurrent()) return;
     if (isVaultRecoveryCancelledError(error)) return;
     if (await handleDmPrivacySoftStateError(error, convId)) return;
     await requestAppAlert(formatDmPrivacyRpcError(error, "Could not switch to Vault."), {
@@ -56151,13 +56216,14 @@ async function acceptPrivateDmRequestForActiveConversation() {
       okText: "OK",
     });
   } finally {
-    if (directDmPrivacyActionInFlight === "accept") setDirectDmPrivacyActionInFlight("");
+    if (owner.isCurrent() && directDmPrivacyActionInFlight === "accept") setDirectDmPrivacyActionInFlight("");
   }
 }
 
 async function rejectPrivateDmRequestForActiveConversation() {
   const convId = normId(activeDmId || state.activeDm?.conversationId || "");
   if (!convId || directDmPrivacyActionInFlight) return;
+  const owner = captureDmE2eeUiOwner();
   logDmPrivacyActionClicked("decline", convId);
   setDirectDmPrivacyActionInFlight("decline");
   try {
@@ -56169,19 +56235,21 @@ async function rejectPrivateDmRequestForActiveConversation() {
       action: "decline",
     });
   } catch (error) {
+    if (!owner.isCurrent()) return;
     if (await handleDmPrivacySoftStateError(error, convId)) return;
     await requestAppAlert(formatDmPrivacyRpcError(error, "Could not decline the Vault request."), {
       title: t("dm.privacy.alert_title", "ALTARA Vault"),
       okText: "OK",
     });
   } finally {
-    if (directDmPrivacyActionInFlight === "decline") setDirectDmPrivacyActionInFlight("");
+    if (owner.isCurrent() && directDmPrivacyActionInFlight === "decline") setDirectDmPrivacyActionInFlight("");
   }
 }
 
 async function cancelPrivateDmRequestForActiveConversation() {
   const convId = normId(activeDmId || state.activeDm?.conversationId || "");
   if (!convId || directDmPrivacyActionInFlight) return;
+  const owner = captureDmE2eeUiOwner();
   logDmPrivacyActionClicked("cancel", convId);
   setDirectDmPrivacyActionInFlight("cancel");
   try {
@@ -56193,13 +56261,14 @@ async function cancelPrivateDmRequestForActiveConversation() {
       action: "cancel",
     });
   } catch (error) {
+    if (!owner.isCurrent()) return;
     if (await handleDmPrivacySoftStateError(error, convId)) return;
     await requestAppAlert(formatDmPrivacyRpcError(error, "Could not cancel the Vault request."), {
       title: t("dm.privacy.alert_title", "ALTARA Vault"),
       okText: "OK",
     });
   } finally {
-    if (directDmPrivacyActionInFlight === "cancel") setDirectDmPrivacyActionInFlight("");
+    if (owner.isCurrent() && directDmPrivacyActionInFlight === "cancel") setDirectDmPrivacyActionInFlight("");
   }
 }
 
@@ -56222,11 +56291,13 @@ async function confirmSwitchActiveDmToSync() {
 async function switchActiveDmToSyncForActiveConversation() {
   const convId = normId(activeDmId || state.activeDm?.conversationId || "");
   if (!convId || directDmPrivacyActionInFlight) return;
+  const owner = captureDmE2eeUiOwner();
   logDmPrivacyActionClicked("switch-sync", convId);
-  const confirmed = await confirmSwitchActiveDmToSync();
-  if (!confirmed) return;
   setDirectDmPrivacyActionInFlight("switch-sync");
   try {
+    const confirmed = await confirmSwitchActiveDmToSync();
+    assertDmE2eeUiOwner(owner);
+    if (!confirmed) return;
     startActiveDmPrivacyListener(convId);
     await runDmPrivacyRpc("switch_direct_dm_to_sync", {
       p_conversation_id: convId,
@@ -56235,15 +56306,17 @@ async function switchActiveDmToSyncForActiveConversation() {
       fallbackError: "Could not switch this DM back to Sync.",
       action: "switch-sync",
     });
+    assertDmE2eeUiOwner(owner);
     showDmPrivacyToast(t("dm.privacy.toast_switched_to_sync", "This DM switched back to Sync."));
   } catch (error) {
+    if (!owner.isCurrent()) return;
     if (await handleDmPrivacySoftStateError(error, convId)) return;
     await requestAppAlert(formatDmPrivacyRpcError(error, "Could not switch this DM back to Sync."), {
       title: t("dm.privacy.alert_title", "ALTARA Vault"),
       okText: "OK",
     });
   } finally {
-    if (directDmPrivacyActionInFlight === "switch-sync") setDirectDmPrivacyActionInFlight("");
+    if (owner.isCurrent() && directDmPrivacyActionInFlight === "switch-sync") setDirectDmPrivacyActionInFlight("");
   }
 }
 
@@ -56439,13 +56512,15 @@ async function sendPlainTextMessageToConversation(conversationId, text, {
   replyToId = null,
   sendId: providedSendId = "",
   optimisticMessageId = "",
+  onAccepted = null,
 } = {}) {
   const convId = normId(conversationId);
   const content = String(text || "").trim();
   if (!convId || !content || !state.user?.id) {
     return { ok: false, error: { message: "conversation_id ou content invalido" } };
   }
-  if (isActiveMessageRequestPreview()) {
+  const owner = captureDmE2eeUiOwner();
+  if (normId(activeDmId || "") === convId && isActiveMessageRequestPreview()) {
     return { ok: false, error: { message: "Accept this request before replying." } };
   }
   if (
@@ -56457,117 +56532,171 @@ async function sendPlainTextMessageToConversation(conversationId, text, {
 
   const serverPermissionContext = getServerPermissionContextForConversation(convId);
   const canUseImmediateDmOptimism = !serverPermissionContext?.serverId;
-  markPerfStart("message_send_total", { conversationId: convId });
-  recordDmMessageSendPerfPhase("started");
-  let optimisticMessage = optimisticMessageId
-    ? getConversationRowsForOptimisticMutation(convId).find((row) => normId(row?.id || "") === normId(optimisticMessageId)) || null
-    : null;
-  if (!optimisticMessage && canUseImmediateDmOptimism) {
-    optimisticMessage = createOptimisticOutgoingMessage({
-      conversationId: convId,
-      content,
-      contentKind: "text",
-      replyToId,
-      suppressEmbeds: false,
-      retryPayload: {
-        kind: "text",
-        conversationId: convId,
-        text: content,
-        replyToId: replyToId || null,
-      },
-    });
-    if (optimisticMessage) finalizeLocalOutgoingEcho();
+  const requireEncrypted = normalizeDmPrivacyState(getConversationDmPrivacyMeta(convId).dmPrivacyState) === "private_active";
+  const laneKey = `${owner.userId}:${convId}`;
+  let lane = canUseImmediateDmOptimism ? dmTextSendInFlightByConversation.get(laneKey) : null;
+  if (lane && providedSendId && lane.ids.has(providedSendId)) return { ok: false, accepted: false, pending: true };
+  if (lane && lane.count >= DM_TEXT_SEND_PENDING_LIMIT) {
+    return { ok: false, accepted: false, error: new Error("There are messages still sending. Your draft is kept; try again shortly.") };
   }
-
-  const permissionPreflight = await verifyCanSendPlainTextMessageToConversation(convId, "send-message-preflight");
-  if (!permissionPreflight?.ok) {
-    if (!optimisticMessage) return { ok: false, error: permissionPreflight?.error || new Error(MESSAGE_COMPOSER_NO_SEND_PERMISSION_TEXT), permissionBlocked: true };
-    markOptimisticOutgoingMessageFailed(optimisticMessage.id, permissionPreflight?.error, convId);
-    markPerfEnd("message_send_total", { conversationId: convId, ok: false, stage: "permission" });
-    return { ok: false, error: permissionPreflight?.error || new Error(MESSAGE_COMPOSER_NO_SEND_PERMISSION_TEXT), permissionBlocked: true };
+  let release = null;
+  let previous = null;
+  if (canUseImmediateDmOptimism) {
+    if (!lane) {
+      lane = { count: 0, tail: Promise.resolve(), ids: new Set() };
+      dmTextSendInFlightByConversation.set(laneKey, lane);
+    }
+    previous = lane.tail;
+    lane.tail = new Promise((resolve) => { release = resolve; });
+    lane.count += 1;
   }
-
-  if (!optimisticMessage) {
-    const optimisticSuppressEmbeds = await resolveOptimisticHumanMessageSuppressEmbeds(convId, {
-      permissionResult: permissionPreflight.permissionResult,
-    });
-    optimisticMessage = createOptimisticOutgoingMessage({
-      conversationId: convId,
-      content,
-      contentKind: "text",
-      replyToId,
-      suppressEmbeds: optimisticSuppressEmbeds,
-      retryPayload: {
-        kind: "text",
-        conversationId: convId,
-        text: content,
-        replyToId: replyToId || null,
-      },
-    });
-    if (optimisticMessage) finalizeLocalOutgoingEcho();
-  }
-  const sendId = String(providedSendId || optimisticMessage?.id || ("send_" + Date.now().toString(36))).trim();
-  recordMessageSendState("started", {
-    sendId,
-    conversationId: convId,
-    contentLength: content.length,
-    phase: "optimistic_created",
-    pendingCount: getOptimisticSendingMessagesSnapshot().length,
-    insertStarted: false,
-  });
-  let insertPayload = null;
+  let sendId = String(providedSendId || "");
+  let accepted = false;
+  let optimisticMessage = null;
   try {
-    await ensureConversationMessageRateLimit(convId, { sendId });
-    insertPayload = await altaraWithTimeout(buildConversationMessageInsertPayload({
-      conversationId: convId,
-      content,
-      contentKind: "text",
-      replyToId,
-    }), 5000, "message payload build");
-  } catch (error) {
-    if (optimisticMessage) markOptimisticOutgoingMessageFailed(optimisticMessage.id, error, convId);
-    recordMessageSendState("prepare_failed", {
-      sendId,
-      conversationId: convId,
-      contentLength: content.length,
-      phase: "prepare",
-      pendingCount: getOptimisticSendingMessagesSnapshot().length,
-      clearedPending: true,
-      error: error?.message || error,
-    });
-    markPerfEnd("message_send_total", { conversationId: convId, ok: false, stage: "prepare" });
-    return { ok: false, error };
-  }
+    assertDmE2eeUiOwner(owner);
+    markPerfStart("message_send_total", { conversationId: convId });
+    recordDmMessageSendPerfPhase("started");
+    optimisticMessage = optimisticMessageId
+      ? getConversationRowsForOptimisticMutation(convId).find((row) => normId(row?.id || "") === normId(optimisticMessageId)) || null
+      : null;
+    if (!optimisticMessage && canUseImmediateDmOptimism) {
+      optimisticMessage = createOptimisticOutgoingMessage({
+        conversationId: convId,
+        content,
+        contentKind: "text",
+        replyToId,
+        suppressEmbeds: false,
+        retryPayload: {
+          kind: "text",
+          conversationId: convId,
+          text: content,
+          replyToId: replyToId || null,
+        },
+      });
+      if (optimisticMessage) finalizeLocalOutgoingEcho();
+    }
 
-  const { row, error } = await insertMessageRowAndHydrate(insertPayload, convId, { sendId, contentLength: content.length });
-  if (error) {
-    if (optimisticMessage) markOptimisticOutgoingMessageFailed(optimisticMessage.id, error, convId);
-    recordMessageSendState("insert_failed", {
+    sendId = String(providedSendId || optimisticMessage?._clientMessageId || optimisticMessage?.id || ("send_" + crypto.randomUUID()));
+    if (lane) lane.ids.add(sendId);
+    if (optimisticMessage) {
+      accepted = true;
+      if (typeof onAccepted === "function") onAccepted({ sendId, conversationId: convId, userId: owner.userId });
+    }
+    if (previous) await previous;
+    assertDmE2eeUiOwner(owner);
+    const permissionPreflight = await verifyCanSendPlainTextMessageToConversation(convId, "send-message-preflight");
+    assertDmE2eeUiOwner(owner);
+    if (!permissionPreflight?.ok) {
+      if (!optimisticMessage) return { ok: false, error: permissionPreflight?.error || new Error(MESSAGE_COMPOSER_NO_SEND_PERMISSION_TEXT), permissionBlocked: true };
+      markOptimisticOutgoingMessageFailed(optimisticMessage.id, permissionPreflight?.error, convId);
+      markPerfEnd("message_send_total", { conversationId: convId, ok: false, stage: "permission" });
+      return { ok: false, error: permissionPreflight?.error || new Error(MESSAGE_COMPOSER_NO_SEND_PERMISSION_TEXT), permissionBlocked: true };
+    }
+
+    if (!optimisticMessage) {
+      const optimisticSuppressEmbeds = await resolveOptimisticHumanMessageSuppressEmbeds(convId, {
+        permissionResult: permissionPreflight.permissionResult,
+      });
+      assertDmE2eeUiOwner(owner);
+      optimisticMessage = createOptimisticOutgoingMessage({
+        conversationId: convId,
+        content,
+        contentKind: "text",
+        replyToId,
+        suppressEmbeds: optimisticSuppressEmbeds,
+        retryPayload: {
+          kind: "text",
+          conversationId: convId,
+          text: content,
+          replyToId: replyToId || null,
+        },
+      });
+      if (optimisticMessage) finalizeLocalOutgoingEcho();
+    }
+    if (!accepted) {
+      accepted = true;
+      if (typeof onAccepted === "function") onAccepted({ sendId, conversationId: convId, userId: owner.userId });
+    }
+    recordMessageSendState("started", {
       sendId,
       conversationId: convId,
       contentLength: content.length,
-      phase: "insert",
+      phase: "optimistic_created",
       pendingCount: getOptimisticSendingMessagesSnapshot().length,
-      clearedPending: true,
-      error: error?.message || error,
+      insertStarted: false,
     });
-    markPerfEnd("message_send_total", { conversationId: convId, ok: false, stage: "insert" });
-    return { ok: false, error };
+    let insertPayload = null;
+    try {
+      await ensureConversationMessageRateLimit(convId, { sendId });
+      assertDmE2eeUiOwner(owner);
+      insertPayload = await altaraWithTimeout(buildConversationMessageInsertPayload({
+        conversationId: convId,
+        content,
+        contentKind: "text",
+        replyToId,
+        owner,
+        requireEncrypted,
+      }), 5000, "message payload build");
+    } catch (error) {
+      if (!owner.isCurrent()) return { ok: false, accepted, cancelled: true };
+      if (optimisticMessage) markOptimisticOutgoingMessageFailed(optimisticMessage.id, error, convId);
+      recordMessageSendState("prepare_failed", {
+        sendId,
+        conversationId: convId,
+        contentLength: content.length,
+        phase: "prepare",
+        pendingCount: getOptimisticSendingMessagesSnapshot().length,
+        clearedPending: true,
+        error: error?.message || error,
+      });
+      markPerfEnd("message_send_total", { conversationId: convId, ok: false, stage: "prepare" });
+      return { ok: false, error };
+    }
+
+    assertDmE2eeUiOwner(owner);
+    const { row, error } = await insertMessageRowAndHydrate(insertPayload, convId, { sendId, contentLength: content.length, owner });
+    assertDmE2eeUiOwner(owner);
+    if (error) {
+      if (optimisticMessage) markOptimisticOutgoingMessageFailed(optimisticMessage.id, error, convId);
+      recordMessageSendState("insert_failed", {
+        sendId,
+        conversationId: convId,
+        contentLength: content.length,
+        phase: "insert",
+        pendingCount: getOptimisticSendingMessagesSnapshot().length,
+        clearedPending: true,
+        error: error?.message || error,
+      });
+      markPerfEnd("message_send_total", { conversationId: convId, ok: false, stage: "insert" });
+      return { ok: false, error };
+    }
+    recordDmMessageSendPerfPhase("ack");
+    if (optimisticMessage && row) reconcileOptimisticOutgoingMessage(optimisticMessage.id, row, { keepBottom: true, source: "rpc" });
+    else if (optimisticMessage) markOptimisticOutgoingMessageSentLocally(optimisticMessage.id, { keepBottom: true });
+    recordMessageSendState("send_success", {
+      sendId,
+      conversationId: convId,
+      contentLength: content.length,
+      phase: "complete",
+      pendingCount: getOptimisticSendingMessagesSnapshot().length,
+      insertSucceeded: true,
+      clearedPending: true,
+    });
+    markPerfEnd("message_send_total", { conversationId: convId, ok: true });
+    return { ok: true, accepted, row: row || null };
+  } catch (error) {
+    if (!owner.isCurrent()) return { ok: false, accepted, cancelled: true };
+    if (optimisticMessage) markOptimisticOutgoingMessageFailed(optimisticMessage.id, error, convId);
+    return { ok: false, accepted, error };
+  } finally {
+    if (lane) {
+      lane.ids.delete(sendId);
+      lane.count -= 1;
+      release();
+      if (!lane.count && dmTextSendInFlightByConversation.get(laneKey) === lane) dmTextSendInFlightByConversation.delete(laneKey);
+    }
   }
-  recordDmMessageSendPerfPhase("ack");
-  if (optimisticMessage && row) reconcileOptimisticOutgoingMessage(optimisticMessage.id, row, { keepBottom: true, source: "rpc" });
-  else if (optimisticMessage) markOptimisticOutgoingMessageSentLocally(optimisticMessage.id, { keepBottom: true });
-  recordMessageSendState("send_success", {
-    sendId,
-    conversationId: convId,
-    contentLength: content.length,
-    phase: "complete",
-    pendingCount: getOptimisticSendingMessagesSnapshot().length,
-    insertSucceeded: true,
-    clearedPending: true,
-  });
-  markPerfEnd("message_send_total", { conversationId: convId, ok: true });
-  return { ok: true, row: row || null };
 }
 
 function getCurrentUserSystemDisplayName() {
@@ -58255,7 +58384,11 @@ function getServerVoiceMemberModerationContext({
     || isActiveServerBotTargetForRoleManagement(sid, targetBotId)
   );
   const targetHasVoiceMembership = !!getServerVoiceV2Member(uid);
-  const moveTargetEligible = !isSelf && !targetIsActiveBot && ability?.canTouchTarget === true;
+  // Voice Move permits the canonical owner as a target. Other moderation
+  // actions continue using the existing hierarchy/protected-owner decision.
+  const targetIsServerOwner = uid === normId(getCanonicalServerOwnerUserIdSync(sid));
+  const moveTargetEligible = !isSelf && !targetIsActiveBot
+    && (targetIsServerOwner || ability?.canTouchTarget === true);
   const dragPermission = resolveServerVoiceDragPermission({
     actorUserId: meId,
     targetUserId: uid,
@@ -58317,6 +58450,8 @@ function getServerVoiceMemberModerationContext({
 
 
 let voiceModerationToastTimer = 0;
+let voiceModerationUiOperationId = "";
+let voiceModerationUiRevision = 0;
 
 function showVoiceModerationToast(message = "", type = "success") {
   const text = String(message || "").trim();
@@ -58339,9 +58474,11 @@ function showVoiceModerationToast(message = "", type = "success") {
   }, type === "error" ? 2600 : 1800);
 }
 
-function notifyServerVoiceModerationUi(message = "", { error = false, audioCue = "" } = {}) {
+function notifyServerVoiceModerationUi(message = "", { error = false, audioCue = "", moveOperationId = "" } = {}) {
   const text = String(message || "").trim();
   if (!text) return;
+  voiceModerationUiOperationId = String(moveOperationId || "");
+  const uiRevision = ++voiceModerationUiRevision;
   const semanticAudioCue = String(audioCue || "").trim().toLowerCase();
   if (["ui_success", "ui_warning", "ui_error"].includes(semanticAudioCue)) {
     void playUiCue(semanticAudioCue, {
@@ -58353,7 +58490,9 @@ function notifyServerVoiceModerationUi(message = "", { error = false, audioCue =
   try {
     if (typeof setCallStatus === "function") {
       setCallStatus(text, true);
-      setTimeout(() => setCallStatus("", false), error ? 2600 : 1600);
+      setTimeout(() => {
+        if (uiRevision === voiceModerationUiRevision) setCallStatus("", false);
+      }, error ? 2600 : 1600);
       return;
     }
   } catch (_) {}
@@ -58742,6 +58881,9 @@ async function performServerVoiceModerationAction({
   const targetId = normId(targetUserId || "");
   const destinationId = normId(targetChannelId || "");
   const requesterUserId = normId(state.user?.id || "");
+  const requesterSessionEpoch = presenceSessionEpoch;
+  const ownsMoveRequest = () => canonicalAction !== "move_member"
+    || (requesterUserId === normId(state.user?.id || "") && requesterSessionEpoch === presenceSessionEpoch);
   if (!canonicalAction || !sid || !targetId || !requesterUserId) throw new Error("voice_moderation_invalid_context");
 
   const edgeFunctionName = canonicalAction === "move_member"
@@ -58777,6 +58919,7 @@ async function performServerVoiceModerationAction({
     logChannel: "voice-moderation",
     failEvent: "voice_moderation.auth_missing",
   });
+  if (!ownsMoveRequest()) return { ok: false, obsolete: true };
   if (!authReady.ok) {
     rollbackVoiceModerationOptimisticAction(optimisticDetails, optimisticSnapshot, "voice_moderation_auth_missing");
     throw authReady.error || new Error("voice_moderation_auth_missing");
@@ -58797,7 +58940,9 @@ async function performServerVoiceModerationAction({
     moveId: String(moveId || "").trim() || undefined,
   };
   const { data, error } = await supabase.functions.invoke(edgeFunctionName, { body });
+  if (!ownsMoveRequest()) return { ok: false, obsolete: true };
   const errorPayload = error ? await readSupabaseFunctionErrorPayload(error) : null;
+  if (!ownsMoveRequest()) return { ok: false, obsolete: true };
   const payload = data && typeof data === "object" ? data : (errorPayload || {});
   if (error || payload?.ok === false) {
     const err = new Error(getServerVoiceActionErrorMessage(errorPayload || payload, "Could not complete that voice action."));
@@ -58930,7 +59075,7 @@ function buildVoiceMemberContextMenuHtml(context = {}) {
       ? "Active bots use dedicated voice controls"
       : (!context?.hasMoveMembersPermission
         ? "Requires Move Members"
-        : (!context?.moveTargetEligible ? "Owner or equal/higher role is protected" : "")));
+        : (!context?.moveTargetEligible ? "That member is not eligible for a voice move" : "")));
   const actionToEdgeAction = (action) => action === "mute" ? "mute_member"
     : action === "unmute" ? "unmute_member"
       : action === "deafen" ? "deafen_member"
@@ -59043,7 +59188,7 @@ function bindServerVoiceMemberMenuOnce(menu) {
               ? "Active bots use their dedicated voice-management controls."
               : (!freshContext?.hasMoveMembersPermission
                 ? "You need Move Members to move other members."
-                : "You can't move the server owner or an equal/higher-ranked member.")));
+                : "That member is not eligible for a voice move.")));
         }
         freshContext.anchorEl = context.anchorEl || null;
         context = freshContext;
@@ -59177,7 +59322,7 @@ function tryOpenServerVoiceMemberMenuAt(userId, conversationId, point = null, op
 }
 
 function isServerVoiceMemberInteractiveTarget(target = null) {
-  return Boolean(target?.closest?.([
+  const interactive = target?.closest?.([
     "button",
     "input",
     "select",
@@ -59189,7 +59334,9 @@ function isServerVoiceMemberInteractiveTarget(target = null) {
     ".serverVoiceMemberMenu",
     ".voice-member-context-menu",
     "[role='menuitem']",
-  ].join(",")));
+  ].join(",")) || null;
+  const surface = getServerVoiceMemberDragSourceFromTarget(target);
+  return !!interactive && interactive !== surface;
 }
 
 function getServerVoiceMemberDragSourceFromTarget(target = null) {
@@ -59278,7 +59425,35 @@ function resolveVoiceMemberSourceChannelId(memberEl = null) {
   return "";
 }
 
-function cleanupVoiceMemberNativeDrag() {
+function consumeServerVoiceMemberDragClick(event) {
+  const owner = serverVoiceMemberDragClickOwner;
+  if (!owner) return false;
+  serverVoiceMemberDragClickOwner = null;
+  const target = eventTargetElement(event);
+  if (!target || (!owner.sourceEl?.contains?.(target) && !owner.dropEl?.contains?.(target))) return false;
+  event.preventDefault?.();
+  event.stopPropagation?.();
+  event.stopImmediatePropagation?.();
+  return true;
+}
+
+function observeServerVoiceMemberDragSource(sourceEl) {
+  serverVoiceMemberDragRemovalObserver?.disconnect();
+  if (!sourceEl || typeof MutationObserver !== "function") return;
+  serverVoiceMemberDragRemovalObserver = new MutationObserver(() => {
+    if (sourceEl.isConnected) return;
+    cleanupVoiceMemberNativeDrag({ cancelClick: true });
+    cleanupServerVoiceMemberPointerDrag();
+  });
+  serverVoiceMemberDragRemovalObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function cleanupVoiceMemberNativeDrag({ cancelClick = false } = {}) {
+  activeVoiceMemberNativeDrag?.sourceEl?.classList?.remove("is-voice-member-dragging");
+  serverVoiceMemberDragRemovalObserver?.disconnect();
+  serverVoiceMemberDragRemovalObserver = null;
+  document.body?.classList?.remove("is-server-voice-member-dragging");
+  if (cancelClick) serverVoiceMemberDragClickOwner = null;
   document
     .querySelectorAll(".server-voice-channel-row.is-voice-member-drop-target, .serverVoiceRoomWrap.is-voice-member-drop-target")
     .forEach((el) => el.classList.remove("is-voice-member-drop-target"));
@@ -59292,7 +59467,10 @@ function cleanupVoiceMemberNativeDrag() {
 function handleVoiceMemberNativeDragStart(event) {
   const memberEl = getServerVoiceMemberDragSourceFromTarget(eventTargetElement(event));
   if (!memberEl || isServerVoiceBotMemberRow(memberEl)) return;
-  if (isServerVoiceMemberInteractiveTarget(eventTargetElement(event))) return;
+  if (isServerVoiceMemberInteractiveTarget(eventTargetElement(event))) {
+    event.preventDefault?.();
+    return;
+  }
 
   const targetUserId = normId(memberEl.dataset.voiceMemberUserId || memberEl.getAttribute("data-server-voice-member-id") || "");
   const sourceChannelId = resolveVoiceMemberSourceChannelId(memberEl);
@@ -59310,6 +59488,8 @@ function handleVoiceMemberNativeDragStart(event) {
     displayName: memberName,
   });
   if (!moveContext?.canDragVoiceMember) {
+    memberEl.setAttribute("draggable", "false");
+    memberEl.setAttribute("data-voice-drag-authorized", "0");
     event.preventDefault?.();
     return;
   }
@@ -59343,8 +59523,13 @@ function handleVoiceMemberNativeDragStart(event) {
     memberName,
     dragIntent: moveContext.isSelf ? "manual_self_switch" : "authoritative_moderator_move",
   };
-  activeVoiceMemberNativeDrag = payload;
-  serverVoiceMemberDragSuppressClickUntil = Date.now() + 800;
+  activeVoiceMemberNativeDrag = {
+    ...payload, sourceEl: memberEl,
+    ownerUserId: normId(state.user?.id || ""), ownerSessionEpoch: presenceSessionEpoch,
+  };
+  serverVoiceMemberDragClickOwner = { sourceEl: memberEl, dropEl: null };
+  observeServerVoiceMemberDragSource(memberEl);
+  document.body?.classList?.add("is-server-voice-member-dragging");
 
   try {
     event.dataTransfer.effectAllowed = "move";
@@ -59427,6 +59612,34 @@ async function moveServerVoiceMemberV2FastPath({
 
   const targetConversationId = getActiveConversationIdForChannel(destinationId, sid);
 
+  for (const pending of serverVoiceMoveDeliveryByOperation.values()) {
+    if (!isServerVoiceMoveDeliveryCurrent(pending, { requireChannel: pending.phase === "request" })) clearServerVoiceMoveDelivery(pending.operationId, pending);
+    else if (pending.phase === "request" && pending.serverId === sid && pending.targetUserId === targetId) {
+      throw new Error("A move for this member is already awaiting authority.");
+    }
+  }
+  if (serverVoiceMoveDeliveryByOperation.size >= SERVER_VOICE_MOVE_PENDING_LIMIT) {
+    for (const pending of serverVoiceMoveDeliveryByOperation.values()) {
+      if (pending.deadlineElapsed) clearServerVoiceMoveDelivery(pending.operationId, pending);
+      if (serverVoiceMoveDeliveryByOperation.size < SERVER_VOICE_MOVE_PENDING_LIMIT) break;
+    }
+  }
+  if (serverVoiceMoveDeliveryByOperation.size >= SERVER_VOICE_MOVE_PENDING_LIMIT) throw new Error("Voice moves are busy. Try again shortly.");
+  const requestedPerfAt = Number.isFinite(moveOperation.requestedPerfAt) ? moveOperation.requestedPerfAt : getServerVoicePerfNow();
+  const requestPending = {
+    operationId: effectiveMoveId, phase: "request", serverId: sid, targetUserId: targetId,
+    targetChannelId: destinationId, membershipSessionId: String(moveOperation.membershipSessionId || "").trim(), earlyAck: null,
+    ownerUserId: moveOperation.ownerUserId || normId(state.user?.id || ""),
+    ownerSessionEpoch: moveOperation.ownerSessionEpoch ?? presenceSessionEpoch,
+    channel: serverVoiceOccupancyChannelByServerId.get(sid)
+      || (serverVoiceV2ControlPlaneServerId === sid ? serverVoiceV2ControlPlaneChannel : null),
+  };
+  serverVoiceMoveDeliveryByOperation.set(effectiveMoveId, requestPending);
+  const ownsRequestContext = () => requestPending.ownerUserId === normId(state.user?.id || "")
+    && requestPending.ownerSessionEpoch === presenceSessionEpoch
+    && (!requestPending.channel || requestPending.channel === (serverVoiceOccupancyChannelByServerId.get(sid)
+      || (serverVoiceV2ControlPlaneServerId === sid ? serverVoiceV2ControlPlaneChannel : null)));
+  try {
   recordVoiceV2MoveTiming("rpc_request_start", {
     moveId: effectiveMoveId,
     assignmentNonce: effectiveMoveId,
@@ -59443,14 +59656,15 @@ async function moveServerVoiceMemberV2FastPath({
     targetChannelId: destinationId,
   });
 
-  const rpcStartedAt = Date.now();
+  const rpcStartedAt = getServerVoicePerfNow();
   const { data, error } = await supabase.rpc("move_server_voice_member_v2", {
     p_server_id: sid,
     p_target_user_id: targetId,
     p_target_channel_id: destinationId,
     p_move_id: effectiveMoveId,
   });
-  const rpcCompletedAt = Date.now();
+  const rpcCompletedAt = getServerVoicePerfNow();
+  if (!isServerVoiceMoveDeliveryCurrent(requestPending)) return { ok: false, obsolete: true };
   recordVoiceV2MoveTiming("rpc_response", {
     moveId: effectiveMoveId,
     assignmentNonce: effectiveMoveId,
@@ -59499,6 +59713,7 @@ async function moveServerVoiceMemberV2FastPath({
         source: "drag",
         moveId: effectiveMoveId,
       });
+      if (!ownsRequestContext()) return { ok: false, obsolete: true };
       console.info("[voice-v2-fast] edge_fallback_response", {
         moveId: effectiveMoveId,
         serverId: sid,
@@ -59532,22 +59747,22 @@ async function moveServerVoiceMemberV2FastPath({
       serverId: sid,
       targetUserId: targetId,
       targetChannelId: destinationId,
-      elapsedMs: Date.now() - requestedAt,
+      elapsedMs: getServerVoicePerfNow() - requestedPerfAt,
     });
   }
   if (data?.changed !== true) {
     emitServerVoiceMoveDiagnostic({
       operationKey: moveOperation.operationKey,
-      inputToRequestMs: Math.max(0, rpcStartedAt - moveOperation.requestedAt),
+      inputToRequestMs: Math.max(0, rpcStartedAt - requestedPerfAt),
       requestMs: Math.max(0, rpcCompletedAt - rpcStartedAt),
-      authoritativeAcceptedMs: Math.max(0, rpcCompletedAt - moveOperation.requestedAt),
-      moderatorAckMs: Math.max(0, Date.now() - moveOperation.requestedAt),
+      authoritativeAcceptedMs: Math.max(0, rpcCompletedAt - requestedPerfAt),
+      moderatorAckMs: Math.max(0, getServerVoicePerfNow() - requestedPerfAt),
       fallbackUsed: false,
       deliveryPath: "local-ack",
       tokenRequestCount: 0,
       roomConnectAttemptCount: 0,
       publicationCount: 0,
-      totalMoveMs: Math.max(0, Date.now() - moveOperation.requestedAt),
+      totalMoveMs: Math.max(0, getServerVoicePerfNow() - requestedPerfAt),
       generation: moveOperation.activeCallGeneration,
       result: "authoritative_same_channel_noop",
     });
@@ -59556,25 +59771,26 @@ async function moveServerVoiceMemberV2FastPath({
 
   const controlPayload = buildServerVoiceMoveControlPayload(data, moveOperation);
   scheduleServerVoiceMoveApplicationAckFallback({ operation: moveOperation, payload: controlPayload });
-  const broadcastStartedAt = Date.now();
+  const broadcastStartedAt = getServerVoicePerfNow();
   const controlSent = confirmRow
     ? await broadcastServerVoiceV2ControlPlaneRow(confirmRow, "server_voice_v2_channel_changed", controlPayload)
     : false;
+  if (!ownsRequestContext()) return { ok: false, obsolete: true };
   emitServerVoiceMoveDiagnostic({
     operationKey: moveOperation.operationKey,
-    inputToRequestMs: Math.max(0, rpcStartedAt - moveOperation.requestedAt),
+    inputToRequestMs: Math.max(0, rpcStartedAt - requestedPerfAt),
     requestMs: Math.max(0, rpcCompletedAt - rpcStartedAt),
-    authoritativeAcceptedMs: Math.max(0, rpcCompletedAt - moveOperation.requestedAt),
-    moderatorAckMs: Math.max(0, Date.now() - moveOperation.requestedAt),
-    broadcastDispatchMs: Math.max(0, Date.now() - broadcastStartedAt),
-    eventDispatchMs: Math.max(0, Date.now() - broadcastStartedAt),
+    authoritativeAcceptedMs: Math.max(0, rpcCompletedAt - requestedPerfAt),
+    moderatorAckMs: Math.max(0, getServerVoicePerfNow() - requestedPerfAt),
+    broadcastDispatchMs: Math.max(0, getServerVoicePerfNow() - broadcastStartedAt),
+    eventDispatchMs: Math.max(0, getServerVoicePerfNow() - broadcastStartedAt),
     fallbackUsed: controlSent !== true,
     fallbackReason: controlSent ? "" : "control_subscription_not_ready",
     deliveryPath: controlSent ? "broadcast" : "postgres",
     tokenRequestCount: 0,
     roomConnectAttemptCount: 0,
     publicationCount: 0,
-    totalMoveMs: Math.max(0, Date.now() - moveOperation.requestedAt),
+    totalMoveMs: Math.max(0, getServerVoicePerfNow() - requestedPerfAt),
     generation: moveOperation.activeCallGeneration,
     result: controlSent ? "authoritative_rpc_broadcast_dispatched" : "authoritative_rpc_postgres_fallback",
   });
@@ -59590,6 +59806,9 @@ async function moveServerVoiceMemberV2FastPath({
     ok: true,
   });
   return { ...data, controlSent, control_sent: controlSent, operation: moveOperation };
+  } finally {
+    clearServerVoiceMoveDelivery(effectiveMoveId, requestPending);
+  }
 }
 
 function isMissingDedicatedVoiceMoveFunctionError(error = null, payload = null) {
@@ -59721,9 +59940,16 @@ async function moveVoiceMemberToChannelFromNativeDrag({
   memberName = "",
   moveId = "",
 } = {}) {
+  const ownerUserId = normId(state.user?.id || "");
+  const ownerSessionEpoch = presenceSessionEpoch;
+  let moveUiOperationId = "";
   try {
     const requestedAt = Date.now();
     const sid = normId(serverId || getServerVoiceV2Member(targetUserId)?.serverId || currentServerVoiceV2Session?.serverId || "");
+    const moveContext = getServerVoiceMemberModerationContext({
+      userId: targetUserId, conversationId, serverId: sid, displayName: memberName,
+    });
+    if (!moveContext?.canMoveMembers) throw new Error("You can no longer move that member.");
     const targetConversationId = getActiveConversationIdForChannel(targetChannelId, sid);
     const moveOperation = createServerVoiceMoveOperationIdentity({
       moveId,
@@ -59736,8 +59962,10 @@ async function moveVoiceMemberToChannelFromNativeDrag({
       requestedAt,
     });
     const effectiveMoveId = moveOperation.operationId;
+    moveUiOperationId = effectiveMoveId;
+    voiceModerationUiOperationId = effectiveMoveId;
     if (isServerVoiceV2Enabled()) {
-      await moveServerVoiceMemberV2FastPath({
+      const result = await moveServerVoiceMemberV2FastPath({
         serverId: sid,
         targetUserId,
         sourceChannelId,
@@ -59748,7 +59976,12 @@ async function moveVoiceMemberToChannelFromNativeDrag({
         requestedAt,
         operation: moveOperation,
       });
-      notifyServerVoiceModerationUi("Move sent.");
+      if (result?.obsolete || ownerUserId !== normId(state.user?.id || "") || ownerSessionEpoch !== presenceSessionEpoch) return;
+      if (result?.changed !== false && voiceModerationUiOperationId === effectiveMoveId) {
+        notifyServerVoiceModerationUi(serverVoiceMoveAppliedAckIds.has(effectiveMoveId)
+          ? "Participant confirmed the move."
+          : "Move accepted; awaiting participant confirmation.", { moveOperationId: effectiveMoveId });
+      }
       return;
     }
     recordVoiceV2MoveTiming("edge_request_start", {
@@ -59798,6 +60031,7 @@ async function moveVoiceMemberToChannelFromNativeDrag({
       ? "Move sent."
       : getVoiceModerationSuccessMessage({ action: "move_member", targetName: memberName, targetChannelName }));
   } catch (error) {
+    if (ownerUserId !== normId(state.user?.id || "") || ownerSessionEpoch !== presenceSessionEpoch) return;
     if (isServerVoiceV2Enabled()) {
       void loadServerVoiceV2ControlPlaneSnapshot(serverId || currentServerVoiceV2Session?.serverId || "", "drag_failed");
     }
@@ -59812,7 +60046,9 @@ async function moveVoiceMemberToChannelFromNativeDrag({
       message: error?.message,
       error,
     });
-    notifyServerVoiceModerationUi(safeMessage, { error: true });
+    if (!moveUiOperationId || voiceModerationUiOperationId === moveUiOperationId) {
+      notifyServerVoiceModerationUi(safeMessage, { error: true });
+    }
   }
 }
 
@@ -59850,17 +60086,25 @@ async function switchCurrentUserServerVoiceChannelFromDrag({
 async function handleVoiceMemberNativeDrop(event) {
   if (!eventHasVoiceMemberNativeDrag(event)) return;
   const channelEl = getVoiceChannelNativeDropTarget(event);
-  if (!channelEl) return;
+  if (!channelEl) { cleanupVoiceMemberNativeDrag(); return; }
   const targetChannelId = normId(channelEl.dataset.voiceChannelId || channelEl.getAttribute("data-server-voice-channel-id") || "");
-  if (!targetChannelId) return;
+  if (!targetChannelId) { cleanupVoiceMemberNativeDrag(); return; }
 
-  let payload = activeVoiceMemberNativeDrag;
-  try {
-    const raw = event.dataTransfer?.getData?.(ALTARA_VOICE_MEMBER_DRAG_MIME) || "";
-    if (raw) payload = JSON.parse(raw);
-  } catch (error) {
-    console.warn("[voice-drag] failed to parse voice member drag payload", error);
+  if (serverVoiceMemberDragClickOwner) serverVoiceMemberDragClickOwner.dropEl = channelEl;
+  const dragOwner = activeVoiceMemberNativeDrag;
+  if (!dragOwner) {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    cleanupVoiceMemberNativeDrag({ cancelClick: true });
+    return;
   }
+  if (dragOwner && (dragOwner.sourceEl?.isConnected === false || dragOwner.ownerUserId !== normId(state.user?.id || "") || dragOwner.ownerSessionEpoch !== presenceSessionEpoch)) {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    cleanupVoiceMemberNativeDrag({ cancelClick: true });
+    return;
+  }
+  const payload = dragOwner;
 
   event.preventDefault?.();
   event.stopPropagation?.();
@@ -59932,8 +60176,10 @@ function handleVoiceMemberNativeDragEnd() {
 
 function cleanupServerVoiceMemberPointerDrag({ restoreRow = true } = {}) {
   const drag = serverVoiceMemberPointerDrag;
+  serverVoiceMemberDragRemovalObserver?.disconnect();
+  serverVoiceMemberDragRemovalObserver = null;
   if (drag?.sourceRow && restoreRow) drag.sourceRow.classList.remove("is-voice-member-dragging");
-  try { drag?.sourceRow?.setAttribute?.("draggable", "false"); } catch (_) {}
+  try { drag?.sourceRow?.setAttribute?.("draggable", drag.sourceRow.getAttribute("data-voice-drag-authorized") === "1" ? "true" : "false"); } catch (_) {}
   try { drag?.sourceRow?.releasePointerCapture?.(drag.pointerId); } catch (_) {}
   if (serverVoiceMemberDragGhostEl) {
     serverVoiceMemberDragGhostEl.remove();
@@ -60004,6 +60250,7 @@ function beginServerVoiceMemberPointerDrag(event) {
   const rect = row.getBoundingClientRect();
   serverVoiceMemberPointerDrag = {
     pointerId: event.pointerId,
+    ownerUserId: actorId, ownerSessionEpoch: presenceSessionEpoch,
     sourceRow: row,
     serverId,
     conversationId,
@@ -60029,7 +60276,8 @@ function moveServerVoiceMemberPointerDrag(event) {
   if (!drag.started) {
     if (Math.hypot(dx, dy) < 7) return;
     drag.started = true;
-    serverVoiceMemberDragSuppressClickUntil = Date.now() + 500;
+    serverVoiceMemberDragClickOwner = { sourceEl: drag.sourceRow, dropEl: null };
+    observeServerVoiceMemberDragSource(drag.sourceRow);
     console.info("[voice-drag] start", {
       targetUserId: drag.targetUserId,
       sourceChannelId: drag.sourceChannelId,
@@ -60063,11 +60311,17 @@ function moveServerVoiceMemberPointerDrag(event) {
 async function endServerVoiceMemberPointerDrag(event) {
   const drag = serverVoiceMemberPointerDrag;
   if (!drag || event.pointerId !== drag.pointerId) return;
+  if (drag.sourceRow?.isConnected === false || drag.ownerUserId !== normId(state.user?.id || "") || drag.ownerSessionEpoch !== presenceSessionEpoch) {
+    cleanupServerVoiceMemberPointerDrag();
+    serverVoiceMemberDragClickOwner = null;
+    return;
+  }
   const hadStarted = drag.started === true;
   const dropTarget = hadStarted ? getServerVoiceMemberDropTargetFromPoint(event.clientX, event.clientY) : null;
   const targetChannelId = normId(dropTarget?.getAttribute?.("data-server-voice-channel-id") || dropTarget?.getAttribute?.("data-voice-channel-id") || "");
   const targetChannelName = String(dropTarget?.getAttribute?.("data-voice-channel-name") || dropTarget?.getAttribute?.("data-server-voice-name") || dropTarget?.querySelector?.("[data-server-voice-name], .serverVoiceRoom__label")?.getAttribute?.("data-server-voice-name") || dropTarget?.querySelector?.(".serverVoiceRoom__label")?.textContent || "").trim();
   cleanupServerVoiceMemberPointerDrag();
+  if (hadStarted && serverVoiceMemberDragClickOwner) serverVoiceMemberDragClickOwner.dropEl = dropTarget;
   if (!hadStarted || !targetChannelId) {
     console.info("[voice-drag] cancel no target", {
       hadStarted,
@@ -60121,26 +60375,29 @@ function cancelServerVoiceMemberPointerDrag(event = null) {
   const drag = serverVoiceMemberPointerDrag;
   if (event?.pointerId != null && drag && event.pointerId !== drag.pointerId) return;
   cleanupServerVoiceMemberPointerDrag();
+  serverVoiceMemberDragClickOwner = null;
 }
 
 function bindServerVoiceMemberDocumentDragOnce() {
   if (bindServerVoiceMemberDocumentDragOnce.bound) return;
   bindServerVoiceMemberDocumentDragOnce.bound = true;
-  document.addEventListener("click", (event) => {
-    if (Date.now() >= serverVoiceMemberDragSuppressClickUntil) return;
-    const target = eventTargetElement(event);
-    if (!getServerVoiceMemberDragSourceFromTarget(target)) return;
-    console.info("[voice-drag] suppressed profile click after native drag");
-    event.preventDefault?.();
-    event.stopPropagation?.();
-  }, true);
+  document.addEventListener("pointerdown", () => { serverVoiceMemberDragClickOwner = null; }, true);
+  document.addEventListener("click", consumeServerVoiceMemberDragClick, true);
   document.addEventListener("dragstart", handleVoiceMemberNativeDragStart, true);
   document.addEventListener("dragover", handleVoiceMemberNativeDragOver, true);
   document.addEventListener("dragleave", handleVoiceMemberNativeDragLeave, true);
   document.addEventListener("drop", handleVoiceMemberNativeDrop, true);
   document.addEventListener("dragend", handleVoiceMemberNativeDragEnd, true);
+  window.addEventListener("blur", () => {
+    cleanupVoiceMemberNativeDrag({ cancelClick: true });
+    cancelServerVoiceMemberPointerDrag();
+  });
   document.addEventListener("keydown", (event) => {
-    if (String(event.key || "") === "Escape") cleanupVoiceMemberNativeDrag();
+    serverVoiceMemberDragClickOwner = null;
+    if (String(event.key || "") === "Escape") {
+      cleanupVoiceMemberNativeDrag({ cancelClick: true });
+      cancelServerVoiceMemberPointerDrag();
+    }
   }, true);
 }
 bindServerVoiceMemberDocumentDragOnce();
@@ -70095,7 +70352,9 @@ function getServerVoicePermissionContext({
 
 function getCachedServerVoicePermissionDecision(serverId = "", channelId = "") {
   const key = getServerVoicePermissionCacheKey(serverId, channelId);
-  return key === ":" ? null : (serverVoicePermissionDecisionByChannel.get(key) || null);
+  const decision = key === ":" ? null : (serverVoicePermissionDecisionByChannel.get(key) || null);
+  return decision?.ownerUserId === normId(state.user?.id || "") && decision?.ownerSessionEpoch === presenceSessionEpoch
+    ? decision : null;
 }
 
 function resolveLocalServerVoicePermissionDecision(serverId = "", channelId = "", reason = "local_cache") {
@@ -70354,6 +70613,9 @@ async function refreshServerVoicePermissionDecision({
   force = false,
   reason = "manual",
 } = {}) {
+  const ownerUserId = normId(state.user?.id || "");
+  const ownerSessionEpoch = presenceSessionEpoch;
+  const ownsContext = () => ownerUserId === normId(state.user?.id || "") && ownerSessionEpoch === presenceSessionEpoch;
   const context = getServerVoicePermissionContext({ serverId, channelId, conversationId });
   const sid = context.serverId;
   const cid = context.channelId;
@@ -70365,13 +70627,16 @@ async function refreshServerVoicePermissionDecision({
       source: reason,
     });
   }
-  const cached = serverVoicePermissionDecisionByChannel.get(key) || null;
+  const cached = getCachedServerVoicePermissionDecision(sid, cid);
   if (!force && cached && Date.now() - Number(cached.checkedAt || 0) < 15000) return { ...cached };
-  if (serverVoicePermissionCheckInFlightByChannel.has(key)) {
+  const inFlight = serverVoicePermissionCheckInFlightByChannel.get(key);
+  if (inFlight?.ownerUserId === ownerUserId && inFlight?.ownerSessionEpoch === ownerSessionEpoch) {
     const existingRequest = serverVoicePermissionCheckInFlightByChannel.get(key);
     if (!force) return existingRequest;
     await existingRequest.catch(() => null);
-    if (serverVoicePermissionCheckInFlightByChannel.has(key)) {
+    if (!ownsContext()) return { ok: false, obsolete: true };
+    const inFlight = serverVoicePermissionCheckInFlightByChannel.get(key);
+  if (inFlight?.ownerUserId === ownerUserId && inFlight?.ownerSessionEpoch === ownerSessionEpoch) {
       return serverVoicePermissionCheckInFlightByChannel.get(key);
     }
   }
@@ -70382,6 +70647,7 @@ async function refreshServerVoicePermissionDecision({
       p_server_id: sid,
       p_channel_id: cid,
     });
+    if (!ownsContext()) return { ok: false, obsolete: true };
     if (response?.error) {
       lastServerVoicePermissionError = {
         code: String(response.error?.code || ""),
@@ -70398,11 +70664,11 @@ async function refreshServerVoicePermissionDecision({
         cause: response.error,
       });
     }
-    const decision = normalizeServerVoicePermissionDecision(response?.data, {
+    const decision = { ...normalizeServerVoicePermissionDecision(response?.data, {
       serverId: sid,
       channelId: cid,
       source: `rpc:${reason}`,
-    });
+    }), ownerUserId, ownerSessionEpoch };
     if (serverVoicePermissionLatestRequestByChannel.get(key) !== sequence) {
       serverVoicePermissionStaleResponsesIgnored += 1;
       return serverVoicePermissionDecisionByChannel.get(key) || decision;
@@ -70416,6 +70682,8 @@ async function refreshServerVoicePermissionDecision({
       serverVoicePermissionCheckInFlightByChannel.delete(key);
     }
   });
+  request.ownerUserId = ownerUserId;
+  request.ownerSessionEpoch = ownerSessionEpoch;
   serverVoicePermissionCheckInFlightByChannel.set(key, request);
   return request;
 }
@@ -70426,7 +70694,9 @@ async function invokeServerVoicePermissionReconciliation({
   scope = "self",
   reason = "permissions_refresh",
   forceAfterInFlight = false,
+  isCurrent = () => true,
 } = {}) {
+  if (!isCurrent()) return { ok: false, obsolete: true };
   const sid = normId(serverId || currentServerVoiceV2Session?.serverId || "");
   const cid = normId(channelId || currentServerVoiceV2Session?.voiceChannelId || "");
   if (!sid || (scope === "channel" && !cid)) {
@@ -70437,6 +70707,7 @@ async function invokeServerVoicePermissionReconciliation({
     const existing = serverVoicePermissionReconciliationInFlightByScope.get(requestKey);
     if (!forceAfterInFlight) return existing;
     await existing.catch(() => null);
+    if (!isCurrent()) return { ok: false, obsolete: true };
     if (serverVoicePermissionReconciliationInFlightByScope.has(requestKey)) {
       return serverVoicePermissionReconciliationInFlightByScope.get(requestKey);
     }
@@ -70455,6 +70726,7 @@ async function invokeServerVoicePermissionReconciliation({
       logChannel: "server-voice",
       failEvent: "server_voice_permissions.auth_missing",
     });
+    if (!isCurrent()) return { ok: false, obsolete: true };
     if (!authReady.ok) throw authReady.error;
     const { data, error } = await supabase.functions.invoke(edgeFunctionName, {
       body: {
@@ -70465,6 +70737,7 @@ async function invokeServerVoicePermissionReconciliation({
         sessionId: requestSessionId || undefined,
       },
     });
+    if (!isCurrent()) return { ok: false, obsolete: true };
     if (error) throw error;
     if (!data || data.ok === false) {
       throw new Error(String(data?.message || data?.error || "voice_permission_reconciliation_failed"));
@@ -70482,6 +70755,7 @@ async function invokeServerVoicePermissionReconciliation({
     };
     return data;
   })().catch((error) => {
+    if (!isCurrent()) return { ok: false, obsolete: true };
     lastServerVoicePermissionReconciliation = {
       ok: false,
       serverId: sid,
@@ -70605,7 +70879,9 @@ async function evictCurrentUserFromServerVoiceForTimeout(serverId = "", { source
 async function applyCurrentServerVoiceParticipationDecision(decision = null, {
   reason = "permission_reconcile",
   notify = true,
+  isCurrent = () => true,
 } = {}) {
+  if (!isCurrent()) return { ok: false, obsolete: true };
   if (!decision?.ok) return { ok: false, skipped: true, error: "permissions_unresolved" };
   const session = getCapturedServerVoiceV2JoinContext?.() || currentServerVoiceV2Session || {};
   const sid = normId(session?.serverId || "");
@@ -70643,6 +70919,7 @@ async function applyCurrentServerVoiceParticipationDecision(decision = null, {
   let cameraStopped = false;
   let screenShareStopped = false;
   const convId = normId(session?.conversationId || callConversationId || "");
+  const ownedMicTrack = localMicTrack;
   if (!decision.speak) {
     try {
       await serverVoiceTransportController?.unpublishMicrophone?.({
@@ -70655,11 +70932,13 @@ async function applyCurrentServerVoiceParticipationDecision(decision = null, {
         message: error?.message || error,
       });
     }
-    try { localMicTrack?.stop?.(); } catch (_) {}
-    localMicTrack = null;
+    if (!isCurrent()) return { ok: false, obsolete: true };
+    try { ownedMicTrack?.stop?.(); } catch (_) {}
+    if (localMicTrack === ownedMicTrack) localMicTrack = null;
     micMuted = true;
     microphoneStopped = true;
   }
+  if (!isCurrent()) return { ok: false, obsolete: true };
   if (!decision.video) {
     const layer = getActiveServerVoiceCameraLayer(convId);
     if (layer?.isLocalCameraActive?.()) {
@@ -70667,6 +70946,7 @@ async function applyCurrentServerVoiceParticipationDecision(decision = null, {
       cameraStopped = true;
     }
   }
+  if (!isCurrent()) return { ok: false, obsolete: true };
   if (!decision.stream) {
     const layer = getActiveServerVoiceScreenshareLayer(convId);
     if (layer?.isLocalShareActive?.()) {
@@ -70674,6 +70954,7 @@ async function applyCurrentServerVoiceParticipationDecision(decision = null, {
       screenShareStopped = true;
     }
   }
+  if (!isCurrent()) return { ok: false, obsolete: true };
   applyMicMute();
   updateActiveServerVoiceTransportLocalControls(convId);
   refreshCallUI();
@@ -82716,19 +82997,18 @@ async function applyServerVoiceMoveControlMessage(message = {}, event = {}, { so
       });
       return true;
     }
-    const moveStartedAt = Date.now();
-    const authorityAt = getVoiceV2AssignmentTimestamp(message, moveStartedAt);
+    const moveStartedAt = getServerVoicePerfNow();
     const operationKey = sanitizeServerVoiceMoveOperationKey(authoritativeMoveOperation.operationId);
     setCallStatus("A mudar de canal…", true);
     refreshCallUI();
-    const targetShellAt = Date.now();
+    const targetShellAt = getServerVoicePerfNow();
     emitServerVoiceMoveDiagnostic({
       operationKey,
-      broadcastReceiveMs: deliveryPath === "broadcast" ? Math.max(0, moveStartedAt - authorityAt) : null,
-      postgresReceiveMs: deliveryPath === "postgres" ? Math.max(0, moveStartedAt - authorityAt) : null,
-      movedClientReceivedMs: Math.max(0, moveStartedAt - authorityAt),
-      oldMediaStoppedMs: 0,
-      receiveToOldMediaStopMs: 0,
+      broadcastReceiveMs: null,
+      postgresReceiveMs: null,
+      movedClientReceivedMs: null,
+      oldMediaStoppedMs: null,
+      receiveToOldMediaStopMs: null,
       receiveToTargetShellMs: Math.max(0, targetShellAt - moveStartedAt),
       deliveryPath,
       generation: authoritativeMoveOperation.generation,
@@ -82736,11 +83016,11 @@ async function applyServerVoiceMoveControlMessage(message = {}, event = {}, { so
     });
     void (async () => {
       try {
-        const controlReceivedAt = Date.now();
+        const controlReceivedAt = getServerVoicePerfNow();
         if (!isServerVoiceAuthoritativeMoveOperationCurrent(authoritativeMoveOperation)) {
           throw new Error("stale_move_generation");
         }
-        const validationDoneAt = Date.now();
+        const validationDoneAt = getServerVoicePerfNow();
         if (message?.row && typeof message.row === "object") {
           recordVoiceV2MoveTiming("broadcast_received", {
             moveId: message?.moveId || message?.move_id || message?.assignmentNonce || message?.assignment_nonce || "",
@@ -82767,13 +83047,21 @@ async function applyServerVoiceMoveControlMessage(message = {}, event = {}, { so
         if (!isServerVoiceAuthoritativeMoveOperationCurrent(authoritativeMoveOperation)) {
           throw new Error("stale_move_generation");
         }
+        const acceptedMember = getServerVoiceV2Member(targetUserId);
+        if (!doesServerVoiceMoveSignalMatchMembership(message, acceptedMember)) {
+          throw new Error("stale_move_assignment");
+        }
         const assignmentApplied = await applyVoiceV2ChannelAssignment({
           ...message,
           targetUserId,
           serverId,
           targetChannelId,
           targetConversationId: resolvedTargetConversationId || targetConversationId,
+          assignmentNonce: acceptedMember.assignmentNonce || acceptedMember.assignment_nonce,
+          assignmentUpdatedAt: acceptedMember.assignmentUpdatedAt || acceptedMember.assignment_updated_at,
         }, "control_signal", { updateLocalTransport: false });
+        if (!assignmentApplied) throw new Error("authoritative_move_assignment_not_applied");
+        if (!isServerVoiceAuthoritativeMoveOperationCurrent(authoritativeMoveOperation)) throw new Error("stale_move_generation");
         if (assignmentApplied) {
           const activeOperation = serverVoiceOperationLifecycle.getCurrent() || null;
           serverVoiceOperationLifecycle.retarget(activeOperation, {
@@ -82782,15 +83070,42 @@ async function applyServerVoiceMoveControlMessage(message = {}, event = {}, { so
             conversationId: resolvedTargetConversationId || targetConversationId,
             membershipSessionId: authoritativeMoveOperation.sessionId,
           });
-          if (!serverVoiceTransportController) throw new Error("authoritative_move_transport_unavailable");
-          const transportUpdateStartedAt = Date.now();
+          if (!serverVoiceTransportController || !getActiveServerVoiceTransportController(resolvedTargetConversationId || targetConversationId)) {
+            throw new Error("authoritative_move_transport_unavailable");
+          }
+          applyMicMute("authoritative_server_voice_assignment");
+          updateActiveServerVoiceTransportLocalControls(resolvedTargetConversationId || targetConversationId);
+          const transportUpdateStartedAt = getServerVoicePerfNow();
           const transportUpdatePromise = updateVoiceV2LocalParticipantChannel({
             serverId,
             channelId: targetChannelId,
             conversationId: resolvedTargetConversationId || targetConversationId,
             reason: "authoritative_moderator_move",
             deferVisualReconcile: true,
+            isCurrent: () => isServerVoiceAuthoritativeMoveOperationCurrent(authoritativeMoveOperation),
           });
+          const isCurrentMove = () => isServerVoiceAuthoritativeMoveOperationCurrent(authoritativeMoveOperation);
+          const permissionConversationId = resolvedTargetConversationId || targetConversationId;
+          if (!isCurrentMove()) return;
+          void fetchServerVoiceModerationStatesForConversation(permissionConversationId, {
+            force: true, reason: "authoritative_move", isCurrent: isCurrentMove,
+          });
+          const decision = await refreshServerVoicePermissionDecision({
+            serverId, channelId: targetChannelId, conversationId: permissionConversationId,
+            force: true, reason: "authoritative_move",
+          });
+          if (!isCurrentMove()) return;
+          if (!decision?.ok) throw new Error("authoritative_move_permissions_unresolved");
+          const permissionResult = await applyCurrentServerVoiceParticipationDecision(decision, {
+            reason: "authoritative_move", isCurrent: isCurrentMove,
+          });
+          if (!isCurrentMove() || permissionResult?.disconnected || permissionResult?.obsolete) return;
+          const grantResult = await invokeServerVoicePermissionReconciliation({
+            serverId, channelId: targetChannelId, scope: "self", reason: "authoritative_move",
+            forceAfterInFlight: true, isCurrent: isCurrentMove,
+          });
+          if (!isCurrentMove()) return;
+          if (grantResult?.ok === false) throw new Error("authoritative_move_permission_reconciliation_failed");
           const soundResult = playAuthoritativeServerVoiceMoveSfx({
             conversationId: resolvedTargetConversationId || targetConversationId,
             operation: batchId
@@ -82800,7 +83115,7 @@ async function applyServerVoiceMoveControlMessage(message = {}, event = {}, { so
             targetIsLocal: true,
             transitionSucceeded: true,
           });
-          const soundRequestedAt = Date.now();
+          const soundRequestedAt = getServerVoicePerfNow();
           recordVoiceV2MoveTiming("move_sound_requested", {
             moveId: authoritativeMoveOperation.operationId,
             operationKey,
@@ -82818,25 +83133,25 @@ async function applyServerVoiceMoveControlMessage(message = {}, event = {}, { so
             eventValidationMs: Math.max(0, validationDoneAt - controlReceivedAt),
             logicalSwitchMs: Math.max(0, transportUpdateStartedAt - controlReceivedAt),
             sourceUiExitMs: Math.max(0, targetShellAt - moveStartedAt),
-            targetUiCommitMs: Math.max(0, Date.now() - moveStartedAt),
+            targetUiCommitMs: Math.max(0, getServerVoicePerfNow() - moveStartedAt),
             audioRoutingMs: Math.max(0, transportUpdateStartedAt - controlReceivedAt),
             soundStartMs: Math.max(0, soundRequestedAt - controlReceivedAt),
-            movedClientReceivedMs: Math.max(0, controlReceivedAt - authorityAt),
-            oldMediaStoppedMs: 0,
-            receiveToOldMediaStopMs: 0,
+            movedClientReceivedMs: null,
+            oldMediaStoppedMs: null,
+            receiveToOldMediaStopMs: null,
             receiveToTargetShellMs: Math.max(0, targetShellAt - moveStartedAt),
             receiveToTokenStartMs: null,
             targetTokenMs: null,
             targetLiveKitMs: null,
             targetPublicationMs: null,
-            targetAudioReadyMs: Date.now() - moveStartedAt,
-            targetConnectedMs: Date.now() - moveStartedAt,
+            targetAudioReadyMs: null,
+            targetConnectedMs: null,
             moveSpecificOverheadMs: Math.max(0, transportUpdateStartedAt - moveStartedAt),
             deliveryPath,
             tokenRequestCount: 0,
             roomConnectAttemptCount: 0,
             publicationCount: 0,
-            totalMoveMs: Math.max(0, Date.now() - authorityAt),
+            totalMoveMs: Math.max(0, getServerVoicePerfNow() - moveStartedAt),
             generation: authoritativeMoveOperation.generation,
             result: "target_routing_started",
           });
@@ -82846,15 +83161,15 @@ async function applyServerVoiceMoveControlMessage(message = {}, event = {}, { so
           }
           emitServerVoiceMoveDiagnostic({
             operationKey,
-            movedClientReceivedMs: Math.max(0, controlReceivedAt - authorityAt),
-            targetConnectedMs: Date.now() - moveStartedAt,
-            targetAudioReadyMs: Date.now() - moveStartedAt,
+            movedClientReceivedMs: null,
+            targetConnectedMs: null,
+            targetAudioReadyMs: null,
             moveSpecificOverheadMs: Math.max(0, transportUpdateStartedAt - moveStartedAt),
             deliveryPath,
             tokenRequestCount: 0,
             roomConnectAttemptCount: 0,
             publicationCount: 0,
-            totalMoveMs: Math.max(0, Date.now() - authorityAt),
+            totalMoveMs: Math.max(0, getServerVoicePerfNow() - moveStartedAt),
             generation: authoritativeMoveOperation.generation,
             result: "target_connected",
           });
@@ -82862,13 +83177,14 @@ async function applyServerVoiceMoveControlMessage(message = {}, event = {}, { so
         console.info("[voice-v2] move timing self assignment committed", {
           targetUserId,
           targetChannelId,
-          elapsedMs: Date.now() - controlReceivedAt,
+          elapsedMs: getServerVoicePerfNow() - controlReceivedAt,
         });
         requestAnimationFrame(() => {
+          if (!isServerVoiceAuthoritativeMoveOperationCurrent(authoritativeMoveOperation)) return;
           console.info("[voice-v2] move timing first render done", {
             targetUserId,
             targetChannelId,
-            elapsedMs: Date.now() - controlReceivedAt,
+            elapsedMs: getServerVoicePerfNow() - controlReceivedAt,
           });
         });
         recordVoiceMoveEvent({
@@ -82909,7 +83225,7 @@ async function applyServerVoiceMoveControlMessage(message = {}, event = {}, { so
         }
         emitServerVoiceMoveDiagnostic({
           operationKey,
-          movedClientReceivedMs: Math.max(0, moveStartedAt - authorityAt),
+          movedClientReceivedMs: null,
           deliveryPath,
           generation: authoritativeMoveOperation.generation,
           result: String(error?.message || "target_connection_failed").slice(0, 64),
@@ -83742,6 +84058,9 @@ function getCallParticipantProfilePreviewClickAnchor(ev, rootEl = null) {
   if (!root || (target !== root && !root.contains(target))) return null;
   const anchor = target.closest("[data-call-profile-target='1'], .stageGridAvatar, .participantAvatar, .callParticipantLabel__name, .stageGridLabel, .participantLabel");
   if (!anchor || (anchor !== root && !root.contains(anchor))) return null;
+  if (root.classList?.contains("voice-participant-tile")
+    && anchor.matches?.(".stageGridAvatar, .participantAvatar")
+    && !anchor.matches?.("[data-call-profile-target='1']")) return null;
   return anchor;
 }
 function buildCallParticipantProfilePreviewSeed(userId, seed = {}, anchorEl = null) {
@@ -84584,7 +84903,7 @@ function buildServerVoiceParticipantsFromIds(conversationId, participantIds = []
     : (sid ? (serverMemberListByServerId.get(sid) || []) : []);
   const memberById = new Map();
   memberRows.forEach((member) => {
-    const uid = normId(member?.userId || "");
+    const uid = normId(member?.userId || member?.user_id || member?.id || "");
     if (!uid) return;
     memberById.set(uid, member);
   });
@@ -84607,71 +84926,11 @@ function buildServerVoiceParticipantsFromIds(conversationId, participantIds = []
     }
 
     const member = memberById.get(uid) || {};
-    const cachedProfile = getCachedProfile(uid) || {};
-    const voicePresenceMeta = getServerVoicePresenceMemberMeta(convId, uid) || {};
-    const fallbackIdentity = getGroupMemberIdentity(convId, uid) || {};
-    const participantUiState = includeTransportState
-      ? (participantUiStateByUserId.get(uid) || null)
-      : null;
+    const identity = getGroupMemberIdentity(convId, uid, member);
+    const participantUiState = includeTransportState ? (participantUiStateByUserId.get(uid) || null) : null;
     const isMe = !!(meId && uid === meId);
-    const serverIdentity = getServerDisplayIdentity(sid, uid, member);
-    const displayName = normalizeConversationLabel(resolveCallVisibleName({
-      serverNickname: serverIdentity.serverNickname,
-      displayNames: [
-        member?.globalDisplayName,
-        member?.global_display_name,
-        cachedProfile?.display_name,
-        member?.displayName,
-        isMe ? state.me?.display_name : "",
-      ],
-      usernames: [
-        cachedProfile?.username,
-        serverIdentity.username,
-        isMe ? state.me?.username : "",
-        member?.username,
-      ],
-      receivedLabels: [voicePresenceMeta?.label, fallbackIdentity?.label],
-      fallback: "User",
-    }), "User");
-    const avatarUrl = String(
-      member?.avatarUrl
-      || member?.avatar_url
-      || cachedProfile?.avatar_url
-      || cachedProfile?.avatarUrl
-      || voicePresenceMeta?.avatar
-      || (isMe ? (state.me?.avatar_url || "") : "")
-      || fallbackIdentity?.avatar
-      || ""
-    ).trim();
-    if (displayName && displayName !== "member") {
-      const cacheDisplayName = resolveCallVisibleName({
-        displayNames: [
-          member?.globalDisplayName,
-          member?.global_display_name,
-          cachedProfile?.display_name,
-          member?.displayName,
-        ],
-        usernames: [cachedProfile?.username, member?.username],
-        fallback: "",
-      });
-      cacheProfileRow({
-        id: uid,
-        username: member?.username || cachedProfile?.username || fallbackIdentity?.username || "",
-        display_name: cacheDisplayName,
-        avatar_url: avatarUrl || cachedProfile?.avatar_url || "",
-        name_color: cachedProfile?.name_color || member?.nameColor || member?.name_color || "",
-      });
-    } else {
-      try {
-        if (window?.ALTARA_DEBUG_VOICE) {
-          console.debug("[server-voice] participant profile fallback", {
-            conversation_id: convId,
-            user_id: uid,
-            reason: "missing_member_profile_for_audio_state",
-          });
-        }
-      } catch (_) {}
-    }
+    const displayName = identity.label;
+    const avatarUrl = identity.avatar || "";
     let presenceStatus = getPresenceStatusForServerMember(uid);
     if (presenceStatus === "offline") presenceStatus = "online";
     const membershipPresentation = getServerVoiceV2MembershipPresentation(convId, uid);
@@ -85360,9 +85619,10 @@ function buildServerVoiceMemberRowsHtml(conversationId, serverMembers = [], opti
       serverId,
     }) : null;
     const botProfileAttrs = isBot ? getBotContextProfileAttrs(botProfile, serverId, "") : "";
+    const visibleIdentity = isBot ? null : getGroupMemberIdentity(conversationId, member.userId);
     const avatarHtml = member.avatarUrl
-      ? buildAvatarMediaHtml(member.avatarUrl, { userId: member.userId, alt: isBot ? "bot avatar" : "avatar", deferAnimatedStorage: true })
-      : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(member.displayName, isBot ? "B" : "U"))}</span>`;
+      ? buildAvatarMediaHtml(member.avatarUrl, { userId: member.userId, alt: isBot ? "bot avatar" : "avatar", fallbackChar: visibleIdentity?.fallbackInitial || "", deferAnimatedStorage: true })
+      : `<span class="groupDmAvatarFallback">${esc(visibleIdentity?.fallbackInitial || getGroupOrbFallbackChar(member.displayName, isBot ? "B" : "U"))}</span>`;
     const audioState = isBot ? null : getParticipantAudioStateForUi(member.userId, conversationId);
     const optimisticMove = isBot ? null : getVoiceModerationMoveOverride(member.userId);
     const moderationClasses = [
@@ -86154,12 +86414,6 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
     panel.addEventListener("click", async (e) => {
       const target = eventTargetElement(e);
       if (!target) return;
-      if (Date.now() < serverVoiceMemberDragSuppressClickUntil && getServerVoiceMemberDragSourceFromTarget(target)) {
-        e.preventDefault?.();
-        e.stopPropagation?.();
-        console.info("[voice-drag] suppressed profile click after drag");
-        return;
-      }
       const memberRow = target.closest(".serverVoiceMember[data-server-voice-member-id]");
       if (!memberRow) return;
       if (isServerVoiceBotMemberRow(memberRow)) {
@@ -86183,12 +86437,6 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
     panel.addEventListener("keydown", async (e) => {
       const target = eventTargetElement(e);
       if (!target) return;
-      if (Date.now() < serverVoiceMemberDragSuppressClickUntil && getServerVoiceMemberDragSourceFromTarget(target)) {
-        e.preventDefault?.();
-        e.stopPropagation?.();
-        console.info("[voice-drag] suppressed profile click after drag");
-        return;
-      }
       const memberRow = target.closest(".serverVoiceMember[data-server-voice-member-id]");
       if (!memberRow || !isServerVoiceBotMemberRow(memberRow)) return;
       const key = String(e.key || "");
@@ -88504,8 +88752,8 @@ function renderAddFriendPreview(profile = null, { query = "", loading = false } 
       return;
     }
     if (currentAction?.action === "accept_message_request" && currentAction?.requestId) {
-      const result = await acceptMessageReq(currentAction.requestId);
-      if (result?.ok && result?.conversationId) await showDm(result.conversationId, { autoAnswerIfPending: true });
+      const result = await acceptMessageRequestForDmNavigation(currentAction.requestId);
+      if (result?.ok && result?.conversationId) await showDm(result.conversationId, { autoAnswerIfPending: true, navigationIntent: result.navigationIntent });
       return;
     }
     if (currentAction?.action === "send_message_request") {
@@ -88662,9 +88910,9 @@ function renderPending({ skipWidgets = false, skipAddFriendLookup = false } = {}
     document.querySelectorAll("[data-rej]").forEach(b => b.addEventListener("click", () => rejectReq(b.dataset.rej)));
     document.querySelectorAll("[data-cancel]").forEach(b => b.addEventListener("click", () => cancelReq(b.dataset.cancel)));
     document.querySelectorAll("[data-msg-acc]").forEach((b) => b.addEventListener("click", async () => {
-      const result = await acceptMessageReq(b.dataset.msgAcc);
+      const result = await acceptMessageRequestForDmNavigation(b.dataset.msgAcc);
       if (result?.ok && result?.conversationId) {
-        await showDm(result.conversationId, { autoAnswerIfPending: true });
+        await showDm(result.conversationId, { autoAnswerIfPending: true, navigationIntent: result.navigationIntent });
       }
     }));
     document.querySelectorAll("[data-msg-rej]").forEach((b) => b.addEventListener("click", () => rejectMessageReq(b.dataset.msgRej)));
@@ -96910,8 +97158,8 @@ async function loadDmList(options = {}) {
       const requestId = String(btn.getAttribute("data-request-id") || "").trim();
       if (!requestId) return;
       if (action === "accept") {
-        const result = await acceptMessageReq(requestId);
-        if (result?.ok && result?.conversationId) await showDm(result.conversationId, { autoAnswerIfPending: true });
+        const result = await acceptMessageRequestForDmNavigation(requestId);
+        if (result?.ok && result?.conversationId) await showDm(result.conversationId, { autoAnswerIfPending: true, navigationIntent: result.navigationIntent });
       } else if (action === "ignore") {
         await rejectMessageReq(requestId);
       } else if (action === "block") {
@@ -97057,6 +97305,7 @@ function primeDmOpeningShell(conversationId = "", meta = {}, {
   skipBroadServerRefresh = false,
   allowSnapshot = !pending,
   messageOpenGeneration = 0,
+  navigationIntent = null,
 } = {}) {
   const convId = normId(conversationId || meta?.conversationId || meta?.conversation_id || "");
   const perfToken = convId
@@ -97087,6 +97336,8 @@ function primeDmOpeningShell(conversationId = "", meta = {}, {
     displayFallback
   );
 
+  const resetPrivateComposer = rawKind !== "server"
+    && activatePrivateDmComposerDraft(convId, navigationIntent);
   if (convId) activeDmId = convId;
   else if (pending) activeDmId = null;
 
@@ -97144,11 +97395,13 @@ function primeDmOpeningShell(conversationId = "", meta = {}, {
     recordDmMessagePerfPhase("timeline", perfToken, { visibleMessageCount: dmMessagesCache.length });
     recordDmOpenTimelinePhase("snapshot_rows_inserted");
   }
+  if (resetPrivateComposer) resetPrivateDmComposerForNavigation();
   try { hideDmRequestBanner(); } catch (_) {}
   try { updateDmHeaderAvatar(); } catch (_) {}
   try { applyDmTitleNameStyle(); } catch (_) {}
   try { syncDmActiveListHighlight(); } catch (_) {}
   try { applyDmComposerEditUi({ reason: "conversation-opening" }); } catch (_) {}
+  if (rawKind !== "server" && convId) focusDmComposerSoon({ conversationId: convId, navigationIntent });
   recordDmMessagePerfPhase("shell", perfToken, { visibleMessageCount: renderedMemoryCache ? dmMessagesCache.length : 0 });
   recordDmOpenTimelinePhase("shell_visible");
   markPerfEnd("dm_row_click_to_shell", { reason: String(reason || "conversation-open"), pending: !!pending, conversationId: convId });
@@ -97174,12 +97427,12 @@ async function openDm(username) {
       otherUserId: knownUid,
       avatarUrl: state.activeDm?.avatar_url || state.activeDm?.avatarUrl || "",
       kind: "dm",
-    }, { reason: "open_dm_pending", pending: true });
+    }, { reason: "open_dm_pending", pending: true, navigationIntent });
     if (isAltaraDefinitivelyOffline()) {
       const cachedConversationId = getKnownDmConversationIdForUser(knownUid);
       if (cachedConversationId) {
         rememberDmConversationPeer(cachedConversationId, knownUid, "open-dm-offline-cache");
-        return showDm(cachedConversationId, { reason: "open-dm-offline-cache" });
+        return showDm(cachedConversationId, { reason: "open-dm-offline-cache", navigationIntent });
       }
       setDmComposerInlineStatus("Waiting for connection to open this conversation.", { kind: "offline" });
       return null;
@@ -97200,7 +97453,7 @@ async function openDm(username) {
       avatarUrl: state.activeDm?.avatar_url || state.activeDm?.avatarUrl || "",
     });
     queueLightweightDmListRenderFromState();
-    await showDm(convId, { autoAnswerIfPending: true });
+    await showDm(convId, { autoAnswerIfPending: true, navigationIntent });
     markPerfEnd("dm_open_total", { source: "openDm", conversationId: normId(convId || "") });
   } catch (e) {
     markPerfEnd("dm_open_total", { source: "openDm", error: String(e?.message || e || "unknown") });
@@ -97235,12 +97488,12 @@ async function startDmWith(username, displayName, avatarUrl, otherUserId, suppli
     avatarUrl: avatarUrl || "",
     otherUserId: resolvedOtherUserId || otherUserId || "",
     kind: "dm",
-  }, { reason: "start_dm_pending", pending: true });
+  }, { reason: "start_dm_pending", pending: true, navigationIntent });
   if (isAltaraDefinitivelyOffline()) {
     const cachedConversationId = getKnownDmConversationIdForUser(resolvedOtherUserId);
     if (cachedConversationId) {
       rememberDmConversationPeer(cachedConversationId, resolvedOtherUserId, "start-dm-offline-cache");
-      await showDm(cachedConversationId, { reason: "start-dm-offline-cache" });
+      await showDm(cachedConversationId, { reason: "start-dm-offline-cache", navigationIntent });
       return cachedConversationId;
     }
     setDmComposerInlineStatus("Waiting for connection to open this conversation.", { kind: "offline" });
@@ -97278,7 +97531,7 @@ async function startDmWith(username, displayName, avatarUrl, otherUserId, suppli
     kind: "dm",
     isGroup: false,
   };
-  await showDm(conversationId, { autoAnswerIfPending: true });
+  await showDm(conversationId, { autoAnswerIfPending: true, navigationIntent });
   markPerfEnd("dm_open_total", { source: "startDmWith", conversationId: normId(conversationId || "") });
   if (wasServerContext || wasHidden) queueLightweightDmListRenderFromState();
   return conversationId;
@@ -98010,6 +98263,7 @@ function applyTypingPresenceBadgeElement(badgeEl, userId = "", displayName = "",
   if (typeof badgeEl.dataset.altaraTypingOriginalStatus === "undefined") badgeEl.dataset.altaraTypingOriginalStatus = badgeEl.hasAttribute("data-status") ? String(badgeEl.getAttribute("data-status") || "") : "__missing__";
   if (typeof badgeEl.dataset.altaraTypingOriginalAria === "undefined") badgeEl.dataset.altaraTypingOriginalAria = badgeEl.hasAttribute("aria-label") ? String(badgeEl.getAttribute("aria-label") || "") : "__missing__";
   if (typeof badgeEl.dataset.altaraTypingOriginalTitle === "undefined") badgeEl.dataset.altaraTypingOriginalTitle = badgeEl.hasAttribute("title") ? String(badgeEl.getAttribute("title") || "") : "__missing__";
+  if (uid) badgeEl.dataset.altaraTypingUserId = uid;
   badgeEl.innerHTML = buildTypingPresenceBadgeHtml(displayName || "Someone");
   badgeEl.classList.add("is-typing-presence");
   badgeEl.setAttribute("data-altara-typing-presence-badge", "1");
@@ -98072,15 +98326,20 @@ function clearTypingStatusOnUserCards({ reason = "clear" } = {}) {
     }
     badge.className = badge.dataset.altaraTypingOriginalClass || badge.className.replace(/\bis-typing-presence\b/g, "").trim();
     badge.innerHTML = badge.dataset.altaraTypingOriginalHtml || "";
+    // Typing is a temporary presentation. Presence may have changed while it
+    // was shown; restore the current owner's canonical state, not its old dot.
+    const ownerId = normId(badge.getAttribute("data-status-dot") || badge.dataset.altaraTypingUserId || "");
+    const currentPresence = ownerId ? resolveEffectivePresence(ownerId) : null;
     const originalStatus = badge.dataset.altaraTypingOriginalStatus;
-    if (originalStatus === "__missing__") badge.removeAttribute("data-status");
+    if (currentPresence) badge.setAttribute("data-status", currentPresence.effectiveStatus);
+    else if (originalStatus === "__missing__") badge.removeAttribute("data-status");
     else if (typeof originalStatus !== "undefined") badge.setAttribute("data-status", originalStatus);
     const originalAria = badge.dataset.altaraTypingOriginalAria;
     if (originalAria === "__missing__") badge.removeAttribute("aria-label");
-    else if (typeof originalAria !== "undefined") badge.setAttribute("aria-label", originalAria);
+    else if (typeof originalAria !== "undefined") badge.setAttribute("aria-label", currentPresence?.label || originalAria);
     const originalTitle = badge.dataset.altaraTypingOriginalTitle;
     if (originalTitle === "__missing__") badge.removeAttribute("title");
-    else if (typeof originalTitle !== "undefined") badge.setAttribute("title", originalTitle);
+    else if (typeof originalTitle !== "undefined") badge.setAttribute("title", currentPresence?.label || originalTitle);
     badge.removeAttribute("data-altara-typing-presence-badge");
     badge.removeAttribute("data-altara-typing-temporary-badge");
     delete badge.dataset.altaraTypingOriginalClass;
@@ -98088,6 +98347,8 @@ function clearTypingStatusOnUserCards({ reason = "clear" } = {}) {
     delete badge.dataset.altaraTypingOriginalStatus;
     delete badge.dataset.altaraTypingOriginalAria;
     delete badge.dataset.altaraTypingOriginalTitle;
+    if (currentPresence) recordPresencePaintObservation(ownerId, currentPresence.effectiveStatus, "clearTypingStatusOnUserCards", "typing-restore");
+    delete badge.dataset.altaraTypingUserId;
     cleared += 1;
   });
   document.querySelectorAll("[data-altara-typing-card='1']").forEach((card) => {
@@ -99016,6 +99277,8 @@ const serverMessageHistoryDebugState = {
 let dmShiftHotkeysBound = false;
 let dmComposerArrowUpBound = false;
 let dmComposerEnterBound = false;
+const dmTextSendInFlightByConversation = new Map();
+const DM_TEXT_SEND_PENDING_LIMIT = 8;
 let dmComposerFormatToolbarBound = false;
 const DM_COMPOSER_STYLE_ORDER = ["bold", "italic", "strike", "code", "spoiler"];
 const DM_COMPOSER_STYLE_TAGS = {
@@ -100280,7 +100543,8 @@ let activeVoiceMemberNativeDrag = null;
 let serverVoiceMemberPointerDrag = null;
 let serverVoiceMemberDragGhostEl = null;
 let serverVoiceMemberDropTargetEl = null;
-let serverVoiceMemberDragSuppressClickUntil = 0;
+let serverVoiceMemberDragClickOwner = null;
+let serverVoiceMemberDragRemovalObserver = null;
 let dmCreateGroupModalBound = false;
 let dmCreateGroupSearch = "";
 let dmCreateGroupBasePeerId = "";
@@ -100483,7 +100747,7 @@ let serverVoiceModerationFetchPendingCount = 0;
 let serverVoiceModerationLastError = null;
 const serverVoiceModerationRetryTimersByConversation = new Map();
 const serverVoiceModerationRetryAttemptsByConversation = new Map();
-const serverVoiceModerationFetchInFlightByConversation = new Set();
+const serverVoiceModerationFetchInFlightByConversation = new Map();
 let serverVoiceModerationRealtimeRestartTimer = 0;
 let serverVoiceModerationRealtimeRestartAttempts = 0;
 let serverVoiceModerationStateApplying = false;
@@ -100550,6 +100814,17 @@ function isDirectDmE2eeDiagnosticsEnabled() {
   return isAltaraVerboseTraceEnabled();
 }
 
+// Ownership of the existing UI flow; persistent identities stay in dmE2ee.js.
+let dmE2eeUiGeneration = 0;
+let dmE2eeUiUserId = "";
+let dmE2eeUiAbortController = new AbortController();
+let dmE2eeBootstrapPending = false;
+let settingsDmE2eeBackupRefreshPromise = null;
+let dmE2eeRestorePromptPromise = null;
+let dmE2eeProvisioningPromptPromise = null;
+let dmE2eeDetailsClose = null;
+let dmE2eeDetailsContext = null;
+const DM_E2EE_NEW_PASSWORD_MIN_LENGTH = 12;
 let dmE2eeBootstrapPromise = null;
 let dmE2eeReadiness = {
   status: "idle",
@@ -100564,7 +100839,7 @@ let directDmE2eeDeviceSetupPromise = null;
 let directDmPrivacyActionInFlight = "";
 let dmPrivacyToastTimer = null;
 const directDmPeerE2eeKeyStatusByConversation = new Map();
-const directDmPeerE2eeKeyLookupInFlightByConversation = new Set();
+const directDmPeerE2eeKeyLookupInFlightByConversation = new Map();
 const MESSAGE_SEND_RATE_LIMIT_WARNING_PREFIX = "Estás a enviar mensagens demasiado rápido.";
 const MESSAGE_SEND_RATE_LIMIT_ERROR_CODE = "message_rate_limited";
 const MESSAGE_SEND_RATE_LIMITS_BY_KIND = Object.freeze({
@@ -102169,6 +102444,62 @@ function renderDmE2eeRecoveryState() {
   setDmJumpLatestVisible(false);
 }
 
+function resetDmE2eeUiSession(userId = "") {
+  dmE2eeUiGeneration += 1;
+  dmE2eeUiUserId = String(userId || "");
+  dmE2eeUiAbortController.abort();
+  dmE2eeUiAbortController = new AbortController();
+  clearDmE2eeMemory();
+  for (const map of [dmPrivacyRequestConfirmTimersByConversation, dmPrivacyFollowupRefetchTimersByConversation, dmPrivacyEventRetryTimersByConversation]) {
+    for (const timers of map.values()) timers.forEach((timer) => clearTimeout(timer));
+    map.clear();
+  }
+  if (dmPrivacyToastTimer) clearTimeout(dmPrivacyToastTimer);
+  dmPrivacyToastTimer = null;
+  dmE2eeBootstrapPromise = null;
+  dmE2eeBootstrapPending = false;
+  directDmE2eeDeviceSetupPromise = null;
+  directDmE2eeDeviceSetupInFlight = false;
+  settingsDmE2eeBackupRefreshPromise = null;
+  dmE2eeRestorePromptPromise = null;
+  dmE2eeProvisioningPromptPromise = null;
+  settingsDmE2eeBackupLoading = settingsDmE2eeBackupSaving = settingsDmE2eeBackupRestoring = settingsDmE2eeBackupSetupInFlight = false;
+  directDmPrivacyActionInFlight = "";
+  directDmPeerE2eeKeyStatusByConversation.clear();
+  directDmPeerE2eeKeyLookupInFlightByConversation.clear();
+  dmTextSendInFlightByConversation.clear();
+  cancelDmComposerNavigationFocus();
+  const composerInput = document.getElementById("dmInput");
+  if (composerInput?.dataset) {
+    composerInput.value = "";
+    delete composerInput.dataset.dmDraftUserId;
+    delete composerInput.dataset.dmDraftConversationId;
+    delete composerInput.dataset.dmDraftNavigationIntentSeq;
+    delete composerInput.dataset.dmDraftRestorePending;
+  }
+  dmPrivacyRenderSignatureByConversation.clear();
+  settingsDmE2eeBackupState = { loaded: false, identityStatus: "unknown", error: null };
+  dmE2eeReadiness = { status: "idle", userId: dmE2eeUiUserId, identityStatus: "", error: null, updatedAt: 0 };
+  clearDmE2eeBackupInputs();
+}
+
+function captureDmE2eeUiOwner() {
+  const userId = String(state.user?.id || "");
+  if (dmE2eeUiUserId !== userId) resetDmE2eeUiSession(userId);
+  const generation = dmE2eeUiGeneration;
+  const signal = dmE2eeUiAbortController.signal;
+  return { userId, signal, isCurrent: () => !!userId && !signal.aborted && generation === dmE2eeUiGeneration && userId === String(state.user?.id || "") };
+}
+
+function assertDmE2eeUiOwner(owner) {
+  if (!owner.isCurrent()) throw createVaultRecoveryCancelledError("session-changed");
+}
+
+function isStrongDmE2eeSetupPassword(password) {
+  return typeof password === "string" && password.trim().length >= DM_E2EE_NEW_PASSWORD_MIN_LENGTH
+    && !/^[\d\s]+$/.test(password) && !/^(.)\1+$/u.test(password.trim());
+}
+
 function isDmE2eeReadyForInteraction() {
   if (!isDirectDmE2eeEnabled()) return true;
   if (!activeDmSupportsEncryptedTextOnly()) return true;
@@ -102181,9 +102512,11 @@ async function ensureDmE2eeReadyForConversation(conversationId, { reason = "open
   }
   const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
   if (!convId || !state.user?.id) return { ok: false, status: "missing_context" };
+  const owner = captureDmE2eeUiOwner();
   const isDirect = await isDirectDmConversationId(convId);
+  if (!owner.isCurrent()) return { ok: false, status: "cancelled" };
   if (!isDirect) return { ok: true, status: "not_direct_dm" };
-  setDmE2eeReadiness({
+  if (dmE2eeReadiness.status !== "ready") setDmE2eeReadiness({
     status: "checking",
     userId: state.user.id,
     identityStatus: "",
@@ -102195,6 +102528,7 @@ async function ensureDmE2eeReadyForConversation(conversationId, { reason = "open
   });
 
   const identity = await ensureDmE2eeBootstrapStarted();
+  if (!owner.isCurrent()) return { ok: false, status: "cancelled" };
   const identityStatus = String(identity?.status || "").trim().toLowerCase();
   if (identityStatus === "ready") {
     setDmE2eeReadiness({
@@ -102210,7 +102544,7 @@ async function ensureDmE2eeReadyForConversation(conversationId, { reason = "open
     return { ok: true, status: identityStatus, identity };
   }
 
-  const resolvedStatus = identityStatus || "missing_local_private";
+  const resolvedStatus = identityStatus || "error";
   const fallbackError = identity?.error instanceof Error
     ? identity.error
     : new Error(getDmE2eeRecoveryHintText());
@@ -102266,6 +102600,7 @@ function getDirectDmPeerE2eeKeyStatusSignature(statusInput = {}) {
   return [
     String(status.status || "unknown").trim().toLowerCase(),
     normId(status.keyId || status.key_id || ""),
+    normId(status.peerUserId || ""),
     String(status.error?.message || status.error || ""),
   ].join("|");
 }
@@ -102299,53 +102634,69 @@ function setDirectDmPeerE2eeKeyStatus(conversationId, nextStatus = {}) {
 
 async function refreshDirectDmPeerE2eeKeyStatus(conversationId, peerUserId, { force = false } = {}) {
   if (!isDirectDmE2eeEnabled()) return { status: "runtime_disabled", keyId: "", error: null };
+  const owner = captureDmE2eeUiOwner();
   const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
   const peerId = normId(peerUserId || state.activeDm?.otherUserId || "");
   if (!convId || !peerId) {
     return setDirectDmPeerE2eeKeyStatus(convId, {
-      status: "missing",
-      keyId: "",
+      status: "missing", keyId: "", peerUserId: peerId,
       error: new Error("Could not find the Direct DM recipient."),
     });
   }
   const current = getDirectDmPeerE2eeKeyStatus(convId);
-  if (!force && (current.status === "ready" || current.status === "missing" || current.status === "error")) {
-    return current;
-  }
-  if (directDmPeerE2eeKeyLookupInFlightByConversation.has(convId)) {
-    return current.status === "checking" ? current : setDirectDmPeerE2eeKeyStatus(convId, { status: "checking", error: null });
-  }
-  directDmPeerE2eeKeyLookupInFlightByConversation.add(convId);
-  setDirectDmPeerE2eeKeyStatus(convId, { status: "checking", keyId: "", error: null });
-  try {
-    const keyRow = await getActiveDmE2eePeerKey(peerId, { force });
-    if (!keyRow?.id) {
+  const previous = directDmPeerE2eeKeyLookupInFlightByConversation.get(convId);
+  const samePendingOwner = previous?.peerUserId === peerId && previous.owner.isCurrent();
+  if (samePendingOwner && (!force || previous.force)) return previous.promise;
+  if (!force && current.peerUserId === peerId
+    && (current.status === "ready" || current.status === "missing" || current.status === "error")) return current;
+
+  // A forced validation cannot reuse a possibly cached non-forced result.
+  // Await that single prior lookup before starting the forced lookup, so its
+  // stale completion cannot overwrite the library's newer active-key cache.
+  const priorLookup = samePendingOwner ? previous.promise : null;
+  const request = { peerUserId: peerId, owner, force: !!force, promise: null };
+  const isCurrent = () => owner.isCurrent()
+    && directDmPeerE2eeKeyLookupInFlightByConversation.get(convId) === request;
+  request.promise = Promise.resolve().then(async () => {
+    try {
+      if (priorLookup) await priorLookup;
+      if (!isCurrent()) return { status: "cancelled" };
+      const keyRow = await getActiveDmE2eePeerKey(peerId, { force });
+      if (!isCurrent()) return { status: "cancelled" };
+      if (!keyRow?.id) {
+        return setDirectDmPeerE2eeKeyStatus(convId, {
+          status: "missing", keyId: "", peerUserId: peerId,
+          error: new Error("The recipient has not set up Direct DM encryption yet."),
+        });
+      }
       return setDirectDmPeerE2eeKeyStatus(convId, {
-        status: "missing",
-        keyId: "",
-        error: new Error("The recipient has not set up Direct DM encryption yet."),
+        status: "ready", keyId: keyRow.id, peerUserId: peerId, error: null,
       });
+    } catch (error) {
+      if (!isCurrent()) return { status: "cancelled" };
+      return setDirectDmPeerE2eeKeyStatus(convId, {
+        status: "error", keyId: "", peerUserId: peerId,
+        error: error instanceof Error ? error : new Error(String(error || "Could not check recipient encryption key.")),
+      });
+    } finally {
+      if (isCurrent()) directDmPeerE2eeKeyLookupInFlightByConversation.delete(convId);
     }
-    return setDirectDmPeerE2eeKeyStatus(convId, {
-      status: "ready",
-      keyId: keyRow.id,
-      error: null,
-    });
-  } catch (error) {
-    return setDirectDmPeerE2eeKeyStatus(convId, {
-      status: "error",
-      keyId: "",
-      error: error instanceof Error ? error : new Error(String(error || "Could not check recipient encryption key.")),
-    });
-  } finally {
-    directDmPeerE2eeKeyLookupInFlightByConversation.delete(convId);
+  });
+  directDmPeerE2eeKeyLookupInFlightByConversation.set(convId, request);
+  // Keep an already verified composer's presentation stable while this send
+  // awaits fresh validation. Missing/error results still block that send.
+  if (current.status !== "ready" || (current.peerUserId && current.peerUserId !== peerId)) {
+    setDirectDmPeerE2eeKeyStatus(convId, { status: "checking", keyId: "", peerUserId: peerId, error: null });
   }
+  return request.promise;
 }
 
 function getDirectDmE2eeComposerBlockStatus() {
   if (!activeDmSupportsEncryptedTextOnly()) return "";
   if (!isDmE2eeReadyForInteraction()) {
-    return dmE2eeReadiness.status === "checking" ? "local_checking" : "local_missing";
+    if (dmE2eeReadiness.status === "checking") return "local_checking";
+    if (["not_initialized", "missing_local_private", "migration_requires_recovery"].includes(dmE2eeReadiness.identityStatus)) return "local_missing";
+    return "local_error";
   }
   const peerStatus = getDirectDmPeerE2eeKeyStatus();
   if (peerStatus.status === "ready") return "";
@@ -102355,6 +102706,7 @@ function getDirectDmE2eeComposerBlockStatus() {
 }
 
 function getDirectDmE2eeComposerPlaceholder(blockStatus = getDirectDmE2eeComposerBlockStatus()) {
+  if (blockStatus === "local_error") return "Não foi possível verificar a encriptação. Tente novamente.";
   if (blockStatus === "local_checking") return directDmE2eeDeviceSetupInFlight
     ? t("dm.e2ee.setting_up_input", "Setting up encryption...")
     : t("dm.e2ee.checking_input", "Checking encryption...");
@@ -102365,208 +102717,224 @@ function getDirectDmE2eeComposerPlaceholder(blockStatus = getDirectDmE2eeCompose
   return t("dm.privacy.private_input", "Vault message...");
 }
 
-async function promptVaultProvisioningPassword() {
-  const understood = await showVaultRecoveryResponsibilityNotice();
-  if (!understood) return null;
-  const password = await requestAppPrompt(
-    t("dm.e2ee.setup.recovery_password_prompt", "Create a Vault Recovery Password before this device generates its identity."),
-    {
-      title: t("settings.security.dm_backup.setup_btn", "Set up Vault on this device"),
-      label: t("settings.security.dm_backup.password", "Vault Recovery Password"),
-      placeholder: tf(
-        "settings.security.dm_backup.password_placeholder",
-        { min: DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH },
-        "At least {min} characters"
-      ),
-      okText: t("dialog.confirm.ok", "Continue"),
-      cancelText: t("dialog.confirm.cancel", "Cancel"),
-      inputType: "password",
-      requireValue: true,
-      maxLength: 4000,
-    }
-  );
-  if (password === null) return null;
-  if (String(password).length < DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH) {
-    await requestAppAlert(tf(
-      "settings.security.dm_backup.error_password_short",
-      { min: DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH },
-      "Use a Vault Recovery Password with at least {min} characters."
-    ));
-    return null;
-  }
-  const confirmation = await requestAppPrompt(
-    t("dm.e2ee.setup.recovery_password_confirm", "Confirm the Vault Recovery Password."),
-    {
-      title: t("settings.security.dm_backup.setup_btn", "Set up Vault on this device"),
-      label: t("settings.security.dm_backup.password_confirm", "Confirm Vault Recovery Password"),
-      okText: t("dialog.confirm.ok", "Confirm"),
-      cancelText: t("dialog.confirm.cancel", "Cancel"),
-      inputType: "password",
-      requireValue: true,
-      maxLength: 4000,
-    }
-  );
-  if (confirmation === null) return null;
-  if (String(confirmation) !== String(password)) {
-    await requestAppAlert(t("settings.security.dm_backup.error_password_match", "Vault Recovery Passwords do not match."));
-    return null;
-  }
-  return String(password);
+function promptVaultProvisioningPassword() {
+  const owner = captureDmE2eeUiOwner();
+  if (!owner.isCurrent()) return Promise.resolve(null);
+  if (dmE2eeProvisioningPromptPromise) return dmE2eeProvisioningPromptPromise;
+  const prompt = new Promise((resolve) => {
+    const previousFocus = document.activeElement;
+    const modal = document.createElement("div");
+    modal.className = "modal altaraConfirmDialog vaultRecoverySetupNotice";
+    modal.setAttribute("aria-hidden", "false");
+    modal.innerHTML = `
+      <div class="modal__backdrop" data-vault-password-cancel></div>
+      <form class="modalCard appConfirmModalCard altaraConfirmDialog__card" role="dialog" aria-modal="true" aria-labelledby="vaultPasswordSetupTitle">
+        <div class="modalTop"><div class="modalTitle" id="vaultPasswordSetupTitle">Configurar mensagens encriptadas</div></div>
+        <div class="modal__body appConfirmModalBody">
+          <p>Escolha uma palavra-passe dedicada para recuperar as mensagens encriptadas desta conta noutro dispositivo ou navegador. Use uma frase longa e única, com pelo menos 12 caracteres; um PIN numérico não é suficiente.</p>
+          <label class="vaultPasswordField">Palavra-passe das mensagens<input class="input" type="password" name="password" autocomplete="new-password" minlength="12" maxlength="4000" required></label>
+          <label class="vaultPasswordField">Confirmar palavra-passe<input class="input" type="password" name="confirmation" autocomplete="new-password" minlength="12" maxlength="4000" required></label>
+          <p class="settingsHint">Guarde esta palavra-passe. Se perder todos os dispositivos autorizados e os métodos de recuperação, a ALTARA não poderá recuperar estas mensagens. A palavra-passe de início de sessão é separada.</p>
+          <p data-vault-password-error role="alert"></p>
+        </div>
+        <div class="appConfirmModalActions"><button class="btn ghost" type="button" data-vault-password-cancel>Cancelar</button><button class="btn primary" type="submit">Configurar mensagens encriptadas</button></div>
+      </form>`;
+    const fields = Array.from(modal.querySelectorAll('input[type="password"]'));
+    let finished = false;
+    const cleanup = (value) => {
+      if (finished) return;
+      finished = true;
+      fields.forEach((input) => { input.value = ""; });
+      owner.signal.removeEventListener("abort", cancel);
+      modal.remove();
+      if (owner.isCurrent()) previousFocus?.focus?.();
+      resolve(owner.isCurrent() ? value : null);
+    };
+    const cancel = () => cleanup(null);
+    owner.signal.addEventListener("abort", cancel, { once: true });
+    modal.addEventListener("click", (event) => {
+      if (event.target?.closest?.("[data-vault-password-cancel]")) cancel();
+    });
+    modal.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { event.preventDefault(); cancel(); }
+      if (event.key === "Tab") {
+        const focusable = Array.from(modal.querySelectorAll("input, button"));
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    });
+    modal.querySelector("form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const password = fields[0].value;
+      const error = !isStrongDmE2eeSetupPassword(password)
+        ? "Use uma frase única com pelo menos 12 caracteres, não apenas números ou um carácter repetido."
+        : password !== fields[1].value ? "As palavras-passe não coincidem." : "";
+      modal.querySelector("[data-vault-password-error]").textContent = error;
+      if (!error) cleanup(password);
+    });
+    document.body.appendChild(modal);
+    fields[0].focus();
+  });
+  dmE2eeProvisioningPromptPromise = prompt;
+  void prompt.finally(() => { if (dmE2eeProvisioningPromptPromise === prompt) dmE2eeProvisioningPromptPromise = null; });
+  return prompt;
 }
 
 async function setupDirectDmEncryptionForCurrentDevice({ conversationId = null, showError = true, checkPeerKey = true } = {}) {
   if (!isDirectDmE2eeEnabled()) return { ok: false, status: "runtime_disabled", reason: "runtime_disabled" };
-  if (directDmE2eeDeviceSetupPromise) return directDmE2eeDeviceSetupPromise;
-  const userId = normId(state.user?.id || "");
+  const owner = captureDmE2eeUiOwner();
+  const userId = owner.userId;
   const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
-  if (!userId) {
-    const error = new Error(getDmE2eeSetupFailureMessage("auth_missing"));
-    error.code = "auth_missing";
-    error.reason = "auth_missing";
-    setDmE2eeReadiness({ status: "failed", userId: "", identityStatus: "auth_missing", error });
-    return { ok: false, status: "auth_missing", reason: "auth_missing", error };
-  }
-
-  directDmE2eeDeviceSetupPromise = (async () => {
-    directDmE2eeDeviceSetupInFlight = true;
-    dmE2eeBootstrapPromise = null;
-    setDmE2eeReadiness({
-      status: "checking",
-      userId,
-      identityStatus: "setting_up",
-      error: null,
-    });
-    renderDmPrivacyUi();
-    applyDmComposerEditUi();
-
+  if (!owner.isCurrent()) return { ok: false, status: "auth_missing", reason: "auth_missing" };
+  if (directDmE2eeDeviceSetupPromise) return directDmE2eeDeviceSetupPromise;
+  if (settingsDmE2eeBackupRestoring || settingsDmE2eeBackupSaving || dmE2eeRestorePromptPromise) return { ok: false, status: "busy", reason: "busy" };
+  directDmE2eeDeviceSetupInFlight = true;
+  settingsDmE2eeBackupSetupInFlight = true;
+  if (dmE2eeReadiness.status !== "ready") setDmE2eeReadiness({ status: "checking", userId, identityStatus: "setting_up", error: null });
+  renderDmE2eeBackupSettingsUi();
+  const runSetup = async () => {
+    let priorStatus = "unknown";
     try {
+      // Do not race an earlier storage bootstrap, including a slow IndexedDB open.
+      if (dmE2eeBootstrapPending && dmE2eeBootstrapPromise) await dmE2eeBootstrapPromise;
+      assertDmE2eeUiOwner(owner);
       const caps = await ensureDmFeatureCaps(true);
-      if (!caps?.e2eeMessages) {
-        const error = new Error("Vault support is not available. Apply the Direct DM E2EE SQL patch and reload.");
-        error.code = "rpc_error";
-        error.reason = "rpc_error";
-        throw error;
+      assertDmE2eeUiOwner(owner);
+      if (!caps?.e2eeMessages) throw new Error("As mensagens encriptadas não estão disponíveis neste momento.");
+      const preflight = await getDmE2eeIdentityState({ userId, force: true });
+      assertDmE2eeUiOwner(owner);
+      priorStatus = String(preflight?.status || "error");
+      if (priorStatus === "error") throw preflight.error || new Error("Não foi possível verificar as chaves deste dispositivo.");
+      if (priorStatus === "missing_local_private") {
+        setDmE2eeReadiness({ status: "failed", userId, identityStatus: priorStatus, error: null });
+        return { ok: false, status: priorStatus, reason: priorStatus };
       }
-      const preflightIdentityState = await getDmE2eeIdentityState({ userId, force: true });
       let backupPassword = "";
-      if (
-        preflightIdentityState?.status === "not_initialized"
-        || preflightIdentityState?.status === "migration_requires_recovery"
-      ) {
+      const enrolling = priorStatus === "not_initialized" || priorStatus === "migration_requires_recovery";
+      if (enrolling) {
         backupPassword = await promptVaultProvisioningPassword();
-        if (!backupPassword) {
-          const error = new Error("Vault setup requires a recovery password.");
-          error.code = "dm_e2ee_recovery_required";
-          error.reason = "dm_e2ee_recovery_required";
-          throw error;
+        assertDmE2eeUiOwner(owner);
+        if (backupPassword === null) {
+          setDmE2eeReadiness({ status: "idle", userId, identityStatus: priorStatus, error: null });
+          return { ok: false, status: "cancelled", reason: "vault_recovery_cancelled", error: createVaultRecoveryCancelledError("setup") };
         }
       }
-      const identity = await awaitWithTimeout(
-        setupDmE2eeIdentityForCurrentDevice({
-          userId,
-          backupPassword,
-          passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL,
-          includeRecoveryKey: true,
-        }),
-        30000,
-        "dm e2ee identity setup"
-      );
-      if (String(identity?.status || "").trim().toLowerCase() !== "ready") {
-        const reason = normalizeDmE2eeSetupFailureReason(identity?.reason || identity?.status || identity?.error || "setup_failed");
-        const error = identity?.error instanceof Error ? identity.error : new Error(getDmE2eeSetupFailureMessage(reason));
-        error.code = String(error.code || reason);
-        error.reason = String(error.reason || reason);
-        throw error;
+      setDmE2eeReadiness({ status: "checking", userId, identityStatus: "setting_up", error: null });
+      // Keep ownership until the actual operation settles; a timeout cannot cancel crypto/storage writes.
+      const identity = await setupDmE2eeIdentityForCurrentDevice({
+        userId, backupPassword, passwordSource: DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL, includeRecoveryKey: false,
+      });
+      backupPassword = "";
+      assertDmE2eeUiOwner(owner);
+      if (identity?.status !== "ready") throw identity?.error || new Error(getDmE2eeSetupFailureMessage(identity?.status || "setup_failed"));
+      const identityState = await getDmE2eeIdentityState({ userId, force: true });
+      assertDmE2eeUiOwner(owner);
+      if (identityState?.status !== "ready" || !identityState.hasLocalPrivateKey || !identityState.hasRemotePublicKey) {
+        throw identityState?.error || new Error("Não foi possível validar a configuração neste dispositivo.");
       }
-      if (identity.recoveryKey) {
-        const savedKey = await showVaultRecoveryKeyOnce(identity.recoveryKey, { isUpdate: false });
-        if (!savedKey) {
-          logDmE2eeUi("recovery_key_not_confirmed_saved", { userId, conversationId: convId });
-        }
-      }
-
-      const identityState = await getDmE2eeIdentityState({ userId, force: true }).catch((error) => ({
-        status: "error",
-        error,
-      }));
-      const hasLocalPrivateKey = identityState?.hasLocalPrivateKey === true || !!identity?.privateKey;
-      const hasActivePublicKey = identityState?.hasRemotePublicKey === true || !!normId(identity?.keyId || "");
-      if (!hasLocalPrivateKey) {
-        const error = new Error(getDmE2eeSetupFailureMessage("local_private_key_store_failed"));
-        error.code = "local_private_key_store_failed";
-        error.reason = "local_private_key_store_failed";
-        throw error;
-      }
-      if (!hasActivePublicKey) {
-        const error = new Error(getDmE2eeSetupFailureMessage("public_key_upload_failed"));
-        error.code = "public_key_upload_failed";
-        error.reason = "public_key_upload_failed";
-        throw error;
-      }
-
       dmE2eeBootstrapPromise = Promise.resolve(identity);
-      setDmE2eeReadiness({
-        status: "ready",
-        userId,
-        identityStatus: "ready",
-        error: null,
-      });
-
-      const peerId = checkPeerKey && convId
-        ? await resolveConversationPeerUserId(convId).catch(() => normId(state.activeDm?.otherUserId || ""))
-        : "";
-      if (checkPeerKey && convId && peerId) {
-        await awaitWithTimeout(
-          refreshDirectDmPeerE2eeKeyStatus(convId, peerId, { force: true }),
-          5000,
-          "dm peer key check"
-        ).catch((error) => {
-          logDmE2eeUi("peer_key_check_after_setup_failed", {
-            conversationId: convId,
-            userId,
-            peerUserId: peerId,
-            message: String(error?.message || error || "unknown"),
-          });
-        });
+      setDmE2eeReadiness({ status: "ready", userId, identityStatus: "ready", error: null });
+      if (checkPeerKey && convId) {
+        const peerId = await resolveConversationPeerUserId(convId).catch(() => "");
+        assertDmE2eeUiOwner(owner);
+        if (peerId) void refreshDirectDmPeerE2eeKeyStatus(convId, peerId, { force: true });
       }
-      logDmE2eeUi("device_setup_ready", { conversationId: convId, userId });
-      renderDmPrivacyUi();
-      applyDmComposerEditUi();
-      return { ok: true, status: "ready", reason: "ready", identity, hasLocalPrivateKey, hasActivePublicKey };
+      if (enrolling && identity.backupCreated === true) {
+        showDmPrivacyToast("Mensagens encriptadas configuradas. Guarde a palavra-passe para recuperar o acesso noutro dispositivo.");
+      } else if (enrolling) {
+        showDmPrivacyToast("Esta conta já foi configurada noutra janela. Use a palavra-passe guardada nessa configuração; a palavra-passe introduzida agora não substituiu a anterior.");
+      }
+      return { ok: true, status: "ready", reason: "ready", identity, hasLocalPrivateKey: true, hasActivePublicKey: true };
     } catch (error) {
+      if (!owner.isCurrent() || isVaultRecoveryCancelledError(error)) return { ok: false, status: "cancelled", reason: "vault_recovery_cancelled", error };
       dmE2eeBootstrapPromise = null;
-      const reason = normalizeDmE2eeSetupFailureReason(error, "unknown_error");
-      const setupError = error instanceof Error ? error : new Error(String(error || getDmE2eeSetupFailureMessage(reason)));
-      setupError.code = String(setupError.code || reason);
-      setupError.reason = String(setupError.reason || reason);
-      if (!String(setupError.message || "").includes("Reason:")) {
-        setupError.message = getDmE2eeSetupFailureMessage(reason);
-      }
-      logDmE2eeUi("device_setup_failed", {
-        conversationId: convId,
-        userId,
-        reason,
-        code: String(setupError.code || ""),
-      });
-      setDmE2eeReadiness({
-        status: "failed",
-        userId,
-        identityStatus: reason,
-        error: setupError,
-      });
-      if (showError) showDmComposerNotice(getDmE2eeSetupFailureMessage(reason), { title: "Encryption" });
-      renderDmPrivacyUi();
-      applyDmComposerEditUi();
-      return { ok: false, status: "setup_failed", reason, error: setupError };
+      const reason = String(error?.code || "error");
+      setDmE2eeReadiness({ status: "failed", userId, identityStatus: "error", error });
+      if (showError) showDmComposerNotice(String(error?.message || "Não foi possível configurar as mensagens encriptadas."), { title: "Mensagens encriptadas" });
+      return { ok: false, status: "setup_failed", reason, error };
     } finally {
-      directDmE2eeDeviceSetupInFlight = false;
-      directDmE2eeDeviceSetupPromise = null;
-      renderDmPrivacyUi();
-      applyDmComposerEditUi();
+      if (owner.isCurrent()) {
+        directDmE2eeDeviceSetupInFlight = false;
+        settingsDmE2eeBackupSetupInFlight = false;
+        directDmE2eeDeviceSetupPromise = null;
+        renderDmPrivacyUi();
+        applyDmComposerEditUi();
+        renderDmE2eeBackupSettingsUi();
+      }
     }
-  })();
+  };
+  // Schedule the existing enrollment UI across tabs before preflight or credentials.
+  // The library's separate identity lock still owns crypto/storage mutations.
+  const operation = Promise.resolve().then(() => {
+    assertDmE2eeUiOwner(owner);
+    if (typeof navigator !== "undefined" && navigator.locks?.request) {
+      return navigator.locks.request(`altara-dm-e2ee-setup-ui:${userId}`, { mode: "exclusive", signal: owner.signal }, runSetup);
+    }
+    return runSetup();
+  }).catch((error) => {
+    if (!owner.isCurrent()) return { ok: false, status: "cancelled", reason: "vault_recovery_cancelled", error: createVaultRecoveryCancelledError("session-changed") };
+    directDmE2eeDeviceSetupInFlight = false;
+    settingsDmE2eeBackupSetupInFlight = false;
+    directDmE2eeDeviceSetupPromise = null;
+    setDmE2eeReadiness({ status: "failed", userId, identityStatus: "error", error });
+    renderDmE2eeBackupSettingsUi();
+    if (showError) showDmComposerNotice("Não foi possível iniciar a configuração. Tente novamente.", { title: "Mensagens encriptadas" });
+    return { ok: false, status: "setup_failed", reason: "error", error };
+  });
+  directDmE2eeDeviceSetupPromise = operation;
+  return operation;
+}
 
-  return directDmE2eeDeviceSetupPromise;
+function showDirectDmSecurityDetails() {
+  const owner = captureDmE2eeUiOwner();
+  if (!owner.isCurrent()) return;
+  const convId = getVisibleDmPrivacyConversationId();
+  if (!convId) return;
+  dmE2eeDetailsClose?.();
+  const privacyState = normalizeDmPrivacyState(getConversationDmPrivacyMeta(convId).dmPrivacyState);
+  const encrypted = privacyState === "private_active";
+  const pending = privacyState === "private_requested";
+  const modal = document.createElement("div");
+  modal.className = "modal altaraConfirmDialog";
+  modal.dataset.dmSecurityDetails = "true";
+  modal.setAttribute("aria-hidden", "false");
+  const status = document.getElementById("dmPrivacyBadge")?.textContent || "";
+  const explanation = encrypted
+    ? "As novas mensagens de texto desta conversa são encriptadas de ponta a ponta. Anexos não são suportados neste modo. Os eventos de sistema e de chamadas são separados. O histórico anterior mantém a proteção com que foi enviado."
+    : "As mensagens Sync são sincronizadas através da conta e não são encriptadas de ponta a ponta. O histórico encriptado anterior continua protegido. Para encriptar novas mensagens de texto, ambas as pessoas têm de aceitar.";
+  const modeAction = encrypted ? "switch-sync" : "request";
+  const modeLabel = encrypted ? "Mudar novas mensagens para Sync (sem encriptação de ponta a ponta)" : "Pedir mensagens encriptadas nesta conversa";
+  const canRequest = encrypted || isActiveDirectDmEncryptionEligible();
+  modal.innerHTML = `<div class="modal__backdrop" data-dm-security-close></div>
+    <div class="modalCard appConfirmModalCard altaraConfirmDialog__card" role="dialog" aria-modal="true" aria-labelledby="dmSecurityDetailsTitle">
+      <div class="modalTop"><div class="modalTitle" id="dmSecurityDetailsTitle">Segurança da conversa</div><button class="icon-btn" type="button" data-dm-security-close aria-label="Fechar">&times;</button></div>
+      <div class="modal__body appConfirmModalBody"><p><strong data-dm-security-status>${esc(status)}</strong></p><p>${esc(explanation)}</p>
+        <p>A identidade e a recuperação pertencem à sua conta. Cada dispositivo ou origem do navegador precisa de autorização própria.</p>
+        <button class="btn ghost" type="button" data-dm-e2ee-act="security-settings">Configuração e recuperação da conta</button>
+      </div>
+      <div class="appConfirmModalActions">${!pending && canRequest ? `<button class="btn ghost" type="button" data-dm-privacy-act="${modeAction}">${esc(modeLabel)}</button>` : ""}<button class="btn primary" type="button" data-dm-security-close>Fechar</button></div>
+    </div>`;
+  const cleanup = () => {
+    owner.signal.removeEventListener("abort", cleanup);
+    modal.remove();
+    if (dmE2eeDetailsClose === cleanup) { dmE2eeDetailsClose = null; dmE2eeDetailsContext = null; }
+  };
+  dmE2eeDetailsClose = cleanup;
+  dmE2eeDetailsContext = { conversationId: convId, userId: owner.userId, privacyState };
+  owner.signal.addEventListener("abort", cleanup, { once: true });
+  modal.addEventListener("click", (event) => { if (event.target?.closest?.("[data-dm-security-close]")) cleanup(); });
+  modal.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { event.preventDefault(); cleanup(); }
+    if (event.key === "Tab") {
+      const focusable = Array.from(modal.querySelectorAll("button"));
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  });
+  document.body.appendChild(modal);
+  modal.querySelector("button")?.focus();
 }
 
 function handleDirectDmE2eeActionClick(event) {
@@ -102574,12 +102942,16 @@ function handleDirectDmE2eeActionClick(event) {
   const actionEl = target?.closest?.('[data-dm-e2ee-act], [data-dm-privacy-act], [data-action="dm-e2ee-setup"]');
   if (!(actionEl instanceof HTMLElement)) return;
   const action = String(actionEl.dataset.dmPrivacyAct || actionEl.dataset.dmE2eeAct || actionEl.dataset.action || "").trim();
-  const allowedActions = new Set(["setup", "dm-e2ee-setup", "restore", "retry-peer", "request", "accept", "decline", "cancel", "switch-sync"]);
+  const allowedActions = new Set(["details", "security-settings", "retry-local", "setup", "dm-e2ee-setup", "restore", "retry-peer", "request", "accept", "decline", "cancel", "switch-sync"]);
   if (!allowedActions.has(action)) return;
   event.preventDefault();
   event.stopPropagation();
   if (actionEl instanceof HTMLButtonElement && actionEl.disabled) return;
   if (directDmPrivacyActionInFlight && action !== "retry-peer") return;
+  if (actionEl.closest("[data-dm-security-details]")) dmE2eeDetailsClose?.();
+  if (action === "details") { showDirectDmSecurityDetails(); return; }
+  if (action === "security-settings") { openProfileOverlay(); setSettingsTab("security"); return; }
+  if (action === "retry-local") { void ensureDmE2eeBootstrapStarted({ force: true }); return; }
   if (action === "restore") {
     void promptRestoreDmE2eeBackupFromDm();
     return;
@@ -102754,6 +103126,9 @@ function renderDmPrivacyUi() {
     if (actionSr) actionSr.textContent = titleText || resolvedLabel;
   };
 
+  if (dmE2eeDetailsClose && (dmE2eeDetailsContext?.conversationId !== convId
+    || dmE2eeDetailsContext?.userId !== String(state.user?.id || "")
+    || dmE2eeDetailsContext?.privacyState !== normalizeDmPrivacyState(getConversationDmPrivacyMeta(convId).dmPrivacyState))) dmE2eeDetailsClose();
   hideAction();
   if (!isDirectDmE2eeEnabled() || !isDirectDm) {
     hideBadge();
@@ -102765,9 +103140,9 @@ function renderDmPrivacyUi() {
   const privacyMeta = getConversationDmPrivacyMeta(convId);
   const privacyState = normalizeDmPrivacyState(privacyMeta.dmPrivacyState);
   const peerLabel = getActiveDirectDmPeerDisplayName(t("dm.privacy.peer_fallback", "your friend"));
-  let label = t("dm.privacy.badge.standard", "Sync");
+  let label = "Sync · sem E2EE";
   let className = "is-standard";
-  let title = t("dm.privacy.standard_title", "ALTARA Sync is protected, synced across devices, and recoverable if you lose access.");
+  let title = "Sync: mensagens sincronizadas através da conta, sem encriptação de ponta a ponta.";
   let bannerHtml = "";
   let bannerClass = "dmPrivacyBanner hidden";
   const busyAction = String(directDmPrivacyActionInFlight || "").trim().toLowerCase();
@@ -102819,9 +103194,9 @@ function renderDmPrivacyUi() {
   } else if (privacyState === "private_active") {
     const blockStatus = getDirectDmE2eeComposerBlockStatus();
     const peerStatus = getDirectDmPeerE2eeKeyStatus(convId);
-    label = t("dm.e2ee.badge.encrypted", "Vault");
+    label = "Texto encriptado";
     className = "is-private";
-    title = t("dm.e2ee.badge.title", "This DM is end-to-end encrypted. ALTARA cannot recover Vault messages without your recovery methods.");
+    title = "Novas mensagens de texto encriptadas de ponta a ponta. Anexos não são suportados neste modo; eventos de sistema e chamadas são separados.";
 
     if (blockStatus === "local_checking") {
       label = directDmE2eeDeviceSetupInFlight
@@ -102846,24 +103221,34 @@ function renderDmPrivacyUi() {
       }
     } else if (blockStatus === "local_missing") {
       const requiresMigration = dmE2eeReadiness.identityStatus === "migration_requires_recovery";
-      const localRecoveryAction = requiresMigration ? "setup" : "restore";
-      const localRecoveryActionLabel = requiresMigration
-        ? t("settings.security.dm_backup.create_btn", "Set up Vault Recovery")
+      const needsSetup = requiresMigration || dmE2eeReadiness.identityStatus === "not_initialized";
+      const localRecoveryAction = needsSetup ? "setup" : "restore";
+      const localRecoveryActionLabel = needsSetup
+        ? "Configurar mensagens encriptadas"
         : t("settings.security.dm_backup.restore_btn", "Restore Vault messages");
       visibleButtons = [localRecoveryAction];
-      label = t("dm.e2ee.badge.setup_needed", "Vault not set up");
+      label = needsSetup ? "Configuração necessária" : "Recuperação necessária";
       className = "is-warning";
       title = getDmE2eeRecoveryHintText();
       bannerClass = "dmPrivacyBanner is-warning";
       bannerHtml = [
         '<div class="dmPrivacyBanner__body">',
-          '<div class="dmPrivacyBanner__title">' + esc(t("dm.e2ee.active_local_missing.title", "Vault is not set up on this device")) + '</div>',
+          '<div class="dmPrivacyBanner__title">' + esc(needsSetup ? 'Configurar mensagens encriptadas' : 'Recuperar acesso neste dispositivo') + '</div>',
           '<div class="dmPrivacyBanner__text">' + esc(getDmE2eeRecoveryHintText()) + '</div>',
         '</div>',
         '<div class="dmPrivacyBanner__actions">',
           '<button class="btn primary" type="button" data-dm-e2ee-act="' + escAttr(localRecoveryAction) + '">' + esc(localRecoveryActionLabel) + '</button>',
         '</div>',
       ].join("");
+    } else if (blockStatus === "local_error") {
+      const corrupted = String(dmE2eeReadiness.error?.code || "") === "local_private_key_corrupt";
+      label = corrupted ? "Chave local inválida" : "Encriptação indisponível";
+      className = "is-warning";
+      title = corrupted
+        ? "A chave local está danificada ou é inválida. Conserve os dados existentes e use um método de recuperação guardado nas definições. Nenhuma identidade foi substituída."
+        : "Não foi possível validar as chaves deste dispositivo. O envio encriptado continua bloqueado; as mensagens não mudaram para Sync.";
+      bannerClass = "dmPrivacyBanner is-warning";
+      bannerHtml = '<div class="dmPrivacyBanner__body"><div class="dmPrivacyBanner__title">Não foi possível verificar a encriptação</div><div class="dmPrivacyBanner__text">' + esc(title) + '</div></div><div class="dmPrivacyBanner__actions"><button class="btn ghost" type="button" data-dm-e2ee-act="retry-local">Tentar novamente</button><button class="btn ghost" type="button" data-dm-e2ee-act="security-settings">Recuperação e detalhes</button></div>';
     } else if (blockStatus === "peer_checking") {
       label = t("dm.e2ee.badge.checking", "Checking Vault");
       className = "is-pending";
@@ -102904,6 +103289,10 @@ function renderDmPrivacyUi() {
     }
   }
 
+  const detailsStatus = document.querySelector("[data-dm-security-status]");
+  if (detailsStatus) detailsStatus.textContent = label;
+  // Mode changes and account recovery live behind the existing security control.
+  showAction("Segurança", "details", "Segurança e proteção desta conversa");
   if (badgeEl) {
     badgeEl.hidden = false;
     badgeEl.className = ("dmPrivacyBadge " + className).trim();
@@ -103083,11 +103472,11 @@ function bindDmRequestBannerUiOnce() {
       return;
     }
     if (action === "accept") {
-      const result = await acceptMessageReq(requestId);
+      const result = await acceptMessageRequestForDmNavigation(requestId);
       if (result?.ok && result?.conversationId) {
         activeMessageRequestPreviewId = "";
         hideDmRequestBanner();
-        await showDm(result.conversationId, { autoAnswerIfPending: true });
+        await showDm(result.conversationId, { autoAnswerIfPending: true, navigationIntent: result.navigationIntent });
       }
       return;
     }
@@ -103269,8 +103658,6 @@ function openDraftMessageRequest(draftIdOrUserId = "") {
   if (input) {
     input.value = String(row?.first_message_draft || "");
     clearDmComposerColorRanges();
-    clearDmComposerSizeRanges();
-    clearDmComposerStyleRanges();
   }
   applyDmComposerEditUi({ reason: "message-request-draft" });
   try { input?.focus?.({ preventScroll: true }); } catch (_) {
@@ -103355,13 +103742,15 @@ function applyDmComposerCapabilityUi() {
   const privateTextRequired = activeDmSupportsEncryptedTextOnly();
   const blockStatus = getDirectDmE2eeComposerBlockStatus();
   const e2eeReady = !privateTextRequired || !blockStatus;
+  const conversationLocked = shouldBlockDmAccess(state.user?.id || "", activeDmId || "");
   const requestPreviewActive = isActiveMessageRequestPreview();
   const requestDraftActive = isActiveMessageRequestDraft();
   const outgoingRequestPreviewActive = requestPreviewActive
     && String(state.activeDm?.requestDirection || "").trim().toLowerCase() === "outgoing";
 
   if (input) {
-    const nextDisabled = requestPreviewActive || (!requestDraftActive && !e2eeReady);
+    // Key readiness gates transmission in the send pipeline, not local drafting.
+    const nextDisabled = requestPreviewActive || conversationLocked;
     if (input.disabled !== nextDisabled) input.disabled = nextDisabled;
     if (!dmEditTarget?.id) {
       const nextPlaceholder = requestDraftActive
@@ -103369,7 +103758,7 @@ function applyDmComposerCapabilityUi() {
         : (requestPreviewActive
           ? (outgoingRequestPreviewActive ? "Waiting for them to accept." : "Accept this request to reply.")
           : (privateTextRequired
-            ? getDirectDmE2eeComposerPlaceholder(blockStatus)
+            ? t("dm.privacy.private_input", "Vault message...")
             : t("dm.privacy.standard_input", "Message...")));
       if (input.placeholder !== nextPlaceholder) input.placeholder = nextPlaceholder;
     }
@@ -103399,7 +103788,12 @@ function applyDmComposerCapabilityUi() {
     else gifBtn.removeAttribute("aria-disabled");
   }
   if (sendBtn) {
-    sendBtn.disabled = requestPreviewActive || (!requestDraftActive && privateTextRequired && !e2eeReady);
+    sendBtn.disabled = requestPreviewActive || conversationLocked || (!requestDraftActive && privateTextRequired && ["local_missing", "local_error", "peer_missing", "peer_error"].includes(blockStatus));
+  }
+  const currentStatus = document.getElementById("dmComposerInlineStatus");
+  if (!currentStatus || currentStatus.dataset.encryptionStatus === "1") {
+    const status = setDmComposerInlineStatus(privateTextRequired && blockStatus ? getDirectDmE2eeComposerPlaceholder(blockStatus) : "");
+    if (status) status.dataset.encryptionStatus = "1";
   }
 }
 
@@ -103833,84 +104227,35 @@ async function ensureDmFeatureCaps(force = false) {
 }
 
 function ensureDmE2eeBootstrapStarted({ force = false } = {}) {
-  if (!isDirectDmE2eeEnabled()) {
-    dmE2eeBootstrapPromise = null;
-    setDmE2eeReadiness({
-      status: "idle",
-      userId: state.user?.id || "",
-      identityStatus: "runtime_disabled",
-      error: null,
-    });
-    return Promise.resolve({
-      status: "runtime_disabled",
-    });
-  }
-  if (!state.user?.id) return Promise.resolve(null);
-  if (!force && dmE2eeBootstrapPromise) return dmE2eeBootstrapPromise;
-
-  dmE2eeBootstrapPromise = (async () => {
-    const caps = await ensureDmFeatureCaps();
-    if (!caps?.e2eeMessages) return null;
-    setDmE2eeReadiness({
-      status: "checking",
-      userId: state.user.id,
-      identityStatus: "",
-      error: null,
-    });
-    const identity = await ensureDmE2eeIdentity({ userId: state.user.id });
-    if (
-      identity?.status === "missing_local_private"
-      || identity?.status === "not_initialized"
-      || identity?.status === "migration_requires_recovery"
-    ) {
-      console.warn("dm e2ee identity is not ready on this device");
-      setDmE2eeReadiness({
-        status: "failed",
-        userId: state.user.id,
-        identityStatus: String(identity.status),
-        error: identity.error || new Error(
-          identity.status === "not_initialized"
-            ? "Set up Vault Recovery before creating this device identity."
-            : (identity.status === "migration_requires_recovery"
-              ? "Set a Vault Recovery Password to securely migrate this device's legacy Vault identity."
-              : getDmE2eeRecoveryHintText())
-        ),
-      });
+  const owner = captureDmE2eeUiOwner();
+  if (!isDirectDmE2eeEnabled()) return Promise.resolve({ status: "runtime_disabled" });
+  if (!owner.isCurrent()) return Promise.resolve(null);
+  if (dmE2eeBootstrapPromise && (dmE2eeBootstrapPending || !force)) return dmE2eeBootstrapPromise;
+  if (directDmE2eeDeviceSetupPromise) return directDmE2eeDeviceSetupPromise.then((result) => result?.identity || { status: result?.status || "error" });
+  dmE2eeBootstrapPending = true;
+  if (dmE2eeReadiness.status !== "ready") setDmE2eeReadiness({ status: "checking", userId: owner.userId, identityStatus: "", error: null });
+  const operation = (async () => {
+    try {
+      const caps = await ensureDmFeatureCaps(force);
+      assertDmE2eeUiOwner(owner);
+      if (!caps?.e2eeMessages) throw new Error("Não foi possível verificar a disponibilidade das mensagens encriptadas.");
+      const identity = await ensureDmE2eeIdentity({ userId: owner.userId });
+      assertDmE2eeUiOwner(owner);
+      const identityStatus = String(identity?.status || "error");
+      if (identityStatus === "error") throw identity?.error || new Error("Não foi possível verificar as chaves deste dispositivo.");
+      setDmE2eeReadiness({ status: identityStatus === "ready" ? "ready" : "failed", userId: owner.userId, identityStatus, error: identity?.error || null });
+      return identity;
+    } catch (error) {
+      if (!owner.isCurrent()) return { status: "cancelled" };
+      dmE2eeBootstrapPromise = null;
+      setDmE2eeReadiness({ status: "failed", userId: owner.userId, identityStatus: "error", error });
+      return { status: "error", error };
+    } finally {
+      if (owner.isCurrent()) dmE2eeBootstrapPending = false;
     }
-    if (identity?.status === "error") {
-      setDmE2eeReadiness({
-        status: "failed",
-        userId: state.user.id,
-        identityStatus: "error",
-        error: identity.error || new Error("Could not initialize DM E2EE"),
-      });
-      throw identity.error || new Error("Could not initialize DM E2EE");
-    }
-    if (identity?.status === "ready") {
-      setDmE2eeReadiness({
-        status: "ready",
-        userId: state.user.id,
-        identityStatus: "ready",
-        error: null,
-      });
-    }
-    return identity;
-  })().catch((error) => {
-    console.warn("dm e2ee bootstrap failed", error?.message || error);
-    dmE2eeBootstrapPromise = null;
-    setDmE2eeReadiness({
-      status: "failed",
-      userId: state.user?.id || "",
-      identityStatus: "error",
-      error: error instanceof Error ? error : new Error(String(error || "Could not initialize DM E2EE")),
-    });
-    return {
-      status: "error",
-      error,
-    };
-  });
-
-  return dmE2eeBootstrapPromise;
+  })();
+  dmE2eeBootstrapPromise = operation;
+  return operation;
 }
 
 function isDirectDmE2eePlaintextPassthroughParsedMessage(parsed = {}) {
@@ -103922,8 +104267,12 @@ async function buildConversationMessageInsertPayload({
   content,
   contentKind = "",
   replyToId = null,
+  owner = captureDmE2eeUiOwner(),
+  requireEncrypted = false,
 } = {}) {
+  assertDmE2eeUiOwner(owner);
   await ensureDmFeatureCaps();
+  assertDmE2eeUiOwner(owner);
   const convId = normId(conversationId);
   const declaredContentKind = String(contentKind || "").trim().toLowerCase();
   const serializedContent = declaredContentKind === "text"
@@ -103935,13 +104284,15 @@ async function buildConversationMessageInsertPayload({
 
   const payload = {
     conversation_id: convId,
-    user_id: state.user.id,
+    user_id: owner.userId,
   };
   if (dmFeatureCaps.advancedMessages && replyToId) {
     payload.reply_to_id = replyToId;
   }
 
   const applyPlaintextPayload = () => {
+    assertDmE2eeUiOwner(owner);
+    if (requireEncrypted) throw new Error("Encryption state changed. Review this conversation before retrying.");
     payload.content = serializedContent;
     if (dmFeatureCaps.e2eeMessages) {
       payload.message_mode = "plaintext";
@@ -103950,6 +104301,7 @@ async function buildConversationMessageInsertPayload({
   };
 
   const conversationKind = await getConversationKindForNotificationRouting(convId);
+  assertDmE2eeUiOwner(owner);
   if (conversationKind === "group" || conversationKind === "server") {
     return applyPlaintextPayload();
   }
@@ -103960,7 +104312,15 @@ async function buildConversationMessageInsertPayload({
     return applyPlaintextPayload();
   }
 
-  const privacyMeta = await resolveConversationDmPrivacyMeta(convId);
+  let privacyMeta = await resolveConversationDmPrivacyMeta(convId);
+  assertDmE2eeUiOwner(owner);
+  if (["opening", "pending_fetch"].includes(privacyMeta.dmPrivacySource)) {
+    privacyMeta = await resolveConversationDmPrivacyMeta(convId, { force: true });
+    assertDmE2eeUiOwner(owner);
+    if (["opening", "pending_fetch"].includes(privacyMeta.dmPrivacySource)) {
+      throw new Error("Could not verify conversation encryption. Your pending message can be retried.");
+    }
+  }
   if (normalizeDmPrivacyState(privacyMeta.dmPrivacyState) !== "private_active") {
     return applyPlaintextPayload();
   }
@@ -103980,6 +104340,7 @@ async function buildConversationMessageInsertPayload({
   let readiness = null;
   try {
     readiness = await assertDmPrivateTextReadyForConversation(convId, { reason: "text_send" });
+  assertDmE2eeUiOwner(owner);
   } catch (error) {
     logDirectDmE2eeSendDebug({
       conversationId: convId,
@@ -103993,6 +104354,7 @@ async function buildConversationMessageInsertPayload({
   }
   const hasLocalPrivateKey = String(readiness?.status || "").trim().toLowerCase() === "ready";
   const otherUserId = await resolveConversationPeerUserId(convId);
+  assertDmE2eeUiOwner(owner);
   if (!otherUserId) {
     logDirectDmE2eeSendDebug({
       conversationId: convId,
@@ -104005,6 +104367,7 @@ async function buildConversationMessageInsertPayload({
     throw new Error("Could not resolve the DM recipient for encryption.");
   }
   const peerStatus = await refreshDirectDmPeerE2eeKeyStatus(convId, otherUserId, { force: true });
+  assertDmE2eeUiOwner(owner);
   if (peerStatus?.status !== "ready") {
     logDirectDmE2eeSendDebug({
       conversationId: convId,
@@ -104019,10 +104382,11 @@ async function buildConversationMessageInsertPayload({
 
   const encryptedPayload = await buildEncryptedDmMessagePayload({
     conversationId: convId,
-    userId: state.user.id,
+    userId: owner.userId,
     otherUserId,
     content: serializedContent,
   });
+  assertDmE2eeUiOwner(owner);
   if (dmFeatureCaps.dmPrivacyEpoch) {
     encryptedPayload.dm_privacy_epoch = normalizeDmPrivacyEpoch(
       privacyMeta.dmPrivacyEpoch,
@@ -104919,7 +105283,8 @@ function playMessageSentCueOnce(sendId = "", messageId = "") {
   return true;
 }
 
-async function insertMessageRowAndHydrate(insertPayload, conversationId, { sendId = "", contentLength = null } = {}) {
+async function insertMessageRowAndHydrate(insertPayload, conversationId, { sendId = "", contentLength = null, owner = null } = {}) {
+  if (owner) assertDmE2eeUiOwner(owner);
   const convId = normId(conversationId || "");
   const startedAt = Date.now();
   const permissionContext = getServerPermissionContextForConversation(convId);
@@ -104992,6 +105357,7 @@ async function insertMessageRowAndHydrate(insertPayload, conversationId, { sendI
     2500,
     "message insert debug snapshot"
   ).catch((error) => ({ conversationId: convId, snapshotError: String(error?.message || error || "") }));
+  if (owner) assertDmE2eeUiOwner(owner);
   logMessageInsertDebugSnapshot("insert_payload", debugSnapshot);
 
   let insertResult = null;
@@ -105019,6 +105385,7 @@ async function insertMessageRowAndHydrate(insertPayload, conversationId, { sendI
     });
     return { row: null, error: insertError instanceof Error ? insertError : new Error(String(insertError || "Message insert failed")) };
   }
+  if (owner) assertDmE2eeUiOwner(owner);
   const { data, error } = insertResult || {};
 
   if (error) {
@@ -105052,6 +105419,7 @@ async function insertMessageRowAndHydrate(insertPayload, conversationId, { sendI
       2500,
       "message hydrate after insert"
     );
+    if (owner) assertDmE2eeUiOwner(owner);
     recordMessageSendState("insert_success", {
       conversationId: convId,
       messageId: resolvedRow?.id || data?.id || "",
@@ -105066,6 +105434,7 @@ async function insertMessageRowAndHydrate(insertPayload, conversationId, { sendI
     });
     return { row: resolvedRow || data || null, error: null };
   } catch (hydrateError) {
+    if (owner) assertDmE2eeUiOwner(owner);
     console.warn("message hydration failed after insert", hydrateError?.message || hydrateError);
     recordMessageSendState("insert_success_hydration_failed", {
       conversationId: convId,
@@ -106626,6 +106995,7 @@ function clearConversationMessageMemoryCache({ userSwitch = false } = {}) {
   dmLastRenderedMessagesSignature = "";
   dmLastRenderedMessagesConversationId = "";
   if (userSwitch) {
+    resetDmE2eeUiSession();
     for (const timer of dmMessagePersistentWriteTimers.values()) clearTimeout(timer);
     dmMessagePersistentWriteTimers.clear();
   }
@@ -114732,7 +115102,7 @@ function applyDmComposerEditUi(options = {}) {
         : (isEditing
           ? t("dm.privacy.edit_input", "Edit message...")
           : (privateTextRequired
-            ? getDirectDmE2eeComposerPlaceholder()
+            ? t("dm.privacy.private_input", "Vault message...")
             : t("dm.privacy.standard_input", "Message..."))));
     if (input.placeholder !== nextPlaceholder) input.placeholder = nextPlaceholder;
   }
@@ -116464,37 +116834,169 @@ function bindDmComposerFormatToolbarOnce(inputEl) {
   });
 }
 
-function focusDmComposerSoon({ attempts = 3, delayMs = 42 } = {}) {
-  let triesLeft = Math.max(1, Number(attempts) || 1);
-  const delay = Math.max(16, Number(delayMs) || 42);
+let dmComposerNavigationFocus = null;
+let dmComposerNavigationFocusListenersBound = false;
 
+function cancelDmComposerNavigationFocus() {
+  const pending = dmComposerNavigationFocus;
+  dmComposerNavigationFocus = null;
+  if (pending?.frame) cancelAnimationFrame(pending.frame);
+  if (pending?.timer) clearTimeout(pending.timer);
+}
+
+function armDmComposerNavigationFocus(navigationIntent, conversationId = "") {
+  cancelDmComposerNavigationFocus();
+  const userId = normId(state.user?.id || "");
+  if (!userId || !isMainContentNavigationIntentCurrent(navigationIntent)) return;
+  if (!dmComposerNavigationFocusListenersBound) {
+    dmComposerNavigationFocusListenersBound = true;
+    const cancelForNewInteraction = (event) => {
+      const pending = dmComposerNavigationFocus;
+      if (!pending || pending.arming) return;
+      const input = document.getElementById("dmInput");
+      if (event.target === input) return;
+      cancelDmComposerNavigationFocus();
+    };
+    document.addEventListener("pointerdown", cancelForNewInteraction, true);
+    document.addEventListener("keydown", cancelForNewInteraction, true);
+    document.addEventListener("focusin", cancelForNewInteraction, true);
+  }
+  const pending = {
+    owner: captureDmE2eeUiOwner(),
+    userId,
+    navigationIntent,
+    conversationId: normId(conversationId || ""),
+    arming: true,
+    frame: 0,
+    timer: 0,
+  };
+  dmComposerNavigationFocus = pending;
+  queueMicrotask(() => { if (dmComposerNavigationFocus === pending) pending.arming = false; });
+}
+
+async function acceptMessageRequestForDmNavigation(requestId) {
+  const owner = captureDmE2eeUiOwner();
+  const userId = normId(state.user?.id || "");
+  const navigationIntent = beginMainContentNavigationIntent({ reason: "accept-message-request" });
+  const result = await acceptMessageReq(requestId);
+  if (!owner.isCurrent() || normId(state.user?.id || "") !== userId || !isMainContentNavigationIntentCurrent(navigationIntent)) return null;
+  return result ? { ...result, navigationIntent } : result;
+}
+
+function setDmComposerDraftOwner(input, conversationId = "") {
+  if (!input?.dataset) return;
+  input.dataset.dmDraftUserId = normId(state.user?.id || "");
+  input.dataset.dmDraftConversationId = normId(conversationId || "");
+  input.dataset.dmDraftNavigationIntentSeq = String(dmOpenIntentSeq || 0);
+}
+
+function activatePrivateDmComposerDraft(conversationId = "", navigationIntent = null) {
+  const input = document.getElementById("dmInput");
+  const userId = normId(state.user?.id || "");
+  if (!input || !userId) return false;
+  const convId = normId(conversationId || "");
+  const hasOwner = Object.prototype.hasOwnProperty.call(input.dataset, "dmDraftUserId");
+  const previousUserId = hasOwner ? normId(input.dataset.dmDraftUserId || "") : userId;
+  const previousConversationId = hasOwner
+    ? normId(input.dataset.dmDraftConversationId || "")
+    : normId(activeDmId || state.activeDm?.conversationId || "");
+  const blocked = !!convId && shouldBlockDmAccess(userId, convId);
+  const sameOwner = hasOwner && previousUserId === userId && previousConversationId === convId
+    && (convId || Number(input.dataset.dmDraftNavigationIntentSeq || 0) === Number(navigationIntent?.openIntentSeq || dmOpenIntentSeq || 0));
+  if (sameOwner && (input.dataset.dmDraftRestorePending !== "1" || blocked)) return false;
+  const pendingHandoff = !!(hasOwner && previousUserId === userId && !previousConversationId && convId
+    && navigationIntent && isMainContentNavigationIntentCurrent(navigationIntent)
+    && Number(input.dataset.dmDraftNavigationIntentSeq || 0) === Number(navigationIntent.openIntentSeq || 0));
+  if (previousUserId === userId && previousConversationId) {
+    persistAltaraOfflineComposerDraft(previousConversationId, input.value || "");
+  }
+  if (blocked) {
+    input.value = "";
+    setDmComposerDraftOwner(input, convId);
+    input.dataset.dmDraftRestorePending = "1";
+    return true;
+  }
+  delete input.dataset.dmDraftRestorePending;
+  if (convId) restoreAltaraOfflineComposerDraft(convId, input, { replace: !pendingHandoff });
+  else if (!pendingHandoff) input.value = "";
+  setDmComposerDraftOwner(input, convId);
+  return !pendingHandoff;
+}
+
+function resetPrivateDmComposerForNavigation() {
+  dmReplyTarget = null;
+  dmEditTarget = null;
+  clearDmComposerColorRanges();
+  renderDmReplyBar();
+  closeMessageMenu();
+  closeDmListMenus();
+  closeEmojiPicker();
+  closeUserCardModal();
+  closeDmCreateGroupModal();
+  closeDmGroupEditModal();
+  closeServerInviteModal();
+  closeServerSettingsModal();
+  closeDmAttachmentModal();
+  clearPendingDmAttachments();
+  resetDmDragDropState();
+}
+
+function focusDmComposerSoon({ conversationId = "", navigationIntent = null, attempts = 3, delayMs = 42 } = {}) {
+  const pending = dmComposerNavigationFocus;
+  const convId = normId(conversationId || "");
+  if (!pending || !convId || !navigationIntent || pending.frame || pending.timer) return;
+  if (!isMainContentNavigationIntentCurrent(navigationIntent)
+    || Number(pending.navigationIntent.openIntentSeq) !== Number(navigationIntent.openIntentSeq)
+    || Number(pending.navigationIntent.navigationVersion) !== Number(navigationIntent.navigationVersion)) return;
+  if (pending.conversationId && pending.conversationId !== convId) return;
+  pending.conversationId = convId;
+  const input = document.getElementById("dmInput");
+  let triesLeft = Math.max(1, Math.min(3, Number(attempts) || 1));
+  const visible = (element) => !!(element && !element.hidden && element.getClientRects().length
+    && getComputedStyle(element).visibility !== "hidden");
   const tryFocus = () => {
-    const input = document.getElementById("dmInput");
-    if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) return;
-    if (input.disabled || input.readOnly) return;
-
-    try {
-      input.focus({ preventScroll: true });
-    } catch (_) {
-      try { input.focus(); } catch (_) {}
-    }
-
-    if (document.activeElement === input) {
-      try {
-        const end = String(input.value || "").length;
-        input.setSelectionRange(end, end);
-      } catch (_) {}
+    pending.frame = 0;
+    pending.timer = 0;
+    if (dmComposerNavigationFocus !== pending) return;
+    if (!pending.owner.isCurrent() || normId(state.user?.id || "") !== pending.userId
+      || !isMainContentNavigationIntentCurrent(pending.navigationIntent)
+      || normId(activeDmId || "") !== convId
+      || document.getElementById("dmInput") !== input
+      || input?.dataset?.dmDraftUserId !== pending.userId
+      || normId(input?.dataset?.dmDraftConversationId || "") !== convId
+      || String(state.activeDm?.kind || "").toLowerCase() === "server"
+      || !visible(input) || !visible(document.getElementById("dmMain"))) {
+      cancelDmComposerNavigationFocus();
       return;
     }
-
+    const blockedByDialog = Array.from(document.querySelectorAll('.modal, [role="dialog"], [role="menu"], .msgMenu, .contextMenu'))
+      .some((element) => element.getAttribute("aria-hidden") !== "true" && visible(element));
+    if (blockedByDialog) {
+      cancelDmComposerNavigationFocus();
+      return;
+    }
+    // A locally locked shell is not usable yet. Its existing unlock path may
+    // mount it again; any intervening dialog/field interaction cancels this intent.
+    if (shouldBlockDmAccess(pending.userId, convId)) return;
+    if (!input.disabled && !input.readOnly) {
+      if (document.activeElement === input) {
+        cancelDmComposerNavigationFocus();
+        return;
+      }
+      try { input.focus({ preventScroll: true }); } catch (_) { try { input.focus(); } catch (_) {} }
+      if (document.activeElement === input) {
+        cancelDmComposerNavigationFocus();
+        return;
+      }
+    }
     triesLeft -= 1;
-    if (triesLeft <= 0) return;
-    setTimeout(() => {
-      requestAnimationFrame(tryFocus);
-    }, delay);
+    if (triesLeft <= 0) { cancelDmComposerNavigationFocus(); return; }
+    pending.timer = setTimeout(() => {
+      pending.timer = 0;
+      if (dmComposerNavigationFocus === pending) pending.frame = requestAnimationFrame(tryFocus);
+    }, Math.max(16, Number(delayMs) || 42));
   };
-
-  requestAnimationFrame(tryFocus);
+  tryFocus();
 }
 
 function clearDmEditTarget({ clearInput = false, focusInput = false, render = true } = {}) {
@@ -119088,8 +119590,8 @@ function ensureDmUserListMenu() {
         return;
       }
       if (currentAction?.action === "accept_message_request" && currentAction?.requestId) {
-        const result = await acceptMessageReq(currentAction.requestId);
-        if (result?.ok && result?.conversationId) await showDm(result.conversationId, { autoAnswerIfPending: true });
+        const result = await acceptMessageRequestForDmNavigation(currentAction.requestId);
+        if (result?.ok && result?.conversationId) await showDm(result.conversationId, { autoAnswerIfPending: true, navigationIntent: result.navigationIntent });
         return;
       }
       if (currentAction?.action === "pending_message_request" && currentAction?.requestId) {
@@ -119125,8 +119627,8 @@ function ensureDmUserListMenu() {
       closeDmListMenus();
       const requestId = String(actionBtn.getAttribute("data-user-list-request-id") || "").trim();
       if (!requestId) return;
-      const result = await acceptMessageReq(requestId);
-      if (result?.ok && result?.conversationId) await showDm(result.conversationId, { autoAnswerIfPending: true });
+      const result = await acceptMessageRequestForDmNavigation(requestId);
+      if (result?.ok && result?.conversationId) await showDm(result.conversationId, { autoAnswerIfPending: true, navigationIntent: result.navigationIntent });
       return;
     }
     if (action === "ignore_message_request") {
@@ -125478,13 +125980,7 @@ function renderUserCard(profile = {}, { loading = false, forceWidgetPanelRender 
   const bio = String(profile?.bio || "").trim();
   const avatarUrl = resolveProfileAvatarUrl(profile?.avatar_url || profile?.avatarUrl || "", "");
   const status = getPresenceStatusForUser(id);
-  const statusLabel = status === "dnd"
-    ? "ocupado"
-    : status === "idle"
-      ? "ausente"
-      : status === "online"
-        ? "online"
-        : "offline";
+  const statusLabel = getPresenceStatusLabel(status, { self: id === normId(state.user?.id || "") });
   const gameActivity = getPresenceActivityForUser(id);
   const selfId = String(state.user?.id || "").trim();
   const isSelf = id === selfId;
@@ -126865,9 +127361,9 @@ function bindUserCardModalOnce() {
       return;
     }
     if (action?.action === "accept_message_request" && action?.requestId) {
-      const result = await acceptMessageReq(action.requestId);
+      const result = await acceptMessageRequestForDmNavigation(action.requestId);
       if (result?.ok && result?.conversationId) {
-        await showDm(result.conversationId, { autoAnswerIfPending: true });
+        await showDm(result.conversationId, { autoAnswerIfPending: true, navigationIntent: result.navigationIntent });
         closeUserCardModal();
       } else if (result?.ok) {
         refreshOpenUserCard();
@@ -131771,6 +132267,7 @@ function setDmComposerInlineStatus(message = "", { kind = "info" } = {}) {
   }
   status.className = `dmComposerInlineStatus is-${String(kind || "info").replace(/[^a-z0-9_-]/gi, "") || "info"}`;
   status.style.color = String(kind || "") === "offline" ? "#e6c890" : "rgba(232,222,208,.74)";
+  delete status.dataset.encryptionStatus;
   status.textContent = text;
   return status;
 }
@@ -131897,6 +132394,7 @@ async function uploadDmFileList(files, {
   sendBtn = null,
   manageUi = true,
   replyToIdOverride = null,
+  conversationId = activeDmId,
 } = {}) {
   const list = Array.from(files || []).filter(Boolean);
   const uploadItems = list
@@ -131930,7 +132428,7 @@ async function uploadDmFileList(files, {
     failedEntries: uploadItems,
   };
 
-  const targetConversationId = normId(activeDmId);
+  const targetConversationId = normId(conversationId);
   if (!targetConversationId) return {
     total: 0,
     failed: uploadItems.length,
@@ -135406,6 +135904,8 @@ function wireDmComposer() {
   const attachBtn = document.getElementById("btnAttach");
   const fileInput = document.getElementById("dmFileInput");
   if (!input || !send) return;
+  if (input.dataset.composerBound === "1") return;
+  input.dataset.composerBound = "1";
   bindDmMessageActions();
   bindEmojiPickerOnce();
   bindDmEmojiShortcodeMenuOnce();
@@ -135436,8 +135936,16 @@ function wireDmComposer() {
     }
   }
   let isSending = false;
+  let draftRevision = 0;
 
   async function doSend() {
+    if (input.disabled || input.readOnly) return;
+    const owner = captureDmE2eeUiOwner();
+    const submittedRevision = draftRevision;
+    const submittedNavigationIntent = dmOpenIntentSeq;
+    const submittedReply = dmReplyTarget ? Object.freeze({ ...dmReplyTarget }) : null;
+    const submittedAttachments = dmPendingAttachments.map((item) => Object.freeze({ ...item }));
+    let submissionAccepted = false;
     closeDmEmojiShortcodeMenu();
     const rawInputText = String(input.value || "");
     persistAltaraOfflineComposerDraft(activeDmId || state.activeDm?.conversationId || "", rawInputText);
@@ -135461,6 +135969,19 @@ function wireDmComposer() {
     const editingActive = !!(editingTargetId && editingConversationId && editingConversationId === normId(activeDmId || ""));
     const draftRequestActive = isActiveMessageRequestDraft();
     const convId = normId(activeDmId || "");
+    const ownsComposer = () => owner.isCurrent()
+      && dmOpenIntentSeq === submittedNavigationIntent
+      && normId(activeDmId || "") === convId
+      && document.getElementById("dmInput") === input;
+    const clearSubmittedDraft = () => {
+      submissionAccepted = true;
+      if (!ownsComposer() || draftRevision !== submittedRevision || input.value !== expandedInputText) return;
+      input.value = "";
+      draftRevision += 1;
+      clearDmComposerColorRanges();
+      persistAltaraOfflineComposerDraft(convId, "");
+      updateDmComposerPreview();
+    };
     const permissionContext = getActiveMessageComposerPermissionContext();
     const permissionState = activeMessageComposerPermissionState || {};
     const permissionStateIsFresh = permissionContext.isServerTextChannel && permissionState.key === permissionContext.key;
@@ -135508,6 +136029,7 @@ function wireDmComposer() {
     const restoreComposerSendUi = (reason = "restore") => {
       if (!usesBlockingComposerSend) return;
       isSending = false;
+      if (!ownsComposer()) return;
       if (attachBtn) {
         attachBtn.disabled = oldAttachDisabled;
         attachBtn.innerHTML = oldAttachText || "&#x1F4CE;";
@@ -135534,7 +136056,7 @@ function wireDmComposer() {
       send.disabled = true;
       send.textContent = "A enviar...";
       sendUiWatchdogTimer = setTimeout(() => {
-        if (!isSending) return;
+        if (!isSending || !ownsComposer()) return;
         clearStaleOptimisticSendingMessages({ reason: "message-send-timeout", maxAgeMs: ALTARA_MESSAGE_SEND_UNLOCK_TIMEOUT_MS });
         restoreComposerSendUi("send_timeout_unlock");
         showDmComposerNotice("Message send is taking too long. The composer was unlocked; retry if the message does not appear.", { title: "Messages" });
@@ -135545,11 +136067,7 @@ function wireDmComposer() {
       if (draftRequestActive) {
         const sendRes = await sendActiveDraftMessageRequest(text);
         if (!sendRes?.ok) throw (sendRes?.error || new Error("Could not send this message request."));
-        input.value = "";
-        persistAltaraOfflineComposerDraft(convId, "");
-        clearDmComposerColorRanges();
-        clearDmComposerSizeRanges();
-        clearDmComposerStyleRanges();
+        clearSubmittedDraft();
         return;
       }
       if (editingActive) {
@@ -135589,15 +136107,13 @@ function wireDmComposer() {
         const previousMessageId = idx >= 0 ? normId(dmMessagesCache[idx]?.id || "") : "";
         if (idx >= 0) dmMessagesCache[idx] = { ...dmMessagesCache[idx], ...(resolvedRow || data || {}) };
         updateActiveConversationMessageCache({ persist: true, source: "message-edit" });
-        input.value = "";
-        persistAltaraOfflineComposerDraft(convId, "");
-        clearDmComposerColorRanges();
-        clearDmEditTarget({ clearInput: false, focusInput: true, render: true });
+        clearSubmittedDraft();
+        if (ownsComposer() && dmEditTarget?.id === editingTargetId) clearDmEditTarget({ clearInput: false, focusInput: false, render: true });
         markLocalDmOutgoingActivity();
         renderMessagesFromCache({ keepBottom: false, reason: "message-edit" });
       } else if (text) {
         const plainCommandText = String(expandedInputText || "").trim();
-        if (!hasPendingAttachments && !dmReplyTarget?.id) {
+        if (!hasPendingAttachments && !submittedReply?.id && getBotCommandServerTextContext(convId)) {
           const commandResult = await tryDispatchBotSlashCommandFromComposer(convId, plainCommandText);
           if (commandResult === true) {
             clearBotCommandComposerAfterHandled(input);
@@ -135606,31 +136122,34 @@ function wireDmComposer() {
           }
           if (commandResult === "blocked") return;
         }
-        const replyToId = dmReplyTarget?.id || null;
-        const sendPromise = sendPlainTextMessageToConversation(convId, text, { replyToId });
-        input.value = "";
-        clearDmComposerColorRanges();
-        clearDmComposerSizeRanges();
-        clearDmComposerStyleRanges();
-        persistAltaraOfflineComposerDraft(convId, "");
+        if (!owner.isCurrent()) return;
+        const replyToId = submittedReply?.id || null;
+        const sendPromise = sendPlainTextMessageToConversation(convId, text, { replyToId, onAccepted: clearSubmittedDraft });
         const sendRes = await altaraWithTimeout(sendPromise, ALTARA_MESSAGE_SEND_UNLOCK_TIMEOUT_MS + 1500, "composer message send");
-        if (!sendRes?.ok) throw (sendRes?.error || new Error("Falhou o envio da mensagem."));
+        if (sendRes?.cancelled) return;
+        if (!sendRes?.ok) {
+          if (!submissionAccepted && ownsComposer()) setDmComposerInlineStatus(sendRes?.error?.message || "Could not start sending. Your draft is kept.", { kind: "error" });
+          throw (sendRes?.error || new Error("Falhou o envio da mensagem."));
+        }
       }
 
       if (!editingActive && hasPendingAttachments) {
-        const queued = dmPendingAttachments.slice();
-        const result = await uploadDmFileList(queued, { attachBtn, sendBtn: send, manageUi: false });
+        if (!owner.isCurrent()) return;
+        const queued = submittedAttachments;
+        const result = await uploadDmFileList(queued, { attachBtn, sendBtn: send, manageUi: false, conversationId: convId, replyToIdOverride: submittedReply?.id || null });
+        if (!ownsComposer()) return;
         const retrySource = Array.isArray(result?.retryEntries) && result.retryEntries.length
           ? result.retryEntries
           : (result?.failedEntries || []);
         const failedIds = new Set(retrySource.map((entry) => String(entry?.itemId || "")).filter(Boolean));
 
-        if (!failedIds.size) {
+        const submittedIds = new Set(queued.map((item) => String(item?.id || "")));
+        if (!failedIds.size && dmPendingAttachments.every((item) => submittedIds.has(String(item?.id || "")))) {
           clearPendingDmAttachments();
         } else {
           const next = [];
           for (const item of dmPendingAttachments) {
-            if (failedIds.has(String(item?.id || ""))) next.push(item);
+            if (!submittedIds.has(String(item?.id || "")) || failedIds.has(String(item?.id || ""))) next.push(item);
             else safeRevokeObjectUrl(item?.previewUrl);
           }
           dmPendingAttachments = next;
@@ -135638,6 +136157,7 @@ function wireDmComposer() {
         }
       }
     } catch (err) {
+      if (!ownsComposer()) return;
       if (isConnectivityError(err, { navigatorOnline: getNavigatorOnlineSignal() })) {
         if (usesBlockingComposerSend) {
           if (!String(input.value || "")) input.value = rawInputText;
@@ -135668,8 +136188,15 @@ function wireDmComposer() {
     }
   }
 
+  send.addEventListener("pointerdown", (event) => {
+    if (event.button === 0 && document.activeElement === input) event.preventDefault();
+  });
+  send.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.repeat && !event.isComposing) event.preventDefault();
+  });
   send.addEventListener("click", doSend);
   input.addEventListener("input", () => {
+    draftRevision += 1;
     persistAltaraOfflineComposerDraft(activeDmId || state.activeDm?.conversationId || "", input.value);
     updateActiveMessageRequestDraftText(input.value);
     handleTypingComposerInput(input.value);
@@ -135697,7 +136224,7 @@ function wireDmComposer() {
     void updateBotSlashCommandPicker(input);
   });
   input.addEventListener("keyup", (e) => {
-    if (e.isComposing) return;
+    if (e.isComposing || e.keyCode === 229) return;
     if (!dmEmojiShortcodeMenuState.open && (e.altKey || e.ctrlKey || e.metaKey)) return;
     syncDmEmojiShortcodeMenuFromInput(input);
   });
@@ -135742,7 +136269,9 @@ function wireDmComposer() {
     insertParsedFormattingIntoComposer(input, parsedPaste);
   });
   input.addEventListener("keydown", (e) => {
-    if (e.isComposing) return;
+    if (e.defaultPrevented) return;
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === "Enter" && e.repeat) { e.preventDefault(); return; }
     if (handleBotSlashCommandPickerKeydown(e, input)) return;
     if (e.key === "Escape") hideBotSlashCommandPicker();
     if (handleDmEmojiShortcodeMenuKeydown(e, input)) return;
@@ -135787,8 +136316,8 @@ function wireDmComposer() {
   if (!dmComposerEnterBound) {
     dmComposerEnterBound = true;
     document.addEventListener("keydown", (e) => {
-      if (e.isComposing) return;
-      if (e.key !== "Enter") return;
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key !== "Enter" || e.repeat || e.defaultPrevented) return;
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       if (!activeDmId || !state.user?.id) return;
 
@@ -137485,6 +138014,8 @@ let serverVoiceDeafenRestoreState = null;
 let lastVoiceMicStateChange = null;
 let lastVoiceOutputStateChange = null;
 let localVoiceControlIntentGeneration = 0;
+let localVoiceControlPendingIntent = null;
+let localVoiceControlRenderFrame = null;
 let localVoiceStateSignalClock = 0;
 let stageOpen = true; // já que queres palco grande
 
@@ -138189,12 +138720,39 @@ function bringGlobalCallSessionToFront(session = null) {
   return true;
 }
 
-async function leavePrivateCallSessionForSwitch() {
-  await hangupCurrentCallByUser("Mudaste para outra chamada.", {
+async function leavePrivateCallSessionForSwitch(activeSession = null, targetSession = null) {
+  const current = getGlobalActiveCallSession();
+  if (!current || current.kind !== "private"
+    || current.conversationId !== activeSession?.conversationId
+    || current.generation !== activeSession?.generation
+    || current.controller !== activeSession?.controller) return false;
+  const actorId = normId(state.user?.id || "");
+  // Only this explicit cross-type adapter owns generation termination. A new
+  // private ACCEPT already performs its atomic terminal switch in the backend.
+  const terminal = targetSession?.kind === "server" && current.generation
+    ? terminateAcceptedPrivateCall({
+        conversationId: current.conversationId,
+        callGeneration: current.generation,
+        otherUserId: privateCallTerminalLifecycle.getAcceptedContext(current.conversationId)?.otherUserId || callOtherUserId,
+        reason: "session_switch",
+        controller: current.controller,
+        allowUnconfirmed: true,
+      })
+    : null;
+  const left = await hangupCurrentCallByUser("Mudaste para outra chamada.", {
     leaveIntent: "session_switch",
     rediscoverAfterLeave: false,
+    privateGenerationTerminalInFlight: !!terminal,
   });
-  return true;
+  if (terminal) {
+    const result = await terminal;
+    if (normId(state.user?.id || "") !== actorId) return false;
+    if (result?.ok !== true) {
+      showPrivateCallFeedback("Saíste localmente. Não foi possível confirmar o fim da chamada anterior. Tenta novamente.");
+      return false;
+    }
+  }
+  return left !== false;
 }
 
 async function leaveGroupCallSessionForSwitch() {
@@ -138560,8 +139118,11 @@ function retirePrivateCallActivePresentation({
   if (!generation) return false;
 
   const key = getPrivateCallPresentationGenerationKey(convId, generation);
+  const previousTerminal = privateCallPresentationTerminalByGeneration.get(key);
+  const finalOutcomeRecorded = ["declined", "missed"]
+    .includes(previousTerminal?.terminalState);
   privateCallPresentationTerminalByGeneration.delete(key);
-  privateCallPresentationTerminalByGeneration.set(key, {
+  privateCallPresentationTerminalByGeneration.set(key, finalOutcomeRecorded ? previousTerminal : {
     conversationId: convId,
     callGeneration: generation,
     terminalState: String(terminalState || "ended").trim().toLowerCase() || "ended",
@@ -139621,6 +140182,7 @@ const serverVoiceTransportSnapshotByConversation = new Map();
 const liveKitLocalCallStateSignatureByController = new WeakMap();
 const liveKitLocalVoiceMediaQueueByController = new WeakMap();
 const liveKitLocalVoiceAttributeQueueByController = new WeakMap();
+const liveKitLocalVoiceDataQueueByController = new WeakMap();
 const CALL_STATE_ATTRIBUTE_SELF_MUTED = "altara_self_muted";
 const CALL_STATE_ATTRIBUTE_SELF_DEAFENED = "altara_self_deafened";
 const CALL_STATE_ATTRIBUTE_VERSION = "altara_call_state_version";
@@ -139752,6 +140314,25 @@ function scheduleAltaraSfxWarmup() {
 scheduleAltaraSfxWarmup();
 const DND_MUTED_SFX_NAMES = new Set(["private_call_incoming_loop", "private_call_outgoing_loop"]);
 const DND_MUTED_UI_CUE_NAMES = new Set(["message_received"]);
+
+function cancelLocalVoiceControlOperations(conversationId = "", controller = null) {
+  const convId = normId(conversationId || callConversationId || "");
+  ++localVoiceControlIntentGeneration;
+  localVoiceControlPendingIntent = null;
+  if (localVoiceControlRenderFrame != null) {
+    cancelAnimationFrame(localVoiceControlRenderFrame);
+    localVoiceControlRenderFrame = null;
+  }
+  const target = controller || getActiveServerVoiceTransportController(convId);
+  if (target) {
+    liveKitLocalVoiceMediaQueueByController.get(target)?.cancel();
+    liveKitLocalVoiceAttributeQueueByController.get(target)?.cancel();
+    liveKitLocalVoiceDataQueueByController.get(target)?.cancel();
+    liveKitLocalCallStateSignatureByController.delete(target);
+  }
+  const owner = getCurrentCallSfxOwner(convId);
+  if (owner) altaraSfxPlayer.cancelOwner(`${owner.callType}:${owner.conversationId}:${owner.generation}:local-control`, "call_control_exit");
+}
 
 function getCurrentCallSfxOwner(conversationId = "") {
   const convId = normId(conversationId || callConversationId || activeDmId || "");
@@ -140614,6 +141195,7 @@ async function playUiCue(name, notificationOrDepth = 0, depth = 0) {
   }
   return altaraSfxPlayer.play(cueName, {
     ownerKey: String(notification?.ownerKey || "").trim(),
+    replaceOwner: notification?.replaceOwner === true,
     ownerType: String(notification?.ownerType || "ui").trim() || "ui",
     generation: String(notification?.generation || "").trim(),
     reason: String(notification?.reason || "semantic_play").trim() || "semantic_play",
@@ -140660,11 +141242,15 @@ function playAndBroadcastLocalCallCue(cueName, { audible = true } = {}) {
     } else {
       playUiCue(semanticCue, {
         ownerKey: owner ? `${owner.callType}:${owner.conversationId}:${owner.generation}:local-control` : "",
+        replaceOwner: true,
         ownerType: owner?.callType || "local_call_control",
         generation: owner?.generation || "",
         reason: `explicit_${semanticCue}`,
         isPlaybackCurrent: owner
-          ? () => getCurrentCallSfxOwner(convId)?.generation === owner.generation
+          ? () => inCall && convId === getCurrentCallConversationId()
+            && getCurrentCallSfxOwner(convId)?.generation === owner.generation
+            && (owner.callType !== "server_voice"
+              || !["leaving", "idle", "failed", "cancelled"].includes(String(serverVoiceOperationLifecycle.getCurrent()?.phase || "").toLowerCase()))
           : undefined,
       });
     }
@@ -144895,7 +145481,8 @@ function startServerVoiceModerationStateRealtime() {
   }
 }
 
-async function fetchServerVoiceModerationStatesForConversation(conversationId, { force = false, reason = "" } = {}) {
+async function fetchServerVoiceModerationStatesForConversation(conversationId, { force = false, reason = "", isCurrent = () => true } = {}) {
+  if (!isCurrent()) return false;
   const convId = normId(conversationId || "");
   if (!convId || !state.user?.id || !isServerVoiceConversationById(convId)) {
     logVoiceModerationStateDebug("skipped_no_context", {
@@ -144914,33 +145501,105 @@ async function fetchServerVoiceModerationStatesForConversation(conversationId, {
     return false;
   }
 
-  try { startServerVoiceModerationStateRealtime(); } catch (_) {}
-  const now = Date.now();
-  const last = Number(serverVoiceModerationStateLoadedAtByConversation.get(convId) || 0);
-  if (!force && last && (now - last) < 5000) return true;
-  if (serverVoiceModerationFetchInFlightByConversation.has(convId)) return true;
-  serverVoiceModerationFetchInFlightByConversation.add(convId);
-  serverVoiceModerationStateLoadedAtByConversation.set(convId, now);
-  serverVoiceModerationFetchPendingCount += 1;
-  altaraVoiceModerationBootState.fetchPending = true;
-  altaraVoiceModerationBootState.lastFetchAt = now;
-  logVoiceModerationStateDebug("fetch_start", { reason, serverId, channelId, conversationId: convId });
-  recordServerRolePermissionSaveTiming("moderation_snapshot_request", { serverId, channelId, conversationId: convId, reason });
+  const ownerUserId = normId(state.user.id);
+  const ownerSessionEpoch = presenceSessionEpoch;
+  const ownsCaller = () => ownerUserId === normId(state.user?.id || "")
+    && ownerSessionEpoch === presenceSessionEpoch && isCurrent();
+  const existing = serverVoiceModerationFetchInFlightByConversation.get(convId);
+  if (existing && !force && existing.current.ownerUserId === ownerUserId
+    && existing.current.ownerSessionEpoch === ownerSessionEpoch && existing.current.isCurrent()) {
+    return (existing.pending?.promise || existing.current.promise).then((result) => ownsCaller() && result);
+  }
+  const loaded = serverVoiceModerationStateLoadedAtByConversation.get(convId);
+  const last = Number(loaded?.at || 0);
+  if (!existing && !force && loaded?.ownerUserId === ownerUserId
+    && loaded?.ownerSessionEpoch === ownerSessionEpoch && last && Date.now() - last < 5000) return true;
+  let resolveTask;
+  const promise = new Promise((resolve) => { resolveTask = resolve; });
+  const task = { ownerUserId, ownerSessionEpoch, isCurrent, serverId, channelId, reason, promise, resolve: resolveTask };
+  if (existing) {
+    existing.pending?.resolve(false);
+    existing.pending = task;
+    return promise;
+  }
+  const entry = { current: task, pending: null };
+  serverVoiceModerationFetchInFlightByConversation.set(convId, entry);
+  const ownsTask = (candidate) => serverVoiceModerationFetchInFlightByConversation.get(convId) === entry
+    && entry.current === candidate && !entry.pending
+    && candidate.ownerUserId === normId(state.user?.id || "")
+    && candidate.ownerSessionEpoch === presenceSessionEpoch && candidate.isCurrent();
+  const runSnapshot = async (task) => {
+    if (!ownsTask(task)) return false;
+    const { serverId, channelId, reason } = task;
+    try { startServerVoiceModerationStateRealtime(); } catch (_) {}
+    const now = Date.now();
+    serverVoiceModerationFetchPendingCount += 1;
+    altaraVoiceModerationBootState.fetchPending = true;
+    altaraVoiceModerationBootState.lastFetchAt = now;
+    logVoiceModerationStateDebug("fetch_start", { reason, serverId, channelId, conversationId: convId });
+    recordServerRolePermissionSaveTiming("moderation_snapshot_request", { serverId, channelId, conversationId: convId, reason });
+    try {
+      const previous = new Map(serverVoiceModerationStateByConversation.get(convId) || []);
+      const result = await awaitWithTimeout(
+        supabase
+          .from("server_voice_moderation_states")
+          .select("server_id, channel_id, user_id, mic_server_muted, deaf_server_muted, updated_at")
+          .eq("server_id", serverId)
+          .eq("channel_id", channelId),
+        4500,
+        "server voice moderation state fetch"
+      ).catch((error) => ({ data: null, error }));
+      if (!ownsTask(task)) return false;
+      const data = result?.data;
+      const error = result?.error;
+      if (error) {
+        serverVoiceModerationLastError = getSafeAltaraBootError(error);
+        altaraVoiceModerationBootState.lastError = serverVoiceModerationLastError;
+        if (!serverVoiceModerationStateByConversation.has(convId)) serverVoiceModerationStateByConversation.set(convId, new Map());
+        logVoiceModerationStateDebug("fetch_error", {
+          reason,
+          serverId,
+          channelId,
+          conversationId: convId,
+          message: error?.message || String(error || "unknown"),
+          code: error?.code || error?.name || "",
+          details: error?.details || "",
+        }, { level: "warn" });
+        scheduleServerVoiceModerationStateRetry(convId, "fetch_error", error);
+        return false;
+      }
 
-  try {
-    const previous = new Map(serverVoiceModerationStateByConversation.get(convId) || []);
-    const result = await awaitWithTimeout(
-      supabase
-        .from("server_voice_moderation_states")
-        .select("server_id, channel_id, user_id, mic_server_muted, deaf_server_muted, updated_at")
-        .eq("server_id", serverId)
-        .eq("channel_id", channelId),
-      4500,
-      "server voice moderation state fetch"
-    ).catch((error) => ({ data: null, error }));
-    const data = result?.data;
-    const error = result?.error;
-    if (error) {
+      serverVoiceModerationLastError = null;
+      altaraVoiceModerationBootState.lastError = null;
+      serverVoiceModerationStateByConversation.set(convId, new Map());
+      const rows = Array.isArray(data) ? data : [];
+      const previousApplying = serverVoiceModerationStateApplying;
+      serverVoiceModerationStateApplying = true;
+      try {
+        rows.forEach((row) => {
+          applyAuthoritativeServerVoiceModerationState(row, { source: "authoritative_state_fetch", eventType: "UPDATE" });
+          previous.delete(normId(row?.user_id || ""));
+        });
+        previous.forEach((row, userId) => {
+          applyAuthoritativeServerVoiceModerationState({
+            server_id: serverId,
+            channel_id: channelId,
+            user_id: userId,
+            mic_server_muted: false,
+            deaf_server_muted: false,
+          }, { source: "authoritative_state_fetch_clear", eventType: "DELETE" });
+        });
+      } finally {
+        serverVoiceModerationStateApplying = previousApplying;
+      }
+      serverVoiceModerationStateLoadedAtByConversation.set(convId, {
+        at: Date.now(), ownerUserId: task.ownerUserId, ownerSessionEpoch: task.ownerSessionEpoch,
+      });
+      logVoiceModerationStateDebug("fetch_done", { reason, serverId, channelId, conversationId: convId, rowCount: rows.length });
+      clearServerVoiceModerationStateRetry(convId);
+      return true;
+    } catch (error) {
+      if (!ownsTask(task)) return false;
       serverVoiceModerationLastError = getSafeAltaraBootError(error);
       altaraVoiceModerationBootState.lastError = serverVoiceModerationLastError;
       if (!serverVoiceModerationStateByConversation.has(convId)) serverVoiceModerationStateByConversation.set(convId, new Map());
@@ -144949,59 +145608,39 @@ async function fetchServerVoiceModerationStatesForConversation(conversationId, {
         serverId,
         channelId,
         conversationId: convId,
-        message: error?.message || String(error || "unknown"),
+        message: error?.message || error || "unknown",
         code: error?.code || error?.name || "",
-        details: error?.details || "",
       }, { level: "warn" });
-      scheduleServerVoiceModerationStateRetry(convId, "fetch_error", error);
+      scheduleServerVoiceModerationStateRetry(convId, "exception", error);
       return false;
+    } finally {
+      serverVoiceModerationFetchPendingCount = Math.max(0, serverVoiceModerationFetchPendingCount - 1);
+      altaraVoiceModerationBootState.fetchPending = serverVoiceModerationFetchPendingCount > 0;
     }
 
-    serverVoiceModerationLastError = null;
-    altaraVoiceModerationBootState.lastError = null;
-    serverVoiceModerationStateByConversation.set(convId, new Map());
-    const rows = Array.isArray(data) ? data : [];
-    const previousApplying = serverVoiceModerationStateApplying;
-    serverVoiceModerationStateApplying = true;
+  };
+  void (async () => {
+    let next = task;
     try {
-      rows.forEach((row) => {
-        applyAuthoritativeServerVoiceModerationState(row, { source: "authoritative_state_fetch", eventType: "UPDATE" });
-        previous.delete(normId(row?.user_id || ""));
-      });
-      previous.forEach((row, userId) => {
-        applyAuthoritativeServerVoiceModerationState({
-          server_id: serverId,
-          channel_id: channelId,
-          user_id: userId,
-          mic_server_muted: false,
-          deaf_server_muted: false,
-        }, { source: "authoritative_state_fetch_clear", eventType: "DELETE" });
-      });
+      while (next) {
+        entry.current = next;
+        let result = false;
+        try { result = await runSnapshot(next); } catch (_) {}
+        next.resolve(result);
+        next = entry.pending;
+        entry.pending = null;
+        if (serverVoiceModerationFetchInFlightByConversation.get(convId) !== entry) {
+          next?.resolve(false);
+          break;
+        }
+      }
     } finally {
-      serverVoiceModerationStateApplying = previousApplying;
+      if (serverVoiceModerationFetchInFlightByConversation.get(convId) === entry) {
+        serverVoiceModerationFetchInFlightByConversation.delete(convId);
+      }
     }
-    logVoiceModerationStateDebug("fetch_done", { reason, serverId, channelId, conversationId: convId, rowCount: rows.length });
-    clearServerVoiceModerationStateRetry(convId);
-    return true;
-  } catch (error) {
-    serverVoiceModerationLastError = getSafeAltaraBootError(error);
-    altaraVoiceModerationBootState.lastError = serverVoiceModerationLastError;
-    if (!serverVoiceModerationStateByConversation.has(convId)) serverVoiceModerationStateByConversation.set(convId, new Map());
-    logVoiceModerationStateDebug("fetch_error", {
-      reason,
-      serverId,
-      channelId,
-      conversationId: convId,
-      message: error?.message || error || "unknown",
-      code: error?.code || error?.name || "",
-    }, { level: "warn" });
-    scheduleServerVoiceModerationStateRetry(convId, "exception", error);
-    return false;
-  } finally {
-    serverVoiceModerationFetchInFlightByConversation.delete(convId);
-    serverVoiceModerationFetchPendingCount = Math.max(0, serverVoiceModerationFetchPendingCount - 1);
-    altaraVoiceModerationBootState.fetchPending = serverVoiceModerationFetchPendingCount > 0;
-  }
+  })();
+  return promise;
 }
 function getServerVoiceModerationAction(message = {}) {
   return String(message?.mod_action || message?.action || "").trim().toLowerCase();
@@ -146404,10 +147043,9 @@ function getRemoteAudioEntryPlaybackState(entry = null, { anyParticipantSpeaking
   const remoteParticipantMuted = !!(type === REMOTE_AUDIO_TYPE_VOICE && (participantAudioState?.micMuted === true || transportParticipantState?.audioMuted === true));
   const trackMuted = !!(entry?.track?.muted || String(entry?.track?.readyState || "").toLowerCase() === "ended");
   const globalDeafened = getEffectiveLocalDeafened(activeConvId);
-  // Deafen is a participant-voice output control. ScreenShare/system audio has
-  // an independent receiver-side mute/volume preference and must remain
-  // audible while participant voice is deafened.
-  const outputDeafened = type === REMOTE_AUDIO_TYPE_VOICE && globalDeafened;
+  // Viewing a share cannot bypass deafen. Keep its independent mute/volume
+  // preferences intact so they still apply when the viewer undeafens.
+  const outputDeafened = globalDeafened;
   const muted = !!(outputDeafened || typeMuted || userMuted || streamMuted || watchGateMuted || duplicateRelayForOwner || remoteParticipantMuted || trackMuted);
   return { type, ownerUserId, source, activeConvId, streamPreferenceKey, userFactor, streamFactor, attenuationEnabled, attenuationStrength, attenuationFactor, baseVolume, mixedGain, typeMuted, userMuted, streamMuted, watchGateMuted, duplicateRelayForOwner, remoteParticipantMuted, trackMuted, globalDeafened, outputDeafened, muted };
 }
@@ -148636,11 +149274,156 @@ function applyDmStageHeightPref() {
   setDmStageHeightVh(getDmStageHeightVhValue(), false);
 }
 
+function getCallSharePresentationContext(panel) {
+  const stage = panel?.closest?.("#callStage");
+  const conversationId = normId(callConversationId || activeDmId || state.activeDm?.conversationId || "");
+  const entry = stage && getServerVoiceScreenshareEntryForPanel(conversationId, panel);
+  const lifecycle = getAuthoritativePrivateCallFocusLifecycleKey({ serverVoice: isServerVoiceConversationById(conversationId) });
+  if (!entry?.share || !lifecycle || (!entry.share.isLocal && entry.share.isWatched !== true)) return null;
+  return { stage, panel, conversationId, entry, lifecycle, key: String(entry.shareKey || "").trim().toLowerCase() };
+}
+
+function syncCallShareOnlyPresentation(stage = document.getElementById("callStage")) {
+  if (!stage) return false;
+  const focusedKey = String(stage.getAttribute("data-private-call-focused-share-key") || "").trim().toLowerCase();
+  const panel = stage.querySelector(".callSharePrimary[data-server-voice-screenshare-panel='1']");
+  const context = getCallSharePresentationContext(panel);
+  const current = !!(context && stageLayoutMode === "focus" && context.key === focusedKey);
+  const shareOnly = !!(current
+    && stage.getAttribute("data-call-share-only-key") === context.key
+    && stage.getAttribute("data-call-share-only-lifecycle") === context.lifecycle);
+  stage.toggleAttribute("data-call-share-only", shareOnly);
+  if (!shareOnly) {
+    stage.removeAttribute("data-call-share-only-key");
+    stage.removeAttribute("data-call-share-only-lifecycle");
+  }
+  const rail = stage.querySelector("#callShareRail");
+  if (rail) {
+    rail.inert = shareOnly;
+    if (shareOnly) rail.setAttribute("aria-hidden", "true");
+    else rail.setAttribute("aria-hidden", rail.hidden ? "true" : "false");
+  }
+  const fullscreen = stage.__altaraShareFullscreen;
+  if (fullscreen && (!current || context.panel !== fullscreen.panel || context.key !== fullscreen.key || context.lifecycle !== fullscreen.lifecycle)) {
+    stage.__altaraShareFullscreen = null;
+    if (document.fullscreenElement === fullscreen.panel) void document.exitFullscreen?.().catch?.(() => {});
+  }
+  stage.querySelectorAll(".sharePresentationControls").forEach((controls) => {
+    const owner = controls.parentElement;
+    controls.hidden = !current || owner !== panel;
+    const focusButton = controls.querySelector("[data-share-presentation-action='focus']");
+    if (focusButton) {
+      focusButton.textContent = shareOnly && owner === panel ? "Sair do modo foco" : "Modo foco";
+      focusButton.setAttribute("aria-pressed", shareOnly && owner === panel ? "true" : "false");
+    }
+    const fullButton = controls.querySelector("[data-share-presentation-action='fullscreen']");
+    if (fullButton) fullButton.textContent = document.fullscreenElement === owner ? "Sair do ecrã inteiro" : "Ecrã inteiro";
+  });
+  return shareOnly;
+}
+
+function setCallShareOnlyFocus(panel, enabled = true) {
+  const context = getCallSharePresentationContext(panel);
+  if (!context) return false;
+  const { stage, key, lifecycle } = context;
+  if (enabled && (stageLayoutMode !== "focus" || String(stage.getAttribute("data-private-call-focused-share-key") || "").toLowerCase() !== key)) {
+    if (!activatePrivateCallShareFocusFromPanel(panel, null, { inputMethod: "share_only" })) return false;
+  }
+  if (enabled) {
+    stage.setAttribute("data-call-share-only-key", key);
+    stage.setAttribute("data-call-share-only-lifecycle", lifecycle);
+  } else {
+    stage.removeAttribute("data-call-share-only-key");
+    stage.removeAttribute("data-call-share-only-lifecycle");
+  }
+  syncCallShareOnlyPresentation(stage);
+  queueCallStageLayoutSync();
+  return true;
+}
+
+async function toggleCallShareFullscreen(panel) {
+  const context = getCallSharePresentationContext(panel);
+  if (!context || !panel.classList.contains("callSharePrimary")) return false;
+  if (document.fullscreenElement === panel) {
+    try { await document.exitFullscreen(); } catch (_) { return false; }
+    return true;
+  }
+  if (document.fullscreenElement || context.stage.__altaraShareFullscreen) return false;
+  const ownership = { panel, key: context.key, lifecycle: context.lifecycle };
+  context.stage.__altaraShareFullscreen = ownership;
+  try {
+    if (typeof panel.requestFullscreen !== "function") throw new Error("fullscreen_unavailable");
+    await panel.requestFullscreen();
+    const latest = getCallSharePresentationContext(panel);
+    if (context.stage.__altaraShareFullscreen !== ownership || latest?.key !== ownership.key || latest?.lifecycle !== ownership.lifecycle) {
+      if (document.fullscreenElement === panel) await document.exitFullscreen();
+      return false;
+    }
+    syncCallShareOnlyPresentation(context.stage);
+    queueCallStageLayoutSync();
+    return document.fullscreenElement === panel;
+  } catch (_) {
+    if (context.stage.__altaraShareFullscreen === ownership) {
+      context.stage.__altaraShareFullscreen = null;
+      showPrivateCallFeedback("Não foi possível abrir o ecrã inteiro. Podes continuar a ver no modo foco.");
+    }
+    return false;
+  }
+}
+
+function ensureCallSharePresentationControls(panel) {
+  const context = getCallSharePresentationContext(panel);
+  if (!context) return;
+  let controls = panel.querySelector(":scope > .sharePresentationControls");
+  if (!controls) {
+    controls = document.createElement("div");
+    controls.className = "sharePresentationControls";
+    controls.setAttribute("role", "group");
+    controls.setAttribute("aria-label", "Apresentação da transmissão");
+    for (const [action, label] of [["focus", "Modo foco"], ["fullscreen", "Ecrã inteiro"], ["stop-local", "Parar partilha"]]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "shareViewerAction";
+      button.setAttribute("data-share-presentation-action", action);
+      button.textContent = label;
+      controls.appendChild(button);
+    }
+    for (const eventName of ["pointerdown", "mousedown", "dblclick", "dragstart"]) controls.addEventListener(eventName, (event) => {
+      event.stopPropagation();
+      if (eventName === "dragstart") event.preventDefault();
+    });
+    controls.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+    });
+    controls.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const action = event.target.closest?.("[data-share-presentation-action]")?.getAttribute("data-share-presentation-action");
+      const latest = getCallSharePresentationContext(panel);
+      if (!latest) return;
+      if (action === "focus") setCallShareOnlyFocus(panel, !latest.stage.hasAttribute("data-call-share-only"));
+      if (action === "fullscreen") void toggleCallShareFullscreen(panel);
+      if (action === "stop-local" && latest.entry.share.isLocal) {
+        const layer = getActiveServerVoiceScreenshareLayer(latest.conversationId);
+        if (layer?.isLocalShareActive?.()) void layer.stopShare({ triggerReason: "share_presentation_stop_local" }).catch(() => {
+          showPrivateCallFeedback("Não foi possível parar a partilha. Tenta novamente.");
+        });
+      }
+    });
+    panel.appendChild(controls);
+  }
+  controls.querySelector("[data-share-presentation-action='stop-local']").hidden = !context.entry.share.isLocal;
+}
+
 function toggleViewportFullscreen() {
   const viewport = document.querySelector("#callStage .callStageViewport");
   if (!viewport) return;
   if (document.fullscreenElement) {
     document.exitFullscreen?.().catch?.(() => {});
+    return;
+  }
+  const sharePanel = viewport.querySelector(".callSharePrimary[data-server-voice-screenshare-panel='1']");
+  if (getCallSharePresentationContext(sharePanel)) {
+    void toggleCallShareFullscreen(sharePanel);
     return;
   }
   viewport.requestFullscreen?.().catch?.(() => {});
@@ -148748,7 +149531,7 @@ function applyStageTileIdentityToEl(el, {
   }
   const voiceCtx = convId && isServerVoiceConversationById(convId) ? findServerChannelContextByConversationId(convId) : null;
   const voiceChannelId = normId(voiceCtx?.channelId || voiceCtx?.channel?.id || voiceCtx?.channel?.channel_id || "");
-  if (uid && voiceChannelId) {
+  if (uid && voiceChannelId && normalizedTileType !== "screenshare") {
     const dragContext = getServerVoiceMemberModerationContext({
       userId: uid,
       conversationId: convId,
@@ -157133,6 +157916,8 @@ function exitCallStageFocusView({
     stage.setAttribute("data-focused-type", "");
     stage.setAttribute("data-focused-tile-model-key", "");
     stage.removeAttribute("data-private-call-focused-participant-id");
+    stage.removeAttribute("data-server-voice-participant-focus");
+    stage.removeAttribute("data-server-voice-focus-target-session");
     stage.removeAttribute("data-private-call-focused-share-key");
     stage.removeAttribute("data-private-call-focused-target-id");
     stage.removeAttribute("data-private-call-focus-lifecycle-key");
@@ -157629,7 +158414,18 @@ function derivePrivateCallFocusPresentationAuthority({
   });
 }
 
-function getAuthoritativePrivateCallFocusLifecycleKey() {
+function getAuthoritativePrivateCallFocusLifecycleKey({ serverVoice = false } = {}) {
+  if (serverVoice) {
+    const convId = normId(callConversationId || "");
+    const operation = serverVoiceOperationLifecycle.getCurrent();
+    const session = currentServerVoiceV2Session;
+    if (!convId || !isActiveServerVoiceCallJoined(convId) || !serverVoiceTransportController
+      || !["joining", "connected", "reconnecting"].includes(String(operation?.phase || ""))
+      || !session?.sessionId || !operation?.generation
+      || normId(session.conversationId || "") !== convId
+      || normId(serverVoiceTransportController.conversationId || "") !== convId) return "";
+    return ["server", normId(state.user?.id || ""), session.serverId, convId, getCurrentVoiceV2ChannelId(), session.sessionId, operation.generation].join(":");
+  }
   const decision = getPrivateCallSurfaceAuthorityDecision();
   const conversationId = normId(decision?.activePrivateConversationId || "");
   const callGeneration = normId(decision?.authoritativeCallGeneration || "");
@@ -157673,6 +158469,8 @@ function clearPrivateCallFocusPresentationState(stageInput = null, {
       "data-private-call-focused-target-id",
       "data-private-call-focus-lifecycle-key",
       "data-private-call-focus-kind",
+      "data-server-voice-participant-focus",
+      "data-server-voice-focus-target-session",
     ].forEach((attribute) => stage.removeAttribute(attribute));
   }
   const exitFocusButton = document.getElementById("btnExitCallFocus");
@@ -157692,10 +158490,33 @@ function clearPrivateCallFocusPresentationState(stageInput = null, {
 
 function reconcilePrivateCallFocusPresentationAuthority(stageInput = null, {
   privateCallUi = false,
+  serverVoice = false,
 } = {}) {
   const stage = stageInput || document.getElementById("callStage");
-  if (!stage || privateCallUi !== true) return false;
-  const authoritativeLifecycleKey = getAuthoritativePrivateCallFocusLifecycleKey();
+  if (!stage || (privateCallUi !== true && serverVoice !== true)) return false;
+  if (serverVoice) {
+    if (stageFocusMemberMediaType === "share") {
+      const focusedShareKey = String(stage.getAttribute("data-private-call-focused-share-key") || "").trim().toLowerCase();
+      const share = getServerVoiceScreenshares(callConversationId)
+        .find((candidate) => String(candidate.key || "").trim().toLowerCase() === focusedShareKey);
+      if (!share || (!share.isLocal && !share.isWatched)) {
+        clearPrivateCallFocusPresentationState(stage, { reason: "server_share_viewing_ended" });
+        return false;
+      }
+    } else {
+    if (stage.getAttribute("data-server-voice-participant-focus") !== "1") return false;
+    const member = getServerVoiceV2Member(stageFocusMemberId);
+    const targetSession = String(member?.sessionId || member?.session_id || "");
+    if (stageFocus !== "member" || stageFocusMemberMediaType === "share"
+      || normId(member?.serverId || member?.server_id || "") !== normId(currentServerVoiceV2Session?.serverId || "")
+      || normId(member?.channelId || member?.channel_id || "") !== normId(getCurrentVoiceV2ChannelId())
+      || !targetSession || targetSession !== stage.getAttribute("data-server-voice-focus-target-session")) {
+      clearPrivateCallFocusPresentationState(stage, { reason: "server_participant_focus_assignment_ended" });
+      return false;
+    }
+    }
+  }
+  const authoritativeLifecycleKey = getAuthoritativePrivateCallFocusLifecycleKey({ serverVoice });
   const authority = derivePrivateCallFocusPresentationAuthority({
     privateCallUi: true,
     stageMode: stageLayoutMode,
@@ -157744,9 +158565,11 @@ function syncCallStagePresentationLayout(stageInput = null, gridInput = null, {
     isLiveVideoTrack(share?.track, { allowMuted: true })
     || !!pickLiveVideoTrackFromStream(share?.stream || null, { allowMuted: true })
   ));
-  const liveScreenShares = getServerVoiceScreenshares(layoutConversationId).filter((share) => (
-    isLiveVideoTrack(share?.track, { allowMuted: true })
-    || !!pickLiveVideoTrackFromStream(share?.stream || null, { allowMuted: true })
+  const offeredScreenShares = getServerVoiceScreenshares(layoutConversationId);
+  const liveScreenShares = offeredScreenShares.filter((share) => (
+    (share.isLocal || share.isWatched === true)
+    && (share.hasPublication || isLiveVideoTrack(share?.track, { allowMuted: true })
+      || !!pickLiveVideoTrackFromStream(share?.stream || null, { allowMuted: true }))
   ));
   let focusedSource = String(stage.getAttribute("data-focused-source") || "").trim();
   const useSharedLayout = sharedStageUi === true
@@ -157783,7 +158606,12 @@ function syncCallStagePresentationLayout(stageInput = null, gridInput = null, {
       spatialAvailable: String(callKind || "").trim().toLowerCase() === "server",
     },
   });
-  const layout = useSharedLayout
+  // Server shares keep their approved grid owner. A private call returns to
+  // its dedicated share stage for local/watched media; invitations alone stay
+  // in the participant grid and never imply receiving consent.
+  const viewerGrid = stageLayoutMode !== "focus" && offeredScreenShares.length > 0
+    && (!privateCallUi || liveScreenShares.length === 0);
+  const layout = viewerGrid ? (useSharedLayout ? PRIVATE_CALL_STAGE_LAYOUT.VOICE_GRID : "grid") : useSharedLayout
     ? stageModel.layout
     : deriveSharedCallStagePresentationLayout({
       mode: stageLayoutMode,
@@ -157899,14 +158727,18 @@ function activatePrivateCallParticipantFocusFromTile(tile, event = null, {
   });
   const stage = tile?.closest?.("#callStage") || document.getElementById("callStage");
   const conversationId = normId(callConversationId || activeDmId || state.activeDm?.conversationId || "");
-  if (!stage || !tile || !conversationId || !isPrivateDmLiveKitTransportConversation(conversationId)) {
+  const serverParticipant = !!(conversationId && isServerVoiceConversationById(conversationId));
+  if (isPrivateCallSurfaceInteractiveDescendant(tile, eventTargetElement(event))) return false;
+  if (!stage || !tile || !conversationId || (!serverParticipant && !isPrivateDmLiveKitTransportConversation(conversationId))) {
     updatePrivateCallParticipantFocusTrace({
       lastRenderStage: "participant_resolution",
       failureReason: "private_call_context_unavailable",
     });
     return false;
   }
-  const focusLifecycleKey = getAuthoritativePrivateCallFocusLifecycleKey();
+  const focusLifecycleKey = serverParticipant
+    ? getAuthoritativePrivateCallFocusLifecycleKey({ serverVoice: true })
+    : getAuthoritativePrivateCallFocusLifecycleKey();
   if (!focusLifecycleKey) {
     updatePrivateCallParticipantFocusTrace({
       lastRenderStage: "focus_authority",
@@ -157944,6 +158776,12 @@ function activatePrivateCallParticipantFocusFromTile(tile, event = null, {
     participantResolved: true,
     lastRenderStage: "participant_resolved",
   });
+
+  const serverMember = serverParticipant ? getServerVoiceV2Member(participantId) : null;
+  const serverTargetSession = String(serverMember?.sessionId || serverMember?.session_id || "");
+  if (serverParticipant && (!serverTargetSession
+    || normId(serverMember?.serverId || serverMember?.server_id || "") !== normId(currentServerVoiceV2Session?.serverId || "")
+    || normId(serverMember?.channelId || serverMember?.channel_id || "") !== normId(getCurrentVoiceV2ChannelId()))) return false;
 
   const tileId = String(
     identity.tileId
@@ -158023,6 +158861,10 @@ function activatePrivateCallParticipantFocusFromTile(tile, event = null, {
   stage.setAttribute("data-focused-source", hasCamera ? "camera" : "avatar");
   stage.setAttribute("data-focused-type", focusedType);
   stage.setAttribute("data-focused-tile-model-key", stageFocusedTileModelKey || "");
+  if (serverParticipant) {
+    stage.setAttribute("data-server-voice-participant-focus", "1");
+    stage.setAttribute("data-server-voice-focus-target-session", serverTargetSession);
+  }
   stage.setAttribute("data-private-call-focused-participant-id", participantId);
   stage.setAttribute("data-private-call-focused-target-id", focusTargetId);
   stage.setAttribute("data-private-call-focus-lifecycle-key", focusLifecycleKey);
@@ -158107,7 +158949,8 @@ function activatePrivateCallShareFocusFromPanel(panel, event = null, {
   const share = entry?.share || null;
   const ownerUserId = normId(share?.ownerUserId || "");
   const shareKey = String(entry?.shareKey || "").trim().toLowerCase();
-  const focusLifecycleKey = getAuthoritativePrivateCallFocusLifecycleKey();
+  const focusLifecycleKey = getAuthoritativePrivateCallFocusLifecycleKey({ serverVoice: isServerVoiceConversationById(conversationId) });
+  if (share && !share.isLocal && share.isWatched !== true) return false;
   const explicitFocusTarget = parsePrivateCallFocusTargetId(
     panel?.getAttribute?.("data-call-focus-target")
     || panel?.getAttribute?.("data-private-call-focus-target-id")
@@ -158703,6 +159546,8 @@ function openPrivateCallShareAudioMenu(panelInput, clientX, clientY, { focusMenu
   const context = resolvePrivateCallShareAudioControlContext(panel);
   if (!panel || !context) return false;
   const menu = ensurePrivateCallShareAudioMenu();
+  const menuParent = document.fullscreenElement === panel ? panel : document.body;
+  if (menu.parentElement !== menuParent) menuParent.appendChild(menu);
   privateCallShareAudioMenuPanel = panel;
   panel.querySelector?.("[data-private-share-audio-trigger='1']")?.setAttribute?.("aria-expanded", "true");
   menu.hidden = false;
@@ -158874,7 +159719,7 @@ function syncPrivateCallShareStageDomOwnership(stageInput = null, {
   const focusKind = String(stage.getAttribute("data-private-call-focus-kind") || "").trim();
   const conversationId = normId(callConversationId || activeDmId || state.activeDm?.conversationId || "");
   const presentationEntries = getServerVoiceScreensharePresentationEntries(conversationId)
-    .filter((entry) => !!entry.panel && !!entry.share?.stream && !entry.panel.hidden);
+    .filter((entry) => !!entry.panel && (!!entry.share?.stream || entry.share?.hasPublication) && !entry.panel.hidden);
   prunePrivateCallSharePlaybackSessions(presentationEntries.map((entry) => entry.shareKey));
   const fallbackPanels = refs.panels.filter((panel) => !panel.hidden);
   const sharePanels = presentationEntries.length
@@ -158937,12 +159782,27 @@ function syncPrivateCallShareStageDomOwnership(stageInput = null, {
     grid.hidden = true;
     grid.setAttribute("aria-hidden", "true");
   };
-  const syncSharePresentation = (panel) => ({
-    panel,
-    video: panel?.querySelector?.("video.serverVoiceScreensharePanel__video") || null,
-    aspectFit: ensurePrivateCallShareAspectFitBinding(panel),
-    shareAudioControls: syncPrivateCallShareAudioControls(panel),
-  });
+  const syncSharePresentation = (panel) => {
+    // The layer owns one video per logical share. Grid adoption can leave that
+    // node connected elsewhere, or retain its opacity-zero grid class after a
+    // later subscription remounts it. Restore the exact panel's canonical node
+    // when this presentation owner takes over; do not restart or clone media.
+    const entry = presentationEntries.find((candidate) => candidate.panel === panel);
+    const video = entry?.video || panel?.querySelector?.("video.serverVoiceScreensharePanel__video") || null;
+    if (video) {
+      if (video.classList.contains("stageGridVideo") || video.classList.contains("participantVideo")) {
+        stopMemberTileFrameProbe(video);
+      }
+      video.classList.remove("stageGridVideo", "participantVideo");
+      if (video.parentElement !== panel) panel.appendChild(video);
+    }
+    return {
+      panel,
+      video,
+      aspectFit: ensurePrivateCallShareAspectFitBinding(panel),
+      shareAudioControls: syncPrivateCallShareAudioControls(panel),
+    };
+  };
 
   if (ownsParticipantFocus) {
     hideMultiPrimary();
@@ -159048,10 +159908,20 @@ function syncPrivateCallShareStageDomOwnership(stageInput = null, {
   if (ownsSingleShareStage) {
     hideFocusPrimary();
     hideMultiPrimary();
-    const panel = sharePanels[0];
+    const privatePresentation = stage.getAttribute("data-call-stage-kind") === "private";
+    const panel = (privatePresentation && presentationEntries.find((entry) => (
+      entry.share?.isLocal || entry.share?.isWatched === true
+    ))?.panel) || sharePanels[0];
     panel.classList.add("callSharePrimary");
     panel.classList.remove("callMultiShareCell", "callShareSecondary");
     if (panel.parentElement !== root) root.insertBefore(panel, rail);
+    // An unselected second share remains an invitation in the existing rail,
+    // rather than taking the local/watched share's primary surface.
+    if (privatePresentation) sharePanels.filter((candidate) => candidate !== panel).forEach((secondary) => {
+      setSharePanelRole(secondary, "secondary");
+      if (secondary.parentElement !== rail) rail.appendChild(secondary);
+      syncSharePresentation(secondary);
+    });
     participantTiles.forEach((tile) => {
       tile.classList.remove("is-private-call-focused-primary");
       tile.setAttribute("aria-pressed", "false");
@@ -159060,8 +159930,8 @@ function syncPrivateCallShareStageDomOwnership(stageInput = null, {
     showOwnedRoot();
     stage.setAttribute("data-private-call-share-owned", "1");
     stage.removeAttribute("data-private-call-focused-share-key");
-    const stableVideo = panel.querySelector("video.serverVoiceScreensharePanel__video");
     const presentation = syncSharePresentation(panel);
+    const stableVideo = presentation.video;
     return {
       owned: true,
       focusOwned: false,
@@ -159647,10 +160517,13 @@ function hydrateActiveCallMemberProfiles(conversationId, memberIds = []) {
   callMemberProfilesHydrateFingerprint = fingerprint;
   callMemberProfilesHydrateAt = now;
 
-  void fetchProfilesByIds(ids, { includeBio: false, force: true })
+  const ownerUserId = normId(state.user?.id || "");
+  void fetchProfilesByIds(ids, { includeBio: false, force: !isServerVoiceConversationById(convId), maxAgeMs: CALL_MEMBER_PROFILES_HYDRATE_THROTTLE_MS })
     .then(() => {
       const activeConv = normId(callConversationId || activeDmId || state.activeDm?.conversationId || "");
-      if (activeConv === convId) refreshCallUI();
+      if (normId(state.user?.id || "") !== ownerUserId || activeConv !== convId) return;
+      if (isServerVoiceConversationById(convId)) ids.forEach(refreshServerVoiceParticipantIdentity);
+      else refreshCallUI();
     })
     .catch(() => {})
     .finally(() => {
@@ -160034,10 +160907,22 @@ function syncGroupCallMemberTileVideo(tile, track = null) {
   const nextTrack = isLiveVideoTrack(track, { allowMuted: allowMutedForTileAttach }) ? track : null;
   const nextTrackId = resolveTrackIdentity(nextTrack);
   const isRemoteScreenshareTile = !!(isScreenshareTile && tileUserId && tileUserId !== meId);
-  if (isScreenshareTile && tileUserId && tileUserId !== meId && nextTrackId) {
-    const stableRemoteVideo = getActiveServerVoiceScreenshareLayer(convId)?.getRemoteVideoElement?.({
-      trackId: nextTrackId,
-    }) || null;
+  if (isRemoteScreenshareTile && getActiveServerVoiceScreenshareLayer(convId)) {
+    const viewer = resolveLiveKitViewerShare(convId, tile.getAttribute("data-share-viewer-key") || "");
+    if (!viewer || !viewer.share.isWatched) {
+      stopMemberTileFrameProbe(videoEl);
+      try { videoEl.pause(); videoEl.srcObject = null; } catch (_) {}
+      tile.classList.remove("has-video", "is-share-loading", "is-share-reconnecting");
+      tile.removeAttribute("data-call-video-track-id");
+      if (viewer) syncRemoteShareViewerControls(tile, viewer.share, convId);
+      return;
+    }
+  }
+  if (isScreenshareTile && tileUserId && nextTrackId) {
+    const shareLayer = getActiveServerVoiceScreenshareLayer(convId);
+    const stableRemoteVideo = (tileUserId === meId
+      ? shareLayer?.getLocalVideoElement?.({ trackId: nextTrackId })
+      : shareLayer?.getRemoteVideoElement?.({ trackId: nextTrackId })) || null;
     if (stableRemoteVideo instanceof HTMLVideoElement && stableRemoteVideo !== videoEl) {
       stopMemberTileFrameProbe(videoEl);
       try {
@@ -160926,8 +161811,9 @@ function renderGroupCallStageMembers() {
     && privateStageAuthority.activePrivateConversationId === convId
   );
   const useSharedDedicatedShareStage = !!(
-    usePrivateDedicatedShareStage
-    || isGroupDmLiveKitTransportConversation(convId)
+    (usePrivateDedicatedShareStage || isGroupDmLiveKitTransportConversation(convId) || useServerVoiceStageModel)
+    && (stageLayoutMode === "focus" || (usePrivateDedicatedShareStage
+      && getServerVoiceScreenshares(convId).some((share) => share.isLocal || share.isWatched === true)))
   );
   const usePrivateParticipantStage = usePrivateDedicatedShareStage;
   if (usePrivateParticipantStage || useSharedDedicatedShareStage) {
@@ -161169,7 +162055,7 @@ function renderGroupCallStageMembers() {
         ? serverVoiceScreensharesByOwner.get(uid)
         : [];
       const hadForceRemovedScreenshareTile = isStageScreenshareForceRemovedOwner(convId, uid);
-      if (ownerScreenshares.some((share) => isLiveVideoTrack(share?.track, { allowMuted: true })) && hadForceRemovedScreenshareTile) {
+      if (ownerScreenshares.some((share) => share?.hasPublication || isLiveVideoTrack(share?.track, { allowMuted: true })) && hadForceRemovedScreenshareTile) {
         clearStageScreenshareForceRemovedOwner(convId, uid);
       }
       const suppressScreenshareTileAfterStop = isStageScreenshareForceRemovedOwner(convId, uid);
@@ -161256,6 +162142,9 @@ function renderGroupCallStageMembers() {
             primaryMode: "",
             activeShareOwnerId: uid,
             trackIdentity: shareTrackIdentity,
+            shareKey,
+            shareWatched: share.isWatched === true,
+            shareViewerState: share.viewerState || "available",
             renderReason: screenshareRenderReason,
           });
         });
@@ -161402,8 +162291,10 @@ function renderGroupCallStageMembers() {
       entry.detached === true ? 1 : 0,
       entry.track?.sid || entry.track?.id || entry.trackIdentity || '',
       entry.cameraPublicationKey || '',
+      entry.shareKey || '', entry.shareWatched ? 1 : 0, entry.shareViewerState || '',
       // Badge state is presentation state too, including local and moderation overrides.
       buildCallAudioStateBadgesHtml(entry.userId, convId),
+      getServerVoiceMemberModerationContext({ userId: entry.userId, conversationId: convId })?.canDragVoiceMember === true ? 1 : 0,
     ].join(':')).join('|');
     const mountedKeys = Array.from((stageViewport || grid).querySelectorAll('[data-call-grid-entry=\'1\'], [data-call-extra=\'1\']'))
       .map((element) => String(element.getAttribute('data-call-entry-key') || '').trim())
@@ -161480,9 +162371,10 @@ function renderGroupCallStageMembers() {
     if (tile) participantNodesReused += 1;
     if (!tile) {
       participantNodesCreated += 1;
-      tile = document.createElement("button");
+      tile = document.createElement(entryTileType === "screenshare" ? "section" : "button");
       tile.className = "stageGridTile stageGridTile--member";
-      tile.type = "button";
+      if (entryTileType !== "screenshare") tile.type = "button";
+      else { tile.tabIndex = 0; tile.setAttribute("role", "group"); }
       tile.setAttribute("data-call-grid-entry", "1");
       tile.innerHTML = `
         <video class="stageGridVideo" autoplay muted playsinline></video>
@@ -161604,6 +162496,8 @@ function renderGroupCallStageMembers() {
       tile.removeAttribute("title");
     }
     tile.setAttribute("data-call-media-type", entry.mediaType);
+    if (entry.shareKey) tile.setAttribute("data-share-viewer-key", entry.shareKey);
+    else tile.removeAttribute("data-share-viewer-key");
     tile.removeAttribute("data-call-share-primary");
     tile.setAttribute(
       "data-call-render-reason",
@@ -161693,7 +162587,8 @@ function renderGroupCallStageMembers() {
     });
     tile.classList.toggle("stageGridTile--media", !!entry.track);
     tile.onclick = (ev) => {
-      if (ev && typeof ev.button === "number" && ev.button !== 0) return;
+      if (ev?.defaultPrevented || (ev && typeof ev.button === "number" && ev.button !== 0)) return;
+      if (isPrivateCallSurfaceInteractiveDescendant(tile, eventTargetElement(ev))) return;
       const privateParticipantSurface = tile.getAttribute("data-private-call-participant-action") === "1";
       if (privateParticipantSurface) {
         const exactPrivateFocusTarget = resolveCallFocusEventTarget({
@@ -161800,6 +162695,12 @@ function renderGroupCallStageMembers() {
         return;
       }
       if (isServerVoiceConversationById(watchConvId)) closeMeProfilePopout();
+      const remoteShareKey = tile.getAttribute("data-share-viewer-key") || "";
+      if (remoteShareKey && normId(tile.getAttribute("data-call-user-id")) !== meId) {
+        if (ev.target?.closest?.("button, a, input, [role=menuitem]")) return;
+        focusRemoteShareViewer(convId, remoteShareKey);
+        return;
+      }
       if (
         memberMediaType === "share"
         && memberUserId !== meId
@@ -161816,16 +162717,13 @@ function renderGroupCallStageMembers() {
         startWatchingRemoteShare(watchConvId);
         return;
       }
-      if (clickedType === "participant_avatar" && !usePrivateParticipantStage) {
-        logStageTileEvent("stage.avatar_focus_skipped", {
-          tileId: memberTileId,
-          tileType: memberTileType,
-          participantId: memberUserId,
-          triggerReason: "avatar_tile_has_no_visual_track",
-          callerFunction: "renderGroupCallStageMembers.onclick",
+      if (isServerVoiceConversationById(watchConvId) && memberTileType !== "screenshare") {
+        activatePrivateCallParticipantFocusFromTile(tile, ev, {
+          inputMethod: ev?.detail === 0 ? "keyboard" : "pointer",
         });
         return;
       }
+      if (clickedType === "participant_avatar" && !usePrivateParticipantStage) return;
       logStageTileEvent("stage.focus_target", {
         tileId: memberTileId,
         tileType: memberTileType,
@@ -161942,7 +162840,10 @@ function renderGroupCallStageMembers() {
     };
 
     const avatarEl = tile.querySelector(".stageGridAvatar");
-    if (avatarEl) setAvatar(avatarEl, entry.avatar || null);
+    if (avatarEl) {
+      if (useServerVoiceStageModel) setServerVoiceParticipantAvatar(avatarEl, getGroupMemberIdentity(convId, entry.userId));
+      else setAvatar(avatarEl, entry.avatar || null);
+    }
     const isPrivateParticipantAction = !!(usePrivateDedicatedShareStage && entryTileType !== "screenshare");
     const labelEl = tile.querySelector(".stageGridLabel");
     if (labelEl) {
@@ -161999,6 +162900,10 @@ function renderGroupCallStageMembers() {
       tile.removeAttribute("data-call-personalized-color");
     }
     syncGroupCallMemberTileVideo(tile, entry.track || null);
+    if (entry.shareKey) {
+      const share = serverVoiceScreenshares.find((candidate) => candidate.key === entry.shareKey);
+      if (share && !share.isLocal) syncRemoteShareViewerControls(tile, share, convId);
+    }
   });
 
   for (const staleTile of existingTiles.values()) {
@@ -162124,8 +163029,10 @@ function renderGroupCallStageMembers() {
       entry.detached === true ? 1 : 0,
       entry.track?.sid || entry.track?.id || entry.trackIdentity || '',
       entry.cameraPublicationKey || '',
+      entry.shareKey || '', entry.shareWatched ? 1 : 0, entry.shareViewerState || '',
       // Badge state is presentation state too, including local and moderation overrides.
       buildCallAudioStateBadgesHtml(entry.userId, convId),
+      getServerVoiceMemberModerationContext({ userId: entry.userId, conversationId: convId })?.canDragVoiceMember === true ? 1 : 0,
     ].join(':')).join('|');
     serverVoiceStageRenderSignatureByConversation.set(convId, committedSignature);
   }
@@ -162625,7 +163532,10 @@ function renderIncomingCallNotification({
       && incomingTargetId
       && (activeSession.kind !== incomingKind || activeSession.id !== incomingTargetId)
     );
-    oAccept.textContent = switchesSession ? "Switch" : "Accept";
+    if (switchesSession && !groupCall && oHint) {
+      oHint.textContent = t("call.waiting_hint", "You're already in a call");
+    }
+    oAccept.textContent = groupCall && switchesSession ? "Switch" : "Accept";
     oAccept.setAttribute("aria-label", switchesSession ? "Accept and switch call" : "Accept call");
   }
   if (oAvatar) {
@@ -163309,6 +164219,7 @@ function findStageTileVideoForStreamContext(context = null) {
 function getPreferredCallPictureInPictureVideo() {
   if (!isCallPictureInPictureSupported()) return null;
   const convId = normId(callConversationId || activeDmId || "");
+  if (getActiveServerVoiceScreenshareLayer(convId)) return getCallPictureInPictureVideoForStreamContext();
   if (!remoteIsSharing || isRemoteShareWatchPromptActive(convId)) return null;
   return getCallPictureInPictureCandidateVideos().find((videoEl) => (
     !!videoEl?.srcObject
@@ -163316,8 +164227,29 @@ function getPreferredCallPictureInPictureVideo() {
   )) || null;
 }
 
+function captureShareVideoPlaybackAuthority(video) {
+  const stream = video?.srcObject;
+  const accountId = normId(state.user?.id || "");
+  const convId = normId(callConversationId || "");
+  const layer = getActiveServerVoiceScreenshareLayer(convId);
+  const key = video?.closest?.("[data-share-viewer-key]")?.getAttribute("data-share-viewer-key") || "";
+  return () => !!stream && video?.srcObject === stream && video.isConnected
+    && normId(state.user?.id || "") === accountId && normId(callConversationId || "") === convId
+    && (!layer || (getActiveServerVoiceScreenshareLayer(convId) === layer && (!key || layer.isShareWatched(key))));
+}
+
 function getCallPictureInPictureVideoForStreamContext(context = null) {
   if (!isCallPictureInPictureSupported()) return null;
+  const convId = normId(callConversationId || "");
+  if (getActiveServerVoiceScreenshareLayer(convId)) {
+    const resolved = resolveCurrentStreamMenuContext(context);
+    const key = String(context?.shareKey || resolved?.shareKey || resolved?.streamKey || "");
+    const viewer = resolveLiveKitViewerShare(convId, key);
+    if (!viewer?.share.isWatched) return null;
+    const presentation = getServerVoiceScreensharePresentationEntries(convId)
+      .find((entry) => entry.shareKey === viewer.share.key);
+    return presentation?.video?.srcObject ? presentation.video : null;
+  }
   const stageTileVideo = findStageTileVideoForStreamContext(context);
   if (stageTileVideo) return stageTileVideo;
   return getPreferredCallPictureInPictureVideo();
@@ -163345,9 +164277,15 @@ async function toggleCallPictureInPicture() {
     }
     const videoEl = getPreferredCallPictureInPictureVideo();
     if (!videoEl) return;
+    const isCurrent = captureShareVideoPlaybackAuthority(videoEl);
     bindCallPictureInPictureVideoEvents(videoEl);
     try { await videoEl.play?.(); } catch (_) {}
+    if (!isCurrent()) return false;
     await videoEl.requestPictureInPicture();
+    if (!isCurrent() && document.pictureInPictureElement === videoEl) {
+      await document.exitPictureInPicture?.();
+      return false;
+    }
   } catch (err) {
     console.warn("call picture-in-picture failed", err);
   } finally {
@@ -163369,9 +164307,15 @@ async function openCallPictureInPictureForStreamContext(context = null) {
       await document.exitPictureInPicture?.();
     }
     if (!videoEl) return false;
+    const isCurrent = captureShareVideoPlaybackAuthority(videoEl);
     bindCallPictureInPictureVideoEvents(videoEl);
     try { await videoEl.play?.(); } catch (_) {}
+    if (!isCurrent()) return false;
     await videoEl.requestPictureInPicture();
+    if (!isCurrent() && document.pictureInPictureElement === videoEl) {
+      await document.exitPictureInPicture?.();
+      return false;
+    }
     refreshCallUI();
     return true;
   } catch (error) {
@@ -164668,6 +165612,7 @@ function queuePendingRemoteAudioPlayback(audioEl) {
 function attemptRemoteAudioPlayback(audioEl, { queueOnFail = true } = {}) {
   if (!audioEl || !audioEl.srcObject) return;
   const previousMuted = !!audioEl.muted;
+  const playbackStream = audioEl.srcObject;
   try { audioEl.muted = true; } catch (_) {}
 
   let playPromise = null;
@@ -164682,6 +165627,10 @@ function attemptRemoteAudioPlayback(audioEl, { queueOnFail = true } = {}) {
     applyRemoteAudioVolumes();
   };
   const onFailure = () => {
+    if (audioEl.srcObject !== playbackStream || !audioEl.isConnected) {
+      pendingRemoteAudioPlayEls.delete(audioEl);
+      return;
+    }
     try { audioEl.muted = previousMuted; } catch (_) {}
     if (queueOnFail) queuePendingRemoteAudioPlayback(audioEl);
   };
@@ -165918,6 +166867,12 @@ async function disconnectMinimalServerVoiceTransport({
   const activeController = controller
     || getActiveServerVoiceTransportController(convId)
     || ((convId && normId(serverVoiceTransportConversationId || "") === convId) ? serverVoiceTransportController : null);
+  if (activeController) {
+    liveKitLocalVoiceMediaQueueByController.get(activeController)?.cancel();
+    liveKitLocalVoiceAttributeQueueByController.get(activeController)?.cancel();
+    liveKitLocalVoiceDataQueueByController.get(activeController)?.cancel();
+    liveKitLocalCallStateSignatureByController.delete(activeController);
+  }
   const initialOwnership = classifyLiveKitControllerCleanup({
     requestedController: controller,
     currentController: serverVoiceTransportController,
@@ -166721,6 +167676,7 @@ async function endCallUI(msg = null, {
     }
     return;
   }
+  cancelLocalVoiceControlOperations(callConversationId || activeDmId);
   const endConvId = normId(callConversationId || activeDmId || "");
   const serverVoiceCallContext = !!(endConvId && isServerVoiceConversationById(endConvId));
   clearCallFeedbackToast();
@@ -169253,11 +170209,28 @@ function cancelPrivateCallAcceptPipeline(reason = "cancelled") {
   return cancelled;
 }
 
+function isCurrentPrivateCallInvite(invite, { requirePending = true, allowExpired = false } = {}) {
+  if (!invite || normId(invite.accountId) !== normId(state.user?.id || "")) return false;
+  const conversationId = normId(invite.conversationId);
+  const generation = normId(invite.callGeneration);
+  if (!conversationId || !generation || !normId(invite.fromUserId)) return false;
+  if (!allowExpired && !(Number(invite.expiresAtMs) > Date.now())) return false;
+  if (isPrivateCallPresentationGenerationTerminal(conversationId, generation)) return false;
+  const pending = pendingPrivateCallLiveKitInvite;
+  if (!pending) return !requirePending;
+  return normId(pending.accountId) === normId(invite.accountId)
+    && normId(pending.conversationId) === conversationId
+    && normId(pending.callGeneration) === generation
+    && normId(pending.fromUserId) === normId(invite.fromUserId);
+}
+
 function restorePendingPrivateInviteAfterSessionSwitch(invite = null) {
   const record = invite && typeof invite === "object" ? { ...invite } : null;
   const conversationId = normId(record?.conversationId || "");
   const fromUserId = normId(record?.fromUserId || "");
-  if (!conversationId || !fromUserId) return false;
+  // The old call's teardown can clear the overlay. It cannot revive an expired,
+  // cancelled, replaced or differently owned invitation from this snapshot.
+  if (!isCurrentPrivateCallInvite(record, { requirePending: false })) return false;
   pendingPrivateCallLiveKitInvite = record;
   pendingCallInfo = {
     conversationId,
@@ -169289,6 +170262,7 @@ function acceptIncomingPrivateCall({
     const inviteSnapshot = pendingPrivateCallLiveKitInvite
       ? { ...pendingPrivateCallLiveKitInvite }
       : null;
+    const acceptingAccountId = normId(state.user?.id || "");
     const inviteConversationId = normId(
       pendingPrivateCallLiveKitInvite?.conversationId
       || pendingCallInfo?.conversationId
@@ -169301,10 +170275,21 @@ function acceptIncomingPrivateCall({
       || getPrivateCallGeneration(inviteConversationId)
       || ""
     );
+    if (inviteSnapshot ? !isCurrentPrivateCallInvite(inviteSnapshot) : !pendingOffer) return Promise.resolve(false);
+    const pendingTarget = globalCallSessionCoordinator.getSnapshot().pendingTarget;
+    if (pendingTarget && (
+      pendingTarget.kind !== "private"
+      || pendingTarget.conversationId !== inviteConversationId
+      || pendingTarget.generation !== inviteGeneration
+    )) return Promise.resolve(false);
     return globalCallSessionCoordinator.requestTransition({
       target: buildPrivateCallSessionTarget(inviteConversationId, inviteGeneration, "accept_incoming"),
       reason: "accept_incoming_private_call",
       preflight: async () => {
+        if (normId(state.user?.id || "") !== acceptingAccountId
+            || (inviteSnapshot && !isCurrentPrivateCallInvite(inviteSnapshot))) {
+          return { ok: false, reason: "incoming_private_invite_obsolete" };
+        }
         const currentInviteConversationId = normId(
           pendingPrivateCallLiveKitInvite?.conversationId
           || pendingCallInfo?.conversationId
@@ -169321,6 +170306,10 @@ function acceptIncomingPrivateCall({
         if (inviteGeneration && currentGeneration && inviteGeneration !== currentGeneration) {
           return { ok: false, reason: "incoming_private_generation_changed" };
         }
+        stopSfx("incoming");
+        if (pendingPrivateCallIncomingTimeoutTimer) clearTimeout(pendingPrivateCallIncomingTimeoutTimer);
+        pendingPrivateCallIncomingTimeoutTimer = null;
+        showOverlay(false);
         return {
           ok: true,
           target: buildPrivateCallSessionTarget(
@@ -169332,7 +170321,8 @@ function acceptIncomingPrivateCall({
       },
       bringToFront: bringGlobalCallSessionToFront,
       enterTarget: () => {
-        restorePendingPrivateInviteAfterSessionSwitch(inviteSnapshot);
+        if (normId(state.user?.id || "") !== acceptingAccountId) return false;
+        if (inviteSnapshot && !restorePendingPrivateInviteAfterSessionSwitch(inviteSnapshot)) return false;
         return acceptIncomingPrivateCall({
           event,
           navigate,
@@ -169415,6 +170405,7 @@ function beginPrivateCallStartAttempt(conversationId, otherUserId = "") {
   privateCallStartAttemptCounter += 1;
   activePrivateCallStartAttempt = {
     id: privateCallStartAttemptCounter,
+    accountId: normId(state.user?.id || ""),
     conversationId: convId,
     otherUserId: normId(otherUserId || ""),
     callGeneration,
@@ -169698,7 +170689,7 @@ function clearPrivateCallLiveKitState(conversationId = null, {
     privateCallJoinInFlight = false;
   }
   const pendingInviteConvId = normId(pendingPrivateCallLiveKitInvite?.conversationId || "");
-  if (clearPendingInvite || !convId || (pendingInviteConvId && pendingInviteConvId === convId)) {
+  if (!convId || (pendingInviteConvId && pendingInviteConvId === convId)) {
     pendingPrivateCallLiveKitInvite = null;
   }
   const stateConvId = normId(privateCallStateConversationId || "");
@@ -171116,7 +172107,7 @@ function getServerVoiceScreenshareForParticipant(conversationId = null, particip
 }
 
 function bindServerVoiceCameraLayer(conversationId, controller = null) {
-  const convId = normId(conversationId || "");
+  let convId = normId(conversationId || "");
   if (!convId || !controller || !controller.room) return null;
   if (!shouldUseServerVoiceLiveKitTransport(convId)) return null;
   const meId = normId(state.user?.id || "");
@@ -171128,6 +172119,10 @@ function bindServerVoiceCameraLayer(conversationId, controller = null) {
   }
   const layer = createServerVoiceCameraLayer({
     conversationId: convId,
+    onConversationChanged: (nextId) => { convId = normId(nextId || ""); },
+    shouldSubscribeToParticipant: (participant) => !isServerVoiceV2Enabled()
+      || !currentServerVoiceV2Session || !isServerVoiceConversationById(convId)
+      || shouldSubscribeToVoiceV2Participant(participant),
     localUserId: meId,
     logger: ({ event, ...details } = {}) => {
       const eventName = String(event || "").trim();
@@ -171310,7 +172305,7 @@ async function toggleServerVoiceCamera(conversationId = null, {
 }
 
 function bindServerVoiceScreenshareLayer(conversationId, controller = null) {
-  const convId = normId(conversationId || "");
+  let convId = normId(conversationId || "");
   if (!convId || !controller || !controller.room) return null;
   if (!shouldUseServerVoiceLiveKitTransport(convId)) return null;
   const meId = normId(state.user?.id || "");
@@ -171327,10 +172322,17 @@ function bindServerVoiceScreenshareLayer(conversationId, controller = null) {
   const nativeHighMotionBridge = privateOneToOne ? getNativeHighMotionCaptureBridge() : null;
   const layer = createServerVoiceScreenshareLayer({
     conversationId: convId,
+    onConversationChanged: (nextId) => { convId = normId(nextId || ""); },
+    shouldSubscribeToParticipant: (participant) => !isServerVoiceV2Enabled()
+      || !currentServerVoiceV2Session || !isServerVoiceConversationById(convId)
+      || shouldSubscribeToVoiceV2Participant(participant),
     localUserId: meId,
-    // Every call kind uses the same exact publication -> subscribed track ->
-    // dedicated stage binding path. Server calls must not stop at a placeholder.
-    autoWatchRemoteShares: true,
+    // Publication availability is independent of the viewer choosing to receive it.
+    autoWatchRemoteShares: false,
+    onRemoteShareViewingStopped: (details) => {
+      if (normId(state.user?.id || "") !== meId || getActiveServerVoiceScreenshareLayer(convId) !== layer) return;
+      cleanupRemoteShareViewerMedia(convId, details);
+    },
     privateOneToOne,
     resolveShareTitle: ({ ownerUserId = "", isLocal = false } = {}) => resolveCallShareTitle(convId, {
       ownerUserId,
@@ -172481,7 +173483,16 @@ function isServerVoiceTransportParticipantInChannel(conversationId, userId, part
   const uid = normId(userId || "");
   const meId = normId(state.user?.id || "");
   if (!convId || !uid) return false;
-  if (uid !== meId && isServerVoiceV2Enabled() && !isCurrentServerVoiceV3Session({ conversationId: convId })) {
+  // The shared stage also renders an active private DM Room. Require its
+  // explicit cached kind here: the general routing helper has an unknown-kind
+  // fallback, which must not bypass the server assignment check.
+  const privateRoomMeta = isPrivateDmLiveKitTransportConversation(convId)
+    ? (getActiveConversationMeta(convId) || getConversationMeta(convId))
+    : null;
+  const activePrivateStage = String(privateRoomMeta?.kind || "").trim().toLowerCase() === "dm";
+  if (uid !== meId && isServerVoiceV2Enabled()
+    && !activePrivateStage
+    && !isCurrentServerVoiceV3Session({ conversationId: convId })) {
     const context = findServerChannelContextByConversationId(convId) || null;
     const expectedServerId = normId(context?.serverId || context?.server_id || "");
     const expectedChannelId = normId(context?.channel?.id || context?.channelId || context?.channel_id || "");
@@ -172892,9 +173903,14 @@ function scheduleLiveKitLocalVoiceState(controller, {
   if (!queue) {
     queue = createLatestLocalVoiceMediaQueue({
       apply: async (nextState, context = {}) => {
+        const currentConvId = normId(context.conversationId);
+        const isOwned = () => !!inCall && controller === getActiveServerVoiceTransportController(currentConvId);
+        if (!context.isCurrent?.() || !isOwned()) return;
         if (typeof controller.setMicrophoneMuted === "function") {
-          await controller.setMicrophoneMuted(nextState.muted, {
+          await controller.setMicrophoneMuted(getEffectiveLocalMicMuted(currentConvId), {
             reason: String(context.reason || "local_voice_state"),
+            isCurrent: () => context.isCurrent() && isOwned(),
+            getEffectiveMuted: () => !isOwned() || getEffectiveLocalMicMuted(currentConvId),
           });
         }
       },
@@ -172905,13 +173921,15 @@ function scheduleLiveKitLocalVoiceState(controller, {
   let attributeQueue = liveKitLocalVoiceAttributeQueueByController.get(controller) || null;
   if (!attributeQueue) {
     attributeQueue = createLatestLocalVoiceMediaQueue({
-      apply: async (nextState) => {
-        if (typeof controller.updateLocalParticipantAttributes !== "function") return;
+      apply: async (nextState, context = {}) => {
+        const isCurrent = () => context.isCurrent?.() && !!inCall
+          && controller === getActiveServerVoiceTransportController(context.conversationId);
+        if (!isCurrent() || typeof controller.updateLocalParticipantAttributes !== "function") return;
         await controller.updateLocalParticipantAttributes({
           [CALL_STATE_ATTRIBUTE_SELF_MUTED]: nextState.muted ? "1" : "0",
           [CALL_STATE_ATTRIBUTE_SELF_DEAFENED]: nextState.deafened ? "1" : "0",
           [CALL_STATE_ATTRIBUTE_VERSION]: "1",
-        });
+        }, { isCurrent });
       },
     });
     liveKitLocalVoiceAttributeQueueByController.set(controller, attributeQueue);
@@ -176462,6 +177480,155 @@ function normalizeRemoteShareMode(value) {
   return "";
 }
 
+// The existing screenshare layer owns consent. These helpers only project it
+// into the shared stage and route explicit viewer actions to that same layer.
+function resolveLiveKitViewerShare(conversationId = "", shareKey = "") {
+  const convId = normId(conversationId || callConversationId || "");
+  const layer = getActiveServerVoiceScreenshareLayer(convId);
+  if (!layer || normId(callConversationId || "") !== convId) return null;
+  const shares = getServerVoiceScreenshares(convId).filter((share) => !share.isLocal);
+  const key = String(shareKey || "").trim();
+  if (key) {
+    const exact = shares.find((share) => share.key === key);
+    if (exact) return { layer, share: exact, conversationId: convId };
+    // Legacy audio preferences are owner-scoped; do not let a stale exact
+    // publication key silently select a later share from the same owner.
+    if (!key.startsWith("stream:")) return null;
+    const parsed = parseRemoteStreamPreferenceKey(key);
+    if (parsed.conversationId !== convId) return null;
+    const owned = shares.filter((share) => share.ownerUserId === parsed.participantId
+      && (!parsed.streamIdentity || [share.key, share.trackSid, share.trackId].some((identity) => String(identity || "") === parsed.streamIdentity)));
+    return owned.length === 1 ? { layer, share: owned[0], conversationId: convId } : null;
+  }
+  const focusedKey = document.getElementById("callStage")?.getAttribute("data-private-call-focused-share-key") || "";
+  const focused = shares.find((share) => share.key === focusedKey);
+  const share = focused || (shares.length === 1 ? shares[0] : null);
+  return share ? { layer, share, conversationId: convId } : null;
+}
+
+function shouldReceiveCallScreenShareAudio(controller, localUserId, { publication, participant } = {}) {
+  if (!controller || controller !== serverVoiceTransportController
+    || normId(localUserId) !== normId(state.user?.id || "")) return false;
+  return getActiveServerVoiceScreenshareLayer(controller.conversationId)
+    ?.isRemoteScreenTrackWatched?.(publication, participant) === true;
+}
+
+function cleanupRemoteShareViewerMedia(conversationId, { key = "", audioOnly = false, audioTrackIds = [], audioTrackSids = [] } = {}) {
+  const convId = normId(conversationId);
+  const trackIds = new Set(audioTrackIds.map(normId));
+  const trackSids = new Set(audioTrackSids.map(normId));
+  for (const [id, entry] of remoteAudioTrackEls) {
+    if (normId(entry?.conversationId || "") !== convId
+      || resolveRemoteAudioEntryPlaybackDomain(entry) !== REMOTE_AUDIO_TYPE_SHARE) continue;
+    if (trackIds.has(normId(id)) || trackSids.has(normId(entry?.trackSid || ""))) {
+      removeRemoteAudioTrackEl(id, { reason: "viewer_stopped_share" });
+    }
+  }
+  if (audioOnly) return;
+  const stage = document.getElementById("callStage");
+  for (const surface of stage?.querySelectorAll?.("[data-share-viewer-key]") || []) {
+    if (surface.getAttribute("data-share-viewer-key") !== key) continue;
+    for (const video of surface.querySelectorAll("video")) {
+      if (document.pictureInPictureElement === video) {
+        try { document.exitPictureInPicture?.().catch?.(() => {}); } catch (_) {}
+      }
+      try { video.pause(); video.srcObject = null; } catch (_) {}
+    }
+    clearCallTileWatchSnapshot(surface);
+  }
+}
+
+function focusRemoteShareViewer(conversationId, shareKey) {
+  const context = resolveLiveKitViewerShare(conversationId, shareKey);
+  if (!context || context.share.isWatched !== true) return false;
+  const entry = getServerVoiceScreensharePresentationEntries(conversationId)
+    .find((candidate) => candidate.shareKey === shareKey);
+  if (!entry?.panel) return false;
+  return activatePrivateCallShareFocusFromPanel(entry.panel, null, { inputMethod: "viewer" });
+}
+
+function syncRemoteShareViewerControls(surface, share, conversationId) {
+  if (!surface || !share || share.isLocal) return;
+  const convId = normId(conversationId);
+  const ownerId = normId(state.user?.id || "");
+  const owningLayer = getActiveServerVoiceScreenshareLayer(convId);
+  surface.setAttribute("data-share-viewer-key", share.key);
+  const viewerState = share.isWatched !== true ? "available" : (share.viewerState || "connecting");
+  surface.setAttribute("data-share-viewer-state", viewerState);
+  surface.classList.toggle("is-watch-gated", viewerState === "available");
+  surface.classList.remove("is-share-loading");
+  for (const oldPrompt of surface.querySelectorAll(".callTileWatchCta, .callTileLoadingCta")) oldPrompt.hidden = true;
+  clearCallTileWatchSnapshot(surface);
+  let controls = surface.querySelector(":scope > .shareViewerControls");
+  if (!controls) {
+    controls = document.createElement("div");
+    controls.className = "shareViewerControls";
+    controls.innerHTML = '<span class="shareViewerStatus" role="status"></span><button type="button" class="shareViewerAction"></button><button type="button" class="shareViewerRetry" hidden>Tentar novamente</button>';
+    controls.addEventListener("pointerdown", (event) => event.stopPropagation());
+    controls.addEventListener("dragstart", (event) => { event.preventDefault(); event.stopPropagation(); });
+    controls.addEventListener("keydown", (event) => event.stopPropagation());
+    controls.addEventListener("click", (event) => {
+      const button = event.target?.closest?.("button[data-share-viewer-action]");
+      if (!button) return;
+      event.preventDefault(); event.stopPropagation();
+      const binding = controls.__shareViewerContext;
+      const convId = binding?.conversationId || "";
+      if (!binding || normId(state.user?.id || "") !== binding.accountId || getActiveServerVoiceScreenshareLayer(convId) !== binding.layer) return;
+      const key = surface.getAttribute("data-share-viewer-key") || "";
+      if (button.dataset.shareViewerAction === "stop") stopWatchingRemoteShare(convId, { streamKey: key });
+      else {
+        if (button.dataset.shareViewerAction === "retry") stopWatchingRemoteShare(convId, { streamKey: key });
+        startWatchingRemoteShare(convId, { streamKey: key });
+      }
+    });
+    surface.appendChild(controls);
+  }
+  controls.__shareViewerContext = { conversationId: convId, accountId: ownerId, layer: owningLayer };
+  const status = controls.querySelector(".shareViewerStatus");
+  status.textContent = viewerState === "available" ? "Está a partilhar"
+    : viewerState === "watching" ? "A ver transmissão"
+      : viewerState === "failed" ? "Não foi possível reproduzir a transmissão."
+        : viewerState === "interrupted" ? "Transmissão interrompida"
+          : "A ligar à transmissão…";
+  const button = controls.querySelector(".shareViewerAction");
+  button.dataset.shareViewerAction = share.isWatched === true ? "stop" : "watch";
+  button.textContent = share.isWatched === true ? "Parar de ver" : "Ver transmissão";
+  button.setAttribute("aria-label", `${button.textContent} — ${share.ownerDisplayName || "participante"}`);
+  const retry = controls.querySelector(".shareViewerRetry");
+  retry.dataset.shareViewerAction = "retry";
+  retry.hidden = !["failed", "interrupted"].includes(viewerState);
+  if (surface.classList.contains("serverVoiceScreensharePanel")) {
+    let avatar = surface.querySelector(":scope > .shareViewerAvatar");
+    if (!avatar) { avatar = document.createElement("div"); avatar.className = "shareViewerAvatar"; surface.appendChild(avatar); }
+    const identity = getGroupMemberIdentity(convId, share.ownerUserId);
+    setAvatar(avatar, identity?.avatar || null);
+    avatar.hidden = viewerState === "watching";
+  }
+}
+
+function syncCallRemoteShareViewerUi(conversationId) {
+  const convId = normId(conversationId);
+  if (!getActiveServerVoiceScreenshareLayer(convId)) return;
+  const shares = getServerVoiceScreenshares(convId);
+  const stage = document.getElementById("callStage");
+  for (const entry of getServerVoiceScreensharePresentationEntries(convId)) {
+    if (entry.panel && !entry.share.isLocal) syncRemoteShareViewerControls(entry.panel, entry.share, convId);
+  }
+  for (const tile of stage?.querySelectorAll?.("[data-call-grid-entry='1'][data-call-media-type='share']") || []) {
+    const key = tile.getAttribute("data-share-viewer-key") || "";
+    const share = shares.find((candidate) => candidate.key === key);
+    if (share && !share.isLocal) syncRemoteShareViewerControls(tile, share, convId);
+  }
+  const focusedKey = stage?.getAttribute("data-private-call-focused-share-key") || "";
+  if (focusedKey && stageFocusMemberMediaType === "share") {
+    const share = shares.find((candidate) => String(candidate.key || "").trim().toLowerCase() === focusedKey.trim().toLowerCase());
+    if (!share || (!share.isLocal && !share.isWatched)) {
+      clearPrivateCallFocusPresentationState(stage, { reason: "remote_share_viewing_ended" });
+    }
+  }
+}
+
+
 function setRemoteShareWatchEnabled(conversationId, enabled = true, {
   streamKey = "",
   scope = "auto",
@@ -176507,6 +177674,10 @@ function clearRemoteShareWatchState(conversationId = null) {
 function isRemoteShareWatchPromptActive(conversationId = null, streamKey = "") {
   const convId = normId(conversationId || callConversationId || activeDmId || "");
   if (!convId) return false;
+  if (getActiveServerVoiceScreenshareLayer(convId)) {
+    const viewer = resolveLiveKitViewerShare(convId, streamKey);
+    return !!viewer && viewer.share.isWatched !== true;
+  }
   const callActive = !!(
     inCall ||
     (
@@ -176539,6 +177710,17 @@ function stopWatchingRemoteShare(conversationId = null, {
   const convId = normId(conversationId || callConversationId || activeDmId || "");
   if (!convId) return;
   const resolvedStreamKey = String(streamKey || resolveCurrentStreamMenuContext(context).streamKey || "").trim();
+  const viewer = resolveLiveKitViewerShare(convId, resolvedStreamKey);
+  if (getActiveServerVoiceScreenshareLayer(convId)) {
+    if (!viewer) return false;
+    const stopped = viewer.layer.stopWatchingShare(viewer.share.key);
+    const stage = document.getElementById("callStage");
+    if (stage?.getAttribute("data-private-call-focused-share-key") === viewer.share.key) {
+      clearPrivateCallFocusPresentationState(stage, { reason: "viewer_stop_watching" });
+    }
+    refreshCallUI();
+    return stopped;
+  }
   setRemoteShareWatchEnabled(convId, false, {
     streamKey: resolvedStreamKey,
     scope: resolvedStreamKey ? "stream" : "conversation",
@@ -176565,6 +177747,17 @@ function startWatchingRemoteShare(conversationId = null, {
   const convId = normId(conversationId || callConversationId || activeDmId || "");
   if (!convId) return;
   const resolvedStreamKey = String(streamKey || "").trim();
+  const viewer = resolveLiveKitViewerShare(convId, resolvedStreamKey);
+  if (getActiveServerVoiceScreenshareLayer(convId)) {
+    if (!viewer || !viewer.layer.watchShare(viewer.share.key, { focusActive: false })) return false;
+    const controller = serverVoiceTransportController;
+    if (controller && normId(controller.conversationId || "") === convId) {
+      controller.reconcileRemoteScreenShareAudio?.({ reason: "viewer_watch" });
+    }
+    refreshCallUI();
+    focusRemoteShareViewer(convId, viewer.share.key);
+    return true;
+  }
   setRemoteShareWatchEnabled(convId, true, {
     streamKey: resolvedStreamKey,
     scope: resolvedStreamKey ? "stream" : "conversation",
@@ -176965,42 +178158,63 @@ function publishServerVoiceLocalAudioStateData({
     channelId: captured.channelId,
     sessionId: captured.sessionId,
   });
-  void controller.publishData(JSON.stringify({
-    type: "server_voice_self_audio_state_v1",
-    self_muted: voiceState.muted,
-    self_deafened: voiceState.deafened,
-    state_clock: stateClock,
-    session_id: captured.sessionId,
-  }), {
-    reliable: true,
-    topic: SERVER_VOICE_AUDIO_STATE_DATA_TOPIC,
-  }).then(() => {
-    emitServerVoiceMediaStateDiagnostic({
-      action: "sent",
-      source: "livekit-data",
-      decision: "published",
-      stateClock,
-      selfMuted: voiceState.muted,
-      selfDeafened: voiceState.deafened,
-      serverId: captured.serverId,
-      channelId: captured.channelId,
-      sessionId: captured.sessionId,
+  let queue = liveKitLocalVoiceDataQueueByController.get(controller) || null;
+  if (!queue) {
+    queue = createLatestLocalVoiceMediaQueue({
+      apply: (nextState, context) => context.publish(nextState, context),
     });
-  }, (error) => {
-    emitServerVoiceMediaStateDiagnostic({
-      action: "send-failed",
-      source: "livekit-data",
-      decision: permission?.canPublishData === false ? "grant_denied" : "publish_failed",
-      canPublishData: permission?.canPublishData === true,
-      canUpdateOwnMetadata,
-      stateClock,
-      selfMuted: voiceState.muted,
-      selfDeafened: voiceState.deafened,
-      serverId: captured.serverId,
-      channelId: captured.channelId,
-      sessionId: captured.sessionId,
-      errorCode: error?.code || error?.name || "publish_failed",
-    });
+    liveKitLocalVoiceDataQueueByController.set(controller, queue);
+  }
+  queue.enqueue(voiceState, {
+    // A transport may be reused when moving channels. Capture ownership per
+    // request, not when creating its queue.
+    publish: async (nextState, context) => {
+      const isCurrent = () => context.isCurrent?.()
+        && controller === getActiveServerVoiceTransportController(convId)
+        && isCurrentServerVoiceMembershipAudioStateContext(captured);
+      if (!isCurrent()) return;
+      try {
+        await controller.publishData(JSON.stringify({
+          type: "server_voice_self_audio_state_v1",
+          self_muted: nextState.muted,
+          self_deafened: nextState.deafened,
+          state_clock: stateClock,
+          session_id: captured.sessionId,
+        }), {
+          reliable: true,
+          topic: SERVER_VOICE_AUDIO_STATE_DATA_TOPIC,
+        });
+        if (!isCurrent()) return;
+        emitServerVoiceMediaStateDiagnostic({
+          action: "sent",
+          source: "livekit-data",
+          decision: "published",
+          stateClock,
+          selfMuted: nextState.muted,
+          selfDeafened: nextState.deafened,
+          serverId: captured.serverId,
+          channelId: captured.channelId,
+          sessionId: captured.sessionId,
+        });
+      } catch (error) {
+        if (!isCurrent()) return;
+        emitServerVoiceMediaStateDiagnostic({
+          action: "send-failed",
+          source: "livekit-data",
+          decision: permission?.canPublishData === false ? "grant_denied" : "publish_failed",
+          canPublishData: permission?.canPublishData === true,
+          canUpdateOwnMetadata,
+          stateClock,
+          selfMuted: nextState.muted,
+          selfDeafened: nextState.deafened,
+          serverId: captured.serverId,
+          channelId: captured.channelId,
+          sessionId: captured.sessionId,
+          errorCode: error?.code || error?.name || "publish_failed",
+        });
+        throw error;
+      }
+    },
   });
   return true;
 }
@@ -179081,6 +180295,28 @@ function applyMicMute(reason = "unknown") {
 function applyDeafen(reason = "apply-deafen") {
   muteAllRemoteAudioTracks(getEffectiveLocalDeafened(), reason);
 }
+function refreshLocalVoiceControlButtons(conversationId = "") {
+  const muted = getEffectiveLocalMicMuted(conversationId);
+  const outputMuted = getEffectiveLocalDeafened(conversationId);
+  const micLabel = isServerVoiceSelfMuted(conversationId) ? "Server muted"
+    : (muted ? t("call.unmute_mic", "Unmute microphone") : t("call.mute_mic", "Mute microphone"));
+  const deafenLabel = isServerVoiceSelfDeafened(conversationId) ? "Server deafened"
+    : (outputMuted ? t("call.undeafen", "Unmute incoming audio") : t("call.deafen", "Mute incoming audio"));
+  for (const [ids, enabled, label] of [
+    [["btnMicToggle", "btnHeaderMicToggle", "btnMicToggleSmall"], muted, micLabel],
+    [["btnDeafenToggle", "btnHeaderDeafenToggle", "btnDeafenToggleSmall"], outputMuted, deafenLabel],
+  ]) {
+    for (const id of ids) {
+      const button = document.getElementById(id);
+      if (!button) continue;
+      button.classList.toggle("is-on", enabled);
+      button.setAttribute("aria-pressed", String(enabled));
+      setCallButtonA11y(button, label);
+    }
+  }
+  pushDesktopCallThumbarState();
+}
+
 function applyLocalVoiceState({
   muted = micMuted,
   deafened: nextDeafened = deafened,
@@ -179123,8 +180359,19 @@ function applyLocalVoiceState({
     });
   }
   updateActiveServerVoiceTransportLocalControls(convId, reason);
-  refreshCallUI();
-  refreshServerVoiceChannelBadges();
+  // The privacy gate and canonical state above stay synchronous. Full stage
+  // and sidebar reconciliation runs once per frame, not once per activation.
+  refreshLocalVoiceControlButtons(convId);
+  if (localVoiceControlRenderFrame == null) {
+    const ownerController = getActiveServerVoiceTransportController(convId);
+    localVoiceControlRenderFrame = requestAnimationFrame(() => {
+      localVoiceControlRenderFrame = null;
+      if (canSyncCallState !== !!inCall || meId !== normId(state.user?.id || "")
+        || ownerController !== getActiveServerVoiceTransportController(convId)) return;
+      refreshCallUI();
+      refreshServerVoiceChannelBadges();
+    });
+  }
 
   if (cue) {
     if (canSyncCallState) {
@@ -179141,69 +180388,67 @@ function applyLocalVoiceState({
 
 async function toggleMic() {
   const intentGeneration = ++localVoiceControlIntentGeneration;
-  const currentState = normalizeLocalVoiceState({ muted: micMuted, deafened });
-  const nextState = getNextLocalVoiceState(currentState, "mute");
   const convId = normId(callConversationId || activeDmId || pendingCallInfo?.conversationId || "");
-  let serverVoiceDecision = null;
-  if (convId && isServerVoiceConversationById(convId) && !nextState.muted) {
-    const context = getServerVoicePermissionContext({ conversationId: convId });
-    serverVoiceDecision = getCachedServerVoicePermissionDecision(context.serverId, context.channelId);
-    if (!serverVoiceDecision || Date.now() - Number(serverVoiceDecision.checkedAt || 0) > 15000) {
-      serverVoiceDecision = await refreshServerVoicePermissionDecision({
-        ...context,
-        force: false,
-        reason: "microphone_toggle",
-      }).catch(() => null);
+  const controller = getActiveServerVoiceTransportController(convId);
+  const userId = normId(state.user?.id || "");
+  const wasInCall = !!inCall;
+  const sessionGeneration = serverVoiceOperationLifecycle.getCurrent()?.generation;
+  const isOwned = () => wasInCall === !!inCall
+    && userId === normId(state.user?.id || "")
+    && convId === normId(callConversationId || activeDmId || pendingCallInfo?.conversationId || "")
+    && controller === getActiveServerVoiceTransportController(convId)
+    && sessionGeneration === serverVoiceOperationLifecycle.getCurrent()?.generation;
+  const pending = localVoiceControlPendingIntent;
+  const reusePending = pending?.isOwned() && pending.generation === intentGeneration - 1;
+  const currentState = normalizeLocalVoiceState(reusePending ? pending.state : { muted: micMuted, deafened });
+  const nextState = getNextLocalVoiceState(currentState, "mute");
+  const applyIntent = (nextState, previous) => {
+    if (previous.deafened) serverVoiceDeafenRestoreState = null;
+    applyLocalVoiceState({
+      ...nextState,
+      reason: previous.deafened ? "ui_unmute_clears_deafen" : "ui_toggle_mic",
+      cue: nextState.muted ? "mute" : "unmute",
+    });
+  };
+  if (reusePending) {
+    pending.generation = intentGeneration;
+    pending.state = nextState;
+    pending.previous = currentState;
+    // Privacy is synchronous; only authorization of an unmute can wait.
+    if (nextState.muted) applyIntent(nextState, currentState);
+    return;
+  }
+  if (nextState.muted || !convId || !isServerVoiceConversationById(convId)) {
+    applyIntent(nextState, currentState);
+    return;
+  }
+  if (blockServerMutedSelfUnmute("ui_toggle")) return;
+  const context = getServerVoicePermissionContext({ conversationId: convId });
+  let decision = getCachedServerVoicePermissionDecision(context.serverId, context.channelId);
+  const request = { state: nextState, previous: currentState, generation: intentGeneration, isOwned };
+  localVoiceControlPendingIntent = request;
+  try {
+    if (!decision || Date.now() - Number(decision.checkedAt || 0) > 15000) {
+      decision = await refreshServerVoicePermissionDecision({ ...context, force: false, reason: "microphone_toggle" }).catch(() => null);
     }
-    if (intentGeneration !== localVoiceControlIntentGeneration) return;
-    if ((!serverVoiceDecision?.ok || serverVoiceDecision.speak !== true) && !currentState.deafened) {
+    if (localVoiceControlPendingIntent !== request || !isOwned()
+      || request.generation !== localVoiceControlIntentGeneration || request.state.muted) return;
+    if (!decision?.ok || decision.speak !== true) {
       notifyServerVoicePermissionDenied("speak");
       refreshCallUI();
       return;
     }
-  }
-  if (!nextState.muted && !currentState.deafened && blockServerMutedSelfUnmute("ui_toggle")) return;
-  if (
-    serverVoiceDecision?.speak === true
-    && !nextState.muted
-    && serverVoiceTransportController
-    && !serverVoiceTransportController.getSnapshot?.()?.local?.audioTrackPublished
-  ) {
-    try {
-      const stream = await getLocalAudioStream();
-      const micTrack = getBestLocalMicTrack() || stream?.getAudioTracks?.()[0] || null;
-      if (!micTrack) throw new Error("Microphone unavailable.");
-      if (intentGeneration !== localVoiceControlIntentGeneration) return;
-      localMicTrack = micTrack;
-      try { localMicTrack.contentHint = "speech"; } catch (_) {}
-      registerCallSpeakingMeter(localMicTrack, normId(state.user?.id || ""), { local: true });
-      localMicTrack.enabled = true;
-      await serverVoiceTransportController.publishMicrophone(localMicTrack, {
-        micMuted: false,
-        deafened: false,
-        inputDeviceId: String(voiceInputDeviceId || "").trim() || "default",
-        outputDeviceId: String(voiceOutputDeviceId || "").trim() || "default",
-      });
-      if (intentGeneration !== localVoiceControlIntentGeneration) {
-        applyMicMute("superseded_microphone_publish");
-        updateActiveServerVoiceTransportLocalControls(convId, "superseded_microphone_publish");
-        return;
-      }
-    } catch (error) {
-      if (intentGeneration !== localVoiceControlIntentGeneration) return;
-      setCallStatus("Could not start the microphone. Try again.", true);
-      setTimeout(() => setCallStatus("", false), 2200);
+    if (blockServerMutedSelfUnmute("ui_toggle")) return;
+    // Capture/publication belongs to join or explicit recovery, never a toggle.
+    if (controller && !controller.getSnapshot?.()?.local?.audioTrackPublished) {
+      setCallStatus("Microphone unavailable. Reconnect voice to try again.", true);
       refreshCallUI();
       return;
     }
+    applyIntent(request.state, request.previous);
+  } finally {
+    if (localVoiceControlPendingIntent === request) localVoiceControlPendingIntent = null;
   }
-  if (intentGeneration !== localVoiceControlIntentGeneration) return;
-  if (currentState.deafened) serverVoiceDeafenRestoreState = null;
-  applyLocalVoiceState({
-    ...nextState,
-    reason: currentState.deafened ? "ui_unmute_clears_deafen" : "ui_toggle_mic",
-    cue: nextState.muted ? "mute" : "unmute",
-  });
 }
 
 function resolvePrivateCallShareTitle(conversationId = "", {
@@ -180119,6 +181364,11 @@ function clearInactivePrivateCallStagePresentation({
   functionName = "clearInactivePrivateCallStagePresentation",
 } = {}) {
   const stage = document.getElementById("callStage");
+  // Shared stage classes describe presentation, not private-call ownership.
+  // A current authoritative server call must not be closed by private cleanup.
+  if (stage?.getAttribute("data-call-stage-kind") === "server"
+    && isServerVoiceConversationById(normId(callConversationId || ""))
+    && getAuthoritativePrivateCallFocusLifecycleKey({ serverVoice: true })) return false;
   const privateStageOwned = !!(
     stage
     && (
@@ -180703,9 +181953,12 @@ function refreshCallUIUnsafe() {
     groupDmLiveKitCallUi ||
     privateLiveKitCallUi
   );
+  const serverVoiceParticipantFocusUi = isServerVoiceCallUi
+    && reconcilePrivateCallFocusPresentationAuthority(stage, { serverVoice: true });
   const useSharedCallStageUi = !!(
     privateLiveKitCallUi
     || groupDmLiveKitCallUi
+    || serverVoiceParticipantFocusUi
   );
   const callStageKind = isServerVoiceCallUi
     ? "server"
@@ -180983,11 +182236,24 @@ function refreshCallUIUnsafe() {
     } else stage.removeAttribute("data-call-status");
   }
   renderServerVoiceRecoveryBanner();
+  // A selected, authorized publication is enough to own the dedicated share
+  // surface while media connects. Legacy roster placeholders must not clear it.
+  const sharedScreenshareFocusUi = !!(
+    useSharedCallStageUi && stageLayoutMode === "focus"
+    && stageFocus === "member" && stageFocusMemberMediaType === "share"
+    && !!stage?.getAttribute("data-private-call-focus-lifecycle-key")
+    && activeCallScreenshares.some((share) => (
+      String(share.key || "").trim().toLowerCase() === String(stage?.getAttribute("data-private-call-focused-share-key") || "").trim().toLowerCase()
+      && (share.isLocal || share.isWatched) && (share.hasPublication || share.stream)
+    ))
+    && String(stage?.getAttribute("data-private-call-focus-lifecycle-key") || "").toLowerCase()
+      === getAuthoritativePrivateCallFocusLifecycleKey({ serverVoice: isServerVoiceCallUi }).toLowerCase()
+  );
   const focusMemberId = normId(stageFocusMemberId || "");
   let focusMember = null;
   if (stageFocus === "member" && focusMemberId) {
     const isSelfFocusedMember = !!(meId && focusMemberId === meId);
-    const memberStillActive = !isGroupCallUi || effectiveActiveMemberIds.includes(focusMemberId) || isSelfFocusedMember;
+    const memberStillActive = sharedScreenshareFocusUi || serverVoiceParticipantFocusUi || !isGroupCallUi || effectiveActiveMemberIds.includes(focusMemberId) || isSelfFocusedMember;
     if (!memberStillActive) {
       stageFocus = "remote";
       stageFocusMemberId = "";
@@ -181014,7 +182280,7 @@ function refreshCallUIUnsafe() {
     }
   }
   const memberFocusIsSelf = stageFocus === "member" && !!meId && focusMemberId === meId;
-  if (isGroupCallUi && !hasRemoteGroupPeerStable && stageFocus !== "self" && !memberFocusIsSelf) {
+  if (isGroupCallUi && !hasRemoteGroupPeerStable && stageFocus !== "self" && !memberFocusIsSelf && !serverVoiceParticipantFocusUi && !sharedScreenshareFocusUi) {
     stageFocus = "self";
     stageFocusMemberId = "";
     stageFocusMemberTrackId = "";
@@ -181072,13 +182338,13 @@ function refreshCallUIUnsafe() {
     fallbackReason: "",
   };
   const hasPrivateDedicatedScreenshareFocus = !!(
-    privateLiveKitCallUi
+    (privateLiveKitCallUi || sharedScreenshareFocusUi)
     && hasMemberFocus
     && requestedFocusTileType === "screenshare"
     && serverVoiceActiveScreenshare
   );
   const hasPrivateDedicatedParticipantFocus = !!(
-    privateLiveKitCallUi
+    (privateLiveKitCallUi || serverVoiceParticipantFocusUi)
     && hasMemberFocus
     && requestedFocusTileType !== "screenshare"
   );
@@ -181244,10 +182510,14 @@ function refreshCallUIUnsafe() {
     });
   }
   if (stageAvatar) {
-    stageAvatar.innerHTML = mainAvatar
-      ? buildAvatarMediaHtml(mainAvatar, { userId: mainUserId, alt: "avatar" })
-      : "";
-    queueManagedGifPlaybackSync(stageAvatar);
+    if (isServerVoiceCallUi && mainUserId) {
+      setServerVoiceParticipantAvatar(stageAvatar, getGroupMemberIdentity(stageConvId, mainUserId));
+    } else {
+      stageAvatar.innerHTML = mainAvatar
+        ? buildAvatarMediaHtml(mainAvatar, { userId: mainUserId, alt: "avatar" })
+        : "";
+      queueManagedGifPlaybackSync(stageAvatar);
+    }
   }
   setCallParticipantLabel(stageLabel, mainLabel, mainUserId, {
     conversationId: stageConvId,
@@ -181587,8 +182857,10 @@ function refreshCallUIUnsafe() {
       });
     }
   }
-  syncRemoteShareWatchPromptTiles(stageConvId, { isGroupCallUi });
-  syncRemoteShareLoadingTiles(stageConvId, { isGroupCallUi });
+  if (!getActiveServerVoiceScreenshareLayer(stageConvId)) {
+    syncRemoteShareWatchPromptTiles(stageConvId, { isGroupCallUi });
+    syncRemoteShareLoadingTiles(stageConvId, { isGroupCallUi });
+  }
 
   const stageGrid = document.getElementById("callStageGrid");
   const stagePresentationLayout = syncCallStagePresentationLayout(stage, stageGrid, {
@@ -181777,6 +183049,8 @@ function refreshCallUIUnsafe() {
   const sharedScreensharePresentationActive = !!(
     useSharedCallStageUi
     && activeCallScreenshares.length
+    && (stageLayoutMode === "focus" || (privateLiveKitCallUi
+      && activeCallScreenshares.some((share) => share.isLocal || share.isWatched === true)))
   );
   const useSharedDedicatedScreenshareStage = !!(
     sharedScreensharePresentationActive
@@ -181795,6 +183069,7 @@ function refreshCallUIUnsafe() {
     triggerReason: "refresh_call_ui",
     callerFunction: "refreshCallUI",
   });
+  syncCallRemoteShareViewerUi(stageConvId);
   syncPrivateCallDedicatedScreenshareFocus(stageConvId, stageViewport, {
     enabled: sharedScreensharePresentationActive && showStage,
     activeShare: serverVoiceActiveScreenshare,
@@ -181817,6 +183092,10 @@ function refreshCallUIUnsafe() {
       )
     ),
   });
+  for (const entry of getServerVoiceScreensharePresentationEntries(stageConvId)) {
+    if (entry.panel) ensureCallSharePresentationControls(entry.panel);
+  }
+  syncCallShareOnlyPresentation(stage);
   if (stageGrid && !privateShareStageOwnership.owned) {
     const showGrid = useSharedCallStageUi
       ? true
@@ -182841,13 +184120,84 @@ function stopGroupCallPresenceHeartbeat() {
   stopServerVoiceConsistencyMonitor();
 }
 
-function getGroupMemberIdentity(conversationId, userId) {
+function setServerVoiceParticipantAvatar(element, identity, { retryFailed = false } = {}) {
+  if (!element || !identity?.userId) return;
+  const signature = JSON.stringify([identity.userId, identity.avatar || "", identity.fallbackInitial || "U"]);
+  const currentImage = element.querySelector("img.profileAvatarMedia");
+  const contentMatches = identity.avatar
+    ? currentImage?.getAttribute("data-avatar-src") === identity.avatar
+    : !currentImage && element.querySelector(".profileAvatarFallback")?.textContent === (identity.fallbackInitial || "U");
+  const retryConfirmedImage = retryFailed && element.querySelector(".profileAvatarMediaClip.is-error");
+  if (element.getAttribute("data-server-voice-avatar-signature") === signature && contentMatches && !retryConfirmedImage) return;
+  element.setAttribute("data-server-voice-avatar-signature", signature);
+  element.setAttribute("data-avatar-user-id", identity.userId);
+  element.innerHTML = identity.avatar
+    ? buildAvatarMediaHtml(identity.avatar, { userId: identity.userId, fallbackChar: identity.fallbackInitial, controlledGif: shouldUseControlledAvatarGifPlayback(element) })
+    : getAvatarFallbackHtml(identity.userId, identity.fallbackInitial, "avatar");
+  syncAvatarContainerVisualState(element, { loaded: !!identity.avatar });
+  queueManagedGifPlaybackSync(element);
+}
+
+function refreshServerVoiceParticipantIdentity(userId, { retryFailed = false } = {}) {
+  const uid = normId(userId || "");
+  if (!uid || typeof document === "undefined") return;
+  // Update only already-admitted DOM. Decoration neither admits nor removes a peer.
+  document.querySelectorAll("[data-server-voice-member-id]").forEach((row) => {
+    if (normId(row.getAttribute("data-server-voice-member-id")) !== uid || row.hasAttribute("data-server-voice-bot-id")) return;
+    const convId = row.getAttribute("data-server-voice-conversation-id");
+    const identity = getGroupMemberIdentity(convId, uid);
+    row.setAttribute("data-server-voice-member-avatar", identity.avatar || "");
+    const avatar = row.querySelector(".serverVoiceMember__avatar");
+    const dot = avatar?.querySelector(".statusDot");
+    if (dot) dot.remove();
+    setServerVoiceParticipantAvatar(avatar, identity, { retryFailed });
+    if (dot) avatar.appendChild(dot);
+  });
+  const convId = normId(callConversationId || "");
+  if (!isServerVoiceConversationById(convId) || !isActiveServerVoiceCallJoined(convId)) return;
+  const identity = getGroupMemberIdentity(convId, uid);
+  document.querySelectorAll("#callStage [data-call-user-id]").forEach((tile) => {
+    if (normId(tile.getAttribute("data-call-user-id")) !== uid) return;
+    tile.querySelectorAll(".stageGridAvatar, .participantAvatar").forEach((avatar) => setServerVoiceParticipantAvatar(avatar, identity, { retryFailed }));
+  });
+  if (stageFocus === "member" && normId(stageFocusMemberId) === uid) {
+    setServerVoiceParticipantAvatar(document.getElementById("callStageAvatar"), identity, { retryFailed });
+  }
+}
+
+function getGroupMemberIdentity(conversationId, userId, serverMember = null) {
   const uid = normId(userId);
   if (!uid) return { label: t("call.member", "member"), avatar: null };
   if (isPrivateDmLiveKitTransportConversation(conversationId)) {
     return resolvePrivateCallParticipantIdentity(uid, {
       conversationId,
     });
+  }
+  if (isServerVoiceConversationById(conversationId)) {
+    const sid = resolveServerVoiceServerIdByConversation(conversationId);
+    const member = serverMember || (serverMemberListByServerId.get(sid) || [])
+      .find((entry) => normId(entry?.userId || entry?.user_id || entry?.id || "") === uid) || {};
+    const cached = getCachedProfile(uid) || {};
+    const friend = (state.friends || []).find((entry) => normId(entry?.other_user_id || entry?.id || "") === uid) || {};
+    const presence = getServerVoicePresenceMemberMeta(conversationId, uid) || {};
+    const identity = getServerDisplayIdentity(sid, uid, member);
+    const me = uid === normId(state.user?.id || "") ? state.me : null;
+    const sources = [["profile", cached], ["self", me], ["friend", friend], ["server_member", member], ["presence", presence]];
+    let avatar = "", avatarSource = "fallback";
+    for (const [source, profile] of sources) {
+      const candidate = resolveProfileAvatarUrl(profile?.avatar_url || profile?.avatarUrl || profile?.avatar, "");
+      if (candidate && /^(https?:\/\/|data:image\/|blob:|\.?\.?\/)/i.test(candidate)) { avatar = candidate; avatarSource = source; break; }
+      // A validated explicit removal must not revive an older member-list URL.
+      if (source === "profile" && Object.prototype.hasOwnProperty.call(cached, "avatar_url") && cached.avatar_url === null) break;
+    }
+    const label = resolveCallVisibleName({
+      serverNickname: identity.serverNickname,
+      displayNames: [cached.display_name, member.globalDisplayName, member.global_display_name, member.displayName, me?.display_name, friend.display_name],
+      usernames: [cached.username, identity.username, me?.username, friend.username],
+      receivedLabels: [presence.label], fallback: "User",
+    });
+    return { userId: uid, label, avatar: avatar || null, avatarSource,
+      fallbackInitial: resolveAvatarFallbackInitial(uid, cached.display_name || cached.username || me?.display_name || me?.username || member.username || friend.username || "U") };
   }
   const member = findGroupMemberInfo(conversationId, uid) || {};
   const friend = (state.friends || []).find((f) => normId(f?.other_user_id || f?.id) === uid) || {};
@@ -183594,6 +184944,7 @@ async function startGroupDmLiveKitCall(conversationId, {
           disconnectDisposition: "transient_reconnect",
         }).then(() => scheduleLocalCallReconnectResume(300));
       },
+      shouldReceiveScreenShareAudio: (details) => shouldReceiveCallScreenShareAudio(controller, meId, details),
       onRemoteAudioTrackSubscribed: ({ participant, publication, mediaTrack }) => {
         if (normId(serverVoiceTransportConversationId || "") !== convId) return;
         if (serverVoiceTransportController !== controller) return;
@@ -184954,6 +186305,7 @@ async function startPrivateDmLiveKitCall(conversationId, {
           sessionKey: privateStatusSessionKey,
         });
       },
+      shouldReceiveScreenShareAudio: (details) => shouldReceiveCallScreenShareAudio(controller, meId, details),
       onRemoteAudioTrackSubscribed: ({ participant, publication, mediaTrack }) => {
         if (normId(serverVoiceTransportConversationId || "") !== convId) return;
         if (serverVoiceTransportController !== controller) return;
@@ -185300,6 +186652,8 @@ async function fetchServerVoiceLiveKitJoinPayload(conversationId, {
   operationTiming = null,
   suppressPermissionNotifications = false,
 } = {}) {
+  const permissionOwnerUserId = normId(state.user?.id || "");
+  const permissionOwnerSessionEpoch = presenceSessionEpoch;
   void joinAttemptId;
   const convId = normId(conversationId || "");
   if (!convId) throw new Error("Missing voice conversation.");
@@ -185512,8 +186866,11 @@ async function fetchServerVoiceLiveKitJoinPayload(conversationId, {
     source: "livekit_token",
   });
   const permissionCacheKey = getServerVoicePermissionCacheKey(voicePermissions.serverId, voicePermissions.channelId);
-  if (permissionCacheKey !== ":" && voicePermissions.ok) {
-    serverVoicePermissionDecisionByChannel.set(permissionCacheKey, voicePermissions);
+  if (permissionCacheKey !== ":" && voicePermissions.ok
+    && permissionOwnerUserId === normId(state.user?.id || "") && permissionOwnerSessionEpoch === presenceSessionEpoch) {
+    serverVoicePermissionDecisionByChannel.set(permissionCacheKey, {
+      ...voicePermissions, ownerUserId: permissionOwnerUserId, ownerSessionEpoch: permissionOwnerSessionEpoch,
+    });
     lastServerVoicePermissionDecision = voicePermissions;
   }
   const rawParticipantGrant = data?.participantGrant && typeof data.participantGrant === "object"
@@ -185610,8 +186967,15 @@ async function updateVoiceV2LocalParticipantChannel({
   conversationId = "",
   reason = "metadata_update",
   deferVisualReconcile = false,
+  isCurrent = () => true,
 } = {}) {
-  if (!isServerVoiceV2Enabled() || !serverVoiceTransportController) return false;
+  if (!isServerVoiceV2Enabled() || !serverVoiceTransportController || !isCurrent()) return false;
+  const ownerController = serverVoiceTransportController;
+  const ownerUserId = normId(state.user?.id || "");
+  const ownerSessionId = String(currentServerVoiceV2Session?.sessionId || "");
+  const ownsContext = () => isCurrent() && ownerController === serverVoiceTransportController
+    && ownerUserId === normId(state.user?.id || "")
+    && ownerSessionId === String(currentServerVoiceV2Session?.sessionId || "");
   const sid = normId(serverId || currentServerVoiceV2Session?.serverId || "");
   let voiceChannelId = normId(channelId || currentServerVoiceV2Session?.voiceChannelId || "");
   let convId = normId(conversationId || currentServerVoiceV2Session?.conversationId || callConversationId || "");
@@ -185680,7 +187044,7 @@ async function updateVoiceV2LocalParticipantChannel({
   // These are independent LiveKit signalling writes. Waiting for them in series
   // adds a full network round-trip to every Server Voice join.
   const [metadataUpdated, attributesUpdated] = await Promise.all([
-    serverVoiceTransportController.updateLocalParticipantMetadata?.(metadata).catch((error) => {
+    ownerController.updateLocalParticipantMetadata?.(metadata, { isCurrent: ownsContext }).catch((error) => {
       console.warn("[voice-v2] metadata update failed", {
         reason,
         serverId: sid,
@@ -185689,7 +187053,7 @@ async function updateVoiceV2LocalParticipantChannel({
       });
       return false;
     }),
-    serverVoiceTransportController.updateLocalParticipantAttributes?.(attributes).catch((error) => {
+    ownerController.updateLocalParticipantAttributes?.(attributes, { isCurrent: ownsContext }).catch((error) => {
       console.warn("[voice-v2] attributes update failed", {
         reason,
         serverId: sid,
@@ -185699,6 +187063,7 @@ async function updateVoiceV2LocalParticipantChannel({
       return false;
     }),
   ]);
+  if (!ownsContext()) return false;
   console.info("[voice-v2] metadata updated", {
     reason,
     serverId: sid,
@@ -186105,6 +187470,7 @@ function discardServerVoiceTokenRequest(operation = null, reason = "join_not_adm
 
 function invalidateServerVoiceJoinForExplicitLeave(operation = null, reason = "explicit_leave") {
   if (!operation) return false;
+  if (operation.pendingReplacementIntent) operation.pendingReplacementIntent.cancelled = true;
   const generation = String(operation.generation || "").trim();
   const convId = normId(operation.conversationId || "");
   const pipelineId = String(serverVoiceJoiningPresentation?.pipelineId || "").trim();
@@ -186564,7 +187930,12 @@ function getServerVoiceJoinIntentRuntimeState(target = {}) {
   const operation = serverVoiceOperationLifecycle.getCurrent() || null;
   const session = currentServerVoiceV2Session || null;
   const operationPhase = String(operation?.phase || "").trim().toLowerCase();
-  const phase = operationPhase && operationPhase !== "idle"
+  // A historical server operation can survive canonical replacement by a
+  // private call. It is not evidence that its old channel is still connected.
+  const privateCallOwnsTransport = getGlobalActiveCallSession()?.kind === "private";
+  const phase = privateCallOwnsTransport && operationPhase === "connected"
+    ? "idle"
+    : operationPhase && operationPhase !== "idle"
     ? operationPhase
     : (inCall && session ? "connected" : "idle");
   const currentServerId = normId(
@@ -186677,6 +188048,30 @@ async function requestServerVoiceJoinIntent(input = {}, {
     };
     const provisionalRuntime = getServerVoiceJoinIntentRuntimeState(provisionalTarget);
     const provisionalDecision = resolveServerVoiceJoinIntentAction(provisionalRuntime);
+    const replacementOwner = provisionalRuntime.operation;
+    if (replacementOwner?.replacingPrivateCall && replacementOwner.phase === "joining"
+      && !replacementOwner.joinPipelineEntered && replacementOwner.joinPromise
+      && replacementOwner.userId === expectedStartupUserId) {
+      if (!replacementOwner.pendingReplacementIntent && provisionalDecision.sameChannel) {
+        return observeServerVoicePerfIntent(intentTiming, replacementOwner.joinPromise, "joining_pipeline_reused");
+      }
+      // Keep one latest explicit destination on the existing operation. Its
+      // continuation waits for that operation's teardown/coordinator to settle;
+      // rapid clicks replace this value, never create a chain of hidden joins.
+      const pending = replacementOwner.pendingReplacementIntent || { cancelled: false, promise: null };
+      pending.input = { ...input, ...provisionalTarget };
+      pending.options = { source: normalizedSource, navigate, navigationMeta, activationTiming: intentTiming };
+      replacementOwner.pendingReplacementIntent = pending;
+      if (!pending.promise) pending.promise = Promise.resolve(replacementOwner.joinPromise).then(() => {
+        if (pending.cancelled || replacementOwner.cancelled
+          || serverVoiceOperationLifecycle.getCurrent() !== replacementOwner
+          || normId(state.user?.id || "") !== expectedStartupUserId
+          || globalCallSessionCoordinator.getSnapshot().lastTransition?.error === "active_call_leave_failed") return false;
+        replacementOwner.pendingReplacementIntent = null;
+        return requestServerVoiceJoinIntent(pending.input, pending.options);
+      });
+      return observeServerVoicePerfIntent(intentTiming, pending.promise, "replacement_latest_intent");
+    }
     if (["blocked-leaving", "blocked-joining-other"].includes(provisionalDecision.action)) {
       bringGlobalCallSessionToFront();
       return observeServerVoicePerfIntent(intentTiming, false, "intent_blocked");
@@ -186709,6 +188104,15 @@ async function requestServerVoiceJoinIntent(input = {}, {
       return observeServerVoicePerfIntent(intentTiming, rejoinDetachedServerVoiceMembership({ source: "detached-rejoin", activationTiming: intentTiming }));
     }
     if (decision.action === "switch-channel") {
+      if (isServerVoiceV2Enabled() && !isServerVoiceV3PrototypeEnabled()
+        && runtime.transportConnected
+        && normId(currentServerVoiceV2Session?.serverId || "") === context.serverId) {
+        return observeServerVoicePerfIntent(intentTiming, switchServerVoiceChannelV2({
+          targetChannelId: context.channelId,
+          targetConversationId: context.conversationId,
+          reason: normalizedSource,
+        }), "logical_channel_switch");
+      }
       const leavePromise = requestExplicitServerVoiceLeave("Mudaste para outro canal de voz.");
       if (!leavePromise) return observeServerVoicePerfIntent(intentTiming, false, "switch_leave_unavailable");
       patchServerVoicePerfAttempt(intentTiming, { stage: "switch_leave" });
@@ -186801,6 +188205,10 @@ async function requestServerVoiceJoinFromUi(input = {}, {
   }
 
   ensurePipeline();
+  const replacingPrivateCall = !sessionCoordinatorBypass
+    && getGlobalActiveCallSession()?.kind === "private";
+  const pendingPrivateReplacement = !sessionCoordinatorBypass
+    && privateCallTerminalLifecycle.getSnapshot().pending.some((intent) => intent.reason === "session_switch");
   let operation = sessionCoordinatorBypass
     ? serverVoiceOperationLifecycle.getByGeneration(operationGeneration)
     : null;
@@ -186827,6 +188235,7 @@ async function requestServerVoiceJoinFromUi(input = {}, {
       return false;
     }
     operation = begun.operation;
+    operation.replacingPrivateCall = replacingPrivateCall;
   }
   const normalizedJoinSource = normalizeServerVoiceJoinIntentSource(source);
   const automaticResumeSource = [
@@ -186876,7 +188285,7 @@ async function requestServerVoiceJoinFromUi(input = {}, {
     generation: operation.generation,
   });
   presentServerVoiceJoiningShell(context, pipelineId, operation);
-  if (isServerVoiceV2Enabled()) {
+  if (isServerVoiceV2Enabled() && !replacingPrivateCall && !pendingPrivateReplacement) {
     getOrStartServerVoiceTokenRequest(operation, context, {
       pipelineId,
       voiceMode: isServerVoiceV3PrototypeEnabled() ? SERVER_VOICE_V3_MODE : "server_room_v2",
@@ -186925,6 +188334,19 @@ async function requestServerVoiceJoinFromUi(input = {}, {
           }
           patchServerVoicePerfAttempt(joinTiming, { permissionCompletedAt: joinTiming?.permissionDone });
           throwIfServerVoiceJoinOperationStale(operation, "permission_preflight");
+          if (normId(state.user?.id || "") !== operation.userId) {
+            return { ok: false, reason: "voice_actor_changed" };
+          }
+          if (operation.pendingReplacementIntent) return { ok: false, reason: "replacement_target_changed" };
+          if (decision?.ok === true && pendingPrivateReplacement && !replacingPrivateCall) {
+            const recovered = await privateCallTerminalLifecycle.retryPending({ reason: "explicit_server_voice_replacement" });
+            if (recovered.completed !== recovered.attempted) {
+              showPrivateCallFeedback("O fim da chamada anterior ainda não foi confirmado. Tenta novamente quando a ligação recuperar.");
+              return { ok: false, reason: "private_call_terminal_pending" };
+            }
+            if (normId(state.user?.id || "") !== operation.userId
+              || !isServerVoiceJoinOperationCurrent(operation)) return { ok: false, reason: "voice_actor_changed" };
+          }
           if (decision?.ok === true) validatedPermission = decision;
           if (decision?.ok === true) return { ok: true, target, permission: decision };
           patchServerVoicePerfAttempt(joinTiming, { outcomeReason: "permission_denied" });
@@ -186943,18 +188365,23 @@ async function requestServerVoiceJoinFromUi(input = {}, {
         }
       },
       bringToFront: bringGlobalCallSessionToFront,
-      enterTarget: () => requestServerVoiceJoinFromUi(input, {
-        source,
-        sessionCoordinatorBypass: true,
-        preflightPermission: validatedPermission,
-        coordinatorPipelineId: pipelineId,
-        operationGeneration: operation.generation,
-        resolvedContext: context,
-        activationTiming: {
-          ...normalizedActivationTiming,
-          coordinatorAdmissionSettledAt: Date.now(),
-        },
-      }),
+      enterTarget: () => {
+        if (normId(state.user?.id || "") !== operation.userId
+          || !isServerVoiceJoinOperationCurrent(operation)
+          || operation.pendingReplacementIntent) return false;
+        return requestServerVoiceJoinFromUi(input, {
+          source,
+          sessionCoordinatorBypass: true,
+          preflightPermission: validatedPermission,
+          coordinatorPipelineId: pipelineId,
+          operationGeneration: operation.generation,
+          resolvedContext: context,
+          activationTiming: {
+            ...normalizedActivationTiming,
+            coordinatorAdmissionSettledAt: Date.now(),
+          },
+        });
+      },
     });
     const observedTransitionPromise = transitionPromise.then((joined) => {
       if (joined !== true && serverVoiceOperationLifecycle.isCurrent(operation, ["joining"])) {
@@ -187380,14 +188807,15 @@ async function joinServerVoiceChannelV2({
       onConnectionQualityChanged: setCallConnectionQualityUi,
       onSnapshot: (snapshot) => {
         if (serverVoiceTransportController !== controller || !isServerVoiceJoinOperationCurrent(operation)) return;
+        const snapshotConversationId = normId(controller.conversationId || serverVoiceTransportConversationId || resolvedConvId);
         trackCallTransportConnectionSfx(
-          resolvedConvId,
+          snapshotConversationId,
           snapshot?.connectionState || "",
           "server_voice_transport_snapshot",
         );
-        setServerVoiceTransportSnapshot(resolvedConvId, {
+        setServerVoiceTransportSnapshot(snapshotConversationId, {
           ...snapshot,
-          conversationId: resolvedConvId,
+          conversationId: snapshotConversationId,
         });
         requestServerVoiceVisualReconciliation("snapshot", { operation, snapshot });
       },
@@ -187436,11 +188864,12 @@ async function joinServerVoiceChannelV2({
         if (serverVoiceTransportController !== controller || !isServerVoiceJoinOperationCurrent(operation)) return;
         void handleUnexpectedServerVoiceDisconnect(error, {
           serverId: sid,
-          channelId: voiceChannelId,
-          conversationId: resolvedConvId,
+          channelId: getCurrentVoiceV2ChannelId() || voiceChannelId,
+          conversationId: controller.conversationId || resolvedConvId,
           controller,
         });
       },
+      shouldReceiveScreenShareAudio: (details) => shouldReceiveCallScreenShareAudio(controller, meId, details),
       onRemoteAudioTrackSubscribed: ({ participant, publication, mediaTrack }) => {
         if (serverVoiceTransportController !== controller || !isServerVoiceJoinOperationCurrent(operation)) return;
         const uid = normId(participant?.identity || "");
@@ -187467,7 +188896,7 @@ async function joinServerVoiceChannelV2({
         const trackId = normId(mediaTrack?.id || "");
         if (trackId) removeRemoteAudioTrackEl(trackId, { reason: "voice_v2_unsubscribed" });
         if (uid && !trackId) markServerVoiceTransportRemoteAudioDetached(
-          resolvedConvId,
+          controller.conversationId || resolvedConvId,
           uid,
           null,
           String(publication?.trackSid || "") || null,
@@ -188435,6 +189864,7 @@ async function startServerVoiceLiveKitCall(conversationId, { joinExistingOnly = 
           return;
         }
       },
+      shouldReceiveScreenShareAudio: (details) => shouldReceiveCallScreenShareAudio(controller, meId, details),
       onRemoteAudioTrackSubscribed: ({ participant, publication, mediaTrack }) => {
         if (!isVoiceTransitionCurrent(voiceTransition, convId)) return;
         if (normId(serverVoiceTransportConversationId || "") !== convId) return;
@@ -189590,7 +191020,9 @@ function projectServerVoiceLocalExitImmediately(conversationId = "", previousVis
   const remoteParticipantIds = normalizeUuidArray(previousVisibleParticipantIds)
     .filter((participantId) => participantId !== meId);
   resetServerVoiceDurationForExplicitLeave();
+  cancelLocalVoiceControlOperations(convId);
   inCall = false;
+  pushDesktopCallThumbarState();
   groupCallMode = false;
   stageOpen = false;
   if (timing && !timing.localStateExitedAt) timing.localStateExitedAt = Date.now();
@@ -190085,6 +191517,7 @@ async function hangupCurrentCallFromExplicitUi(message = "Desligaste.", { activa
 async function hangupCurrentCallByUser(message = "Desligaste.", {
   leaveIntent = "local_leave",
   rediscoverAfterLeave = true,
+  privateGenerationTerminalInFlight = false,
   serverVoiceExplicitLeaveAt = null,
   prestartedServerVoiceExplicitLeaveTask = null,
 } = {}) {
@@ -190210,7 +191643,7 @@ async function hangupCurrentCallByUser(message = "Desligaste.", {
     setCallButtons("idle");
     setCallStatus("", false);
     refreshCallUI();
-    if (acceptedPrivateCall) {
+    if (acceptedPrivateCall && !privateGenerationTerminalInFlight) {
       privateMembershipLeaveTask = leavePrivateCallMember(
         acceptedPrivateMembershipRecord,
         leaveIntent,
@@ -190857,6 +192290,8 @@ async function startCall(conversationId, otherUserId, otherLabel, {
         ringTimeout = null;
       }
       ringTimeout = setTimeout(async () => {
+        if (!isCurrentPrivateCallStartAttempt(privateStartAttempt)
+            || normId(state.user?.id || "") !== privateStartAttempt.accountId) return;
         ringTimeout = null;
         const lifecycle = getPrivateCallLifecycleState();
         if (
@@ -190881,11 +192316,13 @@ async function startCall(conversationId, otherUserId, otherLabel, {
           await sendPrivateCallControlSignal("private_call_missed", {
             conversationId: normalizedConversationId,
             targetUserId: otherUserId,
-            payload: { reason: "timeout", source: "caller_timeout" },
+            payload: { reason: "timeout", source: "caller_timeout", callGeneration: privateStartAttempt.callGeneration },
           });
         } catch (error) {
           console.warn("private call missed signal failed", getSafePrivateCallLogError(error));
         }
+        if (!isCurrentPrivateCallStartAttempt(privateStartAttempt)
+            || normId(state.user?.id || "") !== privateStartAttempt.accountId) return;
         logPrivateCallStage("private_call.missed_recorded", {
           conversationId: normalizedConversationId,
           otherUserId: normId(otherUserId || ""),
@@ -191390,9 +192827,21 @@ function handleTrustedPrivateCallInboxEvent(event, delivery = {}) {
   const signalType = String(event?.eventType || "").trim().toLowerCase();
   if (!conversationId || !callGeneration || !isPrivateCallControlSignal(signalType)) return false;
   if (signalType !== "private_call_invite") {
+    const recordedTerminal = privateCallPresentationTerminalByGeneration.get(
+      getPrivateCallPresentationGenerationKey(conversationId, callGeneration),
+    );
+    if (["declined", "missed", "private_call_decline", "private_call_missed"].includes(recordedTerminal?.terminalState)) {
+      return false;
+    }
     const durableResume = readOwnedLocalCallResumeRecord(conversationId);
     const presentationRecord = getPrivateCallPresentationRecord(conversationId);
-    const expectedGeneration = getPrivateCallGeneration(conversationId)
+    const pendingTarget = globalCallSessionCoordinator.getSnapshot().pendingTarget;
+    const switchingGeneration = pendingTarget?.kind === "private"
+      && pendingTarget.conversationId === conversationId
+      ? normId(pendingTarget.generation) : "";
+    const pendingGeneration = normId(pendingPrivateCallLiveKitInvite?.conversationId) === conversationId
+      ? normId(pendingPrivateCallLiveKitInvite?.callGeneration) : "";
+    const expectedGeneration = pendingGeneration || switchingGeneration || getPrivateCallGeneration(conversationId)
       || normId(presentationRecord?.callGeneration || "")
       || normId(durableResume?.callGeneration || "");
     if (!expectedGeneration || expectedGeneration !== callGeneration) {
@@ -191455,6 +192904,7 @@ function handleTrustedPrivateCallInboxEvent(event, delivery = {}) {
       disconnected_user_id: normId(event?.disconnectedUserId || ""),
       restored_user_id: normId(event?.restoredUserId || ""),
       reconnect_expires_at: String(event?.expiresAt || ""),
+      invite_expires_at: String(event?.expiresAt || ""),
       trusted_inbox: true,
     },
   };
@@ -191695,13 +193145,17 @@ async function handlePrivateLiveKitControlSignal(sig, {
     });
 
     pendingPrivateCallLiveKitInvite = {
+      accountId: meId,
       conversationId: convId,
       fromUserId: peerUserId,
       fromLabel: fromLabel || t("call.friend", "friend"),
       fromAvatar: fromAvatar || null,
       callGeneration: normId(payload?.call_generation || payload?.callGeneration || ""),
       createdAtMs: Date.parse(String(sig?.created_at || "")) || Date.now(),
+      expiresAtMs: Date.parse(String(payload?.invite_expires_at || ""))
+        || ((Date.parse(String(sig?.created_at || "")) || Date.now()) + PRIVATE_CALL_RING_TIMEOUT_MS),
     };
+    const incomingInvite = pendingPrivateCallLiveKitInvite;
     if (!incomingWhileOtherSessionActive) {
       pendingOffer = null;
       pendingCallInfo = {
@@ -191743,14 +193197,9 @@ async function handlePrivateLiveKitControlSignal(sig, {
     playSfx("incoming", { type: "call", caller_user_id: peerUserId });
     if (pendingPrivateCallIncomingTimeoutTimer) clearTimeout(pendingPrivateCallIncomingTimeoutTimer);
     pendingPrivateCallIncomingTimeoutTimer = setTimeout(async () => {
-      pendingPrivateCallIncomingTimeoutTimer = null;
       const pendingInvite = pendingPrivateCallLiveKitInvite;
-      if (
-        normId(pendingInvite?.conversationId || "") !== convId
-        || normId(pendingInvite?.fromUserId || "") !== peerUserId
-      ) {
-        return;
-      }
+      if (!isCurrentPrivateCallInvite(incomingInvite, { allowExpired: true })) return;
+      pendingPrivateCallIncomingTimeoutTimer = null;
       logPrivateCallStage("private_call.timeout_elapsed", {
         conversationId: convId,
         otherUserId: peerUserId,
@@ -191780,27 +193229,26 @@ async function handlePrivateLiveKitControlSignal(sig, {
         stage: PRIVATE_CALL_STATES.MISSED,
         triggerReason: "incoming_ring_timeout",
       }, { level: "warn" });
-      try {
-        await sendPrivateCallControlSignal("private_call_missed", {
-          conversationId: convId,
-          targetUserId: peerUserId,
-          payload: { reason: "incoming_timeout" },
-        });
-      } catch (error) {
-        console.warn("private call incoming timeout signal failed", getSafePrivateCallLogError(error));
-      } finally {
-        clearPrivateCallLiveKitState(convId, { clearPendingInvite: true });
+      // Only the caller may submit private_call_missed. Locally retire this
+      // exact invitation; never use the generation of an unrelated active call.
+      retirePrivateCallActivePresentation({
+        conversationId: convId,
+        callGeneration: incomingInvite.callGeneration,
+        terminalState: "missed",
+        reason: "incoming_ring_timeout",
+        refresh: false,
+      });
+      if (!incomingWhileOtherSessionActive) {
         if (normId(callConversationId || "") === convId) callConversationId = null;
-        if (!incomingWhileOtherSessionActive) {
-          setCallButtons("idle");
-          setCallStatus("", false);
-        }
-        refreshCallUI();
+        setCallButtons("idle");
+        setCallStatus("", false);
       }
-    }, PRIVATE_CALL_RING_TIMEOUT_MS);
+      refreshCallUI();
+    }, Math.max(0, Math.min(PRIVATE_CALL_RING_TIMEOUT_MS, incomingInvite.expiresAtMs - Date.now())));
 
     if (oAccept) {
       oAccept.onclick = async (event) => {
+        if (!isCurrentPrivateCallInvite(incomingInvite)) return false;
         const handlerEnteredAt = Date.now();
         await acceptIncomingPrivateCall({
           event,
@@ -191816,9 +193264,10 @@ async function handlePrivateLiveKitControlSignal(sig, {
     }
     if (oDecline) {
       oDecline.onclick = (event) => {
+        if (!isCurrentPrivateCallInvite(incomingInvite)) return Promise.resolve(false);
         const clickedAt = Date.now();
         const declineGeneration = normId(
-          pendingPrivateCallLiveKitInvite?.callGeneration
+          incomingInvite.callGeneration
           || payload?.call_generation
           || payload?.callGeneration
           || getPrivateCallGeneration(convId)
@@ -191885,6 +193334,16 @@ async function handlePrivateLiveKitControlSignal(sig, {
             },
           }),
           onSettled: (operation) => {
+            if (normId(state.user?.id) !== meId) return;
+            const newerInvite = pendingPrivateCallLiveKitInvite;
+            if (newerInvite && normId(newerInvite.callGeneration) !== operation.callGeneration) return;
+            if (incomingWhileOtherSessionActive) {
+              if (operation.result === "failed") {
+                showPrivateCallFeedback(t("call.decline_failed", "Couldn't decline the call. Try again."));
+              }
+              return;
+            }
+            if (activePrivateCallGeneration && normId(activePrivateCallGeneration) !== operation.callGeneration) return;
             const lifecycle = getPrivateCallLifecycleState();
             const stillOwnsDeclinedPresentation = !!(
               normId(lifecycle.conversationId || "") === operation.conversationId
@@ -192036,11 +193495,17 @@ async function handlePrivateLiveKitControlSignal(sig, {
       terminalGeneration,
       "incoming_terminal",
     ).id;
+    const pendingTransition = globalCallSessionCoordinator.getSnapshot().pendingTarget;
+    const terminalDuringReplacement = pendingTransition?.kind === "private"
+      && pendingTransition.conversationId === convId
+      && pendingTransition.generation === terminalGeneration
+      && activeSession?.id !== incomingTargetId;
     const terminalOnlyClosesPendingInvite = !!(
-      inviteConvId
+      terminalDuringReplacement || (inviteConvId
       && inviteConvId === convId
+      && normId(pendingPrivateCallLiveKitInvite?.callGeneration) === terminalGeneration
       && activeSession?.id
-      && activeSession.id !== incomingTargetId
+      && activeSession.id !== incomingTargetId)
     );
     if (terminalOnlyClosesPendingInvite) {
       retirePrivateCallActivePresentation({
@@ -192061,7 +193526,7 @@ async function handlePrivateLiveKitControlSignal(sig, {
       logPrivateCallDebug("private_call.pending_invite_terminal_received", {
         conversationId: convId,
         signal: controlSignal,
-        activeSessionId: activeSession.id,
+        activeSessionId: activeSession?.id || null,
         reason: "current_media_session_preserved",
       });
       refreshCallUI();
@@ -195871,10 +197336,13 @@ function clearDmPrivacyFollowupRefetch(conversationId = "") {
 }
 
 function scheduleDmPrivacyFollowupRefetch(conversationId = "") {
+  const owner = captureDmE2eeUiOwner();
+  if (!owner.isCurrent()) return;
   const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
   if (!convId) return;
   clearDmPrivacyFollowupRefetch(convId);
   const timers = [500, 1500].map((delay) => setTimeout(() => {
+    if (!owner.isCurrent()) return;
     const currentActive = normId(activeDmId || state.activeDm?.conversationId || "");
     if (currentActive !== convId) return;
     void refreshDmPrivacyMetaFromServer(convId, { rerender: true, source: "refetch" }).catch((error) => {
@@ -198602,7 +200070,8 @@ function applyRealtimeProfileUpdate(profileRow) {
     const localStatus = normalizeManualPresenceStatus(resolveMyPresenceStatus(state.me));
     const inLocalGrace = uid === meId
       && patchedStatus !== localStatus
-      && Date.now() - Number(lastManualPresenceStatusChangeAt || 0) < PRESENCE_STATUS_LOCAL_CHANGE_GRACE_MS;
+      && (isCurrentPresenceStatusIntent(meStatusPendingIntent)
+        || Date.now() - Number(lastManualPresenceStatusChangeAt || 0) < PRESENCE_STATUS_LOCAL_CHANGE_GRACE_MS);
     if (inLocalGrace) {
       logPresenceDebug("profile/status event ignored during local grace", {
         userId: uid,
@@ -198776,6 +200245,12 @@ async function runProfileSyncFallback() {
   const targetIds = collectProfileSyncTargetIds();
   if (!targetIds.length) return;
 
+  const profileSyncIntent = {
+    userId: normId(state.user.id),
+    sessionEpoch: presenceSessionEpoch,
+    sequence: meStatusIntentSequence,
+  };
+  const profileSyncHadPendingStatus = isCurrentPresenceStatusIntent(meStatusPendingIntent);
   profileSyncFallbackInFlight = true;
   try {
     const includeBio = !!(dmProfilePanelOpen || userCardCurrentUserId);
@@ -198786,7 +200261,15 @@ async function runProfileSyncFallback() {
     );
     if (forceRefresh) profileFallbackLastForceSyncAt = now;
     const rows = await fetchProfilesByIds(targetIds, { includeBio, force: forceRefresh });
-    (rows || []).forEach((row) => applyRealtimeProfileUpdate(row));
+    if (profileSyncIntent.userId !== normId(state.user?.id || "")
+      || profileSyncIntent.sessionEpoch !== presenceSessionEpoch) return;
+    (rows || []).forEach((row) => {
+      if (normId(row?.id || "") === profileSyncIntent.userId
+        && (profileSyncHadPendingStatus
+          || !isCurrentPresenceStatusIntent(profileSyncIntent)
+          || isCurrentPresenceStatusIntent(meStatusPendingIntent))) return;
+      applyRealtimeProfileUpdate(row);
+    });
   } catch (_) {
     // fallback sync is best-effort
   } finally {
@@ -200361,14 +201844,18 @@ function startDirectDmOpenHistoryFetch(conversationId, options = {}) {
 async function showDm(conversationId, opts = {}) {
   if (!state.user) return;
   const showRequestSeq = ++dmShowRequestSeq;
-  const isShowRequestStale = () => showRequestSeq !== dmShowRequestSeq;
+  const showUserId = normId(state.user?.id || "");
+  const isShowRequestStale = () => showRequestSeq !== dmShowRequestSeq || normId(state.user?.id || "") !== showUserId;
   const previouslyRenderedConversationId = normId(activeDmId || "");
   const convIdNorm = normId(conversationId);
   const selectedConversationId = convIdNorm || conversationId;
   if (isGroupDmConversationRevoked(convIdNorm || selectedConversationId)) return false;
   if (previouslyRenderedConversationId && previouslyRenderedConversationId !== convIdNorm) {
     const previousComposer = document.getElementById("dmInput");
-    persistAltaraOfflineComposerDraft(previouslyRenderedConversationId, previousComposer?.value || "");
+    const previousOwnerId = normId(previousComposer?.dataset?.dmDraftConversationId || previouslyRenderedConversationId);
+    if (!previousComposer?.dataset?.dmDraftUserId || previousComposer.dataset.dmDraftUserId === showUserId) {
+      persistAltaraOfflineComposerDraft(previousOwnerId, previousComposer?.value || "");
+    }
   }
   if (typingActiveContextKey && normId(typingActiveContext?.conversationId || "") !== normId(selectedConversationId || "")) {
     unsubscribeTypingContext({ sendStop: true, reason: "show-dm-switch" });
@@ -200384,6 +201871,7 @@ async function showDm(conversationId, opts = {}) {
       ...(state.activeDm || {}),
       conversationId: selectedConversationId,
     }, {
+      navigationIntent: opts?.navigationIntent || null,
       reason: opts?.reason || "show_dm_immediate",
       pending: true,
       allowSnapshot: false,
@@ -200413,6 +201901,7 @@ async function showDm(conversationId, opts = {}) {
       ...(state.activeDm || {}),
       conversationId: selectedConversationId,
     }, {
+      navigationIntent: opts?.navigationIntent || null,
       reason: opts?.reason || "show_dm",
       pending: false,
       messageOpenGeneration: messageOpenToken?.generation || 0,
@@ -200657,6 +202146,9 @@ async function showDm(conversationId, opts = {}) {
   }
 
   const isGroupConversation = resolvedKind === "group" || resolvedKind === "server";
+  if (resolvedKind === "dm") {
+    activatePrivateDmComposerDraft(dmLockConversationId, opts?.navigationIntent || null);
+  }
   const isServerConversation = resolvedKind === "server";
   const isServerVoiceConversation = isServerConversation && isVoiceConversationChannelType(resolvedChannelType);
   // The active message/reaction Realtime topic belongs to direct DMs and
@@ -200728,11 +202220,14 @@ async function showDm(conversationId, opts = {}) {
     forceHidden: !isServerConversation,
     applyCollapsed: true,
   });
-  restoreAltaraOfflineComposerDraft(
-    convIdNorm || conversationId,
-    document.getElementById("dmInput"),
-    { replace: previouslyRenderedConversationId !== convIdNorm }
-  );
+  if (isServerConversation) {
+    restoreAltaraOfflineComposerDraft(
+      convIdNorm || conversationId,
+      document.getElementById("dmInput"),
+      { replace: previouslyRenderedConversationId !== convIdNorm }
+    );
+    setDmComposerDraftOwner(document.getElementById("dmInput"), convIdNorm || conversationId);
+  }
   captureCurrentMainNavigationRoute();
   persistAltaraOfflineNavigationSnapshot();
 
@@ -200771,20 +202266,22 @@ async function showDm(conversationId, opts = {}) {
     dmHistoryLoadingOlder = false;
     dmHistoryOldestCreatedAt = "";
   }
-  dmReplyTarget = null;
-  dmEditTarget = null;
-  renderDmReplyBar();
-  closeMessageMenu();
-  closeDmListMenus();
-  closeEmojiPicker();
-  closeUserCardModal();
-  closeDmCreateGroupModal();
-  closeDmGroupEditModal();
-  closeServerInviteModal();
-  closeServerSettingsModal();
-  closeDmAttachmentModal();
-  clearPendingDmAttachments();
-  resetDmDragDropState();
+  if (isServerConversation) {
+    dmReplyTarget = null;
+    dmEditTarget = null;
+    renderDmReplyBar();
+    closeMessageMenu();
+    closeDmListMenus();
+    closeEmojiPicker();
+    closeUserCardModal();
+    closeDmCreateGroupModal();
+    closeDmGroupEditModal();
+    closeServerInviteModal();
+    closeServerSettingsModal();
+    closeDmAttachmentModal();
+    clearPendingDmAttachments();
+    resetDmDragDropState();
+  }
 
   const reuseActiveDmRealtimeChannel = !!(
     supportsActiveConversationRealtimeTopic
@@ -201206,9 +202703,6 @@ async function showDm(conversationId, opts = {}) {
   if (!isServerVoiceConversation && dmPinsPanelOpen) await openDmPinsModal();
   else if (!isServerVoiceConversation && dmProfilePanelOpen) await openDmProfilePanel();
   if (isShowRequestStale()) return;
-  if (!isServerConversation) {
-    focusDmComposerSoon();
-  }
 
   setAltaraActiveConversationRealtimeRequirement(supportsActiveConversationRealtimeTopic);
   const subscribeActiveConversationChannel = () => {
@@ -202674,7 +204168,7 @@ function bindCallUIButtons() {
   stageViewport?.addEventListener("click", (ev) => {
     const target = eventTargetElement(ev);
     const clickedInteractiveInsideTile = !!target?.closest?.(
-      ".participantTile, .stageGridTile, .callTileWatchCta, .callTileLoadingCta, #btnFullscreenStage, #btnExitCallFocus, .callStageViewportFsBtn, .callStageFocusExitBtn, #remoteWatchGate, .callWatchBtn"
+      ".participantTile, .stageGridTile, .callTileWatchCta, .callTileLoadingCta, #btnFullscreenStage, #btnExitCallFocus, .callStageViewportFsBtn, .callStageFocusExitBtn, #remoteWatchGate, .callWatchBtn, [data-server-voice-screenshare-panel='1']"
     );
     if (clickedInteractiveInsideTile) return;
     // Clicar no palco em destaque volta para grelha (2 pessoas), com ou sem vídeo.
@@ -202684,7 +204178,35 @@ function bindCallUIButtons() {
     });
   });
 
-  document.addEventListener("fullscreenchange", refreshCallUI);
+  document.addEventListener("fullscreenchange", () => {
+    const stage = document.getElementById("callStage");
+    if (stage?.__altaraShareFullscreen && !document.fullscreenElement) stage.__altaraShareFullscreen = null;
+    const menu = document.getElementById("privateShareAudioMenu");
+    if (menu && !document.fullscreenElement && menu.parentElement !== document.body) {
+      closePrivateCallShareAudioMenu();
+      document.body.appendChild(menu);
+    }
+    syncCallShareOnlyPresentation(stage);
+    queueCallStageLayoutSync();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    const stage = document.getElementById("callStage");
+    if (document.fullscreenElement) {
+      if (stage?.__altaraShareFullscreen?.panel === document.fullscreenElement) {
+        event.preventDefault();
+        void document.exitFullscreen?.().catch?.(() => {});
+      }
+      return;
+    }
+    if (event.target?.closest?.("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu']")) return;
+    if (!stage?.hasAttribute("data-call-share-only")) return;
+    const panel = stage.querySelector(".callSharePrimary[data-server-voice-screenshare-panel='1']");
+    if (setCallShareOnlyFocus(panel, false)) {
+      event.preventDefault();
+      panel?.querySelector("[data-share-presentation-action='focus']")?.focus({ preventScroll: true });
+    }
+  });
   window.addEventListener("resize", queueCallStageLayoutSync);
 
   dmStageResizeGrip?.addEventListener("pointerdown", (ev) => {
@@ -204247,10 +205769,15 @@ let preparedPresenceBootstrapGeneration = 0;
 const PRESENCE_LIVE_DIAGNOSTIC_HISTORY_LIMIT = 20;
 const presenceLiveDiagnosticHistory = [];
 const presenceLatencyTracker = createPresenceLatencyTracker();
+const presenceTransitionRecorder = isPresenceLiveDiagnosticsAllowed() ? createPresenceTransitionRecorder() : null;
+let presenceTransitionOwnerId = "";
+let presenceTransitionRuntime = {};
 let presenceDebugAuthReady = false;
 let presenceDebugTokenExpiresAt = "";
 let meStatusMenuBound = false;
 let meStatusPersistQueue = Promise.resolve();
+let meStatusIntentSequence = 0;
+let meStatusPendingIntent = null;
 let currentUserPresenceStatusSyncTimer = null;
 let currentUserPresenceStatusSyncInFlight = false;
 let lastManualPresenceStatusChangeAt = 0;
@@ -204288,6 +205815,121 @@ function isPresenceLiveDiagnosticsAllowed() {
   } catch (_) {
     return false;
   }
+}
+
+// Passive, bounded, development-only observations. These never participate in
+// presence authority, freshness, publication or rendering decisions.
+function recordPresenceTransitionObservation(userId, layer, details = {}) {
+  if (!presenceTransitionRecorder) return;
+  const ownerId = normId(state.user?.id || "");
+  if (presenceTransitionOwnerId !== ownerId) {
+    presenceTransitionRecorder.reset();
+    presenceTransitionOwnerId = ownerId;
+    presenceTransitionRuntime = {};
+  }
+  presenceTransitionRecorder.record(userId, layer, {
+    ownerUserId: presenceOwnerUserId || ownerId,
+    ownerGeneration: presenceSessionEpoch,
+    controllerGeneration: presenceControllerGeneration,
+    channelGeneration: presenceTransitionRuntime.trackGeneration,
+    subscriptionStatus: presenceTransitionRuntime.channelState,
+    transportConnected: presenceTransitionRuntime.socketConnected,
+    ...details,
+  });
+}
+
+function retainPresenceTransitionRuntime(runtime = {}, userIds = []) {
+  const ownerId = normId(state.user?.id || "");
+  if (presenceTransitionOwnerId !== ownerId) {
+    presenceTransitionRecorder.reset();
+    presenceTransitionOwnerId = ownerId;
+  }
+  const ids = [...new Set([
+    normId(state.user?.id || ""),
+    normId(state.activeDm?.otherUserId || state.activeDm?.other_user_id || ""),
+    ...getPresenceKnownFriendIds(), ...userIds,
+  ].filter(Boolean))].slice(0, 256);
+  // Retain only observation metadata, never the full diagnostic snapshot.
+  presenceTransitionRuntime = {
+    trackGeneration: runtime.trackGeneration,
+    channelState: runtime.channelState,
+    socketConnected: runtime.socketConnected,
+    rawPresenceSessionCountsByUserId: Object.fromEntries(ids.map((id) => [id, Number(runtime.rawPresenceSessionCountsByUserId?.[id] || 0)])),
+    remoteFreshnessByUserId: Object.fromEntries(ids.map((id) => [id, {
+      ageMs: runtime.remoteFreshnessByUserId?.[id]?.ageMs ?? null,
+      remainingMs: runtime.remoteFreshnessByUserId?.[id]?.remainingMs ?? null,
+    }])),
+  };
+  return ids;
+}
+
+function buildPresenceTransitionObservation(userId, entry = null) {
+  const sessions = entry?.live_sessions || entry?.liveSessions || [];
+  const classification = classifyPresenceState(entry || { has_live_session: false });
+  const freshness = presenceTransitionRuntime.remoteFreshnessByUserId?.[userId] || {};
+  return {
+    rawSessionCount: Number(presenceTransitionRuntime.rawPresenceSessionCountsByUserId?.[userId] || 0),
+    liveSessionCount: Number(entry?.live_session_count || entry?.liveSessionCount || 0),
+    publicSessionCount: Number(entry?.public_live_session_count || 0),
+    manualStatus: entry?.manual_status || entry?.manualStatus || entry?.status || "unknown",
+    visibleStatus: classification.visibleStatus,
+    grace: sessions.some((session) => session.presence_grace === true),
+    ageMs: freshness.ageMs ?? null,
+    remainingMs: freshness.remainingMs ?? null,
+    sessions: sessions.map((session) => ({
+      id: session.session_id || session.presence_ref || "",
+      status: session.manual_status || session.status || "unknown",
+      grace: session.presence_grace === true,
+      deviceType: session.device_type,
+    })),
+  };
+}
+
+function recordPresenceCanonicalObservations(before, after, metadata, runtime) {
+  if (!presenceTransitionRecorder) return;
+  const ownerId = normId(state.user?.id || "");
+  if (presenceTransitionOwnerId !== ownerId) {
+    presenceTransitionRecorder.reset();
+    presenceTransitionOwnerId = ownerId;
+  }
+  const entryId = (entry) => normId(entry?.id || entry?.user_id || entry?.userId || "");
+  const next = new Map(after.map((entry) => [entryId(entry), entry]));
+  const ids = retainPresenceTransitionRuntime(runtime, [...before.map(entryId), ...next.keys()]);
+  ids.forEach((id) => recordPresenceTransitionObservation(id, "canonical", {
+    ...buildPresenceTransitionObservation(id, next.get(id)),
+    writer: "onPresenceList",
+    reason: metadata?.source || "onPresenceList",
+  }));
+}
+
+function recordPresenceResolvedObservation(userId, resolved, entry) {
+  if (!presenceTransitionRecorder) return;
+  recordPresenceTransitionObservation(userId, "resolved", {
+    ...buildPresenceTransitionObservation(userId, entry),
+    manualStatus: resolved.manualStatus,
+    visibleStatus: resolved.effectiveStatus,
+    writer: "resolveEffectivePresence",
+    reason: "resolve",
+  });
+}
+
+function recordPresencePaintObservation(userId, status, writer, reason = "presence-render") {
+  if (!presenceTransitionRecorder) return;
+  recordPresenceTransitionObservation(userId, "paint", {
+    ...buildPresenceTransitionObservation(userId, getPresenceEntryForUser(userId)),
+    paintStatus: status,
+    writer,
+    reason,
+  });
+}
+
+function recordPresenceCountObservation(reason = "online-count") {
+  if (!presenceTransitionRecorder) return;
+  const count = document.getElementById("onlineCount");
+  if (!count) return;
+  recordPresenceTransitionObservation("__online_count__", "count", {
+    onlineCount: Number(count.textContent || 0), writer: "updatePresenceRender", reason,
+  });
 }
 
 function sanitizePresenceDiagnosticMessage(value = "") {
@@ -205815,16 +207457,24 @@ function openMeStatusMenuAt(point, options = {}) {
   return true;
 }
 
-async function persistMyPresenceStatusToAccount(statusInput) {
+function isCurrentPresenceStatusIntent(intent) {
+  return !!intent
+    && intent.userId === normId(state.user?.id || "")
+    && intent.sessionEpoch === presenceSessionEpoch
+    && intent.sequence === meStatusIntentSequence;
+}
+
+async function persistMyPresenceStatusToAccount(statusInput, intent) {
   const status = normalizeManualPresenceStatus(statusInput);
-  const uid = normId(state.user?.id || "");
-  if (!uid) return false;
+  const uid = intent?.userId || "";
+  if (!uid || !isCurrentPresenceStatusIntent(intent)) return false;
 
   if (profileStatusSupported !== false) {
     const { error } = await supabase
       .from("profiles")
       .update({ status })
       .eq("id", uid);
+    if (!isCurrentPresenceStatusIntent(intent)) return false;
     if (!error) {
       profileStatusSupported = true;
       cacheProfileRow({ id: uid, status });
@@ -205847,6 +207497,7 @@ async function persistMyPresenceStatusToAccount(statusInput) {
     .from("profiles")
     .update({ theme_settings: nextTheme })
     .eq("id", uid);
+  if (!isCurrentPresenceStatusIntent(intent)) return false;
   if (themeError) {
     console.warn("status save fallback failed:", themeError?.message || themeError);
     return false;
@@ -205858,11 +207509,13 @@ async function persistMyPresenceStatusToAccount(statusInput) {
   return true;
 }
 
-function queueMyPresenceStatusPersist(statusInput) {
+function queueMyPresenceStatusPersist(statusInput, intent) {
   const status = normalizeManualPresenceStatus(statusInput);
+  // Serialize the existing account write, skipping selections superseded before
+  // their turn. A queued callback must never adopt the next signed-in account.
   meStatusPersistQueue = meStatusPersistQueue
     .catch(() => {})
-    .then(() => persistMyPresenceStatusToAccount(status));
+    .then(() => persistMyPresenceStatusToAccount(status, intent));
   return meStatusPersistQueue;
 }
 
@@ -205878,9 +207531,12 @@ async function refreshCurrentUserPresenceStatusFromAccount({ reason = "status-sy
   const uid = normId(state.user?.id || "");
   if (!uid || currentUserPresenceStatusSyncInFlight) return;
   if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+  if (isCurrentPresenceStatusIntent(meStatusPendingIntent)) return;
+  const intentAtStart = { userId: uid, sessionEpoch: presenceSessionEpoch, sequence: meStatusIntentSequence };
   currentUserPresenceStatusSyncInFlight = true;
   try {
     const rows = await fetchProfilesByIds([uid], { includeBio: false, force: true }).catch(() => []);
+    if (!isCurrentPresenceStatusIntent(intentAtStart) || isCurrentPresenceStatusIntent(meStatusPendingIntent)) return;
     const row = Array.isArray(rows) ? (rows[0] || getCachedProfile(uid)) : getCachedProfile(uid);
     if (!row) return;
     const remoteStatus = readPresenceStatusValue(row.status)
@@ -212854,6 +214510,13 @@ function getServerMemberActivityMeta(userId = "", fallbackStatusLabel = "Offline
 async function setMyPresenceStatusEverywhere(statusInput, { persistAccount = true } = {}) {
   const status = normalizeManualPresenceStatus(statusInput);
   const previousStatus = normalizeManualPresenceStatus(resolveMyPresenceStatus(state.me));
+  const intent = {
+    userId: normId(state.user?.id || ""),
+    sessionEpoch: presenceSessionEpoch,
+    sequence: ++meStatusIntentSequence,
+  };
+  if (!intent.userId) return previousStatus;
+  meStatusPendingIntent = intent;
   lastManualPresenceStatusChangeAt = Date.now();
   logPresenceDebug("set manual status start", {
     userId: normId(state.user?.id || ""),
@@ -212884,7 +214547,7 @@ async function setMyPresenceStatusEverywhere(statusInput, { persistAccount = tru
   let persisted = persistAccount === false;
   if (persistAccount) {
     try {
-      persisted = await queueMyPresenceStatusPersist(status);
+      persisted = await queueMyPresenceStatusPersist(status, intent);
       logPresenceDebug("manual status persisted", {
         userId: normId(state.user?.id || ""),
         status,
@@ -212904,7 +214567,14 @@ async function setMyPresenceStatusEverywhere(statusInput, { persistAccount = tru
     }
   }
 
+  // A previous write can finish after a newer choice or logout. It owns neither
+  // that user's UI nor a publication on the current Presence controller.
+  if (!isCurrentPresenceStatusIntent(intent)) return status;
+  if (meStatusPendingIntent === intent) meStatusPendingIntent = null;
   if (persistAccount && persisted !== true) {
+    // This selection was rejected. Let the existing account refresh restore
+    // confirmed status; a newer intent still fences that asynchronous result.
+    lastManualPresenceStatusChangeAt = 0;
     state.me.status = setMyStatus(previousStatus);
     if (state.user?.id) cacheProfileRow({ id: state.user.id, status: previousStatus });
     syncSpotifyPollingFromAccounts({ immediate: true });
@@ -213018,37 +214688,6 @@ function applyMeStatusDot(status) {
   }
 }
 
-function applySelfManualStatusFromPresenceList(list = []) {
-  const meId = normalizePresenceUserId(state.user?.id);
-  if (!meId) return;
-  const hit = (list || []).find((u) => normalizePresenceUserId(u?.id || u?.user_id || u?.userId || "") === meId);
-  const remoteStatus = readPresenceStatusValue(hit?.manual_status) || readPresenceStatusValue(hit?.manualStatus);
-  if (!remoteStatus) return;
-  const nextStatus = normalizeManualPresenceStatus(remoteStatus);
-  const localStatus = normalizeManualPresenceStatus(resolveMyPresenceStatus(state.me));
-  if (nextStatus === localStatus) return;
-  const inLocalGrace = Date.now() - Number(lastManualPresenceStatusChangeAt || 0) < PRESENCE_STATUS_LOCAL_CHANGE_GRACE_MS;
-  if (inLocalGrace) {
-    logPresenceDebug("presence sync ignored during local grace", {
-      userId: meId,
-      localStatus,
-      remoteStatus: nextStatus,
-    });
-    return;
-  }
-  state.me = state.me || {};
-  state.me.status = setMyStatus(nextStatus);
-  cacheProfileRow({ id: meId, status: nextStatus });
-  applyMeStatusDot(nextStatus);
-  logPresenceDebug("remote status update received", {
-    userId: meId,
-    previousStatus: localStatus,
-    status: nextStatus,
-    source: "presence",
-  });
-  try { void presence?.setStatus?.(nextStatus); } catch (_) {}
-}
-
 function syncProfilesFromPresenceList(list = []) {
   const rows = (list || [])
     .map((u) => {
@@ -213061,7 +214700,9 @@ function syncProfilesFromPresenceList(list = []) {
         avatar_url: u?.avatar_url || null,
         name_color: normalizeNameColor(u?.name_color),
         call_tile_color: normalizeCallTileColor(u?.call_tile_color),
-        status: readPresenceStatusValue(u?.manual_status) || readPresenceStatusValue(u?.manualStatus) || null,
+        status: id === normalizePresenceUserId(state.user?.id)
+          ? resolveMyPresenceStatus(state.me)
+          : (readPresenceStatusValue(u?.manual_status) || readPresenceStatusValue(u?.manualStatus) || null),
         activity: sanitizePresenceActivity(u?.activity || u?.spotify_activity || u?.spotifyActivity),
       };
     })
@@ -213160,17 +214801,19 @@ function setStatusDotsForUser(userId, status) {
 
   const resolved = normalizePresenceStatus(status || "offline");
   dots.forEach((dot) => dot.setAttribute("data-status", resolved));
+  if (dots.length) recordPresencePaintObservation(raw, resolved, "setStatusDotsForUser");
 }
 
 function applyPresenceStatusDots(snapshot = []) {
-  Array.from(document.querySelectorAll("[data-status-dot]")).forEach((dot) => {
-    dot.setAttribute("data-status", "offline");
-  });
-
-  (Array.isArray(snapshot) ? snapshot : []).forEach((entry) => {
-    const uid = normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || "");
+  const entries = new Map((Array.isArray(snapshot) ? snapshot : []).map((entry) => [
+    normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || ""), entry,
+  ]));
+  document.querySelectorAll("[data-status-dot]").forEach((dot) => {
+    const uid = normalizePresenceUserId(dot.getAttribute("data-status-dot") || "");
     if (!uid) return;
-    setStatusDotsForUser(uid, getPresenceStatusForUser(uid) || normalizePresenceStatus(entry?.status || "offline"));
+    const status = resolveEffectivePresence(uid, { presenceEntry: entries.get(uid) }).effectiveStatus;
+    if (dot.getAttribute("data-status") !== status) dot.setAttribute("data-status", status);
+    recordPresencePaintObservation(uid, status, "applyPresenceStatusDots");
   });
 }
 
@@ -213364,10 +215007,14 @@ function bindPresenceDebugGlobals() {
   if (!isPresenceLiveDiagnosticsAllowed()) {
     delete window.__ALTARA_PRESENCE_DEBUG__;
     delete window.__ALTARA_PRESENCE_DEBUG_PRINT__;
+    delete window.__ALTARA_PRESENCE_TRANSITIONS__;
     delete window.__ALTARA_REALTIME_STARTUP_DEBUG__;
     delete window.__ALTARA_REALTIME_BARRIER_DEBUG__;
     return;
   }
+  window.__ALTARA_PRESENCE_TRANSITIONS__ = () => presenceTransitionRecorder.snapshot(
+    normId(state.activeDm?.otherUserId || state.activeDm?.other_user_id || "")
+  );
   window.__ALTARA_REALTIME_STARTUP_DEBUG__ = function () {
     return realtimeStartupBarrier.getStartupDebugSnapshot().map((entry) => ({
       topic: String(entry?.topic || ""),
@@ -213770,6 +215417,9 @@ function updatePresenceRender() {
     }
   });
 
+  // Existing DM contacts and profile dots may belong to non-friends too.
+  applyPresenceStatusDots(presenceList);
+
   // renderPresenceUI owns the exact Active Now rule: live friend + valid activity.
   // Do not derive Online Now from the number of activity cards.
   if (activeNowEl && !shouldHideActiveNowInCall) {
@@ -213816,6 +215466,7 @@ function updatePresenceRender() {
     presenceLatencyTracker.mark("onlineUiAppliedAt");
   }
   } finally {
+    recordPresenceCountObservation();
     relationshipTracePhaseEnd(trace, traceLabel);
   }
 }
@@ -213903,6 +215554,12 @@ function clearPresenceForSignedOutSession(reason = "auth:signed_out") {
     source: reason,
   });
   presenceSessionEpoch += 1;
+  presenceTransitionRecorder?.reset();
+  presenceTransitionOwnerId = "";
+  presenceTransitionRuntime = {};
+  meStatusPendingIntent = null;
+  meStatusPersistQueue = Promise.resolve();
+  lastManualPresenceStatusChangeAt = 0;
   preparedPresenceBootstrapGeneration = 0;
   realtimeStartupBarrier.reset({ resolveWaiters: true, cancelWaiting: true });
   void privateCallInboxController.stop({ reason, clearLedger: true }).catch(() => {});
@@ -213962,6 +215619,7 @@ function startPresenceAuthStateListener() {
         hasAccessToken,
       });
       if (String(event || "").toUpperCase() === "SIGNED_OUT") {
+        clearConversationMessageMemoryCache({ userSwitch: true });
         serverVoiceStartupReadyUserId = "";
         serverVoiceStartupReadinessController.cancel("auth-signed-out");
         notifyServerVoiceStartupDependencyChange("auth-signed-out");
@@ -213971,6 +215629,7 @@ function startPresenceAuthStateListener() {
       if (!authUserId || !hasAccessToken) return;
       const expectedUserId = normId(state.user?.id || "");
       if (expectedUserId && authUserId !== expectedUserId) {
+        clearConversationMessageMemoryCache({ userSwitch: true });
         serverVoiceStartupReadyUserId = "";
         serverVoiceStartupReadinessController.cancel("auth-user-changed");
         notifyServerVoiceStartupDependencyChange("auth-user-changed");
@@ -214160,14 +215819,19 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
   // the previous access token.
   if (presence && presenceOwnerUserId === nextPresenceOwnerUserId) {
     logPresenceLiveDebug("restart existing presence system", { userId: nextPresenceOwnerUserId });
-    try { await presence.start?.(); } catch (error) {
+    const existingPresenceController = presence;
+    try { await existingPresenceController.start?.(); } catch (error) {
       logPresenceLiveDebug("restart existing presence system failed", {
         userId: nextPresenceOwnerUserId,
         error: getSafeAuthErrorCode(error, "presence_restart"),
       });
       throw error;
     }
-    try { await presence.refresh?.(); } catch (_) {}
+    if (sessionEpochAtStart !== presenceSessionEpoch
+      || normId(state.user?.id || "") !== nextPresenceOwnerUserId
+      || presenceOwnerUserId !== nextPresenceOwnerUserId
+      || presence !== existingPresenceController) return false;
+    try { await existingPresenceController.refresh?.(); } catch (_) {}
     return true;
   }
 
@@ -214332,6 +215996,11 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
     onStatus: (status, meta = {}) => {
       if (presence !== nextPresenceController || presenceOwnerUserId !== nextPresenceOwnerUserId) return;
       recordAltaraRealtimeStatus(status, { source: meta?.source || "presence", error: meta?.error || null });
+      if (presenceTransitionRecorder) {
+        retainPresenceTransitionRuntime(nextPresenceController.getDebugSnapshot(),
+          Object.keys(presenceTransitionRuntime.rawPresenceSessionCountsByUserId || {}));
+        recordPresenceCountObservation("reconnect");
+      }
     },
     onPresenceList: (list, snapshotMeta = {}) => {
       if (presence !== nextPresenceController || presenceOwnerUserId !== nextPresenceOwnerUserId) {
@@ -214351,7 +216020,16 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
         });
         return;
       }
+      const previousPresenceList = presenceList;
       presenceList = list || [];
+      const runtime = presence && typeof presence.getDebugSnapshot === "function"
+        ? presence.getDebugSnapshot({ freshnessUserIds: presenceTransitionRecorder
+          ? [normId(state.user?.id || ""), normId(state.activeDm?.otherUserId || state.activeDm?.other_user_id || ""),
+            ...getPresenceKnownFriendIds(),
+            ...[...previousPresenceList, ...presenceList].map((entry) => normId(entry?.id || entry?.user_id || entry?.userId || ""))]
+          : [] })
+        : {};
+      recordPresenceCanonicalObservations(previousPresenceList, presenceList, snapshotMeta, runtime);
       const snapshotUserIds = presenceList
         .map((entry) => normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || ""))
         .filter(Boolean);
@@ -214404,9 +216082,7 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
         count: getPresenceActiveNowDebugUsers().length,
         userIds: getPresenceActiveNowDebugUsers().map((row) => row.extractedFriendUserId || row.friendUserId || row.userId || "").filter(Boolean),
       });
-      const runtime = presence && typeof presence.getDebugSnapshot === "function"
-        ? presence.getDebugSnapshot()
-        : {};
+
       const currentUserId = normalizePresenceUserId(state.user?.id);
       const normalizedPresenceUserIds = Array.from(new Set(presenceList
         .map((entry) => normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || ""))
@@ -214444,7 +216120,9 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
         matchedOnlineFriendIds,
         onlineNowCount: matchedOnlineFriendIds.length,
       });
-      applySelfManualStatusFromPresenceList(presenceList);
+      // Presence sessions establish connectivity; their aggregate has no account
+      // revision and cannot overwrite a manual choice. Authenticated profile
+      // events and the existing account refresh own cross-device status sync.
       syncProfilesFromPresenceList(presenceList);
       schedulePresenceRender("presence_list");
       if ((document.querySelector("[data-tab].active")?.getAttribute("data-tab") || "") === "widgets") {
@@ -214467,7 +216145,11 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
 
   presence = nextPresenceController;
 
-  await presence.start();
+  await nextPresenceController.start();
+  if (sessionEpochAtStart !== presenceSessionEpoch
+    || normId(state.user?.id || "") !== nextPresenceOwnerUserId
+    || presenceOwnerUserId !== nextPresenceOwnerUserId
+    || presence !== nextPresenceController) return false;
   bindPresenceVisibilityRefreshOnce();
   bindDesktopPresenceShutdownOnce();
   bindDesktopCallShutdownOnce();
@@ -214475,7 +216157,10 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
   const searchInputEl = document.getElementById("searchInput");
   searchInputEl?.addEventListener("input", updatePresenceRender);
 
-  await presence.setStatus(persisted);
+  // The selector owns publication while its account write is pending.
+  if (!isCurrentPresenceStatusIntent(meStatusPendingIntent)) {
+    await nextPresenceController.setStatus(resolveMyPresenceStatus(state.me));
+  }
 }
 
 /* ========================= INIT ========================= */
