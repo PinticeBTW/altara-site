@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
@@ -142,28 +142,40 @@ async function runChromeVaultSuite(profile, url) {
     const port = await waitForDevTools(profile, child, () => stderr);
     const webSocketUrl = await waitForPageWebSocket(port);
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    return await evaluateThroughCdp(
-      webSocketUrl,
-      `new Promise((resolve, reject) => {
-        const deadline = Date.now() + 180000;
-        const check = () => {
-          const element = document.getElementById("result");
-          const status = element?.dataset?.status || "";
-          if (status === "pass" || status === "fail") {
-            resolve({ status, text: element.textContent || "" });
-            return;
-          }
-          if (Date.now() >= deadline) {
-            reject(new Error("vault_page_timeout"));
-            return;
-          }
-          setTimeout(check, 50);
-        };
-        check();
-      })`,
-    );
+    for (let navigationAttempt = 0; navigationAttempt < 5; navigationAttempt += 1) {
+      try {
+        return await evaluateThroughCdp(
+          webSocketUrl,
+          `new Promise((resolve, reject) => {
+            const deadline = Date.now() + 180000;
+            const check = () => {
+              const element = document.getElementById("result");
+              const status = element?.dataset?.status || "";
+              if (status === "pass" || status === "fail") {
+                resolve({ status, text: element.textContent || "" });
+                return;
+              }
+              if (Date.now() >= deadline) {
+                reject(new Error("vault_page_timeout"));
+                return;
+              }
+              setTimeout(check, 50);
+            };
+            check();
+          })`,
+        );
+      } catch (error) {
+        if (navigationAttempt === 4 || !/Execution context was destroyed|Cannot find context/i.test(String(error?.message))) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
   } finally {
-    child.kill();
+    if (process.platform === "win32" && child.pid && child.exitCode === null) {
+      // Terminate only this isolated test browser and its children before deleting its profile.
+      spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore", timeout: 10000 });
+    } else {
+      child.kill();
+    }
     if (child.exitCode === null) {
       await new Promise((resolve) => {
         child.once("exit", resolve);
@@ -190,7 +202,7 @@ test("production-site Vault copy passes 32 real WebCrypto, IndexedDB, migration,
     assert.equal(summary.passed, 32);
     assert.equal(summary.failed, 0);
   } finally {
-    await rm(profile, { recursive: true, force: true });
+    await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
