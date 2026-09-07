@@ -11,7 +11,9 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const fixturePath = "/tests/fixtures/dm-e2ee-vault-browser.html";
 const chromePath = process.env.ALTARA_VAULT_CHROME_PATH
-  || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+  || (process.platform === "darwin"
+    ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    : process.platform === "win32" ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" : "/usr/bin/google-chrome");
 
 function contentType(filePath) {
   const extension = path.extname(filePath).toLowerCase();
@@ -196,8 +198,8 @@ test("production app shell owns the exact hardened Vault module and recovery-fir
   const moduleSource = (await readFile(path.join(repositoryRoot, "public", "app", "lib", "dmE2ee.js"), "utf8")).replace(/\r\n/g, "\n");
   assert.equal(
     createHash("sha256").update(moduleSource).digest("hex"),
-    // Frozen approved 0.1.127 Windows/Linux/web shared source.
-    "bdf4ded477300cb201dbbd7d2eb970576dda1a30fc4737645e96ef92ed15d14a",
+    // Canonical Vault source shared by 0.1.129 and this client-only release.
+    "9a443eff4780c782c374bc2b10bc57bc468d3974b796f368867dcc9bbcffa43f",
   );
   const indexSource = await readFile(path.join(repositoryRoot, "public", "app", "index.html"), "utf8");
   assert.match(indexSource, /<script\s+type="module"\s+src="\/app\/app\.js[^"]*"><\/script>/);
@@ -208,8 +210,8 @@ test("production app shell owns the exact hardened Vault module and recovery-fir
   assert.match(appSource, /data-dm-e2ee-act="' \+ escAttr\(localRecoveryAction\) \+ '"/);
   assert.match(appSource, /rewrapDmE2eeKeyBackup\(\{/);
   assert.doesNotMatch(appSource, /awaitWithTimeout\(\s*setupDirectDmEncryptionForCurrentDevice[\s\S]{0,250}?15000/);
-  assert.match(appSource, /async function promptVaultProvisioningPassword\(\)/);
-  assert.match(appSource, /setupDmE2eeIdentityForCurrentDevice\(\{[\s\S]*?backupPassword:[\s\S]*?includeRecoveryKey: true/);
+  assert.match(appSource, /function promptVaultProvisioningPassword\(\)/);
+  assert.match(appSource, /setupDmE2eeIdentityForCurrentDevice\(\{[\s\S]*?backupPassword,[\s\S]*?includeRecoveryKey: false/);
   assert.doesNotMatch(
     appSource,
     /setupDmE2eeIdentityForCurrentDevice\(\{\s*userId:\s*state\.user\.id,\s*forceNew:\s*false\s*\}\)/,

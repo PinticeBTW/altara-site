@@ -71,6 +71,30 @@ export type WindowsReleaseArtifacts = {
   application: ResolvedReleaseAsset;
 };
 
+export type MacArchitecture = "arm64" | "x64";
+
+export function resolveMacRelease(payload: unknown, architecture: MacArchitecture): WindowsReleaseArtifacts {
+  if (architecture !== "arm64" && architecture !== "x64") fail("unsupported_macos_architecture");
+  const { assets, publishedAt, tagName, version } = parseRelease(payload, false);
+  const application = selectReleaseAsset(assets, `Altara.${version}.mac-${architecture}.dmg`, tagName, `macos_${architecture}`);
+  if (!application) fail("missing_macos_asset");
+  return { version, tagName, publishedAt, application };
+}
+
+export async function createMacArtifactRedirectResponse(
+  architecture: MacArchitecture,
+  fetchImplementation: LinuxReleaseFetch = fetch as LinuxReleaseFetch,
+  logger: Pick<Console, "error"> = console,
+): Promise<Response> {
+  try {
+    const release = resolveMacRelease(await fetchReleasePayload(fetchImplementation), architecture);
+    return temporaryRedirect(release.application.url, "Redirecting to the latest ALTARA macOS installer.");
+  } catch (error) {
+    logger.error(`[macos-download] release resolution failed (${getErrorCode(error)})`);
+    return temporaryRedirect("/downloads?platform=macos&status=macos-unavailable", "The ALTARA macOS download is temporarily unavailable.");
+  }
+}
+
 export class LinuxReleaseResolutionError extends Error {
   readonly code: string;
 

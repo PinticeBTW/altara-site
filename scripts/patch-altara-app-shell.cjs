@@ -10,7 +10,11 @@ const appJsSource = fs.existsSync(appJsPath) ? fs.readFileSync(appJsPath, "utf8"
 const assetVersion = appJsSource.match(/const assetVersion = "([^"]+)"/)?.[1] || "";
 const offlineReconnectMarker =
   appJsSource.match(/const offlineReconnectMarker = "([^"]+)"/)?.[1] || "";
+const releaseManifestPath = path.join(appRoot, "release.json");
+const releaseVersion = fs.existsSync(releaseManifestPath)
+  ? JSON.parse(fs.readFileSync(releaseManifestPath, "utf8")).version : "";
 const appJsQuery = [
+  releaseVersion ? `release=${encodeURIComponent(releaseVersion)}` : "",
   assetVersion ? `v=${encodeURIComponent(assetVersion)}` : "",
   offlineReconnectMarker
     ? `hotfix=${encodeURIComponent(offlineReconnectMarker)}`

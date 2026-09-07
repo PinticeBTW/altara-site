@@ -315,8 +315,8 @@ export default function Home() {
             <Reveal className="hp-cta-panel">
               <h2 className="hp-h2 hp-h2--section">Bring your people to ALTARA.</h2>
               <p className="hp-lead">
-                Available for Windows and Linux x64. Browser access is open too; macOS is
-                planned next.
+                Available for Windows, Linux x64, and macOS on Apple Silicon or Intel.
+                Browser access is open too.
               </p>
 
               <div className="hp-cta-platforms">

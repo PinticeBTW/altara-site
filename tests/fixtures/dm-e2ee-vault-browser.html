@@ -244,7 +244,8 @@ test("wrong recovery password fails authentication without changing local storag
 
 test("tampered recovery ciphertext fails authentication", async () => {
   const tampered = structuredClone(context.passwordMethod);
-  tampered.encrypted_private_key = `${tampered.encrypted_private_key.slice(0, -1)}${tampered.encrypted_private_key.endsWith("A") ? "B" : "A"}`;
+  // Alter data bits, never the unused padding bits in the last base64url character.
+  tampered.encrypted_private_key = `${tampered.encrypted_private_key.startsWith("A") ? "B" : "A"}${tampered.encrypted_private_key.slice(1)}`;
   server.setMethod(context.newUserId, "password", tampered);
   const error = await rejects(() => vault.restoreDmE2eeKeyBackup({ userId: context.newUserId, password: context.password }));
   equal(error.code, "dm_e2ee_backup_bad_password");
@@ -589,64 +590,33 @@ test("errors and diagnostics do not contain private-key material", async () => {
   assert(!serializedLogs.includes(context.recoveryKey), "recovery_key_logged");
 });
 
-test("production recovery-first setup UI executes the exact site app integration", async () => {
-  const source = await (await fetch(`/public/app/app.js?v=${Date.now()}`)).text();
+test("production recovery-first settings delegates to the shared account-owned setup", async () => {
+  const source = (await (await fetch(`/public/app/app.js?v=${Date.now()}`)).text()).replace(/\r\n/g, "\n");
   const start = source.indexOf("async function setupNewDmE2eeKeyFromSettings()");
-  const end = source.indexOf("\nasync function promptRestoreDmE2eeBackupFromDm()", start);
+  const end = source.indexOf("\nfunction promptRestoreDmE2eeBackupFromDm()", start);
   assert(start >= 0 && end > start, "site_setup_function_missing");
   const functionSource = source.slice(start, end);
-  const passwordInput = document.createElement("input");
-  passwordInput.id = "settingsDmE2eeBackupPassword";
-  passwordInput.value = "synthetic migration recovery password";
-  const confirmInput = document.createElement("input");
-  confirmInput.id = "settingsDmE2eeBackupPasswordConfirm";
-  confirmInput.value = passwordInput.value;
-  document.body.append(passwordInput, confirmInput);
-  const calls = [];
-  const dependencyNames = [
-    "isDirectDmE2eeEnabled", "DIRECT_DM_E2EE_KEY_BACKUP_UI_ENABLED", "state",
-    "settingsDmE2eeBackupSetupInFlight", "DM_E2EE_BACKUP_PASSWORD_MIN_LENGTH",
-    "showSecurityDialogMessage", "tf", "t", "showVaultRecoveryResponsibilityNotice",
-    "requestAppConfirm", "renderDmE2eeBackupSettingsUi", "setupDmE2eeIdentityForCurrentDevice",
-    "DM_E2EE_BACKUP_PASSWORD_SOURCE_MANUAL", "showVaultRecoveryKeyOnce",
-    "clearDmE2eeBackupInputs", "dmE2eeBootstrapPromise", "ensureDmE2eeBootstrapStarted",
-    "refreshDmE2eeBackupSettingsState",
-  ];
-  const dependencyValues = [
-    () => true, true, { user: { id: "synthetic-ui-user" } }, false, 6,
-    async (message) => calls.push(["message", message]),
-    (_key, _values, fallback) => fallback,
-    (_key, fallback) => fallback,
-    async () => true,
-    async () => true,
-    () => calls.push(["render"]),
-    async (options) => {
-      calls.push(["setup", options]);
-      return { status: "ready", recoveryKey: "ALTARA-TEST-TEST-TEST-TEST-TEST-TEST-TEST-TEST" };
-    },
-    "manual",
-    async () => { calls.push(["recovery-key-shown"]); return true; },
-    () => calls.push(["clear"]),
-    null,
-    async () => calls.push(["bootstrap"]),
-    async () => calls.push(["refresh"]),
-  ];
-  try {
-    const setup = Function(...dependencyNames, `${functionSource}; return setupNewDmE2eeKeyFromSettings;`)(...dependencyValues);
+  for (const scenario of [{ current: true, ok: true }, { current: true, ok: false }, { current: false, ok: true }]) {
+    const calls = [];
+    const setup = Function("captureDmE2eeUiOwner", "setupDirectDmEncryptionForCurrentDevice",
+      "clearDmE2eeBackupInputs", "refreshDmE2eeBackupSettingsState",
+      `${functionSource}; return setupNewDmE2eeKeyFromSettings;`)(
+      () => ({ isCurrent: () => scenario.current }),
+      async options => { calls.push(["setup", options]); return { ok: scenario.ok }; },
+      options => calls.push(["clear", options]),
+      async options => calls.push(["refresh", options]),
+    );
     await setup();
-    const setupCall = calls.find(([kind]) => kind === "setup");
-    assert(setupCall, "migration_setup_not_called");
-    equal(setupCall[1].userId, "synthetic-ui-user");
-    equal(setupCall[1].backupPassword, passwordInput.value);
-    equal(setupCall[1].passwordSource, "manual");
-    equal(setupCall[1].includeRecoveryKey, true);
-    equal(setupCall[1].forceNew, false);
-    assert(calls.some(([kind]) => kind === "recovery-key-shown"), "recovery_key_not_presented");
-    assert(calls.some(([kind]) => kind === "bootstrap"), "authoritative_bootstrap_not_refreshed");
-    assert(calls.some(([kind]) => kind === "refresh"), "settings_state_not_refreshed");
-  } finally {
-    passwordInput.remove();
-    confirmInput.remove();
+    equal(calls[0][0], "setup");
+    equal(calls[0][1].checkPeerKey, false);
+    if (scenario.current && scenario.ok) {
+      equal(calls[1][0], "clear");
+      equal(calls[1][1].clearRestore, false);
+      equal(calls[2][0], "refresh");
+      equal(calls[2][1].force, true);
+    } else {
+      equal(calls.length, 1);
+    }
   }
 });
 

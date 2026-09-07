@@ -13,6 +13,7 @@ export const LINUX_PORTABLE_DOWNLOAD_URL = "/api/download/linux/portable";
 export const LINUX_HELP_URL = "/download/linux";
 export const LINUX_README_URL = "/api/download/linux/readme";
 export const LINUX_CHECKSUM_URL = "/api/download/linux/checksum";
+export const MAC_DOWNLOAD_URL = "/downloads?platform=macos#macos";
 
 type NavPage = "home" | "features" | "faq" | "about" | "developers";
 type FooterLink = {
@@ -87,11 +88,9 @@ export function WindowsDownloadOption({ version }: { version?: string } = {}) {
 
 export function MacDownloadOption() {
   return (
-    <button
-      type="button"
-      className="platform-btn platform-btn-disabled"
-      disabled
-      aria-disabled="true"
+    <Link
+      href={MAC_DOWNLOAD_URL}
+      className="platform-btn"
     >
       <span className="platform-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="currentColor">
@@ -99,10 +98,10 @@ export function MacDownloadOption() {
         </svg>
       </span>
       <span className="platform-copy">
-        <span className="platform-name">macOS</span>
-        <span className="platform-soon">Coming soon</span>
+        <span className="platform-name">Download for macOS</span>
+        <span className="platform-detail">Apple Silicon · Intel</span>
       </span>
-    </button>
+    </Link>
   );
 }
 
@@ -179,6 +178,7 @@ const footerColumns = [
       { label: "Download options", href: DOWNLOADS_URL },
       { label: "Download for Windows", href: WINDOWS_DOWNLOAD_URL },
       { label: "Linux x64 installers", href: LINUX_HELP_URL },
+      { label: "Download for macOS", href: MAC_DOWNLOAD_URL },
       { label: "Try in browser", href: TRY_IN_BROWSER_URL },
       { label: "Release notes", href: RELEASES_URL },
     ],

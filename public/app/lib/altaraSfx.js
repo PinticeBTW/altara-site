@@ -15,7 +15,7 @@ const cue = (asset, {
 });
 
 export const ALTARA_SFX_CUE_REGISTRY = Object.freeze({
-  message_received: cue("sfx/message_received.wav", { volume: 0.3, usage: "Incoming message notification" }),
+  message_received: cue("sfx/message_received.wav", { volume: 0.3, preload: "priority", usage: "Incoming message notification" }),
   message_sent: cue("sfx/message_sent.wav", { volume: 0.26, usage: "Successful local message send" }),
   server_voice_join: cue("sfx/server_voice_join.wav", { volume: 0.38, preload: "priority", usage: "Server Voice join and genuine remote join" }),
   server_voice_leave: cue("sfx/server_voice_leave.wav", { volume: 0.38, preload: "priority", usage: "Explicit Server Voice leave and genuine remote leave" }),
@@ -41,6 +41,7 @@ export const ALTARA_SFX_CUE_REGISTRY = Object.freeze({
 });
 
 export const ALTARA_SFX_PRIORITY_PRELOAD_CUES = Object.freeze([
+  "message_received",
   "server_voice_join",
   "server_voice_leave",
   "private_call_accept",
@@ -255,7 +256,11 @@ export function createAltaraSfxPlayer({
       trace(normalizedCue, "failed", { ...details, reason: "asset_unavailable", failureCategory: "asset_unavailable" });
       return { played: false, method: "none", failureCategory: "asset_unavailable" };
     }
-    const audio = createAudio(normalizedCue, { loop: false });
+    // Chrome can defer a new media element's first load in a hidden tab. Use
+    // the DM cue prepared during the user's foreground interaction when idle.
+    const reuseDmTemplate = normalizedCue === "message_received"
+      && !Array.from(activePlays).some((record) => record.audio === template);
+    const audio = reuseDmTemplate ? template : createAudio(normalizedCue, { loop: false });
     if (!audio) {
       trace(normalizedCue, "failed", { ...details, reason: "audio_unavailable", failureCategory: "audio_unavailable" });
       return { played: false, method: "none", failureCategory: "audio_unavailable" };

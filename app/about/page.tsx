@@ -64,11 +64,11 @@ const timeline = [
   },
   {
     label: "Now",
-    body: "Open beta. Windows and Linux live. Browser access open. ALTARA+ live.",
+    body: "Open beta. Windows, Linux, and macOS live. Browser access open. ALTARA+ live.",
   },
   {
     label: "Next",
-    body: "macOS planned, alongside continued product and community improvements.",
+    body: "Continued product and community improvements.",
   },
 ];
 

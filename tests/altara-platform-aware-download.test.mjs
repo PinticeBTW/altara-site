@@ -403,9 +403,11 @@ test("platform-neutral copy replaces stale Linux coming-soon wording", async () 
   assert.doesNotMatch(combined, /macOS\/Linux soon/i);
   assert.doesNotMatch(combined, /Linux\s+COMING SOON/i);
   assert.doesNotMatch(combined, /macOS and Linux are planned next/i);
-  assert.doesNotMatch(combined, /Download ALTARA for Windows/i);
-  assert.match(combined, /Available for Windows and Linux x64/);
-  assert.match(combined, /macOS[^]*Coming soon/i);
+  assert.doesNotMatch(combined, />Download ALTARA for Windows</i);
+  assert.match(combined, /Available for Windows, Linux x64, and macOS/);
+  assert.match(combined, /Download for macOS/);
+  assert.match(combined, /Apple Silicon/);
+  assert.doesNotMatch(combined, /macOS.{0,80}Coming soon/i);
 });
 
 test("chooser states Linux ARM64 unavailable and keeps browser access visible", async () => {

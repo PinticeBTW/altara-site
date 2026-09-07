@@ -3960,7 +3960,6 @@ function clearAltaraRealtimeRestartTimersForRecovery({ preservePresenceRestartOw
   [
     altaraPresenceRealtimeRestartTimer,
     activeConversationRealtimeRestartTimer,
-    globalDmMessageRestartTimer,
     typingInboxRestartTimer,
     globalUserBlocksRestartTimer,
     globalDmMembershipRestartTimer,
@@ -3982,7 +3981,6 @@ function clearAltaraRealtimeRestartTimersForRecovery({ preservePresenceRestartOw
   activeConversationRealtimeRestartTimer = 0;
   altaraPresenceRealtimeRestartAttempt = 0;
   activeConversationRealtimeRestartAttempt = 0;
-  globalDmMessageRestartTimer = null;
   typingInboxRestartTimer = 0;
   globalUserBlocksRestartTimer = null;
   globalDmMembershipRestartTimer = null;
@@ -4041,6 +4039,12 @@ function requestPrivateCallInboxActivation(reason = "authenticated-required-subs
   return true;
 }
 
+registerAltaraForegroundResumeTask("dm_unread", () => {
+  if (!state.user?.id) return false;
+  if (isDmConversationActivelyViewed(activeDmId)) clearDmUnreadForActiveConversation();
+  return startGlobalDmMessageListener();
+}, { priority: "critical", network: true, render: true });
+
 registerAltaraForegroundResumeTask("private_call_inbox", () => requestPrivateCallInboxActivation("foreground-resume"), {
   priority: "critical",
 });
@@ -4067,6 +4071,7 @@ function resumeAltaraRealtimeSubscriptionsAfterPresenceReady(presenceGeneration 
   try { syncUserMembershipBroadcastSubscription(); } catch (_) {}
   try { startGlobalDmPrivacyEventListener({ reason: "presence-generation-ready" }); } catch (_) {}
 
+  try { startGlobalDmMessageListener(); } catch (_) {}
   try { startGlobalProfileListener(); } catch (_) {}
   try { subscribeTypingInboxForCurrentUser("presence-generation-ready"); } catch (_) {}
   try { syncServerMemberRemovalBroadcastSubscriptions(); } catch (_) {}
@@ -4108,7 +4113,6 @@ function resetAltaraRealtimeSubscriptionsForRecovery(
 
   const channels = [
     activeDmChannelForRecovery,
-    globalDmMessageChannel,
     typingRealtimeChannel,
     typingInboxChannel,
     globalProfileChannel,
@@ -4139,9 +4143,8 @@ function resetAltaraRealtimeSubscriptionsForRecovery(
   const callRealtimeContexts = Array.from(callRealtimeChannelsByConversationId.values());
 
   dmReactionEventRefreshQueue.reset();
-  globalDmMessageChannel = null;
-  globalDmMessageChannelStatus = "";
-  globalDmMessageNeedsCatchup = false;
+  globalDmMessageNeedsCatchup = true;
+  globalDmMessageCatchupFromMs = globalDmMessageReconciledThroughMs;
   typingRealtimeChannel = null;
   typingRealtimeChannelStatus = "";
   typingInboxChannel = null;
@@ -4310,6 +4313,8 @@ async function performAltaraConnectionRecovery(reason = "restored") {
       return false;
     }
     state.user = authResolution.user;
+    globalDmMessageAuthSuspended = false;
+    startGlobalDmMessageListener();
     invalidateAllServerChannelVisibilityAuthoritySnapshots("connection_reauthenticated");
     // navigationVersionAtStart was captured before the auth-revalidation awaits above
     // (which can take several seconds). If the user explicitly navigated away (e.g. to
@@ -4582,6 +4587,7 @@ function initAltaraConnectionManager() {
       logAltaraConnection("online event", {});
       setAltaraConnectionPatch({ networkOnline: true }, "window-online");
       syncSpotifyPollingFromAccounts({ immediate: true });
+      startGlobalDmMessageListener();
       void retryAltaraConnectionNow("online-event");
     });
     window.addEventListener("offline", () => {
@@ -94867,8 +94873,16 @@ function sweepExpiredDmMutes({
 }
 
 function ensureDmClientStateLoaded() {
-  if (dmClientStateLoaded) return;
-  dmClientStateLoaded = true;
+  const userId = normId(state.user?.id || "");
+  if (!userId || dmClientStateLoaded === userId) return;
+  if (dmClientStateLoaded) {
+    [dmActivityByUserId, dmUnreadByUserId, dmUnreadByConversationId,
+      dmHiddenByUserId, dmHiddenRowByUserId, dmMutedUserIds, dmMutedConversationIds,
+      dmMutedUserUntilById, dmMutedConversationUntilById, dmPinnedGroupConversationIds,
+      dmBestFriendUserIds, dmFriendNicknameByUserId, dmConversationPeerCache,
+      dmConversationIdByUserId].forEach((entries) => entries.clear());
+  }
+  dmClientStateLoaded = userId;
 
   try {
     const rawActivity = localStorage.getItem(getDmActivityStorageKey());
@@ -95042,6 +95056,7 @@ function persistDmUnreadUsersToStorage() {
         payload[uid] = Math.max(1, Math.min(999, Number(count) || 0));
       });
     localStorage.setItem(getDmUnreadUsersStorageKey(), JSON.stringify(payload));
+    persistGlobalDmMessageSyncState();
   } catch (_) {}
 }
 
@@ -95055,6 +95070,7 @@ function persistDmUnreadConversationsToStorage() {
         payload[convId] = Math.max(1, Math.min(999, Number(count) || 0));
       });
     localStorage.setItem(getDmUnreadConversationsStorageKey(), JSON.stringify(payload));
+    persistGlobalDmMessageSyncState();
   } catch (_) {}
 }
 
@@ -95748,16 +95764,11 @@ function unhideDmUser(userId, { rerender = true } = {}) {
 function pruneDmClientState(friendIds = new Set()) {
   ensureDmClientStateLoaded();
   const allowed = friendIds instanceof Set ? friendIds : new Set();
-  let unreadUsersChanged = false;
 
-  for (const uid of Array.from(dmUnreadByUserId.keys())) {
-    if (!allowed.has(uid)) {
-      dmUnreadByUserId.delete(uid);
-      unreadUsersChanged = true;
-    }
-  }
+  // A sidebar snapshot may be incomplete/offline, or predate a received DM.
+  // Only explicit reads or authoritative access revocation can clear unread.
   for (const uid of Array.from(dmActivityByUserId.keys())) {
-    if (!allowed.has(uid)) dmActivityByUserId.delete(uid);
+    if (!allowed.has(uid) && !dmUnreadByUserId.has(uid)) dmActivityByUserId.delete(uid);
   }
   // Hidden Friends / Messages rows are activity-keyed and can belong to non-friend DMs or requests.
   // Do not prune them just because the user is not in the current friends/contact snapshot.
@@ -95779,7 +95790,6 @@ function pruneDmClientState(friendIds = new Set()) {
   }
 
   persistDmActivityToStorage();
-  if (unreadUsersChanged) persistDmUnreadUsersToStorage();
   persistDmHiddenToStorage();
   persistDmMutedUsersToStorage();
   persistDmBestFriendsToStorage();
@@ -95941,6 +95951,7 @@ function syncDmActiveListHighlight() {
 }
 
 let dmChromeRenderFrame = 0;
+let dmChromeRenderTimer = 0;
 const pendingDmChromeRender = {
   decorations: false,
   groupsRail: false,
@@ -95949,7 +95960,12 @@ const pendingDmChromeRender = {
 };
 
 function flushDmChromeRenderQueue() {
+  if (dmChromeRenderFrame && typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(dmChromeRenderFrame);
+  }
+  if (dmChromeRenderTimer) clearTimeout(dmChromeRenderTimer);
   dmChromeRenderFrame = 0;
+  dmChromeRenderTimer = 0;
   const next = { ...pendingDmChromeRender };
   pendingDmChromeRender.decorations = false;
   pendingDmChromeRender.groupsRail = false;
@@ -95972,14 +95988,15 @@ function scheduleDmChromeRender({
   pendingDmChromeRender.groupsRail = pendingDmChromeRender.groupsRail || !!groupsRail;
   pendingDmChromeRender.widgets = pendingDmChromeRender.widgets || !!widgets;
   pendingDmChromeRender.reorderDmList = pendingDmChromeRender.reorderDmList || !!reorderDmList;
-  if (dmChromeRenderFrame) return;
+  if (dmChromeRenderFrame || dmChromeRenderTimer) return;
 
-  const scheduleFrame = (typeof requestAnimationFrame === "function")
-    ? requestAnimationFrame
-    : ((cb) => setTimeout(cb, 16));
-  dmChromeRenderFrame = scheduleFrame(() => {
-    flushDmChromeRenderQueue();
-  });
+  const hasAnimationFrame = typeof requestAnimationFrame === "function";
+  if (hasAnimationFrame) {
+    dmChromeRenderFrame = requestAnimationFrame(flushDmChromeRenderQueue);
+  }
+  // Hidden tabs and minimized windows can suspend animation frames. Keep unread
+  // decorations and the desktop badge moving, with one flush per queued batch.
+  dmChromeRenderTimer = setTimeout(flushDmChromeRenderQueue, hasAnimationFrame ? 100 : 16);
 }
 
 function seedDmActivityFromFriends(friends = []) {
@@ -96131,9 +96148,11 @@ function claimIncomingPrivateMessageEvent(messageInput = {}, conversationId = ""
   const convId = normId(conversationId || messageInput?.conversation_id || messageInput?.conversationId || "");
   if (!messageId || !convId) return true;
   const key = `${convId}:${messageId}`;
+  if (incomingPrivateMessageDurableSeenAtByKey.has(key)) return false;
   const now = Date.now();
   const seenUntil = Number(incomingPrivateMessageEventSeenUntilByKey.get(key) || 0);
   if (Number.isFinite(seenUntil) && seenUntil > now) return false;
+  incomingPrivateMessageDurableSeenAtByKey.set(key, Date.parse(String(messageInput?.created_at || "")) || now);
   incomingPrivateMessageEventSeenUntilByKey.set(key, now + INCOMING_PRIVATE_MESSAGE_EVENT_DEDUPE_TTL_MS);
   for (const [candidateKey, until] of incomingPrivateMessageEventSeenUntilByKey.entries()) {
     if (!Number.isFinite(until) || until <= now) incomingPrivateMessageEventSeenUntilByKey.delete(candidateKey);
@@ -96143,7 +96162,6 @@ function claimIncomingPrivateMessageEvent(messageInput = {}, conversationId = ""
     if (!oldestKey) break;
     incomingPrivateMessageEventSeenUntilByKey.delete(oldestKey);
   }
-  persistGlobalDmMessageSyncState();
   return true;
 }
 
@@ -96160,26 +96178,21 @@ function incrementGroupDmUnread(conversationId = "") {
 function clearDmUnreadForUser(userId) {
   const uid = normId(userId);
   if (!uid) return;
+  dmUnreadReadVersionByTarget.set(`user:${uid}`, (dmUnreadReadVersionByTarget.get(`user:${uid}`) || 0) + 1);
   const hadUnread = dmUnreadByUserId.delete(uid);
   if (!hadUnread) return;
   persistDmUnreadUsersToStorage();
-  scheduleDmChromeRender({
-    decorations: true,
-    groupsRail: true,
-    widgets: true,
-  });
+  scheduleDmChromeRender({ decorations: true, groupsRail: true, widgets: true });
 }
 
 function clearDmUnreadForConversation(conversationId) {
   const convId = normId(conversationId);
   if (!convId) return;
+  dmUnreadReadVersionByTarget.set(`conversation:${convId}`, (dmUnreadReadVersionByTarget.get(`conversation:${convId}`) || 0) + 1);
   const hadUnread = dmUnreadByConversationId.delete(convId);
   if (!hadUnread) return;
   persistDmUnreadConversationsToStorage();
-  scheduleDmChromeRender({
-    decorations: true,
-    widgets: true,
-  });
+  scheduleDmChromeRender({ decorations: true, groupsRail: true, widgets: true });
 }
 
 function clearDmUnreadForActiveConversation() {
@@ -97790,9 +97803,6 @@ function resumeActiveDmRealtimeSubscriptionAfterPresenceReady(presenceGeneration
     descriptor,
   );
 }
-let globalDmMessageChannel = null;
-let globalDmMessageChannelStatus = "";
-let globalDmMessageRestartTimer = null;
 let globalDmMessageNeedsCatchup = false;
 let globalDmMessageSubscribedAtMs = 0;
 let globalDmMessageLastProcessedAtMs = 0;
@@ -97800,6 +97810,15 @@ let globalDmMessageCatchupFromMs = 0;
 let globalDmMessageCatchupInFlight = null;
 let globalDmMessageInitialCatchupStarted = false;
 let globalDmMessageSyncStateLoadedForUserId = "";
+let globalDmMessageReconciledThroughMs = 0;
+let globalDmMessageLegacyBoundaryMs = 0;
+let globalDmMessageSyncGeneration = 0;
+let globalDmMessageCatchupQueued = false;
+let globalDmMessageSyncRetryTimer = null;
+let globalDmMessageSyncRetryAttempt = 0;
+const incomingPrivateMessageDurableSeenAtByKey = new Map();
+const dmUnreadReadVersionByTarget = new Map();
+let globalDmMessageAuthSuspended = false;
 const dmMessageConversationAccessCacheByConversation = new Map();
 const dmMessageConversationAccessLookupInFlightByConversation = new Map();
 const DM_MESSAGE_CONVERSATION_ACCESS_CACHE_MS = 60 * 1000;
@@ -130201,8 +130220,12 @@ function isElementActuallyVisible(el) {
 
 function isDmConversationActivelyViewed(conversationId) {
   const dmMain = document.getElementById("dmMain");
-  const dmVisible = isElementActuallyVisible(dmMain);
-  const sameConversation = normId(conversationId) === normId(activeDmId);
+  const messagePane = document.getElementById("dmMessages");
+  const fullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+  const dmVisible = isElementActuallyVisible(dmMain)
+    && (!messagePane || isElementActuallyVisible(messagePane))
+    && (!fullscreen || fullscreen.contains(dmMain) || (messagePane && fullscreen.contains(messagePane)));
+  const sameConversation = !!normId(conversationId) && normId(conversationId) === normId(activeDmId);
   const pageVisible = document.visibilityState === "visible";
   const winFocused = (typeof document.hasFocus === "function") ? document.hasFocus() : true;
   return dmVisible && sameConversation && pageVisible && winFocused;
@@ -196831,7 +196854,8 @@ function handleGroupDmMembershipUserEvent(
 
 async function startGroupDmRevocationBroadcastListener({ force = false, reason = "start" } = {}) {
   const userId = normId(state.user?.id || "");
-  if (!userId) return null;
+  if (!userId || globalDmMessageAuthSuspended || isAltaraDefinitivelyOffline()) return null;
+  const requestedGeneration = groupDmRevocationBroadcastGeneration;
   let session = null;
   try {
     const { data, error } = await supabase.auth.getSession();
@@ -196842,7 +196866,7 @@ async function startGroupDmRevocationBroadcastListener({ force = false, reason =
   }
   const sessionUserId = normId(session?.user?.id || "");
   const accessToken = String(session?.access_token || "").trim();
-  if (sessionUserId !== userId || !accessToken) return null;
+  if (sessionUserId !== userId || !accessToken || userId !== normId(state.user?.id || "") || globalDmMessageAuthSuspended) return null;
   if (!force
       && groupDmRevocationBroadcastChannel
       && groupDmRevocationBroadcastUserId === userId
@@ -196855,9 +196879,20 @@ async function startGroupDmRevocationBroadcastListener({ force = false, reason =
   } catch (_) {
     return null;
   }
+  if (userId !== normId(state.user?.id || "") || globalDmMessageAuthSuspended) return null;
+  // Concurrent boot/resume requests share the channel created by the first owner.
+  if (requestedGeneration !== groupDmRevocationBroadcastGeneration) {
+    return groupDmRevocationBroadcastUserId === userId ? groupDmRevocationBroadcastChannel : null;
+  }
+  if (groupDmRevocationBroadcastRestartTimer) {
+    clearTimeout(groupDmRevocationBroadcastRestartTimer);
+    groupDmRevocationBroadcastRestartTimer = null;
+  }
   logGdmRealtimeLocal("AUTH_SET", { userId, reason: String(reason || "start") });
   if (groupDmRevocationBroadcastChannel) {
-    try { supabase.removeChannel(groupDmRevocationBroadcastChannel); } catch (_) {}
+    const oldChannel = groupDmRevocationBroadcastChannel;
+    groupDmRevocationBroadcastChannel = null;
+    try { supabase.removeChannel(oldChannel); } catch (_) {}
   }
   groupDmRevocationBroadcastUserId = userId;
   groupDmRevocationBroadcastAuthToken = accessToken;
@@ -196885,6 +196920,23 @@ async function startGroupDmRevocationBroadcastListener({ force = false, reason =
           },
         },
       },
+    })
+    // Use the already authorized self topic; messages RLS still filters each row.
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+      if (groupDmRevocationBroadcastChannel !== channel
+          || groupDmRevocationBroadcastGeneration !== generation
+          || userId !== normId(state.user?.id || "") || globalDmMessageAuthSuspended) return;
+      recordAltaraRuntimeActivity("realtime_callback_message", "global_insert");
+      const row = payload?.new || null;
+      const eventReceivedAt = beginRemoteRealtimeMessageDomTiming(row || {});
+      void onGlobalDmMessageInserted(row, { eventReceivedAt, source: "realtime" })
+        .catch((error) => {
+          logNotificationDebug("dm_global_realtime_callback_failed", {
+            sourceTable: "messages",
+            skippedReason: getSafeAuthErrorCode(error, "dm_global_realtime_callback"),
+          }, { level: "warn" });
+          void reconcileGlobalDmMessageUnreadAfterReconnect({ queueIfRunning: true });
+        });
     })
     .on("broadcast", { event: "group_dm_typing" }, (event) => {
       const payload = event?.payload || {};
@@ -196939,7 +196991,8 @@ async function startGroupDmRevocationBroadcastListener({ force = false, reason =
   groupDmRevocationBroadcastChannel = channel;
   channel.subscribe((status, error) => {
     const isCurrentChannel = groupDmRevocationBroadcastChannel === channel
-      && groupDmRevocationBroadcastGeneration === generation;
+      && groupDmRevocationBroadcastGeneration === generation
+      && userId === normId(state.user?.id || "") && !globalDmMessageAuthSuspended;
     logGdmRealtimeLocal("SUBSCRIBE_STATUS", {
       status: String(status || "").trim().toUpperCase(),
       reason: String(reason || "start"),
@@ -196949,6 +197002,7 @@ async function startGroupDmRevocationBroadcastListener({ force = false, reason =
     });
     if (!isCurrentChannel) return;
     groupDmRevocationBroadcastStatus = String(status || "").trim().toUpperCase();
+    handleGlobalDmMessageChannelStatus(groupDmRevocationBroadcastStatus, error);
     if (groupDmRevocationBroadcastStatus === "SUBSCRIBED") {
       // Reconcile on every successful initial subscribe and Phoenix rejoin.
       // Replay is a fast signal; current database state remains authoritative.
@@ -200718,6 +200772,7 @@ async function canCurrentUserAccessMessageConversation(conversationId, { force =
 
   const lookupPromise = (async () => {
     let allowed = false;
+    let lookupError = null;
 
     try {
       const { data: serverChannelRow, error: serverChannelError } = await supabase
@@ -200790,6 +200845,7 @@ async function canCurrentUserAccessMessageConversation(conversationId, { force =
       ]);
       const { data: membershipRow, error: membershipError } = membershipResult || {};
       const { data: conversationRow, error: conversationError } = conversationResult || {};
+      if (membershipError || conversationError) throw membershipError || conversationError;
 
       if (isGroupDmConversationRevoked(convId)) return false;
 
@@ -200816,11 +200872,12 @@ async function canCurrentUserAccessMessageConversation(conversationId, { force =
           }
         }
       }
-    } catch (_) {
-      allowed = false;
+    } catch (error) {
+      lookupError = error;
     }
 
     if (isGroupDmConversationRevoked(convId)) return false;
+    if (lookupError) throw lookupError;
     dmMessageConversationAccessCacheByConversation.set(convId, {
       allowed: !!allowed,
       checkedAt: Date.now(),
@@ -201184,9 +201241,19 @@ function ensureGlobalDmMessageSyncStateLoaded() {
   const userId = normId(state.user?.id || "");
   if (!userId || globalDmMessageSyncStateLoadedForUserId === userId) return;
   globalDmMessageSyncStateLoadedForUserId = userId;
+  globalDmMessageSyncGeneration += 1;
   globalDmMessageInitialCatchupStarted = false;
   globalDmMessageLastProcessedAtMs = 0;
+  globalDmMessageReconciledThroughMs = 0;
+  globalDmMessageLegacyBoundaryMs = 0;
+  globalDmMessageCatchupInFlight = null;
+  globalDmMessageCatchupQueued = false;
+  if (globalDmMessageSyncRetryTimer) clearTimeout(globalDmMessageSyncRetryTimer);
+  globalDmMessageSyncRetryTimer = null;
+  globalDmMessageSyncRetryAttempt = 0;
   incomingPrivateMessageEventSeenUntilByKey.clear();
+  incomingPrivateMessageDurableSeenAtByKey.clear();
+  dmUnreadReadVersionByTarget.clear();
   try {
     const raw = localStorage.getItem(getGlobalDmMessageSyncStorageKey());
     const parsed = raw ? JSON.parse(raw) : null;
@@ -201194,27 +201261,62 @@ function ensureGlobalDmMessageSyncStateLoaded() {
     if (Number.isFinite(watermarkAtMs) && watermarkAtMs > 0) {
       globalDmMessageLastProcessedAtMs = watermarkAtMs;
     }
+    // Keep counters and claimed IDs in one atomic, per-account snapshot.
+    if (parsed?.version === 2 && Array.isArray(parsed?.unreadUsers) && Array.isArray(parsed?.unreadConversations)) {
+      for (const [target, rows] of [[dmUnreadByUserId, parsed.unreadUsers], [dmUnreadByConversationId, parsed.unreadConversations]]) {
+        target.clear();
+        for (const [id, count] of rows) {
+          if (normId(id) && Number(count) > 0) target.set(normId(id), Math.min(999, Number(count)));
+        }
+      }
+    }
+    const checkpoint = Number(parsed?.reconciledThroughMs || 0);
+    if (Number.isFinite(checkpoint) && checkpoint > 0) {
+      globalDmMessageReconciledThroughMs = checkpoint;
+      globalDmMessageLegacyBoundaryMs = Number(parsed?.legacyBoundaryMs || 0);
+    } else if (globalDmMessageLastProcessedAtMs > 0) {
+      // V1 had a global receipt watermark, not a backend read receipt. Do not
+      // replay its already-counted boundary after its two-minute dedupe expires.
+      globalDmMessageReconciledThroughMs = globalDmMessageLastProcessedAtMs;
+      globalDmMessageLegacyBoundaryMs = globalDmMessageLastProcessedAtMs;
+    }
     const now = Date.now();
     (Array.isArray(parsed?.recentEventKeys) ? parsed.recentEventKeys : []).forEach((entry) => {
       const key = String(entry?.key || "").trim();
       const until = Number(entry?.until || 0);
-      if (key && Number.isFinite(until) && until > now) {
-        incomingPrivateMessageEventSeenUntilByKey.set(key, until);
+      if (key && Number.isFinite(until) && until > now) incomingPrivateMessageEventSeenUntilByKey.set(key, until);
+    });
+    (Array.isArray(parsed?.pendingReceipts) ? parsed.pendingReceipts : []).forEach((entry) => {
+      const key = String(entry?.key || "").trim();
+      const at = Number(entry?.at || 0);
+      if (key && Number.isFinite(at) && at >= globalDmMessageReconciledThroughMs) {
+        incomingPrivateMessageDurableSeenAtByKey.set(key, at);
       }
     });
   } catch (_) {}
+  // There is no backend per-user read state in the current schema. On a new
+  // device establish a baseline now; never label all historical messages unread.
+  if (!globalDmMessageReconciledThroughMs) globalDmMessageReconciledThroughMs = Date.now();
+  globalDmMessageCatchupFromMs = globalDmMessageReconciledThroughMs;
+  globalDmMessageNeedsCatchup = true;
+  persistGlobalDmMessageSyncState();
 }
 
 function persistGlobalDmMessageSyncState() {
   const storageKey = getGlobalDmMessageSyncStorageKey();
-  if (!storageKey) return;
+  if (!storageKey || normId(state.user?.id || "") !== globalDmMessageSyncStateLoadedForUserId) return;
   try {
     const recentEventKeys = Array.from(incomingPrivateMessageEventSeenUntilByKey.entries())
       .slice(-256)
       .map(([key, until]) => ({ key, until: Number(until || 0) }));
     localStorage.setItem(storageKey, JSON.stringify({
-      version: 1,
+      version: 2,
       watermarkAtMs: Math.max(0, Number(globalDmMessageLastProcessedAtMs || 0)),
+      reconciledThroughMs: globalDmMessageReconciledThroughMs,
+      legacyBoundaryMs: globalDmMessageLegacyBoundaryMs,
+      pendingReceipts: Array.from(incomingPrivateMessageDurableSeenAtByKey, ([key, at]) => ({ key, at })),
+      unreadUsers: Array.from(dmUnreadByUserId),
+      unreadConversations: Array.from(dmUnreadByConversationId),
       recentEventKeys,
     }));
   } catch (_) {}
@@ -201324,7 +201426,7 @@ function processAcceptedIncomingPrivateMessage(row = {}, context = {}, {
     return { accepted: true, unreadApplied: false, soundAttempted: false, skippedReason: "server_pipeline" };
   }
   if (isOwnMessage || isSystemOnly) {
-    if (isOwnMessage) clearDmUnreadForConversation(conversationId);
+    if (isOwnMessage && isDmConversationActivelyViewed(conversationId)) clearDmUnreadForConversation(conversationId);
     rememberGlobalDmMessageProcessed(row);
     recordRemoteRealtimeMessagePhase("unread", eventReceivedAt);
     recordRemoteRealtimeMessagePhase("sound", eventReceivedAt);
@@ -201392,6 +201494,9 @@ function processAcceptedIncomingPrivateMessage(row = {}, context = {}, {
   let soundAttempted = false;
   if (allowSound && unreadApplied && !muted && shouldNotifyInFocus(notificationMeta)) {
     soundAttempted = playIncomingMessageCueOnce(row, cueName, notificationMeta);
+    if (!dndSuppressed) {
+      try { showIncomingPrivateMessageNotification(conversationId, isGroup); } catch (_) {}
+    }
   }
   recordRemoteRealtimeMessagePhase("sound", eventReceivedAt);
   rememberGlobalDmMessageProcessed(row);
@@ -201413,61 +201518,119 @@ function processAcceptedIncomingPrivateMessage(row = {}, context = {}, {
   return { accepted: true, unreadApplied, soundAttempted, skippedReason: activeViewed ? "active_conversation" : "" };
 }
 
-async function reconcileGlobalDmMessageUnreadAfterReconnect() {
-  if (globalDmMessageCatchupInFlight) return globalDmMessageCatchupInFlight;
-  const fromMs = Math.max(0, Number(globalDmMessageCatchupFromMs || 0));
-  if (!fromMs || !state.user?.id) return false;
+function showIncomingPrivateMessageNotification(conversationId, isGroup = false) {
+  // No plaintext previews: this also works for locked and encrypted DMs.
+  const body = isGroup
+    ? t("dm.notification.new_group_message", "New group message")
+    : t("dm.notification.new_direct_message", "New direct message");
+  if (document.visibilityState === "visible") showDmPrivacyToast(body);
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  try {
+    const notification = new Notification("ALTARA", {
+      body, tag: `altara-dm:${conversationId}`, silent: true,
+    });
+    notification.onclick = () => {
+      notification.close();
+      window.focus();
+      void showDm(conversationId).catch(() => {});
+    };
+  } catch (_) {}
+}
+
+async function reconcileGlobalDmMessageUnreadAfterReconnect({ queueIfRunning = false } = {}) {
+  if (globalDmMessageAuthSuspended) return false;
+  ensureGlobalDmMessageSyncStateLoaded();
+  if (globalDmMessageCatchupInFlight) {
+    if (queueIfRunning) globalDmMessageCatchupQueued = true;
+    return globalDmMessageCatchupInFlight;
+  }
+  const fromMs = globalDmMessageReconciledThroughMs;
+  const userId = normId(state.user?.id || "");
+  if (!fromMs || !userId || isAltaraDefinitivelyOffline()) return false;
+  const generation = globalDmMessageSyncGeneration;
+  const isCurrent = () => generation === globalDmMessageSyncGeneration && normId(state.user?.id || "") === userId;
+  const readVersions = new Map(dmUnreadReadVersionByTarget);
   const run = (async () => {
-    const fromIso = new Date(Math.max(0, fromMs - 2000)).toISOString();
-    const throughIso = new Date().toISOString();
+    const fromIso = new Date(fromMs).toISOString();
+    const throughMs = Math.max(fromMs, Date.now());
+    const throughIso = new Date(throughMs).toISOString();
     const pageSize = 1000;
     let offset = 0;
     let acceptedRowCount = 0;
     while (true) {
-      const { data, error } = await supabase
+      const { data, error } = await altaraWithTimeout(supabase
         .from("messages")
-        .select(dmMessageSelectColumns({ minimal: true }))
+        .select(`${dmMessageSelectColumns({ minimal: true })}, deleted_at, trusted_event_type`)
         .gte("created_at", fromIso)
         .lte("created_at", throughIso)
         .order("created_at", { ascending: true })
         .order("id", { ascending: true })
-        .range(offset, offset + pageSize - 1);
-      if (error || !Array.isArray(data)) {
-        logNotificationDebug("dm_unread_reconnect_catchup_failed", {
-          sourceTable: "messages",
-          skippedReason: error ? "authorized_history_query_failed" : "invalid_history_result",
-          pageOffset: offset,
-        }, { level: "warn" });
-        return false;
-      }
+        .range(offset, offset + pageSize - 1), 12_000, "dm-unread-recovery");
+      if (!isCurrent()) return false;
+      if (error || !Array.isArray(data)) throw error || new Error("invalid_history_result");
       for (const row of data) {
-        await onGlobalDmMessageInserted(row, { source: "reconnect-catchup" });
+        if (!isCurrent()) return false;
+        if (Date.parse(row.created_at) <= globalDmMessageLegacyBoundaryMs) continue;
+        // Recovery is silent and cannot replay a historical own-message read.
+        if (normId(row.user_id) === userId || row.deleted_at || isAuthoritativeIncomingSystemOnlyMessage(row)) continue;
+        await onGlobalDmMessageInserted(row, { source: "reconnect-catchup", readVersions });
       }
       acceptedRowCount += data.length;
       if (data.length < pageSize) break;
       offset += pageSize;
     }
+    if (!isCurrent()) return false;
+    globalDmMessageReconciledThroughMs = throughMs;
+    globalDmMessageLegacyBoundaryMs = 0;
     globalDmMessageCatchupFromMs = 0;
-    logNotificationDebug("dm_unread_reconnect_catchup_complete", {
-      sourceTable: "messages",
-      classificationReason: "realtime_reconnect_authorized_history",
-      acceptedRowCount,
-    });
+    globalDmMessageNeedsCatchup = false;
+    for (const [key, at] of incomingPrivateMessageDurableSeenAtByKey) {
+      if (at < throughMs) incomingPrivateMessageDurableSeenAtByKey.delete(key);
+    }
+    persistGlobalDmMessageSyncState();
+    globalDmMessageSyncRetryAttempt = 0;
+    if (globalDmMessageSyncRetryTimer) clearTimeout(globalDmMessageSyncRetryTimer);
+    globalDmMessageSyncRetryTimer = null;
+    scheduleDmChromeRender({ decorations: true, groupsRail: true, widgets: true });
+    logNotificationDebug("dm_unread_reconnect_catchup_complete", { sourceTable: "messages", acceptedRowCount });
     return true;
-  })();
+  })().catch((error) => {
+    if (isCurrent()) {
+      globalDmMessageNeedsCatchup = true;
+      logNotificationDebug("dm_unread_reconnect_catchup_failed", {
+        sourceTable: "messages", skippedReason: getSafeAuthErrorCode(error, "authorized_history_query_failed"),
+      }, { level: "warn" });
+      if (!globalDmMessageSyncRetryTimer) {
+        const delay = Math.min(30_000, 1200 * (2 ** Math.min(globalDmMessageSyncRetryAttempt++, 5)));
+        globalDmMessageSyncRetryTimer = setTimeout(() => {
+          globalDmMessageSyncRetryTimer = null;
+          if (isCurrent()) void reconcileGlobalDmMessageUnreadAfterReconnect();
+        }, delay);
+      }
+    }
+    return false;
+  });
   globalDmMessageCatchupInFlight = run;
-  try {
-    return await run;
-  } finally {
-    if (globalDmMessageCatchupInFlight === run) globalDmMessageCatchupInFlight = null;
+  try { return await run; }
+  finally {
+    if (globalDmMessageCatchupInFlight === run) {
+      globalDmMessageCatchupInFlight = null;
+      if (globalDmMessageCatchupQueued && isCurrent()) {
+        globalDmMessageCatchupQueued = false;
+        void reconcileGlobalDmMessageUnreadAfterReconnect();
+      }
+    }
   }
 }
 
 async function onGlobalDmMessageInserted(row, {
   eventReceivedAt = 0,
   source = "realtime",
+  readVersions = null,
 } = {}) {
-  if (!row || !state.user?.id) return;
+  if (!row || !state.user?.id || row.deleted_at) return;
+  const receivingUserId = normId(state.user.id);
+  const syncGeneration = globalDmMessageSyncGeneration;
 
   const convId = normId(row.conversation_id);
   if (!convId) return;
@@ -201479,6 +201642,7 @@ async function onGlobalDmMessageInserted(row, {
   const hasConversationAccess = locallyAuthorized
     ? true
     : await canCurrentUserAccessMessageConversation(convId, { force: isKnownGroupDm });
+  if (normId(state.user?.id || "") !== receivingUserId || globalDmMessageSyncGeneration !== syncGeneration) return;
   if (!hasConversationAccess) {
     clearDmUnreadForConversation(convId);
     const cachedPeerUserId = normId(dmConversationPeerCache.get(convId) || "");
@@ -201494,7 +201658,17 @@ async function onGlobalDmMessageInserted(row, {
   if (!messageContext) {
     messageContext = await getIncomingMessageContext(row, { sourceTable: "messages" });
   }
-  if (!messageContext?.type) return;
+  if (normId(state.user?.id || "") !== receivingUserId || globalDmMessageSyncGeneration !== syncGeneration) return;
+  if (!messageContext?.type) throw new Error("dm_message_context_unavailable");
+  if (readVersions && messageContext.type !== "server_channel") {
+    const target = messageContext.type === "group_dm"
+      ? `conversation:${convId}` : `user:${normId(messageContext.peerUserId || row.user_id)}`;
+    if ((readVersions.get(target) || 0) !== (dmUnreadReadVersionByTarget.get(target) || 0)) {
+      claimIncomingPrivateMessageEvent(row, convId);
+      rememberGlobalDmMessageProcessed(row);
+      return;
+    }
+  }
 
   const receipt = processAcceptedIncomingPrivateMessage(row, messageContext, {
     eventReceivedAt,
@@ -201502,6 +201676,8 @@ async function onGlobalDmMessageInserted(row, {
     authorizationSource: locallyAuthorized ? "rls_plus_trusted_local_context" : "rls_plus_authoritative_access_check",
     allowSound: source !== "reconnect-catchup",
   });
+  // This minimal history query owns unread only, not full/Vault timeline rows.
+  if (source === "reconnect-catchup") return;
   upsertConversationMessageCacheRow(convId, row, { persist: true, source: "message-insert-global" });
 
   const myId = normId(state.user.id);
@@ -201535,10 +201711,7 @@ async function onGlobalDmMessageInserted(row, {
   }
 
   if (fromId && fromId === myId) {
-    clearDmUnreadForConversation(convId);
-    if (normId(activeDmId || state.activeDm?.conversationId || "") === convId) {
-      clearDmUnreadForActiveConversation();
-    }
+    if (isDmConversationActivelyViewed(convId)) clearDmUnreadForActiveConversation();
     return;
   }
 
@@ -201559,90 +201732,55 @@ async function onGlobalDmMessageInserted(row, {
     await loadDmList();
   }
 }
-function startGlobalDmMessageListener() {
-  if (!state.user?.id) return null;
-  ensureGlobalDmMessageSyncStateLoaded();
-  exposeAltaraNotificationsDebugHelper();
-  clearDmMessageConversationAccessCache();
-  if (globalDmMessageRestartTimer) {
-    clearTimeout(globalDmMessageRestartTimer);
-    globalDmMessageRestartTimer = null;
-  }
-  if (
-    globalDmMessageChannel
-    && ["JOINING", "SUBSCRIBED"].includes(globalDmMessageChannelStatus)
-  ) return globalDmMessageChannel;
-  if (globalDmMessageChannel) {
-    const oldChannel = globalDmMessageChannel;
-    globalDmMessageChannel = null;
-    globalDmMessageChannelStatus = "";
-    supabase.removeChannel(oldChannel);
-  }
+function stopGlobalDmNotificationsForAuthChange() {
+  globalDmMessageAuthSuspended = true;
+  globalDmMessageSyncGeneration += 1;
+  globalDmMessageSyncStateLoadedForUserId = "";
+  globalDmMessageCatchupInFlight = null;
+  globalDmMessageCatchupQueued = false;
+  if (globalDmMessageSyncRetryTimer) clearTimeout(globalDmMessageSyncRetryTimer);
+  if (groupDmRevocationBroadcastRestartTimer) clearTimeout(groupDmRevocationBroadcastRestartTimer);
+  globalDmMessageSyncRetryTimer = null;
+  groupDmRevocationBroadcastRestartTimer = null;
+  const channel = groupDmRevocationBroadcastChannel;
+  groupDmRevocationBroadcastChannel = null;
+  groupDmRevocationBroadcastStatus = "";
+  groupDmRevocationBroadcastUserId = "";
+  groupDmRevocationBroadcastAuthToken = "";
+  groupDmRevocationBroadcastGeneration += 1;
+  dmUnreadByUserId.clear();
+  dmUnreadByConversationId.clear();
+  if (channel) void Promise.resolve(supabase.removeChannel(channel)).catch(() => {});
+  scheduleDmChromeRender({ decorations: true, groupsRail: true, widgets: true });
+}
 
-  const channel = supabase
-    .channel("global-dm-messages:" + state.user.id, { config: { private: true } })
-    .on("postgres_changes", {
-      event: "INSERT",
-      schema: "public",
-      table: "messages"
-    }, (payload) => {
-      recordAltaraRuntimeActivity("realtime_callback_message", "global_insert");
-      const row = payload?.new || null;
-      const eventReceivedAt = beginRemoteRealtimeMessageDomTiming(row || {});
-      void onGlobalDmMessageInserted(row, { eventReceivedAt, source: "realtime" })
-        .catch((error) => {
-          logNotificationDebug("dm_global_realtime_callback_failed", {
-            sourceTable: "messages",
-            skippedReason: getSafeAuthErrorCode(error, "dm_global_realtime_callback"),
-          }, { level: "warn" });
-        });
-    });
-  globalDmMessageChannel = channel;
-  globalDmMessageChannelStatus = "JOINING";
-  channel.subscribe((status, error) => {
-    if (globalDmMessageChannel !== channel) return;
-    globalDmMessageChannelStatus = String(status || "").trim().toUpperCase();
-    recordAltaraRealtimeStatus(status, { source: "core-messages", error });
-    if (globalDmMessageChannelStatus === "SUBSCRIBED") {
-      globalDmMessageSubscribedAtMs = Date.now();
-      if (!globalDmMessageInitialCatchupStarted) {
-        globalDmMessageInitialCatchupStarted = true;
-        if (globalDmMessageLastProcessedAtMs > 0) {
-          globalDmMessageCatchupFromMs = globalDmMessageLastProcessedAtMs;
-          globalDmMessageNeedsCatchup = true;
-        } else {
-          globalDmMessageLastProcessedAtMs = globalDmMessageSubscribedAtMs;
-          persistGlobalDmMessageSyncState();
-        }
-      }
-      if (globalDmMessageNeedsCatchup) {
-        globalDmMessageNeedsCatchup = false;
-        invalidateGroupAndServerCollectionsCache();
-        void reconcileGlobalDmMessageUnreadAfterReconnect()
-          .catch(() => false)
-          .finally(() => loadDmList().catch(() => {}));
-      }
-      return;
-    }
-    if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(globalDmMessageChannelStatus)) return;
+function startGlobalDmMessageListener() {
+  if (!state.user?.id || globalDmMessageAuthSuspended) return null;
+  ensureDmClientStateLoaded();
+  ensureGlobalDmMessageSyncStateLoaded();
+  scheduleDmChromeRender({ decorations: true, groupsRail: true, widgets: true });
+  void reconcileGlobalDmMessageUnreadAfterReconnect({ queueIfRunning: true });
+  exposeAltaraNotificationsDebugHelper();
+  if (isAltaraDefinitivelyOffline()) return null;
+  clearDmMessageConversationAccessCache();
+  // Hydration/HTTP do not wait for Presence. The existing private channel and
+  // startup barrier own the live subscription, including auth and restarts.
+  void startGroupDmRevocationBroadcastListener({ reason: "dm-unread-start" }).catch(() => {});
+  return groupDmRevocationBroadcastChannel;
+}
+
+function handleGlobalDmMessageChannelStatus(status, error) {
+  recordAltaraRealtimeStatus(status, { source: "core-messages", error });
+  if (status === "SUBSCRIBED") {
+    globalDmMessageSubscribedAtMs = Date.now();
+    globalDmMessageInitialCatchupStarted = true;
+    // Close the HTTP/subscription gap on initial subscribe and every rejoin.
+    void reconcileGlobalDmMessageUnreadAfterReconnect({ queueIfRunning: true });
+  } else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
     globalDmMessageNeedsCatchup = true;
-    const reconnectBoundaryMs = Math.max(
-      Number(globalDmMessageLastProcessedAtMs || 0),
-      Number(globalDmMessageSubscribedAtMs || 0),
-      Date.now() - 60_000
-    );
-    globalDmMessageCatchupFromMs = globalDmMessageCatchupFromMs
-      ? Math.min(globalDmMessageCatchupFromMs, reconnectBoundaryMs)
-      : reconnectBoundaryMs;
-    globalDmMessageChannel = null;
-    void Promise.resolve(supabase.removeChannel(channel)).catch(() => {});
-    if (globalDmMessageRestartTimer || !state.user?.id) return;
-    globalDmMessageRestartTimer = setTimeout(() => {
-      globalDmMessageRestartTimer = null;
-      startGlobalDmMessageListener();
-    }, 1200);
-  });
-  return channel;
+    globalDmMessageCatchupFromMs = globalDmMessageReconciledThroughMs;
+    void reconcileGlobalDmMessageUnreadAfterReconnect();
+  }
 }
 
 async function onGlobalBotChannelMessageInserted(row) {
@@ -202194,7 +202332,7 @@ async function showDm(conversationId, opts = {}) {
   });
   if (isServerConversation) {
     clearServerUnreadForConversation(convIdNorm || conversationId);
-  } else if (isGroupConversation) {
+  } else if (isGroupConversation && isDmConversationActivelyViewed(convIdNorm || conversationId)) {
     clearDmUnreadForConversation(convIdNorm || conversationId);
   }
   if (isShowRequestStale()) return;
@@ -202372,7 +202510,7 @@ async function showDm(conversationId, opts = {}) {
         banner_url: normalizeBannerUrl(otherProfile.banner_url || otherProfile.theme_settings?.banner_url || state.activeDm?.banner_url || ""),
       };
     }
-    clearDmUnreadForUser(dmPeerUserId);
+    if (isDmConversationActivelyViewed(conversationId)) clearDmUnreadForUser(dmPeerUserId);
   }
   if (isShowRequestStale()) return;
 
@@ -202674,6 +202812,9 @@ async function showDm(conversationId, opts = {}) {
     await earlyMessageLoadPromise;
   } else {
     await fetchMessages(conversationId, { initialLatest: true, reason: channelOpenMessageLoadReason, hydrateBots: false });
+  }
+  if (!isShowRequestStale() && !isServerConversation && isDmConversationActivelyViewed(conversationId)) {
+    clearDmUnreadForActiveConversation();
   }
   if (!isServerVoiceConversation) recordServerNavigationPerfPhase(opts?.serverNavigationTraceId, "message_loading_completed", {
     conversationId: normId(conversationId || ""),
@@ -215619,6 +215760,7 @@ function startPresenceAuthStateListener() {
         hasAccessToken,
       });
       if (String(event || "").toUpperCase() === "SIGNED_OUT") {
+        stopGlobalDmNotificationsForAuthChange();
         clearConversationMessageMemoryCache({ userSwitch: true });
         serverVoiceStartupReadyUserId = "";
         serverVoiceStartupReadinessController.cancel("auth-signed-out");
@@ -215629,12 +215771,16 @@ function startPresenceAuthStateListener() {
       if (!authUserId || !hasAccessToken) return;
       const expectedUserId = normId(state.user?.id || "");
       if (expectedUserId && authUserId !== expectedUserId) {
+        stopGlobalDmNotificationsForAuthChange();
         clearConversationMessageMemoryCache({ userSwitch: true });
         serverVoiceStartupReadyUserId = "";
         serverVoiceStartupReadinessController.cancel("auth-user-changed");
         notifyServerVoiceStartupDependencyChange("auth-user-changed");
         return;
       }
+      globalDmMessageAuthSuspended = false;
+      // Leave the auth callback before any HTTP recovery work (auth lock).
+      setTimeout(() => { if (!globalDmMessageAuthSuspended && normId(state.user?.id) === authUserId) startGlobalDmMessageListener(); }, 0);
       serverVoiceStartupReadyUserId = authUserId;
       notifyServerVoiceStartupDependencyChange(`auth:${String(event || "session").toLowerCase()}`);
       schedulePresenceStartupAfterAuth(session, "auth:" + String(event || "session"));
@@ -216304,6 +216450,7 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
     return;
   }
   const bootUserId = normId(state.user?.id || "");
+  if (bootUserId) startGlobalDmMessageListener();
   if (!bootUserId) {
     setAltaraConnectionPatch({
       authState: ALTARA_AUTH_STATE.UNEXPECTED_BOOT_ERROR,

@@ -11,7 +11,7 @@ import {
 import { FaqBrowser, type Faq, type FaqCategory } from "./faq-browser";
 
 const description =
-  "Answers about ALTARA: pricing and ALTARA+, browser access, Windows and Linux x64 downloads, open beta status, and who it's built for.";
+  "Answers about ALTARA: pricing and ALTARA+, browser access, Windows, Linux x64 and macOS downloads, open beta status, and who it's built for.";
 
 export const metadata: Metadata = {
   title: "FAQ",
@@ -65,14 +65,14 @@ const faqs: Faq[] = [
     category: "downloads",
     question: "Can I use ALTARA in the browser?",
     answer:
-      "Yes. You can try ALTARA in the browser, and Windows plus Linux x64 AppImage, DEB, and portable downloads are available now.",
+      "Yes. You can try ALTARA in the browser, and Windows, Linux x64 and macOS downloads are available now.",
   },
   {
     id: "platforms",
     category: "downloads",
     question: "What platforms are supported?",
     answer:
-      "Windows is available now. Linux x64 is available as AppImage or DEB, with a manually updated portable tar.gz fallback; macOS is planned, and browser access remains open.",
+      "Windows is available now. Linux x64 is available as AppImage or DEB, with a manually updated portable tar.gz fallback; macOS is available for Apple Silicon and Intel, and browser access remains open.",
   },
   {
     id: "beta",
