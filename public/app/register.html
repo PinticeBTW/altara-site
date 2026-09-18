@@ -14,7 +14,14 @@
 <body class="authPage auth-checking" data-auth-page="register">
   <div class="authDesktopDragRegion" aria-hidden="true"></div>
   <div class="authLangDock">
-    <button id="btnAuthLang" class="authLangBtn" type="button" aria-label="Switch language" title="Switch language">PT</button>
+    <label class="authLangPicker">
+      <span class="sr-only">Language</span>
+      <select id="authLanguageSelect" class="authLangSelect" aria-label="Language" title="Language">
+        <option value="en">English</option>
+        <option value="pt-PT">Português (Portugal)</option>
+        <option value="pt-BR">Português (Brasil)</option>
+      </select>
+    </label>
   </div>
 
   <div id="authInstallWelcomeOverlay" class="authInstallWelcomeOverlay hidden" aria-hidden="true">
@@ -75,6 +82,10 @@
       <h2 id="authCardTitle" class="authTitle">Create account</h2>
       <p id="authCardSub" class="authSub">Username is required, just like Discord.</p>
       <div id="authFeedback" class="authFeedback" role="status" aria-live="polite" hidden></div>
+      <div id="authPendingInvite" class="authPendingInvite" role="status" aria-live="polite" hidden>
+        <span id="authPendingInviteText">Server invite saved. Create your account to continue where you left off.</span>
+        <button id="btnCancelPendingInvite" class="authPendingInvite__cancel" type="button">Cancel invite</button>
+      </div>
 
       <div class="field">
         <label id="authUsernameLabel" for="username">Username (3-20, letters/numbers/_/. and spaces)</label>
@@ -91,6 +102,8 @@
         <label id="authPasswordLabel" for="password">Password</label>
         <input id="password" type="password" autocomplete="new-password" placeholder="minimum 6" />
       </div>
+
+      <section id="registerPolicy" class="accountPrivacy" aria-label="Account policy" hidden></section>
 
       <div class="authActions">
         <button class="btn primary" id="btnRegister">Create account</button>

@@ -403,8 +403,20 @@ export function renderPresenceUI({
   searchValue,
   source = "renderPresenceUI",
   onUserClick,
-  onStatusDot
+  onStatusDot,
+  readiness = "ready",
+  translate = (key, fallback) => fallback
 }) {
+  if (readiness !== "ready") {
+    const failed = readiness === "error";
+    if (activeNowEl) {
+      activeNowEl.removeAttribute("data-presence-signature");
+      activeNowEl.innerHTML = `<div class="hint" role="status" data-cold-phase="${failed ? "error" : "loading"}" aria-busy="${!failed}">${esc(translate(failed ? "hydrate.presence_failed" : "hydrate.loading_activity", failed ? "Activity couldn't load. Try again." : "Loading activity…"))}${failed ? ` <button class="btn ghost" type="button" data-cold-retry="presence">${esc(translate("hydrate.retry", "Try again"))}</button>` : ""}</div>`;
+    }
+    if (offlineListEl) { offlineListEl.innerHTML = ""; offlineListEl.removeAttribute("data-presence-signature"); }
+    if (onlineCountEl) onlineCountEl.textContent = "—";
+    return;
+  }
   const q = (searchValue || "").trim();
   const meId = normalizeId(me?.id || me?.user_id || me?.userId || "");
 
@@ -553,13 +565,13 @@ export function renderPresenceUI({
 
   // render Active Now
   if (activeNowEl) {
-    const signature = buildPresenceListSignature("active", active, q);
+    const signature = buildPresenceListSignature("active", active, q) + translate("hydrate.active_empty", "No one active right now.");
     if (activeNowEl.getAttribute("data-presence-signature") === signature) {
       if (onlineCountEl) onlineCountEl.textContent = String(online.length);
     } else {
     const html = active.length
       ? active.map(u => cardUser(u)).join("")
-      : `<div class="hint">No one active right now.</div>`;
+      : `<div class="hint">${esc(translate("hydrate.active_empty", "No one active right now."))}</div>`;
     activeNowEl.innerHTML = html;
     activeNowEl.setAttribute("data-presence-signature", signature);
     queuePresenceGifPlaybackSync(activeNowEl);
@@ -576,11 +588,11 @@ export function renderPresenceUI({
 
   // render Offline
   if (offlineListEl) {
-    const signature = buildPresenceListSignature("offline", offline, q);
+    const signature = buildPresenceListSignature("offline", offline, q) + translate("hydrate.offline_empty", "No offline friends.");
     if (offlineListEl.getAttribute("data-presence-signature") !== signature) {
     const html = offline.length
       ? offline.map(u => cardUser(u, `<div class="presenceState">offline</div>`)).join("")
-      : `<div class="hint">Sem offline.</div>`;
+      : `<div class="hint">${esc(translate("hydrate.offline_empty", "No offline friends."))}</div>`;
     offlineListEl.innerHTML = html;
     offlineListEl.setAttribute("data-presence-signature", signature);
     queuePresenceGifPlaybackSync(offlineListEl);

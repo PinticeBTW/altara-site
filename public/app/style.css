@@ -8271,71 +8271,72 @@ body.is-server-voice-member-dragging .server-voice-channel-row.is-voice-member-d
   display: inline-flex;
 }
 
-.dmPrivacyBadge {
-  flex: 0 0 auto;
+.dmHeader { position: relative; }
+.dmTitleRow > .dmTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dmPrivacyBadge,
+.dmPrivacyOptInBtn {
+  flex: 0 0 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 22px;
-  padding: 0 9px;
-  border-radius: 999px;
-  border: 1px solid rgba(200, 232, 255, 0.18);
-  background: rgba(255, 255, 255, 0.05);
-  color: #e8eeff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.dmPrivacyBadge.is-standard {
-  border-color: rgba(184, 197, 218, 0.24);
-  background: rgba(149, 163, 184, 0.12);
-  color: #d7dfef;
-}
-
-.dmPrivacyBadge.is-pending {
-  border-color: rgba(255, 209, 102, 0.34);
-  background: rgba(255, 209, 102, 0.14);
-  color: #ffe3a3;
-}
-
-.dmPrivacyBadge.is-private {
-  border-color: rgba(120, 255, 190, 0.34);
-  background: rgba(46, 181, 117, 0.18);
-  color: #cffff1;
-}
-
-.dmPrivacyOptInBtn {
-  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
   min-height: 26px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(120, 255, 190, 0.28);
-  background: rgba(46, 181, 117, 0.12);
-  color: #dfffee;
-  font-size: 12px;
-  font-weight: 700;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-soft, #a8a6a2);
   line-height: 1;
-  cursor: pointer;
-  white-space: nowrap;
   -webkit-app-region: no-drag;
 }
+.dmPrivacyOptInBtn { cursor: pointer; }
+.dmPrivacyBadge .altaraIcon,
+.dmPrivacyOptInBtn .altaraIcon { width: 17px; height: 17px; stroke-width: 1.6; }
+.dmPrivacyBadge.is-private,
+.dmPrivacyOptInBtn.is-private { color: var(--altara-accent, #e8cfae); }
+.dmPrivacyBadge.is-pending,
+.dmPrivacyBadge.is-warning,
+.dmPrivacyOptInBtn.is-pending,
+.dmPrivacyOptInBtn.is-warning { color: var(--warn, #d8bc89); }
+.dmPrivacyOptInBtn:hover:not(:disabled) { background: var(--altara-surface-elevated, #242424); color: var(--text, #eee); }
+.dmPrivacyBadge:focus-visible,
+.dmPrivacyOptInBtn:focus-visible { outline: 2px solid var(--altara-accent, #e8cfae); outline-offset: 2px; }
+.dmPrivacyOptInBtn:disabled { cursor: default; opacity: .58; }
+.dmPrivacyOptInBtn.hidden,
+.dmPrivacyBadge.hidden { display: none !important; }
 
-.dmPrivacyOptInBtn:hover:not(:disabled) {
-  background: rgba(46, 181, 117, 0.2);
-  border-color: rgba(120, 255, 190, 0.42);
+.dmHeaderStatusTooltip {
+  position: absolute;
+  inset-inline-start: 13px;
+  top: calc(100% + 8px);
+  z-index: 50;
+  width: max-content;
+  max-width: min(280px, calc(100% - 26px));
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--stroke, #393939);
+  border-radius: 8px;
+  background: var(--altara-surface-elevated, #242424);
+  color: var(--text, #eee);
+  box-shadow: 0 6px 20px #0003;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: start;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  visibility: hidden;
+  pointer-events: none;
 }
+.dmPrivacyBadge:is(:hover, :focus-visible) .dmHeaderStatusTooltip,
+.dmPrivacyOptInBtn:is(:hover, :focus-visible) .dmHeaderStatusTooltip { visibility: visible; }
+.addFriendFeedback[data-tone="error"] { color: var(--danger, #e79898); }
+.addFriendFeedback[data-tone="success"] { color: var(--text-soft, #bdb8ae); }
 
-.dmPrivacyOptInBtn:disabled {
-  cursor: default;
-  opacity: 0.58;
-}
-
-.dmPrivacyOptInBtn.hidden {
-  display: none !important;
-}
 
 .dmPrivacyBanner {
   margin: 10px 10px 0;
@@ -15337,7 +15338,7 @@ input[type="range"] {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center center;
   background: #000;
   border-radius: inherit;
@@ -15713,7 +15714,8 @@ input[type="range"] {
 }
 
 .participantVideo {
-  object-fit: cover;
+  object-fit: contain;
+  border-radius: 8px;
   border: 1px solid rgba(200, 232, 255, 0.18);
   background: #000;
   opacity: 0;
@@ -16002,7 +16004,7 @@ input[type="range"] {
   height: 11px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: var(--icon-stroke, 2);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -16031,7 +16033,37 @@ input[type="range"] {
   backdrop-filter: none;
 }
 
-.callStageControls .callStagePreviewJoin {
+.authPendingInvite {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(108, 201, 255, 0.26);
+  border-radius: 12px;
+  background: rgba(57, 143, 200, 0.1);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.authPendingInvite[hidden] { display: none; }
+
+.authPendingInvite__cancel {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.authPendingInvite__cancel:hover,
+.authPendingInvite__cancel:focus-visible { color: var(--text); }
+
+:is(.callStageControls, .groupDmJoinCard) .callStagePreviewJoin {
   display: none;
   min-width: 148px;
   min-height: 48px;
@@ -16048,7 +16080,7 @@ input[type="range"] {
   box-shadow: 0 12px 24px rgba(20, 108, 61, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
-.callStageControls .callStagePreviewJoin:hover:not([disabled]) {
+:is(.callStageControls, .groupDmJoinCard) .callStagePreviewJoin:hover:not([disabled]) {
   border-color: rgba(166, 255, 204, 0.94);
   background: linear-gradient(160deg, rgba(59, 199, 122, 0.99), rgba(36, 153, 91, 0.99));
   transform: translateY(-1px);
@@ -16063,7 +16095,7 @@ input[type="range"] {
 .callStagePreviewJoin__icon svg {
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: var(--icon-stroke, 1.9);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -16152,7 +16184,7 @@ input[type="range"] {
   height: 100%;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: var(--icon-stroke, 1.9);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -16214,7 +16246,7 @@ input[type="range"] {
 }
 
 .callStageControls .callCtrlBtn--danger .callCtrlBtn__icon svg {
-  stroke-width: 2.25;
+  stroke-width: var(--icon-stroke, 2.25);
 }
 
 .callStageViewportFsBtn {
@@ -16327,6 +16359,12 @@ input[type="range"] {
   transform: translateY(0);
 }
 
+/* Terminal mini-call projection must also leave the layout and hit testing.
+   Dock display rules otherwise override the browser's default [hidden] rule. */
+#callBar[hidden] {
+  display: none !important;
+}
+
 .callBarHeader,
 .callBar__left {
   display: flex;
@@ -16405,7 +16443,7 @@ input[type="range"] {
   height: 16px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: var(--icon-stroke, 1.9);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -16461,7 +16499,7 @@ input[type="range"] {
   height: 100%;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: var(--icon-stroke, 1.9);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -18260,7 +18298,7 @@ body::after {
   height: 100%;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: var(--icon-stroke, 1.9);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -24748,12 +24786,6 @@ body:not(.authPage).desktop-titlebar-overlay .panel.mid.is-dm-conversation-open 
 }
 
 @media (max-width: 980px) {
-  .dmTitleRow {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 5px;
-  }
-
   .dmPrivacyBanner {
     flex-direction: column;
     align-items: stretch;
@@ -33855,6 +33887,10 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
   --settings-nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.7 8.9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3C/svg%3E");
 }
 
+#profileOverlay.settingsOverlay .settingsNavItem[data-settings-tab="connections"] {
+  --settings-nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E");
+}
+
 #profileOverlay.settingsOverlay .settingsNavItem[data-settings-tab="profiles"] {
   --settings-nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='18' x='3' y='3' rx='2'/%3E%3Ccircle cx='9' cy='9' r='2'/%3E%3Cpath d='M15 8h2M15 12h2M7 16c1.4-2 4.6-2 6 0'/%3E%3C/svg%3E");
 }
@@ -33875,8 +33911,20 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
   --settings-nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4z'/%3E%3Cpath d='M15.5 8.5a5 5 0 0 1 0 7'/%3E%3Cpath d='M19 5a9 9 0 0 1 0 14'/%3E%3C/svg%3E");
 }
 
+#profileOverlay.settingsOverlay .settingsNavItem[data-settings-tab="activity"] {
+  --settings-nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E");
+}
+
+#profileOverlay.settingsOverlay .settingsNavItem[data-settings-tab="developer"] {
+  --settings-nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m16 18 6-6-6-6M8 6l-6 6 6 6m6-14-4 16'/%3E%3C/svg%3E");
+}
+
 #profileOverlay.settingsOverlay .settingsNavItem[data-settings-tab="keybinds"] {
   --settings-nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='20' height='16' x='2' y='4' rx='2'/%3E%3Cpath d='M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10'/%3E%3C/svg%3E");
+}
+
+#profileOverlay.settingsOverlay .settingsNavItem[data-settings-tab="language"] {
+  --settings-nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cellipse cx='12' cy='12' rx='4' ry='10'/%3E%3Cpath d='M2 12h20'/%3E%3C/svg%3E");
 }
 
 #profileOverlay.settingsOverlay .settingsNavItem[data-settings-tab="appearance"] {
@@ -36678,6 +36726,50 @@ body {
   margin-block-end: calc(2px * var(--altara-message-spacing, 1));
 }
 
+body.authPage .authLangPicker {
+  display: inline-flex;
+}
+
+body.authPage .authLangSelect {
+  min-width: 168px;
+  height: 36px;
+  padding: 0 34px 0 13px;
+  border: 1px solid rgba(245, 240, 231, 0.12);
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.82);
+  color: rgba(245, 240, 231, 0.88);
+  font: 700 12px/1 "Manrope", sans-serif;
+  color-scheme: dark;
+  cursor: pointer;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(10px);
+}
+
+body.authPage .authLangSelect:hover,
+body.authPage .authLangSelect:focus-visible {
+  border-color: rgba(232, 207, 174, 0.3);
+  background: rgba(21, 21, 21, 0.9);
+  color: rgba(255, 246, 232, 0.96);
+  outline: 0;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28), 0 0 0 3px rgba(232, 207, 174, 0.08);
+}
+
+.settingsLocaleSelect {
+  width: min(100%, 240px);
+  min-width: 190px;
+}
+
+@media (max-width: 640px) {
+  .appearanceSection--locale .appearanceSectionHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settingsLocaleSelect {
+    width: 100%;
+  }
+}
+
 .msg--legacyCallRecord,
 .dmLegacyCallRecord {
   display: flex;
@@ -38995,7 +39087,7 @@ body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call 
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callCtrlBtn__icon svg {
-  stroke-width: 1.85;
+  stroke-width: var(--icon-stroke, 1.85);
 }
 
 body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call .callStageControls .callCtrlBtn--danger {
@@ -43506,7 +43598,7 @@ body:not(.authPage) .app:not(.wrap),
 body:not(.authPage) .appGrid {
   grid-template-columns:
     var(--left-sidebar-width)
-    minmax(560px, 1fr)
+    minmax(0, 1fr)
     clamp(250px, var(--right-sidebar-width), 340px) !important;
 }
 
@@ -48051,7 +48143,7 @@ body:not(.authPage) .groupsRail {
   height: 100%;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: var(--icon-stroke, 1.9);
   stroke-linecap: round;
 }
 
@@ -53284,9 +53376,20 @@ html.altara-motion-off *::after {
   }
 }
 body:not(.authPage) :is(#btnMicToggle, #btnHeaderMicToggle, #btnMicToggleSmall).is-server-muted {
-  cursor: not-allowed;
-  opacity: 0.72;
+  position: relative;
+  cursor: pointer;
   box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.28);
+}
+body:not(.authPage) :is(#btnMicToggle, #btnHeaderMicToggle, #btnMicToggleSmall).is-server-muted::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 10px;
+  height: 10px;
+  background: #fca5a5;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 7V5a4 4 0 0 1 8 0v2h1v8H3V7h1zm2 0h4V5a2 2 0 0 0-4 0v2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  pointer-events: none;
 }
 
 body:not(.authPage) :is(#btnDeafenToggle, #btnHeaderDeafenToggle, #btnDeafenToggleSmall).is-server-deafened {
@@ -56284,7 +56387,7 @@ body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui .privateShar
   height: 17px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.8;
+  stroke-width: var(--icon-stroke, 1.8);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -57247,6 +57350,7 @@ body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui[data-call-st
   place-self: center !important;
   width: min(100%, var(--call-grid-tile-width)) !important;
   height: auto !important;
+  aspect-ratio: 16 / 9 !important;
   max-height: 100% !important;
 }
 
@@ -57256,4 +57360,1302 @@ body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui[data-call-st
   height: var(--private-grid-avatar-size) !important;
   min-width: 0 !important;
   min-height: 0 !important;
+}
+
+/* Mirror is presentation-only: the MediaStreamTrack sent to LiveKit is unchanged. */
+.callStage video[data-camera-mirrored="true"] {
+  /* Independent scale preserves layout transforms and their centering rules. */
+  scale: -1 1;
+}
+
+/* Text channels show only a compact status strip; media stays in the voice
+   view and the original call bar stays above the profile on every route. */
+.serverVoiceTextCallStrip[hidden] { display: none !important; }
+.serverVoiceTextCallStrip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,.12));
+  background: var(--surface, #171612);
+}
+.serverVoiceTextCallStrip__status { display: grid; gap: 2px; min-width: 0; }
+.serverVoiceTextCallStrip__status > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.serverVoiceTextCallStrip__status strong { font-size: 12px; }
+.serverVoiceTextCallStrip__status span { font-size: 11px; color: var(--text-soft, #b8afa3); }
+.serverVoiceTextCallStrip__controls { display: flex; gap: 5px; flex: 0 0 auto; }
+.serverVoiceTextCallStrip__controls .btn { min-height: 30px; padding: 5px 8px; font-size: 11px; }
+.serverVoiceTextCallStrip__controls .btn.is-on { background: rgba(232,207,174,.18); }
+#dmMain.is-server-voice-text-call > .dmMainBody { flex: 1 1 0; min-height: 0; }
+#dmMain.is-server-voice-text-call .dmThread { min-height: 0; }
+#dmMain.is-server-voice-text-call #dmCallDock:empty { display: none; }
+body:not(.authPage) .voiceMiniDockSlot .callBar.is-docked-in-sidebar.is-open:not([hidden]) {
+  display: grid !important;
+  pointer-events: auto !important;
+}
+body:not(.authPage) .voiceMiniDockSlot .callBarShareBadge:not([hidden]) {
+  display: block !important;
+  grid-column: 2;
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* dmMain's ordinary six-row grid cannot assign the new status strip the
+   timeline's flexible row. Explicit flex sizing keeps that row on messages. */
+.panel.mid.is-dm-conversation-open #dmMain.is-server-voice-text-call {
+  display: flex !important;
+  flex-direction: column;
+}
+
+/* Server Voice chrome is scoped to its authoritative stage kind. Private calls
+   retain their approved C1 layout and transport-owned participant nodes. */
+body:not(.authPage) #callStage.callStage[data-call-stage-kind="server"] :is(.stageGridTile, .participantTile),
+body:not(.authPage) #callStage.callStage[data-call-stage-kind="server"] :is(.stageGridAvatar, .participantAvatar, .stageGridLabel, .participantLabel, .callStageLabel, .callAudioStateBadges, .callAudioStateBadge, .serverVoiceScreensharePanel__badge, .serverVoiceScreensharePanel__title) {
+  cursor: default !important;
+}
+
+body:not(.authPage) #callStage.callStage[data-call-stage-kind="server"] :is(.stageGridTile, .participantTile) {
+  container-type: size;
+}
+
+body:not(.authPage) #callStage.callStage[data-call-stage-kind="server"] :is(button, [role="button"]):not(.stageGridTile):not(.participantTile):not([disabled]):not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"][data-call-stage-kind] :is(.stageGridTile[data-call-grid-entry="1"], .participantTile):not(.has-video):not([data-call-media-type="share"]):not([data-call-tile-type="screenshare"]) > :is(.stageGridAvatar, .participantAvatar) {
+  width: min(120px, 44cqw, 52cqh) !important;
+  height: min(120px, 44cqw, 52cqh) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  aspect-ratio: 1;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="voice-grid"] .stageGridTile[data-call-grid-entry="1"]:not(.has-video):not([data-call-media-type="share"]):not([data-call-tile-type="screenshare"]) > .stageGridAvatar {
+  width: min(clamp(144px, 14vw, 224px), 44cqw, 60cqh) !important;
+  height: min(clamp(144px, 14vw, 224px), 44cqw, 60cqh) !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"] :is(.stageGridAvatar, .participantAvatar) img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  aspect-ratio: 1;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm {
+  --call-ux-surface: #11110f;
+  --call-ux-border: rgba(232, 207, 174, .14);
+  --call-ux-control: #292722;
+  width: auto;
+  margin: 8px 10px 10px;
+  min-height: 0 !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm > .callStageCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  gap: 0;
+  min-height: 0 !important;
+  padding: 0 0 72px !important;
+  overflow: hidden;
+  border: 1px solid var(--call-ux-border) !important;
+  border-radius: 18px !important;
+  background: var(--call-ux-surface) !important;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .24) !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm {
+  height: auto !important;
+  align-self: stretch !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm > .callStageCard {
+  height: 100% !important;
+  max-height: 100% !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageTop {
+  position: relative;
+  z-index: 20;
+  min-height: 58px;
+  padding: 10px 15px 8px !important;
+  border: 0 !important;
+  border-radius: 0;
+  background: #171612 !important;
+  box-shadow: inset 0 -1px 0 rgba(232, 207, 174, .08) !important;
+  backdrop-filter: none !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageTitle {
+  font-size: clamp(16px, 1.4vw, 19px);
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageViewport {
+  position: relative;
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+  place-self: stretch !important;
+  width: calc(100% - 12px) !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 6px !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: #0b0b09 !important;
+  box-shadow: none !important;
+  aspect-ratio: auto !important;
+  container-type: size;
+  container-name: server-call-stage;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageControls {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 30;
+  display: flex;
+  flex-wrap: nowrap;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  min-height: 52px;
+  margin: 0;
+  padding: 4px;
+  gap: 5px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--call-ux-border) !important;
+  border-radius: 15px;
+  background: rgba(22, 21, 18, .97) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .3);
+  transform: translateX(-50%);
+  backdrop-filter: none !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageControls__group {
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageControls__group + .callStageControls__group {
+  margin-left: 1px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(232, 207, 174, .1);
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm :is(.callStageControls .callCtrlBtn, .callStageViewportFsBtn) {
+  flex: 0 0 auto;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  border: 1px solid rgba(232, 207, 174, .1) !important;
+  border-radius: 12px !important;
+  background: var(--call-ux-control) !important;
+  color: #f6f0e8 !important;
+  box-shadow: none;
+  transform: none;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageControls .callShareSplit {
+  gap: 4px;
+  border-radius: 12px;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageControls .callShareSplit__arrow {
+  width: 32px;
+  min-width: 32px;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callCtrlBtn__icon {
+  width: 22px;
+  height: 22px;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageControls .callCtrlBtn:is(.is-on, .is-sharing),
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageControls .callShareSplit.is-sharing .callCtrlBtn {
+  border-color: rgba(232, 207, 174, .48) !important;
+  background: #e8cfae !important;
+  color: #211c15 !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageControls .callCtrlBtn--danger {
+  width: 46px;
+  min-width: 46px;
+  background: #b94f49 !important;
+  color: #fff !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm :is(.callStageControls .callCtrlBtn, .callStageViewportFsBtn):hover:not([disabled]) {
+  filter: brightness(1.12);
+  transform: none;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageViewportFsBtn {
+  top: 12px;
+  right: 12px;
+  bottom: auto;
+}
+
+/* Focus uses the same bounded participant card, including an empty solo rail. */
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]),
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) {
+  grid-template-columns: minmax(0, 1fr) clamp(220px, 22%, 260px);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callParticipantFocusPrimary,
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callParticipantFocusPrimary {
+  place-self: center;
+  width: min(100%, 960px, calc((100cqh - 24px) * 16 / 9));
+  height: auto;
+  max-height: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callParticipantFocusPrimary > .stageGridTile[data-call-grid-entry="1"],
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callParticipantFocusPrimary > .stageGridTile[data-call-grid-entry="1"] {
+  border: 1px solid rgba(232, 207, 174, .24) !important;
+  border-radius: 14px !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callParticipantFocusPrimary > .stageGridTile[data-call-grid-entry="1"]:not(.has-video) > .stageGridAvatar,
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callParticipantFocusPrimary > .stageGridTile[data-call-grid-entry="1"]:not(.has-video) > .stageGridAvatar {
+  width: min(224px, 32cqw, 52cqh) !important;
+  height: min(224px, 32cqw, 52cqh) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callParticipantFocusPrimary .stageGridLabel,
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callParticipantFocusPrimary .stageGridLabel {
+  left: 12px;
+  bottom: 11px;
+  max-width: calc(100% - 24px);
+  font-size: 13px;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:has(> .callShareRail:empty),
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:has(> .callShareRail:empty) {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  padding: clamp(12px, 2cqw, 24px);
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage > .callShareRail:empty,
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage > .callShareRail:empty {
+  display: none !important;
+}
+
+/* Sidebars and native window chrome reduce the call's available space. The
+   participant rail responds to that canvas, independently of window width. */
+@container server-call-stage (max-width: 820px) {
+  body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not(:has(> .callShareRail:empty)),
+  body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not(:has(> .callShareRail:empty)) {
+    --server-focus-rail-height: min(116px, 26cqh);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) var(--server-focus-rail-height);
+  }
+
+  body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not(:has(> .callShareRail:empty)) > .callParticipantFocusPrimary,
+  body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not(:has(> .callShareRail:empty)) > .callParticipantFocusPrimary {
+    width: min(100%, calc((100cqh - var(--server-focus-rail-height) - 18px) * 16 / 9));
+  }
+}
+
+/* Participant moderation: the destination list lives in a lateral menu. */
+#serverVoiceMemberMenu.serverVoiceMemberMenu {
+  padding: 0;
+  overflow: visible;
+  max-height: none;
+  transform: none !important;
+  animation: none !important;
+}
+.serverVoiceMemberMenu__main {
+  padding: 7px;
+  max-height: calc(100vh - 18px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.serverVoiceMemberMenu__identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: default;
+}
+.serverVoiceMemberMenu__identity > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settingsVoiceQuickPresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+#profileOverlay.settingsOverlay .settingsVoiceQuickPresets .btn[aria-pressed="true"] {
+  border-color: var(--accent, #ddc39d) !important;
+  background: #ddc39d18 !important;
+}
+.settingsVoiceMicLevelFeedback[data-level="high"] { color: #e4ad74; }
+.settingsVoiceMicLevelFeedback[data-level="good"] { color: var(--accent, #ddc39d); }
+.serverVoiceMemberMenu__volume {
+  padding: 5px 9px;
+}
+.serverVoiceMemberMenu__volumeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.serverVoiceMemberMenu__volumeRow > span {
+  color: var(--accent, #ddc39d);
+  font-variant-numeric: tabular-nums;
+}
+.serverVoiceMemberMenu__volume input[type="range"] {
+  display: block;
+  width: 100%;
+  height: 24px;
+  margin: 4px 0;
+  padding: 0;
+  accent-color: var(--accent, #ddc39d);
+  cursor: pointer;
+}
+.serverVoiceMemberMenu__volume input:focus-visible {
+  outline: 2px solid var(--accent, #ddc39d);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.callParticipantLiveBadge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: var(--altara-danger, #df5266);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .055em;
+  cursor: default;
+  pointer-events: none;
+}
+.callParticipantLiveBadge[hidden] { display: none !important; }
+.serverVoiceMemberMenu__submenuArrow {
+  margin-left: auto;
+  font-size: 19px;
+  line-height: 1;
+  color: var(--altara-text-muted, rgba(242, 240, 236, .58));
+}
+.serverVoiceMemberMenu__moveSubmenu {
+  position: fixed;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 264px;
+  max-width: calc(100vw - 16px);
+  max-height: min(440px, calc(100vh - 16px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 6px;
+  border: 1px solid var(--altara-border, rgba(255, 255, 255, .08));
+  border-radius: 13px;
+  background: var(--altara-surface-elevated, #202020);
+  color: var(--altara-text, #f2f0ec);
+  box-shadow: var(--altara-menu-shadow, 0 20px 54px rgba(0, 0, 0, .38));
+}
+.serverVoiceMemberMenu__moveSubmenu[hidden] { display: none !important; }
+#serverVoiceMemberMenu .msgMenu__meta,
+#serverVoiceMemberMenu .serverVoiceMemberMenu__state { cursor: default; }
+#serverVoiceMemberMenu .msgMenu__item { cursor: pointer; }
+#serverVoiceMemberMenu .msgMenu__item:disabled { cursor: default; }
+
+/* Stream invitations and options share the current call surface palette. */
+#callStage [data-share-viewer-state="available"] > :is(.stageGridAvatar, .participantAvatar, .shareViewerAvatar),
+#callStage .shareViewerAction[hidden], #callStage .shareViewerStatus[hidden] { display: none !important; }
+#callStage [data-share-viewer-state="available"] > .shareViewerControls {
+  inset: 0 !important; max-width: none; gap: 0; pointer-events: none;
+}
+#callStage [data-share-viewer-state="available"] > .shareViewerControls > .shareViewerAction {
+  pointer-events: auto; padding: 14px 24px; min-height: 48px; border-radius: 12px;
+  font-size: 14px; background: #dfc29d; color: #251f18; border: 1px solid #ead6bb;
+  box-shadow: 0 5px 22px #0004;
+}
+#callStage [data-share-viewer-state="available"] > .shareViewerControls > .shareViewerAction:hover { background: #efd8ba; }
+#callStage .shareViewerIdentity {
+  position: absolute; z-index: 20; left: 16px; top: 14px; display: flex; align-items: center; gap: 8px;
+  max-width: calc(100% - 32px); color: #ded6ca; font-size: 12px; pointer-events: none; cursor: default;
+}
+#callStage .shareViewerIdentity[hidden] { display: none; }
+#callStage .shareViewerName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#callStage .shareViewerLive { font-size: 9px; letter-spacing: .07em; font-weight: 800; padding: 3px 5px; border-radius: 4px; color: #ffd6d2; background: #a83e3a66; }
+#callStage .shareViewerStatus { cursor: default; }
+#callStage .privateShareAudioControls__value { pointer-events: auto; cursor: default !important; user-select: none; }
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui .privateShareAudioControls__value {
+  border: 1px solid #ffffff18; border-radius: 7px; padding: 5px 8px; background: #171615ba;
+  color: #ddd4c8; font-size: 11px;
+}
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"] .privateShareAudioTrigger {
+  width: 36px !important; height: 36px !important; min-width: 36px !important; padding: 8px !important;
+  border: 1px solid #ffffff24 !important; border-radius: 10px !important; background: #242321e8 !important;
+  color: #ece5dc !important; cursor: pointer;
+}
+#callStage .privateShareAudioTrigger > svg { width: 18px; height: 18px; fill: currentColor; }
+#privateShareAudioMenu, #callAudioMenu, #callShareMenu {
+  width: 284px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto;
+  box-sizing: border-box; padding: 9px; border: 1px solid #e9d5b92b; border-radius: 14px;
+  background: #201f1df5; color: #ece5dc; box-shadow: 0 16px 50px #0008; backdrop-filter: blur(20px);
+}
+#privateShareAudioMenu .privateShareAudioMenu__title { font-size: 13px; font-weight: 650; padding: 5px 8px 10px; text-transform: none; letter-spacing: 0; }
+#privateShareAudioMenu .privateShareAudioMenu__sectionLabel { padding: 5px 8px 6px; color: #a9a196; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; cursor: default; }
+#privateShareAudioMenu :is(.privateShareAudioMenu__action, .privateShareAudioMenu__focus),
+#callAudioMenu .callAudioMenu__action, #callShareMenu .callShareMenu__item {
+  display: flex; align-items: center; gap: 9px; width: 100%; min-height: 36px; padding: 8px;
+  border: 0; border-radius: 8px; background: transparent; color: inherit;
+  font: inherit; font-size: 12px; text-align: left; cursor: pointer;
+}
+#privateShareAudioMenu button:hover:not(:disabled), #callAudioMenu .callAudioMenu__action:hover:not(:disabled), #callShareMenu .callShareMenu__item:hover:not(:disabled) { background: #ddc39d14; }
+#privateShareAudioMenu button:focus-visible { outline: 2px solid #dfc29d; outline-offset: -2px; }
+#privateShareAudioMenu button:disabled, #callAudioMenu button:disabled, #callShareMenu button:disabled { opacity: .4; cursor: default; }
+#privateShareAudioMenu .privateShareAudioMenu__stop { color: #efaba3; }
+#privateShareAudioMenu .privateShareAudioMenu__separator { margin: 8px 3px; height: 1px; background: #ffffff12; }
+#privateShareAudioMenu .privateShareAudioMenu__volumeLabel { padding: 8px 8px 4px; font-size: 11px; color: #bfb6a9; }
+#privateShareAudioMenu .privateShareAudioMenu__volumeRow { padding: 4px 6px 8px; gap: 9px; }
+#privateShareAudioMenu svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: var(--icon-stroke, 1.6); stroke-linecap: round; stroke-linejoin: round; }
+#privateShareAudioMenu input[type="range"] { accent-color: #dfc29d; }
+/* Opacity leaves keyboard targets available: focus reveals them immediately. */
+#callStage :is(.sharePresentationControls, .privateShareAudioControls, .serverVoiceScreensharePanel__header, .callStageFocusExitBtn) { transition: opacity 180ms ease; }
+#callStage[data-stream-overlays="idle"] :is([data-share-viewer-state="watching"], [data-share-watched="1"]) > :is(.sharePresentationControls, .privateShareAudioControls, .serverVoiceScreensharePanel__header),
+#callStage[data-stream-overlays="idle"][data-private-call-focus-kind="screen"] .callStageFocusExitBtn {
+  opacity: 0 !important; pointer-events: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  #callStage :is(.sharePresentationControls, .privateShareAudioControls, .serverVoiceScreensharePanel__header, .callStageFocusExitBtn) { transition: none; }
+}
+/* Real call RTT, compact beside the shared connection label. */
+body:not(.authPage) .voiceMiniDockSlot .callBarHeader { grid-template-columns: 22px minmax(0, 1fr) auto; }
+body:not(.authPage) .voiceMiniDockSlot #callBarPing:not([hidden]) {
+  display: inline !important; grid-column: 3; grid-row: 1; justify-self: end;
+  padding: 0; margin: 0; border: 0; background: none; font-size: 10px; font-variant-numeric: tabular-nums;
+  font-weight: 500; color: #aba397; cursor: default; white-space: nowrap;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm .callStageSub {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+  min-height: 20px;
+  padding: 0 9px;
+  border: 1px solid rgba(232, 207, 174, .1);
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+}
+#callStage [data-share-viewer-state="available"] > :is(.serverVoiceScreensharePanel__header, .sharePresentationControls, .privateShareAudioControls) { display: none !important; }
+#callStage .serverVoiceScreensharePanel__badge { background: #a83e3a66; border: 1px solid #dc74665c; color: #ffd6d2; border-radius: 5px; cursor: default; }
+#callStage .serverVoiceScreensharePanel__title { color: #e8ded1; background: #201f1dc9; border-color: #e9d5b92b; cursor: default; }
+
+/* A focused peer does not turn the remaining peer into a tall portrait column. */
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callShareRail,
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callShareRail {
+  grid-column: 2;
+  grid-row: 1;
+  flex-direction: column;
+  justify-content: safe center;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callShareRail > :is(.stageGridTile[data-call-grid-entry="1"], .callShareSecondary),
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callShareRail > :is(.stageGridTile[data-call-grid-entry="1"], .callShareSecondary) {
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  height: auto !important;
+  aspect-ratio: 16 / 9 !important;
+  border-radius: 14px !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callParticipantFocusPrimary > .stageGridTile[data-call-grid-entry="1"]:not(.has-video) > .stageGridAvatar,
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callParticipantFocusPrimary > .stageGridTile[data-call-grid-entry="1"]:not(.has-video) > .stageGridAvatar {
+  width: min(176px, 32cqw, 52cqh) !important;
+  height: min(176px, 32cqw, 52cqh) !important;
+}
+
+@container server-call-stage (max-width: 820px) {
+  body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callShareRail,
+  body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callShareRail {
+    grid-column: 1;
+    grid-row: 2;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callShareRail > :is(.stageGridTile[data-call-grid-entry="1"], .callShareSecondary),
+  body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callShareRail > :is(.stageGridTile[data-call-grid-entry="1"], .callShareSecondary) {
+    width: auto !important;
+    height: 100% !important;
+  }
+}
+#callStage[data-stream-overlays="idle"] :is([data-share-viewer-state="watching"], [data-share-watched="1"]) > :is(.sharePresentationControls, .privateShareAudioControls, .serverVoiceScreensharePanel__header) * { pointer-events: none !important; }
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm :is(.stageGridTile, .participantTile):not([data-call-media-type="share"]):not([data-call-tile-type="screenshare"]) {
+  --call-ux-participant-accent: var(--call-participant-color, var(--participant-call-bg, var(--call-tile-bg-start, #1b1a17)));
+  background:
+    radial-gradient(78% 94% at 50% 16%, color-mix(in srgb, var(--call-ux-participant-accent) 18%, transparent), transparent 72%),
+    linear-gradient(155deg, color-mix(in srgb, var(--call-ux-participant-accent) 26%, #1b1a17), color-mix(in srgb, var(--call-ux-participant-accent) 12%, #141310)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm[data-call-status="connected"] .callStageSub {
+  background: rgba(22, 21, 18, .9);
+  box-shadow: none;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-docked-in-dm[data-call-status="connected"] .callStageSub::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border: 0;
+  border-radius: 50%;
+  background: #6fc58b;
+  box-shadow: 0 0 0 3px rgba(111, 197, 139, .11);
+  animation: none;
+}
+/* Keep share identity beside Back, including the focused/fullscreen variants. */
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"] .serverVoiceScreensharePanel__header,
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"] .serverVoiceScreensharePanel__header :is(span, strong) {
+  cursor: default !important; pointer-events: none;
+}
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"][data-private-call-layout="media-focus"][data-private-call-focus-kind="screen"] .callSharePrimary > .serverVoiceScreensharePanel__header {
+  left: 112px !important; top: 18px !important; max-width: calc(100% - 128px) !important;
+}
+
+/* The focused stream has its own fullscreen action inside the player. */
+#callStage[data-private-call-focus-kind="screen"] #btnFullscreenStage { display: none !important; }
+
+/* Normal call layouts expose the app background through all empty stage space.
+   Participant tiles and video/fullscreen viewers own their own backgrounds. */
+body:not(.authPage) #dmMain #callStage.callStage,
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm:is([data-call-stage-kind="server"], .is-private-call-ui) :is(.callStageCard, .callStageTop, .callStageSub) {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage :is(.callStageViewport, .callStageGrid, #callShareStage, #callShareRail, #callParticipantFocusPrimary, #callMultiSharePrimary) {
+  background: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage::before,
+body:not(.authPage) #dmMain #callStage.callStage::after,
+body:not(.authPage) #dmMain #callStage.callStage :is(.callStageCard, .callStageTop, .callStageViewport, .callStageGrid, #callShareStage, #callShareRail, #callParticipantFocusPrimary, #callMultiSharePrimary)::before,
+body:not(.authPage) #dmMain #callStage.callStage :is(.callStageCard, .callStageTop, .callStageViewport, .callStageGrid, #callShareStage, #callShareRail, #callParticipantFocusPrimary, #callMultiSharePrimary)::after {
+  content: none !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage :is(.serverVoiceScreensharePanel:fullscreen, .callStageViewport:fullscreen, video),
+body:not(.authPage) #dmMain #callStage.callStage :fullscreen::backdrop {
+  background: #000 !important;
+}
+.serverVoiceMember__live {
+  flex: 0 0 auto;
+  font-size: 9px;
+  line-height: 14px;
+  padding: 0 4px;
+  border-radius: 4px;
+  cursor: default;
+}
+.serverVoiceMember__live[hidden] { display: none !important; }
+.serverVoiceMember__state:has(.serverVoiceMember__live:not([hidden])) { gap: 4px; }
+
+/* Screen surfaces must receive the pointer instead of the stage behind them. */
+#callStage :is([data-server-voice-screenshare-panel="1"], [data-share-viewer-key]):not([hidden]) {
+  pointer-events: auto;
+  cursor: default;
+}
+
+/* Call controls: one stable surface in every stage layout. */
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls {
+  --call-control-size: 44px;
+  bottom: 12px;
+  gap: 8px;
+  min-height: 58px;
+  padding: 6px;
+  border: 1px solid rgba(232, 207, 174, .13) !important;
+  border-radius: 18px;
+  background: #1b1a17 !important;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+  scrollbar-width: none;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls::-webkit-scrollbar { display: none; }
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls__group {
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls__group + .callStageControls__group {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 1px solid rgba(232, 207, 174, .1) !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .callCtrlBtn {
+  position: relative;
+  width: var(--call-control-size);
+  min-width: var(--call-control-size);
+  height: var(--call-control-size);
+  min-height: var(--call-control-size);
+  padding: 0;
+  border: 1px solid transparent !important;
+  border-radius: 12px !important;
+  background: #282622 !important;
+  color: #ddd7ce !important;
+  box-shadow: none !important;
+  font-size: 12px;
+  transform: none !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .callShareSplit {
+  gap: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 12px;
+  background: #282622 !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .callShareSplit__main {
+  border-radius: 12px 0 0 12px !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .callShareSplit__arrow {
+  width: 26px;
+  min-width: 26px;
+  border-radius: 0 12px 12px 0 !important;
+  color: #b3aba0 !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .callShareSplit__arrow::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 13px;
+  bottom: 13px;
+  width: 1px;
+  background: currentColor;
+  opacity: .18;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .callShareSplit__arrow .callCtrlBtn__icon {
+  width: 16px;
+  height: 16px;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls :is(.callCtrlBtn.is-on, .callCtrlBtn.is-sharing),
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .callShareSplit.is-sharing .callCtrlBtn {
+  background: #3a352b !important;
+  color: #ecd2ab !important;
+  border-color: rgba(232, 207, 174, .13) !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls :is(#btnMicToggle.is-on, #btnDeafenToggle.is-on) {
+  background: #392a29 !important;
+  color: #e3aaa3 !important;
+  border-color: rgba(227, 170, 163, .12) !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .callCtrlBtn--danger {
+  background: #873e3a !important;
+  color: #fff0ed !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .callCtrlBtn:hover:not(:disabled) {
+  filter: brightness(1.18);
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .spatialAudioTrigger__text { display: none; }
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] .callStageControls .spatialAudioTrigger__icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm[data-call-stage-kind="server"] :is(.callStageControls .callCtrlBtn, .callStageViewportFsBtn):focus-visible {
+  outline: 2px solid #e8cfae;
+  outline-offset: -3px;
+}
+/* The fullscreen action is inset into the visible media canvas. */
+body:not(.authPage) #dmMain #callStage.callStage.is-docked-in-dm:is([data-call-stage-kind="server"], .is-private-call-ui) .callStageViewportFsBtn {
+  top: var(--stage-fullscreen-top, 12px) !important;
+  right: var(--stage-fullscreen-right, 12px) !important;
+  bottom: auto !important;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border-radius: 10px !important;
+  border-color: rgba(232, 207, 174, .16) !important;
+  background: rgba(28, 27, 24, .9) !important;
+  opacity: .9;
+  transition: opacity 160ms ease;
+}
+body:not(.authPage) #dmMain #callStage.callStage .callStageViewportFsBtn .callCtrlBtn__icon { width: 18px; height: 18px; }
+body:not(.authPage) #dmMain #callStage.callStage .callStageViewportFsBtn[aria-pressed="true"] svg { transform: rotate(180deg); }
+body:not(.authPage) #dmMain #callStage.callStage[data-stream-overlays="idle"] .callStageViewportFsBtn:not(:focus-visible) {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  body:not(.authPage) #dmMain #callStage.callStage .callStageViewportFsBtn { transition: none; }
+}
+
+/* Call / Voice / Stream use the existing ALTARA vector family. Size belongs to
+   the icon's host, so controls and participant layouts keep their geometry. */
+body:not(.authPage) svg.callIcon {
+  --icon-size: 18px;
+  --icon-stroke: 2;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+body:not(.authPage) :is(.callCtrlBtn__icon, .callMiniBtn__icon, .meCtrlBtn__icon, .spatialAudioTrigger__icon) > svg.callIcon {
+  width: 100%;
+  height: 100%;
+}
+body:not(.authPage) :is(.callAudioStateBadge, .serverVoiceRoom__permissionLock) > svg.callIcon { width: 14px; height: 14px; }
+body:not(.authPage) :is(.callShareMenu__itemIcon, .callShareMenu__submenuArrow, .serverVoiceMemberMenu__submenuArrow) > svg.callIcon { width: 16px; height: 16px; }
+body:not(.authPage) .serverVoiceStageEmptyIcon > svg.callIcon { width: 28px; height: 28px; }
+body:not(.authPage) #btnPopoutStage { gap: 7px; }
+body:not(.authPage) :is(#btnPopoutStage, #btnExitCallFocus) svg.callIcon { width: 16px; height: 16px; }
+body:not(.authPage) svg.callIcon .callIcon__collapse,
+body:not(.authPage) .is-on > .callCtrlBtn__icon > svg.callIcon .callIcon__expand { display: none; }
+body:not(.authPage) .is-on > .callCtrlBtn__icon > svg.callIcon .callIcon__collapse { display: inline; }
+body:not(.authPage) #serverVoiceTextCallStrip [data-call-control-proxy] { gap: 6px; }
+body:not(.authPage) #serverVoiceTextCallStrip svg.callIcon { width: 15px; height: 15px; }
+
+/* Group DM calls reuse the private stage. All group sizes use the same
+   measured canvas; direct Private Calls retain their existing pair geometry. */
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-private-call-layout="voice-grid"] .callStageGrid:not([hidden]) {
+  grid-template-columns: repeat(var(--call-grid-cols, 1), minmax(0, var(--call-grid-tile-width, 1fr))) !important;
+  grid-template-rows: repeat(var(--call-grid-rows, 1), minmax(0, var(--call-grid-tile-height, 1fr))) !important;
+  grid-auto-rows: minmax(0, var(--call-grid-tile-height, 1fr));
+  place-content: center !important;
+  gap: var(--call-grid-gap, 12px) !important;
+  padding: var(--call-grid-edge-padding, 12px) !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-private-call-layout="voice-grid"] .callStageGrid:not([hidden]) > .stageGridTile[data-call-grid-entry="1"] {
+  place-self: center;
+  width: var(--call-grid-tile-width, 100%) !important;
+  height: var(--call-grid-tile-height, auto) !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  aspect-ratio: 16 / 9 !important;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-private-call-layout="voice-grid"] .callStageGrid:not([hidden]) > .stageGridTile[data-call-grid-entry="1"] > .stageGridAvatar {
+  width: min(144px, calc(var(--call-grid-tile-height, 220px) * .48)) !important;
+  height: auto !important;
+  aspect-ratio: 1;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-private-call-layout="voice-grid"] .callStageGrid:not([hidden])[data-last-fill="1"] > .stageGridTile[data-call-grid-entry="1"]:last-child {
+  grid-column: 1 / -1;
+  width: var(--call-grid-tile-width) !important;
+  height: var(--call-grid-tile-height) !important;
+}
+
+/* Group call join preview: the approved private-call Join action, outside the call. */
+#dmMain .groupDmJoinCard {
+  display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; gap: 12px 16px;
+  margin: 12px 16px 0; padding: 12px 16px; border: 1px solid var(--altara-border, #ffffff14);
+  border-radius: 14px; background: var(--altara-surface-elevated, #202020);
+  color: var(--altara-text, #f2f0ec);
+}
+#dmMain .groupDmJoinCard[hidden] { display: none !important; }
+.groupDmJoinCard__avatars { display: flex; flex: 0 0 auto; padding-left: 10px; }
+.groupDmJoinCard__avatar {
+  display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; margin-left: -10px;
+  border: 2px solid var(--altara-surface-elevated, #202020); border-radius: 50%; overflow: hidden;
+  background: #353330; font-weight: 700;
+}
+.groupDmJoinCard__avatar :is(img, video, .profileAvatarMediaClip, .profileAvatarFallback) { width: 100%; height: 100%; object-fit: cover; }
+
+/* Private-call waiting presentation, only until the first Group recipient answers. */
+.groupDmCallerWaiting[hidden] { display: none !important; }
+.groupDmCallerWaiting {
+  position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px; padding: 24px;
+  text-align: center; pointer-events: none;
+}
+.groupDmCallerWaiting__avatars { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; }
+.groupDmCallerWaiting__avatars .groupDmJoinCard__avatar {
+  width: 72px; height: 72px; margin: 0; border: 2px solid rgba(220, 201, 169, .42);
+  box-shadow: 0 0 0 6px rgba(220, 201, 169, .035);
+}
+.groupDmCallerWaiting__title { color: var(--text); font-size: clamp(18px, 2.4cqw, 26px); }
+.groupDmCallerWaiting__names { max-width: 420px; color: var(--muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+#callStage.is-group-private-call-ui[data-group-calling="1"][data-private-call-layout="voice-grid"] #callStageGrid {
+  visibility: hidden; pointer-events: none;
+}
+.groupDmJoinCard__overflow { font-size: 12px; color: #dedbd5; }
+.groupDmJoinCard__info { flex: 1 1 140px; min-width: 0; display: grid; gap: 3px; }
+.groupDmJoinCard__info strong { font-size: 13px; font-weight: 650; }
+.groupDmJoinCard__count { font-size: 12px; font-weight: 600; color: var(--altara-text, #f2f0ec); }
+.groupDmJoinCard__names { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--altara-text-muted, #aaa7a2); }
+#dmMain .groupDmJoinCard .callStagePreviewJoin {
+  display: inline-flex; flex: 0 0 auto; min-height: 38px; min-width: 0; height: auto;
+  padding: 9px 13px; margin-left: auto; gap: 8px; border-radius: 10px; box-shadow: none;
+  border: 1px solid rgba(119, 238, 170, .76); color: #f3fff8; font-size: 12px; font-weight: 650;
+  background: linear-gradient(160deg, #207d4b, #17643a);
+}
+#dmMain .groupDmJoinCard .callStagePreviewJoin:hover:not(:disabled) {
+  border-color: #a6ffcc; background: linear-gradient(160deg, #238451, #1d7644);
+}
+#dmMain .groupDmJoinCard .callStagePreviewJoin:focus-visible {
+  outline: 2px solid #a6ffcc; outline-offset: 3px;
+}
+#dmMain .groupDmJoinCard .callStagePreviewJoin:disabled { opacity: .72; cursor: progress; transform: none; }
+#dmMain .groupDmJoinCard .callStagePreviewJoin__icon,
+#dmMain .groupDmJoinCard .callStagePreviewJoin__icon svg { width: 17px; height: 17px; }
+
+/* One primary Join lives in the card. The Group list badge stays passive. */
+#dmList .dm-item[data-dm-group-conversation] .groupDmName { display: flex; align-items: center; gap: 7px; }
+#dmList .groupDmName__label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#dmList .groupDmCallIndicator {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  color: var(--status-online, #75c79a); font-size: 11px; font-weight: 600; line-height: 16px;
+}
+#dmList .groupDmCallIndicator[hidden] { display: none !important; }
+#dmList .groupDmCallIndicator svg { width: 12px; height: 12px; }
+
+/* Group share presentation: one chosen stream, participant rail, full media offers. */
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageViewport {
+  container-type: size; container-name: group-private-call-stage server-call-stage;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-share-invites="1"] .callStageGrid:not([hidden]) {
+  overflow-y: auto !important; align-content: safe center !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageGrid > .groupCallShareTile {
+  position: relative !important; inset: auto !important; place-self: center;
+  width: var(--call-grid-tile-width, 100%) !important; height: var(--call-grid-tile-height, auto) !important;
+  min-width: 0 !important; min-height: 0 !important; max-width: 100% !important; margin: 0 !important;
+  aspect-ratio: 16 / 9 !important; border-radius: 16px !important; overflow: hidden;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageGrid > .groupCallShareTile > video { display: none !important; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageGrid > .groupCallShareTile .shareViewerIdentity { top: 12px; left: 14px; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageGrid > .groupCallShareTile .shareViewerControls { inset: 42px 10px 12px !important; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageGrid > .groupCallShareTile .shareViewerAction { max-width: 100%; min-height: 32px; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageGrid[data-last-fill="1"] > .groupCallShareTile:last-child { grid-column: 1 / -1; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"]:not([data-private-call-focus-kind="participant"]) .callShareStage:not([hidden]) {
+  grid-template-columns: minmax(0, 1fr) clamp(180px, 22%, 240px);
+  grid-template-rows: minmax(0, 1fr); gap: 12px;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"]:not([data-private-call-focus-kind="participant"]) .callShareStage:not([hidden]) > .callShareRail {
+  grid-column: 2; grid-row: 1; flex-direction: column; justify-content: safe center;
+  overflow-x: hidden; overflow-y: auto;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"]:not([data-private-call-focus-kind="participant"]) .callShareStage:not([hidden]) > .callShareRail > :is(.stageGridTile[data-call-grid-entry="1"], .callShareSecondary) {
+  flex: 0 0 auto !important; width: 100% !important; height: auto !important; aspect-ratio: 16 / 9 !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callShareRail .stageGridAvatar {
+  width: min(96px, 42%) !important; height: auto !important; min-width: 0 !important; min-height: 0 !important; aspect-ratio: 1;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callShareRail .callShareSecondary .shareViewerAction {
+  min-height: 32px !important; padding: 6px 12px !important; font-size: 12px !important;
+}
+@container group-private-call-stage (max-width: 820px) {
+  body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"]:not([data-private-call-focus-kind="participant"]) .callShareStage:not(:has(> .callShareRail:empty)) {
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) min(116px, 26cqh);
+  }
+  body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"]:not([data-private-call-focus-kind="participant"]) .callShareStage:not([hidden]) > .callShareRail {
+    grid-column: 1; grid-row: 2; flex-direction: row; overflow-x: auto; overflow-y: hidden;
+  }
+  body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"]:not([data-private-call-focus-kind="participant"]) .callShareStage:not([hidden]) > .callShareRail > :is(.stageGridTile[data-call-grid-entry="1"], .callShareSecondary) {
+    width: min(190px, calc(25cqw - 16px)) !important; height: auto !important;
+    max-height: 100% !important; align-self: center;
+  }
+}
+
+/* Participant media actions reuse msgMenu's panel/items, without server actions. */
+#callAudioMenu.participantMediaMenu { box-sizing: border-box; width: 272px; min-width: 0; padding: 7px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+#callAudioMenu.participantMediaMenu .participantMediaMenu__identity { padding: 6px 9px 10px; border-bottom: 1px solid var(--altara-border, #ffffff14); color: var(--altara-text, #f2f0ec); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#callAudioMenu.participantMediaMenu .callAudioMenu__title { padding: 10px 9px 4px; color: var(--altara-text-muted, #a49d94); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+#callAudioMenu.participantMediaMenu .callAudioMenu__section { margin: 0; padding: 0; }
+#callAudioMenu.participantMediaMenu :is(.callAudioMenu__check, .callAudioMenu__row) { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 9px; margin: 0; font-size: 12px; }
+#callAudioMenu.participantMediaMenu .callAudioMenu__check { border-radius: 7px; cursor: pointer; }
+#callAudioMenu.participantMediaMenu .callAudioMenu__check:hover { background: #ddc39d14; }
+#callAudioMenu.participantMediaMenu input[role="switch"] { appearance: none; position: relative; flex: 0 0 28px; width: 28px; height: 16px; border: 1px solid #ddc39d44; border-radius: 10px; background: #ffffff12; cursor: pointer; }
+#callAudioMenu.participantMediaMenu input[role="switch"]::after { content: ""; position: absolute; left: 2px; top: 2px; width: 10px; height: 10px; border-radius: 50%; background: #aaa39b; }
+#callAudioMenu.participantMediaMenu input[role="switch"]:checked { background: #ddc39d44; }
+#callAudioMenu.participantMediaMenu input[role="switch"]:checked::after { left: 14px; background: #ddc39d; }
+#callAudioMenu.participantMediaMenu :is(input, button):focus-visible { outline: 2px solid #ddc39d; outline-offset: 2px; }
+#callAudioMenu.participantMediaMenu input:disabled { opacity: .4; cursor: default; }
+#callAudioMenu.participantMediaMenu .callAudioMenu__value { margin-left: auto; color: #ddc39d; font-variant-numeric: tabular-nums; }
+#callAudioMenu.participantMediaMenu .callAudioMenu__slider { display: block; width: calc(100% - 18px); margin: 0 9px 12px; accent-color: #ddc39d; }
+#callAudioMenu.participantMediaMenu .callAudioMenu__action { display: flex; align-items: center; gap: 10px; }
+#callAudioMenu.participantMediaMenu .callAudioMenu__action svg { width: 16px; height: 16px; flex: 0 0 16px; color: #ddc39d; }
+#callAudioMenu.participantMediaMenu .callAudioMenu__action[hidden] { display: none; }
+#callAudioMenu.participantMediaMenu :is(#callVoiceVideoHeading, #callVoiceViewHeading) { border-top: 1px solid #ffffff14; margin-top: 4px; }
+#callAudioMenu:not(.participantMediaMenu) .callAudioMenu__action > svg { display: none; }
+#callStage.is-group-private-call-ui .stageGridTile[data-camera-hidden-locally] > video { visibility: hidden !important; }
+#callStage.is-group-private-call-ui .stageGridTile[data-camera-hidden-locally] > .stageGridAvatar { display: flex !important; visibility: visible !important; opacity: 1 !important; }
+
+/* Group call visual stage. Private Call tokens/cards/controls remain the base;
+   only this joined Group surface receives a cohesive shell and measured layout. */
+
+/* Center incomplete rows without stretching their cards. */
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-private-call-layout="voice-grid"] .callStageGrid[data-grid-cols="3"][data-last-fill="2"] > :is(.stageGridTile[data-call-grid-entry="1"], .groupCallShareTile):nth-last-child(-n+2) {
+  grid-column: auto !important;
+  transform: translateX(calc((var(--call-grid-tile-width) + var(--call-grid-gap, 12px)) / 2)) !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-private-call-layout="voice-grid"] .callStageGrid[data-grid-cols="3"] > :is(.stageGridTile[data-call-grid-entry="1"], .groupCallShareTile):last-child:nth-child(3n+1) {
+  grid-column: 2 !important;
+}
+/* The reserved toolbar row aligns with the primary media when a rail is present. */
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement="right"]:not([data-private-call-layout="voice-grid"]) .callStageControls {
+  transform: translateX(var(--group-toolbar-offset, 0px)) !important;
+}
+
+body:not(.authPage) #dmMain .dmCallDock:has(> #callStage.is-group-private-call-ui.is-open:not([hidden])) {
+  display: grid; grid-template-rows: minmax(0, 1fr);
+  flex: 0 0 80% !important; height: 80% !important; min-height: 0; padding-bottom: 16px; box-sizing: border-box;
+}
+body:not(.authPage) #dmMain .dmThread:has(#callStage.is-group-private-call-ui.is-open:not([hidden])) > .dmMessages {
+  min-height: 0; padding-top: 12px; border-top: 1px solid rgba(232, 207, 174, .08);
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] {
+  container: group-call-shell / inline-size;
+  align-self: stretch !important; width: 100% !important; height: 100% !important;
+  min-width: 0 !important; min-height: 0 !important; margin: 0 !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageCard {
+  display: grid !important; grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  width: 100% !important; height: 100% !important; max-height: 100% !important;
+  min-height: 0 !important; box-sizing: border-box; padding: 0 0 16px !important;
+  border: 1px solid var(--c1154-border) !important; border-radius: 18px !important;
+  background: radial-gradient(ellipse at 50% 0, rgba(232, 207, 174, .035), transparent 70%), var(--c1154-surface) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .18) !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageTop {
+  grid-column: 1; grid-row: 1; display: flex; align-items: center;
+  justify-content: space-between; gap: 12px; min-width: 0; min-height: 56px;
+  padding: 12px 16px 8px; background: transparent !important;
+  border: 0 !important; box-shadow: none !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageInfo { min-width: 0; flex: 1; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageTitle {
+  font-size: 13px; line-height: 1.4; font-weight: 650; color: var(--c1154-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageSub { max-width: 100%; min-height: 16px; margin-top: 2px; font-size: 11px; color: #98c3a6; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-call-status="connected"] .callStageSub { color: #98c3a6; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageTopActions { display: flex; align-items: center; flex: 0 0 auto; gap: 8px; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] #btnGroupDmCallPopout {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px;
+  padding: 6px 10px; border-radius: 10px; font-size: 11px;
+  border: 1px solid var(--c1154-border); background: rgba(232, 207, 174, .035);
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] #btnGroupDmCallPopout[hidden] { display: none !important; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageViewport {
+  display: block !important; grid-column: 1; grid-row: 2;
+  width: 100% !important; height: 100% !important; margin: 0 !important;
+  padding: 0 !important; min-height: 0 !important; border-radius: 0 !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-private-call-layout="voice-grid"] .callStageGrid:not([hidden]) {
+  overflow-x: hidden !important; overflow-y: auto !important;
+  align-content: safe center !important; justify-content: center !important;
+  box-sizing: border-box; scrollbar-width: thin;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] :is(.stageGridTile[data-call-grid-entry="1"], .groupCallShareTile, .callShareSecondary) {
+  border: 1px solid var(--c1154-border) !important; border-radius: 14px !important;
+  background: radial-gradient(ellipse at 50% 15%, rgba(232, 207, 174, .045), transparent 76%), linear-gradient(155deg, var(--c1154-tile), var(--c1154-tile-deep)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025) !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .stageGridTile.is-speaking {
+  border-color: rgba(156, 194, 157, .68) !important;
+  box-shadow: inset 0 0 0 1px rgba(156, 194, 157, .13), 0 0 14px rgba(156, 194, 157, .06) !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .stageGridTile:is(:hover, :focus-visible) { border-color: rgba(232, 207, 174, .45) !important; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .stageGridLabel {
+  left: 12px !important; right: auto !important; bottom: 12px !important;
+  max-width: calc(100% - 24px); padding: 5px 8px; border-radius: 8px;
+  font-size: 12px !important; font-weight: 650; line-height: 1.3;
+  background: rgba(16, 15, 12, .78); border: 1px solid rgba(232, 207, 174, .08);
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .stageGridAvatar {
+  min-width: 0 !important; min-height: 0 !important; border-radius: 50%;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .18);
+}
+/* The toolbar occupies its own row. Wrapping never overlaps media or history. */
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageControls {
+  position: relative !important; inset: auto !important; transform: none !important;
+  grid-column: 1; grid-row: 3; place-self: center; display: flex;
+  flex-wrap: wrap; justify-content: center; gap: 5px; width: fit-content;
+  max-width: calc(100% - 24px); min-height: 50px; margin: 12px 0 0; padding: 4px;
+  box-sizing: border-box; overflow: visible;
+  border: 1px solid var(--c1154-border); border-radius: 15px;
+  background: rgba(22, 21, 18, .97); box-shadow: 0 8px 24px rgba(0, 0, 0, .24);
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageControls__group { flex-wrap: wrap; justify-content: center; min-width: 0; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageFocusExitBtn { top: 16px; left: 16px; min-height: 32px; padding: 6px 10px; font-size: 12px; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageViewportFsBtn { top: 16px; right: 16px; bottom: auto; }
+/* The existing primary/rail nodes retain ownership and selection. Only geometry
+   changes. Both dimensions come from the media viewport, including in Pop Out. */
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement] .callShareStage:not([hidden]) {
+  position: absolute !important; inset: 50% auto auto 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: var(--group-composition-width) !important; height: var(--group-composition-height) !important;
+  max-width: calc(100% - 24px); max-height: calc(100% - 24px); padding: 0 !important;
+  grid-template-columns: minmax(0, var(--group-primary-width)) var(--group-rail-width) !important;
+  grid-template-rows: minmax(0, var(--group-primary-height)) !important;
+  gap: 12px !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement] .callShareStage > :is(.callSharePrimary, .callParticipantFocusPrimary, .callMultiSharePrimary):not([hidden]) {
+  position: relative !important; inset: auto !important; grid-column: 1 !important; grid-row: 1 !important;
+  place-self: stretch !important; width: 100% !important; height: 100% !important;
+  min-width: 0 !important; min-height: 0 !important; max-width: 100% !important; max-height: 100% !important;
+  aspect-ratio: 16 / 9 !important; border-radius: 14px !important; padding: 0 !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement] .callParticipantFocusPrimary > .stageGridTile[data-call-grid-entry="1"]:not(.has-video) > .stageGridAvatar {
+  width: min(176px, calc(var(--group-primary-height) * .44)) !important;
+  height: min(176px, calc(var(--group-primary-height) * .44)) !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement] .callShareStage > .callShareRail {
+  grid-column: 2 !important; grid-row: 1 !important; display: flex !important;
+  flex-direction: column !important; justify-content: start !important; gap: 12px;
+  padding: 0; width: 100% !important; height: 100% !important;
+  overflow-x: hidden !important; overflow-y: auto !important; scrollbar-width: thin;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement] .callShareRail > :is(.stageGridTile[data-call-grid-entry="1"], .callShareSecondary) {
+  flex: 0 0 auto !important; width: 100% !important; height: auto !important;
+  min-height: 0 !important; max-height: none !important; aspect-ratio: 16 / 9 !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement] .callShareRail .stageGridAvatar {
+  width: min(80px, 40%) !important; height: auto !important; aspect-ratio: 1;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement="below"] .callShareStage:not([hidden]) {
+  grid-template-columns: minmax(0, var(--group-primary-width)) !important;
+  grid-template-rows: minmax(0, var(--group-primary-height)) var(--group-rail-height) !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement="below"] .callShareStage > .callShareRail {
+  grid-column: 1 !important; grid-row: 2 !important; flex-direction: row !important;
+  overflow-x: auto !important; overflow-y: hidden !important;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement="below"] .callShareRail > :is(.stageGridTile[data-call-grid-entry="1"], .callShareSecondary) {
+  width: calc(var(--group-rail-height) * 16 / 9) !important; height: 100% !important; align-self: start;
+}
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement="none"] .callShareStage:not([hidden]) { grid-template-columns: minmax(0, 1fr) !important; }
+body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"][data-group-rail-placement="none"] .callShareStage > .callShareRail { display: none !important; }
+@container group-call-shell (max-width: 440px) {
+  body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageTop { padding: 10px 12px 6px; gap: 8px; flex-wrap: wrap; }
+  body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageTopActions { margin-left: auto; }
+  body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageControls .callCtrlBtn { width: 36px; min-width: 36px; height: 36px; min-height: 36px; }
+  body:not(.authPage) #dmMain #callStage.callStage.is-private-call-ui.is-group-private-call-ui[data-call-stage-kind="group"] .callStageCard { padding-bottom: 12px !important; }
+}
+
+/* Friends, requests and discovery. Scoped to the three home tabs. */
+body:not(.authPage) :is(#tabFriends, #tabPending, #tabAdd) {
+  --social-accent: var(--altara-accent, #e8cfae);
+  --social-surface: var(--altara-surface, #181818);
+  --social-text: var(--altara-text, #f2f0ec);
+  --social-muted: var(--text-soft);
+  --social-border: color-mix(in srgb, var(--social-text) 9%, transparent);
+  container: social / inline-size;
+  scrollbar-gutter: stable;
+  padding: 26px clamp(16px, 2.2vw, 36px) 36px;
+  color: var(--social-text);
+}
+.socialPageContent { --social-gap: clamp(12px, 1.6cqi, 24px); width: 100%; min-width: 0; margin: 0; }
+.socialPageHeader { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+.socialPageHeader > div { min-width: 0; }
+body:not(.authPage) .socialPageHeader h1 {
+  margin: 0; color: var(--social-text); font-family: var(--font-display);
+  font-size: 24px; line-height: 1.3; font-weight: 700; letter-spacing: -.035em;
+}
+.socialPageHeader p { margin: 5px 0 0; color: var(--social-muted); font-size: 13px; line-height: 1.6; }
+.socialPageIcon, .pendingDirection, .socialEmptyIcon {
+  display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center;
+  color: var(--social-accent); background: color-mix(in srgb, var(--social-accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--social-accent) 14%, transparent);
+}
+.socialPageIcon { width: 48px; height: 48px; border-radius: 15px; }
+.socialPageIcon svg { width: 24px; height: 24px; }
+body:not(.authPage) #tabFriends .friendsSearch { margin: 0 0 22px; }
+#tabFriends .friendsSearch svg { width: 18px; height: 18px; }
+body:not(.authPage) #tabFriends .friendsSearch .input {
+  height: 46px; border: 1px solid var(--social-border) !important; border-radius: 12px;
+  background: color-mix(in srgb, var(--social-surface) 90%, var(--social-text) 2%) !important;
+  box-shadow: none;
+}
+body:not(.authPage) #tabFriends .friendsSearch .input:focus {
+  border-color: color-mix(in srgb, var(--social-accent) 55%, transparent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--social-accent) 9%, transparent);
+}
+body:not(.authPage) #tabFriends #friendsList { gap: 0; }
+body:not(.authPage) #tabFriends .friendsSectionTitle {
+  display: flex; align-items: center; gap: 9px; margin: 0 2px 10px;
+  color: var(--social-muted); font-size: 10px; font-weight: 700; letter-spacing: .09em;
+}
+.socialCount {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  min-width: 24px; height: 24px; padding: 0 7px; border-radius: 7px;
+  background: color-mix(in srgb, var(--social-text) 6%, transparent);
+  color: var(--social-muted); font-size: 11px; font-weight: 650; letter-spacing: 0; font-variant-numeric: tabular-nums;
+}
+/* Auto-fill keeps the same card tracks in every friend group, including short groups. */
+#tabFriends .friendsSection {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, clamp(260px, 42cqi, 360px)), 1fr));
+  gap: var(--social-gap); margin-bottom: 24px;
+}
+body:not(.authPage) #tabFriends #friendsList .row {
+  min-width: 0; min-height: 70px; padding: 12px 14px; border: 1px solid var(--social-border);
+  border-radius: 12px; background: color-mix(in srgb, var(--social-surface) 94%, var(--social-text) 1%);
+  box-shadow: none; transition: background 140ms ease, border-color 140ms ease;
+}
+#tabFriends .rowLeft { flex: 1; }
+#tabFriends .rowMain { flex: 1; }
+#tabFriends .row .name, #tabPending .row .name { font-size: 14px; line-height: 1.45; }
+#tabFriends .row .meta, #tabPending .row .meta { color: var(--social-muted); font-size: 12px; }
+#tabFriends .row .avatar, #tabPending .row .avatar { width: 40px; height: 40px; flex: 0 0 40px; }
+.socialAvatarInitial {
+  width: 100%; height: 100%; display: grid; place-items: center;
+  font-size: 16px; font-weight: 650; color: var(--social-accent);
+  background: color-mix(in srgb, var(--social-accent) 9%, var(--social-surface)); border-radius: inherit;
+}
+.friendRowOpen {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
+  color: var(--social-muted); background: color-mix(in srgb, var(--social-text) 4%, transparent);
+}
+.friendRowOpen svg { width: 17px; height: 17px; }
+body:not(.authPage) #tabFriends #friendsList .row:hover,
+body:not(.authPage) #tabPending .pendingCard .row:hover {
+  border-color: color-mix(in srgb, var(--social-accent) 28%, transparent);
+  background: color-mix(in srgb, var(--social-accent) 5%, var(--social-surface));
+}
+#tabFriends .row:hover .friendRowOpen, #tabFriends .row:focus-visible .friendRowOpen {
+  color: var(--social-accent); background: color-mix(in srgb, var(--social-accent) 10%, transparent);
+}
+body:not(.authPage) .socialPage .row:focus-visible,
+body:not(.authPage) .socialPage :is(button, input):focus-visible {
+  outline: 2px solid var(--social-accent); outline-offset: 3px;
+}
+body:not(.authPage) #tabFriends #friendsList .row:active { background: color-mix(in srgb, var(--social-accent) 9%, var(--social-surface)); }
+.socialEmpty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; gap: 9px; padding: 32px 22px; min-width: 0;
+}
+.socialEmptyIcon { width: 46px; height: 46px; border-radius: 50%; margin-bottom: 5px; }
+.socialEmptyIcon svg { width: 22px; height: 22px; }
+.socialEmpty strong { font-size: 14px; font-weight: 650; color: var(--social-text); }
+.socialEmpty p { margin: 0; max-width: 310px; font-size: 12px; line-height: 1.65; color: var(--social-muted); overflow-wrap: anywhere; }
+#tabFriends #friendsList > .socialEmpty { border: 1px solid var(--social-border); border-radius: 16px; min-height: 240px; }
+.pendingGrid { display: grid; grid-template-columns: minmax(0,1fr); gap: var(--social-gap); align-items: start; }
+.pendingCard {
+  min-width: 0; border: 1px solid var(--social-border); border-radius: 16px; padding: 0 12px 12px;
+  background: color-mix(in srgb, var(--social-surface) 94%, var(--social-text) 1%); overflow: hidden;
+}
+.pendingCardHeader { display: flex; align-items: center; gap: 11px; min-height: 80px; padding: 16px 6px; }
+.pendingCardHeader > div { flex: 1; min-width: 0; }
+.pendingDirection { width: 36px; height: 36px; border-radius: 11px; }
+.pendingDirection svg { width: 19px; height: 19px; }
+body:not(.authPage) #tabPending .sectionTitle { margin: 0; font-size: 14px; color: var(--social-text); text-transform: none; letter-spacing: -.01em; }
+.pendingCardHeader p { margin: 4px 0 0; font-size: 11px; color: var(--social-muted); line-height: 1.4; }
+.pendingCard--outgoing .pendingDirection, .pendingCard--outgoing .socialEmptyIcon { color: var(--social-muted); border-color: var(--social-border); background: color-mix(in srgb, var(--social-text) 4%, transparent); }
+#tabPending .pendingCard .socialEmpty { border-top: 1px solid var(--social-border); min-height: 194px; }
+body:not(.authPage) #tabPending .pendingCard .row {
+  min-width: 0; padding: 14px; border: 1px solid var(--social-border); border-radius: 11px;
+  background: color-mix(in srgb, var(--social-surface) 88%, black 8%);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
+}
+#tabPending .rowLeft { flex: 1 1 150px; }
+#tabPending .rowActions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 7px; flex: 1 1 100%; padding-left: 51px; }
+#tabPending .pendingReqKind { display: block; width: fit-content; margin: 5px 0 0; color: var(--social-accent); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; background: none; border: 0; padding: 0; }
+#tabPending .pendingReqPreview { display: block; max-width: 100%; margin: 6px 0 0; white-space: normal; overflow-wrap: anywhere; color: var(--social-muted); }
+#tabPending .pendingReqPreview--meta { order: -1; }
+body:not(.authPage) #tabPending .smallBtn { min-height: 32px; padding: 6px 11px; font-size: 11px; border-radius: 8px; }
+
+#tabAdd .addFriendLayout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--social-gap); align-items: start; }
+#tabAdd .addFriendForm { container: add-form / inline-size; min-width: 0; }
+body:not(.authPage) #tabAdd .addToolCard {
+  width: 100%; min-width: 0; margin: 0;
+  position: relative; padding: clamp(20px, 4cqi, 32px); gap: 0; border: 1px solid var(--social-border); border-radius: 20px;
+  background: linear-gradient(155deg, color-mix(in srgb, var(--social-accent) 5%, var(--social-surface)), var(--social-surface) 45%);
+  box-shadow: 0 16px 48px rgba(0,0,0,.12);
+}
+
+#tabAdd .socialFieldLabel { display: block; margin-bottom: 9px; color: var(--social-text); font-size: 12px; font-weight: 600; }
+#tabAdd .addFriendSearch { position: relative; display: flex; gap: 8px; }
+#tabAdd .addFriendAt { position: absolute; top: 13px; left: 14px; color: var(--social-muted); pointer-events: none; font-size: 15px; }
+body:not(.authPage) #tabAdd #addUsername { min-width: 0; flex: 1; height: 46px; padding-left: 36px; border-radius: 10px; }
+body:not(.authPage) #tabAdd #btnSendRequest { min-height: 46px; padding: 10px 16px; white-space: nowrap; border-radius: 10px; font-size: 12px; }
+#tabAdd #addFriendHint { margin: 10px 0 0; font-size: 11px; color: var(--social-muted); }
+#tabAdd .addFriendPreviewHost { min-width: 0; margin: 0; }
+#tabAdd .addFriendPreviewEmpty { border: 1px dashed color-mix(in srgb, var(--social-accent) 18%, transparent); border-radius: 14px; background: color-mix(in srgb, var(--social-text) 2%, transparent); min-height: clamp(240px, 23cqi, 340px); }
+#tabAdd .socialEmptyQuery { color: var(--social-accent); }
+#tabAdd .addFriendPreviewCard { background: var(--social-surface); border-color: var(--social-border); border-radius: 14px; box-shadow: none; }
+#tabAdd .addFriendPreviewBanner { aspect-ratio: 4 / 1; min-height: 94px; max-height: 142px; }
+#tabAdd .addFriendPreviewBody { padding: 0 20px 20px; gap: 16px; }
+#tabAdd .addFriendPreviewIdentity { margin-top: -30px; gap: 10px; }
+#tabAdd .addFriendPreviewAvatar { width: 72px; height: 72px; border-color: var(--social-surface); box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+#tabAdd .addFriendPreviewName { font-size: 22px; color: var(--social-text); letter-spacing: -.025em; }
+#tabAdd .addFriendPreviewHandle { font-size: 12px; }
+#tabAdd .addFriendPreviewBadgeRow:empty { display: none; }
+#tabAdd .addFriendPreviewBio { min-height: 0; padding: 0 0 16px; border: 0; border-bottom: 1px solid var(--social-border); border-radius: 0; background: none; font-size: 13px; line-height: 1.7; }
+#tabAdd .addFriendPreviewActions { gap: 8px; }
+body:not(.authPage) #tabAdd .addFriendPreviewActions .btn { flex: 1 1 auto; min-width: 0; padding: 9px 12px; min-height: 38px; border-radius: 9px; font-size: 11px; }
+#tabAdd .addFriendPreviewMessageHint { font-size: 11px; line-height: 1.6; color: var(--social-muted); }
+@container social (min-width: 600px) {
+  .pendingGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container social (min-width: 760px) {
+  #tabAdd .addFriendLayout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+/* Form controls respond to their column, not to the full window. */
+@container add-form (max-width: 380px) {
+  #tabAdd .addFriendSearch { flex-wrap: wrap; }
+  body:not(.authPage) #tabAdd #addUsername { flex-basis: 100%; }
+  #tabAdd #btnSendRequest { width: 100%; }
+}
+@container social (max-width: 440px) {
+  .socialPageHeader { gap: 11px; }
+  body:not(.authPage) .socialPageHeader h1 { font-size: 21px; }
+  .socialPageHeader p { font-size: 12px; }
+  .socialPageIcon { width: 40px; height: 40px; border-radius: 12px; }
+  body:not(.authPage) #tabAdd .addToolCard { padding: 20px 16px; }
+  #tabPending .rowActions { padding-left: 0; }
+  #tabAdd .addFriendPreviewBody { padding-inline: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body:not(.authPage) #tabFriends #friendsList .row { transition: none; }
 }

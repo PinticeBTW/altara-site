@@ -10,6 +10,30 @@ const PRIVATE_UPLOAD_REFERENCE_PREFIX = "altara-private-upload:";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRUSTED_ATTACHMENT_DELIVERY_STATE = Symbol("altara.trustedAttachmentDeliveryState");
 const TRUSTED_ATTACHMENT_DELIVERY_TOKEN = Object.freeze({ type: "trusted-attachment-delivery" });
+// The existing download broker issues 60-second Storage capabilities. A cached
+// row can outlive that capability; its trust marker must not extend the URL.
+const TRUSTED_ATTACHMENT_DELIVERY_MAX_AGE_MS = 60_000;
+const TRUSTED_ATTACHMENT_DELIVERY_REFRESH_MARGIN_MS = 5_000;
+
+function getTrustedAttachmentDeliveryExpiry(url, issuedAt = Date.now()) {
+  const fallback = issuedAt + TRUSTED_ATTACHMENT_DELIVERY_MAX_AGE_MS;
+  try {
+    const token = new URL(url).searchParams.get("token") || "";
+    const payload = token.split(".")[1] || "";
+    const encoded = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=")));
+    const expiresAt = Number(decoded?.exp) * 1000;
+    // This is only a cache deadline, never authentication or a trust grant.
+    // The delivery URL has already passed the broker-origin/row checks.
+    return Number.isFinite(expiresAt) && expiresAt > 0 ? Math.min(fallback, expiresAt) : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function isTrustedAttachmentDeliveryEntryFresh(entry, now = Date.now()) {
+  return Number(entry?.expiresAt || 0) > now + TRUSTED_ATTACHMENT_DELIVERY_REFRESH_MARGIN_MS;
+}
 
 function safeString(value, max = 512) {
   return String(value == null ? "" : value).trim().slice(0, max);
@@ -45,7 +69,10 @@ function markTrustedAttachmentDeliveryRow(row, entries = [], supabaseOrigin = ""
     value: Object.freeze({
       token: TRUSTED_ATTACHMENT_DELIVERY_TOKEN,
       supabaseOrigin,
-      entries: Object.freeze(normalizedEntries.map((entry) => Object.freeze({ ...entry }))),
+      entries: Object.freeze(normalizedEntries.map((entry) => Object.freeze({
+        ...entry,
+        expiresAt: getTrustedAttachmentDeliveryExpiry(entry.url),
+      }))),
     }),
   });
   return row;
@@ -123,7 +150,10 @@ export function resolveTrustedAttachmentDeliveryUrl(row, attachment = {}, {
     && entry.url === candidate
     && (!requiredId || entry.uploadId === requiredId)
   ));
-  return match?.url || "";
+  // Navigation paints memory rows before fresh history finishes hydrating.
+  // Reject an expired capability here so that first paint cannot send a stale
+  // Storage GET; normal broker hydration replaces it with a fresh URL.
+  return match && isTrustedAttachmentDeliveryEntryFresh(match) ? match.url : "";
 }
 
 function unwrapFunctionPayload(data) {
@@ -267,14 +297,14 @@ function applyTrustedDownloadUrls(value, byId) {
     || parseTrustedPrivateUploadReference(next.previewReferenceUrl || next.preview_reference_url || next.previewUrl || next.preview_url || "");
   const delivery = byId.get(uploadId);
   const previewDelivery = byId.get(previewUploadId);
-  if (delivery?.download_url) {
-    next.url = delivery.download_url;
-    next.originalUrl = delivery.download_url;
+  if (UUID_RE.test(uploadId)) {
+    next.url = delivery?.download_url || trustedPrivateUploadReference(uploadId);
+    next.originalUrl = next.url;
     next.referenceUrl = trustedPrivateUploadReference(uploadId);
     next.uploadId = uploadId;
   }
-  if (previewDelivery?.download_url) {
-    next.previewUrl = previewDelivery.download_url;
+  if (UUID_RE.test(previewUploadId)) {
+    next.previewUrl = previewDelivery?.download_url || trustedPrivateUploadReference(previewUploadId);
     next.previewReferenceUrl = trustedPrivateUploadReference(previewUploadId);
     next.previewUploadId = previewUploadId;
   }
@@ -301,12 +331,16 @@ export async function hydrateTrustedAttachmentRows({ supabase, rows } = {}) {
   });
   if (!ids.size) return list;
 
-  let payload;
+  const payload = { items: [] };
   try {
-    payload = await invokeTrustedUpload(supabase, {
-      action: "download",
-      upload_ids: Array.from(ids).slice(0, 48),
-    });
+    const uploadIds = Array.from(ids);
+    for (let offset = 0; offset < uploadIds.length; offset += 48) {
+      const batch = await invokeTrustedUpload(supabase, {
+        action: "download",
+        upload_ids: uploadIds.slice(offset, offset + 48),
+      });
+      payload.items.push(...(Array.isArray(batch.items) ? batch.items : []));
+    }
   } catch (_) {
     return list;
   }
@@ -322,6 +356,9 @@ export async function hydrateTrustedAttachmentRows({ supabase, rows } = {}) {
     if (!parsed || !row || typeof row !== "object") return row;
     const hydrated = applyTrustedDownloadUrls(parsed, byId);
     const nextRow = { ...row, content: JSON.stringify(hydrated) };
+    // A new response grants only the returned capabilities; omitted/revoked
+    // admissions must not inherit the previous cache row's delivery marker.
+    delete nextRow[TRUSTED_ATTACHMENT_DELIVERY_STATE];
     return markTrustedAttachmentDeliveryFromDescriptors(nextRow, hydrated, { supabaseOrigin });
   });
 }
@@ -418,4 +455,77 @@ export function persistedTrustedMessageContent(rawContent = "") {
     return JSON.stringify(next);
   }
   return content;
+}
+
+export function hasExpiredTrustedAttachmentDelivery(row) {
+  const state = row?.[TRUSTED_ATTACHMENT_DELIVERY_STATE];
+  return !!(state?.token === TRUSTED_ATTACHMENT_DELIVERY_TOKEN
+    && state.entries.some((entry) => !isTrustedAttachmentDeliveryEntryFresh(entry)));
+}
+
+export function mergeTrustedAttachmentDeliveryRows(currentRows, originalRows, hydratedRows) {
+  const originalById = new Map(originalRows.map((row) => [String(row?.id || ""), row]));
+  const hydratedById = new Map(hydratedRows.map((row) => [String(row?.id || ""), row]));
+  return currentRows.map((row) => {
+    const id = String(row?.id || "");
+    const original = originalById.get(id);
+    const hydrated = hydratedById.get(id);
+    const delivery = hydrated?.[TRUSTED_ATTACHMENT_DELIVERY_STATE];
+    if (!original || row.content !== original.content || hydrated === original
+      || hasExpiredTrustedAttachmentDelivery(hydrated)) return row;
+    // Only replace delivery content/provenance; concurrent reactions, profiles,
+    // edits and other message fields retain their current owner.
+    const next = { ...row, content: hydrated.content };
+    delete next[TRUSTED_ATTACHMENT_DELIVERY_STATE];
+    if (delivery?.token === TRUSTED_ATTACHMENT_DELIVERY_TOKEN) Object.defineProperty(next, TRUSTED_ATTACHMENT_DELIVERY_STATE, {
+      configurable: true, enumerable: true, writable: false, value: delivery,
+    });
+    return next;
+  });
+}
+
+export function createTrustedAttachmentDeliveryRefreshQueue({
+  supabase, getContext, onRefreshed, schedule = setTimeout, now = Date.now,
+} = {}) {
+  const pending = new Map();
+  const inFlight = new Set();
+  const retryAfter = new Map();
+  let scheduled = false;
+  const keyFor = (context, row) => `${context}\u0000${String(row?.id || "")}`;
+  const flush = async () => {
+    scheduled = false;
+    const context = String(getContext?.() || "");
+    const batch = Array.from(pending.values()).filter((entry) => entry.context === context);
+    pending.clear();
+    if (!context || !batch.length) return;
+    const originals = batch.map((entry) => entry.row);
+    batch.forEach((entry) => inFlight.add(keyFor(context, entry.row)));
+    try {
+      const hydrated = await hydrateTrustedAttachmentRows({ supabase, rows: originals });
+      if (String(getContext?.() || "") === context) onRefreshed?.(originals, hydrated);
+      hydrated.forEach((row, index) => {
+        if (hasExpiredTrustedAttachmentDelivery(row)) retryAfter.set(keyFor(context, originals[index]), now() + 15_000);
+      });
+    } finally {
+      batch.forEach((entry) => inFlight.delete(keyFor(context, entry.row)));
+      // Failed attempts can retry on a later render, or immediately in a new
+      // navigation generation; no timer loop or retained signed URLs in logs.
+      if (retryAfter.size > 250) retryAfter.clear();
+    }
+  };
+  return {
+    queue(row) {
+      const context = String(getContext?.() || "");
+      if (!context || !row?.id || !hasExpiredTrustedAttachmentDelivery(row)) return false;
+      const key = keyFor(context, row);
+      if (inFlight.has(key) || Number(retryAfter.get(key) || 0) > now()) return false;
+      pending.set(key, { row, context });
+      if (!scheduled) {
+        scheduled = true;
+        schedule(() => { void flush().catch(() => {}); }, 0);
+      }
+      return true;
+    },
+    flush,
+  };
 }

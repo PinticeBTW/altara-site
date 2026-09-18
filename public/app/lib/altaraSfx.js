@@ -793,12 +793,13 @@ export function createServerVoiceMoveSoundLifecycle({ player } = {}) {
     };
     if (!owner || owner.ownerKey !== nextOwner.ownerKey) {
       if (owner) player?.cancelOwner?.(owner.ownerKey, "server_voice_move_owner_replaced");
+      if (owner?.generation !== generation) playedOperations.clear();
       owner = nextOwner;
-      playedOperations.clear();
     }
-    const operationKey = `${owner.ownerKey}:${operation.toLowerCase()}`;
+    const operationKey = `${generation}:${operation.toLowerCase()}`;
     if (playedOperations.has(operationKey)) return { action: "suppressed", reason: "duplicate_move" };
     playedOperations.add(operationKey);
+    if (playedOperations.size > 120) playedOperations.delete(playedOperations.values().next().value);
     void player?.play?.("server_voice_move", {
       ownerKey: owner.ownerKey,
       ownerType: "server_voice",

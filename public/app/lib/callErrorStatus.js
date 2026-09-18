@@ -293,7 +293,7 @@ function mediaFailureCopy(target, failure) {
       return ["Camera access is blocked", "Allow camera access in system settings, then try again."];
     }
     if (failure === MediaDeviceFailure.NotFound) {
-      return ["Camera unavailable", "No camera is available. Check the device and try again."];
+      return ["Camera unavailable", "The camera is unavailable on this device. Choose an available camera from the camera menu, then try again."];
     }
     if (failure === MediaDeviceFailure.DeviceInUse) {
       return ["Camera is busy", "Another app is using the camera. Close it there, then try again."];
@@ -377,6 +377,11 @@ export function normalizeCallIssue(error = null, {
     } catch (_) {
       mediaFailure = null;
     }
+  }
+  if (mediaTarget === "camera"
+    && ["overconstrainederror", "constraintnotsatisfiederror"].includes(lowerName)
+    && String(error?.constraint || error?.constraintName || "").toLowerCase() === "deviceid") {
+    mediaFailure = MediaDeviceFailure.NotFound;
   }
   if ((!mediaFailure || mediaFailure === MediaDeviceFailure.Other) && markerIncludes(markers, [
     "permission_denied",
@@ -502,6 +507,16 @@ export function normalizeCallIssue(error = null, {
     );
   }
   if (isScreenShare && hasToken(contextToken, ["source_enumeration"])) {
+    const captureCode = safeErrorCode(error);
+    if (captureCode === "SCREEN_RECORDING_RESTRICTED") {
+      return warningIssue("screen_recording_restricted", "Screen recording is restricted",
+        "Screen recording is restricted by macOS. Check this Mac's privacy policy or contact its administrator.", diagnostics);
+    }
+    if (captureCode === "SCREEN_RECORDING_PERMISSION_REQUIRED") {
+      const appName = hasToken(stageToken, ["mac_dev"]) ? "Altara DEV" : "Altara";
+      return warningIssue("screen_recording_permission_required", "Allow screen recording",
+        `Allow ${appName} in System Settings → Privacy & Security → Screen & System Audio Recording, then quit ${appName} (⌘Q) and reopen it.`, diagnostics);
+    }
     return warningIssue(
       "screen_share_sources_unavailable",
       "Share sources unavailable",

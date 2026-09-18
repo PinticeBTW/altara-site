@@ -68,12 +68,24 @@ export function setDebug(obj) {
   pre.textContent = JSON.stringify(obj, null, 2);
 }
 
-export function enhancePasswordVisibilityToggles(root = document) {
+export function enhancePasswordVisibilityToggles(root = document, { t = null } = {}) {
   const scope = root && typeof root.querySelectorAll === "function" ? root : document;
-  const inputs = scope.querySelectorAll('input[type="password"]:not([data-password-toggle="off"])');
+  const inputs = scope.querySelectorAll('input[type="password"]:not([data-password-toggle="off"]), input[data-password-toggle-bound="1"]');
   inputs.forEach((input) => {
     if (!(input instanceof HTMLInputElement)) return;
-    if (input.dataset.passwordToggleBound === "1") return;
+    const copy = (visible) => ({
+      text: typeof t === "function" ? t(visible ? "password.hide" : "password.show", visible ? "Hide" : "Show") : (visible ? "Hide" : "Show"),
+      label: typeof t === "function" ? t(visible ? "password.hideAria" : "password.showAria", visible ? "Hide password" : "Show password") : (visible ? "Hide password" : "Show password"),
+    });
+    if (input.dataset.passwordToggleBound === "1") {
+      const existing = input.parentElement?.querySelector?.("[data-password-visibility-toggle]");
+      if (existing instanceof HTMLButtonElement) {
+        const localized = copy(input.type !== "password");
+        existing.textContent = localized.text;
+        existing.setAttribute("aria-label", localized.label);
+      }
+      return;
+    }
     input.dataset.passwordToggleBound = "1";
 
     const parent = input.parentElement;
@@ -92,16 +104,18 @@ export function enhancePasswordVisibilityToggles(root = document) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "passwordToggleBtn";
-    btn.textContent = "Show";
-    btn.setAttribute("aria-label", "Show password");
+    btn.dataset.passwordVisibilityToggle = "1";
+    btn.textContent = copy(false).text;
+    btn.setAttribute("aria-label", copy(false).label);
     btn.setAttribute("aria-pressed", "false");
 
     const setVisible = (visible) => {
       const start = Number.isFinite(input.selectionStart) ? input.selectionStart : null;
       const end = Number.isFinite(input.selectionEnd) ? input.selectionEnd : null;
       input.type = visible ? "text" : "password";
-      btn.textContent = visible ? "Hide" : "Show";
-      btn.setAttribute("aria-label", visible ? "Hide password" : "Show password");
+      const localized = copy(visible);
+      btn.textContent = localized.text;
+      btn.setAttribute("aria-label", localized.label);
       btn.setAttribute("aria-pressed", visible ? "true" : "false");
       wrap.classList.toggle("is-visible", visible);
       try {

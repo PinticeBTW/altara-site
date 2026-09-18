@@ -5,6 +5,55 @@ const AVATAR_PROBE_TIMEOUT_MS = 1800;
 
 let cachedDefaultAvatarPoolPromise = null;
 
+// This module is beside index.html in both packaged and web builds. Pin built-in
+// assets to that app base, not a navigated route or a popup's about:blank URL.
+// Callers/tests may provide an explicit app document/base URL.
+export function resolveAvatarPresentationUrl(value, appBaseUrl = import.meta.url) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw || /[\\\u0000-\u0020\u007f]/.test(raw)) return "";
+  const builtIn = raw.match(/^(?:\.\/|\/)?assets\/default-avatars\/([a-z0-9_-]+\.(?:png|webp|jpe?g|gif))$/i);
+  try {
+    if (builtIn) {
+      const base = new URL(appBaseUrl);
+      if (!["file:", "http:", "https:"].includes(base.protocol)) return "";
+      return new URL(`./assets/default-avatars/${builtIn[1]}`, base).href;
+    }
+    const url = new URL(raw);
+    if (url.username || url.password) return "";
+    if (["http:", "https:"].includes(url.protocol)) return raw;
+    if (/^data:image\//i.test(raw) || url.protocol === "blob:") return raw;
+    // Only already-resolved files from this app's packaged avatar pool.
+    if (url.protocol === "file:") {
+      const asset = url.pathname.match(/\/assets\/default-avatars\/([a-z0-9_-]+\.(?:png|webp|jpe?g|gif))$/i);
+      if (asset && url.href === new URL(`./assets/default-avatars/${asset[1]}`, appBaseUrl).href) return url.href;
+    }
+  } catch (_) { /* Malformed/custom relative paths are not avatar sources. */ }
+  return "";
+}
+
+// Signup assigns a pool URL once, in avatar_url (also in Auth metadata).
+// Rendering must retain that assignment, never randomly pick another avatar.
+export function resolveAssignedDefaultAvatarUrl(...sources) {
+  for (const source of sources) {
+    const values = typeof source === "string" ? [source] : source && typeof source === "object"
+      ? [source.avatar_url, source.avatarUrl, source.avatar, source.assignedDefaultAvatarUrl,
+        source.user_metadata?.avatar_url, source.raw_user_meta_data?.avatar_url] : [];
+    for (const value of values) {
+      const raw = typeof value === "string" ? value.trim() : "";
+      // Only the existing packaged pool is a recognized account default.
+      // A removed custom URL must not be revived from a stale member snapshot.
+      let asset = raw;
+      if (/^(?:https?:|file:)\/\//i.test(raw)) {
+        try { asset = new URL(raw).pathname.match(/\/assets\/default-avatars\/[^/]+$/i)?.[0] || ""; }
+        catch (_) { asset = ""; }
+      }
+      const match = asset.match(/^(?:\.\/|\/)?assets\/default-avatars\/([a-z0-9_-]+\.(?:png|webp|jpe?g|gif))$/i);
+      if (match) return `${DEFAULT_AVATAR_FOLDER}/${match[1]}`;
+    }
+  }
+  return "";
+}
+
 function sleep(ms = 0) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }

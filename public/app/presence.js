@@ -26,6 +26,7 @@ export function createPresenceSystem({
   let shouldRun = false;
   let currentStatus = "online";
   let lastEmittedSignature = "";
+  let lastEmittedSnapshotState = "pending";
   let fallbackSessionId = "";
   const fallbackOnlineAt = new Date().toISOString();
   let channelStatus = "IDLE";
@@ -1262,8 +1263,17 @@ export function createPresenceSystem({
         .sort()
         .join("||");
 
-      if (signature === lastEmittedSignature) return;
+      // Completion is independent of row count/content. An empty full snapshot,
+      // or a full snapshot matching an earlier diff/cache read, must still reach
+      // consumers once. Cache/health/grace reads cannot establish completion.
+      const snapshotState = ["presence-sync", "raw-presence-state"].includes(source)
+        ? "complete"
+        : ["subscribe-error", "channel-unstable"].includes(source)
+          ? "failed"
+          : lastEmittedSnapshotState;
+      if (signature === lastEmittedSignature && snapshotState === lastEmittedSnapshotState) return;
       lastEmittedSignature = signature;
+      lastEmittedSnapshotState = snapshotState;
       if (changedByGraceExpiry) {
         logPresenceLiveDebug("liveSessions replaced", {
           beforeUserIds,
@@ -1606,6 +1616,7 @@ export function createPresenceSystem({
       topic: getChannelTopic(channel),
     });
     lastEmittedSignature = "";
+    lastEmittedSnapshotState = "pending";
 
     logPresenceTrackLifecycle("presence handlers registering", {
       topic: getChannelTopic(channel),
@@ -1849,6 +1860,7 @@ export function createPresenceSystem({
     channelStatus = "STOPPED";
     lastSubscribeStatus = channelStatus;
     lastEmittedSignature = "";
+    lastEmittedSnapshotState = "pending";
     if (!oldStarted) lastTrackResult = "";
     lastTrackPayload = null;
     rawPresenceMirror.clear();

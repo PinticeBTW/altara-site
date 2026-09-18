@@ -1,12 +1,34 @@
-﻿const AUTH_LANG_STORAGE_KEY = "altara_app_language";
-const AUTH_LANG_DEFAULT = "en";
-const SUPPORTED_AUTH_LANGS = new Set(["en", "pt"]);
+import {
+  ALTARA_DEFAULT_LOCALE,
+  detectAltaraLocale,
+  hasAltaraLocalePreference,
+  localeDocumentLanguage,
+  normalizeAltaraLocale,
+  readAltaraLocalePreference,
+  writeAltaraLocalePreference,
+} from "./lib/locale.js";
+import { PT_BR_AUTH_TEXT } from "./lib/ptBrTranslations.js";
+
+const AUTH_LANG_DEFAULT = ALTARA_DEFAULT_LOCALE;
 
 const authLangListeners = new Set();
 let authLanguage = AUTH_LANG_DEFAULT;
 
 const AUTH_TEXT = {
   en: {
+    invite: {
+      "savedLogin": "Server invite saved. Sign in to continue where you left off.",
+      "savedRegister": "Server invite saved. Create your account to continue where you left off.",
+      "cancel": "Cancel invite",
+      "retry": "Retry",
+      "checking": "Checking invite…",
+      "invalid": "This invite is invalid.",
+      "expired": "This invite has expired.",
+      "revoked": "This invite has been revoked.",
+      "exhausted": "This invite reached its usage limit.",
+      "server_unavailable": "This server is no longer available.",
+      "unavailable": "ALTARA could not check this invite. Check your connection and retry."
+},
     language: {
       switchToEnglish: "Switch to English",
       switchToPortuguese: "Switch to Portuguese",
@@ -121,7 +143,20 @@ const AUTH_TEXT = {
       successAutoLogin: "Account created. Signing you in...",
     },
   },
-  pt: {
+  "pt-PT": {
+    invite: {
+      "savedLogin": "Convite para servidor guardado. Entra para continuar de onde paraste.",
+      "savedRegister": "Convite para servidor guardado. Cria a tua conta para continuar.",
+      "cancel": "Cancelar convite",
+      "retry": "Tentar novamente",
+      "checking": "A verificar o convite…",
+      "invalid": "Este convite é inválido.",
+      "expired": "Este convite expirou.",
+      "revoked": "Este convite foi revogado.",
+      "exhausted": "Este convite atingiu o limite de utilizações.",
+      "server_unavailable": "Este servidor já não está disponível.",
+      "unavailable": "Não foi possível verificar este convite. Verifica a tua ligação e tenta novamente."
+},
     language: {
       switchToEnglish: "Mudar para ingles",
       switchToPortuguese: "Mudar para portugues",
@@ -236,35 +271,23 @@ const AUTH_TEXT = {
       successAutoLogin: "Conta criada. A entrar automaticamente...",
     },
   },
+  "pt-BR": PT_BR_AUTH_TEXT,
 };
 
 function normalizeAuthLanguage(value, fallback = AUTH_LANG_DEFAULT) {
-  const lang = String(value || "").trim().toLowerCase();
-  if (SUPPORTED_AUTH_LANGS.has(lang)) return lang;
-  return SUPPORTED_AUTH_LANGS.has(fallback) ? fallback : AUTH_LANG_DEFAULT;
+  return normalizeAltaraLocale(value, fallback);
 }
 
 function readStoredAuthLanguage() {
-  try {
-    return normalizeAuthLanguage(localStorage.getItem(AUTH_LANG_STORAGE_KEY), AUTH_LANG_DEFAULT);
-  } catch (_) {
-    return AUTH_LANG_DEFAULT;
-  }
+  return readAltaraLocalePreference();
 }
 
 function hasStoredAuthLanguage() {
-  try {
-    const value = localStorage.getItem(AUTH_LANG_STORAGE_KEY);
-    return SUPPORTED_AUTH_LANGS.has(String(value || "").trim().toLowerCase());
-  } catch (_) {
-    return false;
-  }
+  return hasAltaraLocalePreference();
 }
 
 function writeStoredAuthLanguage(lang) {
-  try {
-    localStorage.setItem(AUTH_LANG_STORAGE_KEY, normalizeAuthLanguage(lang));
-  } catch (_) {}
+  writeAltaraLocalePreference(lang);
 }
 
 function getByPath(obj, path) {
@@ -305,7 +328,7 @@ function applyAuthTranslations(lang) {
   const pageKey = page === "register" ? "register" : "login";
 
   authLanguage = next;
-  document.documentElement.lang = next === "pt" ? "pt-PT" : "en";
+  document.documentElement.lang = localeDocumentLanguage(next);
   document.title = textFor(next, `${pageKey}.metaTitle`, document.title);
 
   setNodeText("authInstallWelcomeTitle", textFor(next, "install.title"));
@@ -329,6 +352,17 @@ function applyAuthTranslations(lang) {
   setNodeText("authBadge", textFor(next, `${pageKey}.badge`));
   setNodeText("authCardTitle", textFor(next, `${pageKey}.title`));
   setNodeText("authCardSub", textFor(next, `${pageKey}.sub`));
+  setNodeText(
+    "authPendingInviteText",
+    textFor(
+      next,
+      pageKey === "register" ? "invite.savedRegister" : "invite.savedLogin",
+      pageKey === "register"
+        ? "Server invite saved. Create your account to continue where you left off."
+        : "Server invite saved. Sign in to continue where you left off."
+    )
+  );
+  setNodeText("btnCancelPendingInvite", textFor(next, "invite.cancel", "Cancel invite"));
 
   if (pageKey === "register") {
     setNodeText("authUsernameLabel", textFor(next, "register.usernameLabel"));
@@ -359,13 +393,21 @@ function applyAuthTranslations(lang) {
     setNodePlaceholder("authRecoverySecret", textFor(next, "login.recoveryResetConfirmPlaceholder"));
   }
 
+  const selectLang = document.getElementById("authLanguageSelect");
+  if (selectLang instanceof HTMLSelectElement) {
+    selectLang.value = next;
+    selectLang.setAttribute("aria-label", textFor(next, "language.select", "Language"));
+    selectLang.title = textFor(next, "language.select", "Language");
+  }
+
   const btnLang = document.getElementById("btnAuthLang");
   if (btnLang instanceof HTMLButtonElement) {
-    const nextTarget = next === "en" ? "pt" : "en";
+    const order = ["en", "pt-PT", "pt-BR"];
+    const nextTarget = order[(order.indexOf(next) + 1) % order.length];
     btnLang.textContent = nextTarget.toUpperCase();
     const switchTitle = textFor(
       next,
-      nextTarget === "pt" ? "language.switchToPortuguese" : "language.switchToEnglish"
+      nextTarget === "en" ? "language.switchToEnglish" : "language.switchToPortuguese"
     );
     btnLang.setAttribute("aria-label", switchTitle);
     btnLang.title = switchTitle;
@@ -404,7 +446,11 @@ export function onAuthLanguageChange(listener) {
 }
 
 export function initAuthLanguage({ defaultLanguage = AUTH_LANG_DEFAULT } = {}) {
-  const fallback = normalizeAuthLanguage(defaultLanguage, AUTH_LANG_DEFAULT);
+  const fallback = detectAltaraLocale({
+    saved: "",
+    languages: globalThis.navigator?.languages || [globalThis.navigator?.language],
+    fallback: defaultLanguage,
+  });
   const initial = hasStoredAuthLanguage() ? readStoredAuthLanguage() : fallback;
 
   if (!hasStoredAuthLanguage()) {
@@ -418,9 +464,16 @@ export function initAuthLanguage({ defaultLanguage = AUTH_LANG_DEFAULT } = {}) {
     btn.dataset.bound = "1";
     btn.addEventListener("click", (e) => {
       e.preventDefault();
-      const next = authLanguage === "en" ? "pt" : "en";
+      const order = ["en", "pt-PT", "pt-BR"];
+      const next = order[(order.indexOf(authLanguage) + 1) % order.length];
       setAuthLanguage(next, { persist: true });
     });
+  }
+
+  const select = document.getElementById("authLanguageSelect");
+  if (select instanceof HTMLSelectElement && select.dataset.bound !== "1") {
+    select.dataset.bound = "1";
+    select.addEventListener("change", () => setAuthLanguage(select.value, { persist: true }));
   }
 
   return initial;

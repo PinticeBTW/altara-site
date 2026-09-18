@@ -3,6 +3,14 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   devIndicators: false,
   skipTrailingSlashRedirect: true,
+  async redirects() {
+    return [{
+      source: "/",
+      has: [{ type: "query", key: "server_invite" }],
+      destination: "/app/index.html",
+      permanent: false,
+    }];
+  },
   async rewrites() {
     return [
       {

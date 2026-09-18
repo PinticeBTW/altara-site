@@ -13,8 +13,11 @@ const offlineReconnectMarker =
 const releaseManifestPath = path.join(appRoot, "release.json");
 const releaseVersion = fs.existsSync(releaseManifestPath)
   ? JSON.parse(fs.readFileSync(releaseManifestPath, "utf8")).version : "";
+const releasePatch = fs.existsSync(releaseManifestPath)
+  ? JSON.parse(fs.readFileSync(releaseManifestPath, "utf8")).patch : "";
 const appJsQuery = [
   releaseVersion ? `release=${encodeURIComponent(releaseVersion)}` : "",
+  releasePatch ? `patch=${encodeURIComponent(releasePatch)}` : "",
   assetVersion ? `v=${encodeURIComponent(assetVersion)}` : "",
   offlineReconnectMarker
     ? `hotfix=${encodeURIComponent(offlineReconnectMarker)}`
@@ -81,5 +84,10 @@ for (const file of shellFiles) {
 for (const file of authFiles) {
   if (patchFile(file, patchAuthPage)) changed += 1;
 }
+
+// Keep the established production callback canonical even through /register.html aliases.
+if (patchFile("register.js", source => source
+  .replace('new URL("./login.html", window.location.href)', 'new URL("/app/login.html", window.location.origin)')
+  .replace('return \x60\x24{origin}/login.html\x60;', 'return \x60\x24{origin}/app/login.html\x60;'))) changed += 1;
 
 console.log(`[patch-altara-app-shell] Patched ${changed} app shell file(s).`);

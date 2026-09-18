@@ -8,19 +8,29 @@ function normalizeStatus(status) {
   return "online";
 }
 
-export function getMyStatus(){
-  return normalizeStatus(localStorage.getItem(KEY) || "online");
+function accountKey(userId) {
+  const id = typeof userId === "string" ? userId.trim().toLowerCase() : "";
+  return id ? `${KEY}:${id}` : "";
 }
 
-export function getStoredMyStatus(){
-  const raw = localStorage.getItem(KEY);
+export function getMyStatus(userId){
+  return normalizeStatus(getStoredMyStatus(userId) || "online");
+}
+
+export function getStoredMyStatus(userId){
+  const key = accountKey(userId);
+  if (!key) return "";
+  // The legacy shared key has no owner. Leave it for older clients, but never
+  // import it into an authenticated account's preference.
+  const raw = localStorage.getItem(key);
   if (raw == null) return "";
   return normalizeStatus(raw);
 }
 
-export function setMyStatus(status){
+export function setMyStatus(status, userId){
   const s = normalizeStatus(status);
-  localStorage.setItem(KEY, s);
+  const key = accountKey(userId);
+  if (key) localStorage.setItem(key, s);
   return s;
 }
 

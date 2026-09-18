@@ -1,0 +1,5 @@
+!public/app/node_modules
+!public/app/node_modules/**
+*.log
+REFERENCIAS/
+tests/
