@@ -44,8 +44,33 @@ test("macOS resolver refuses missing, duplicate, cross-repository, draft and pre
 test("published browser manifest identifies the exact release and runtime bytes", () => {
   const read = p => readFileSync(new URL(`../public/app/${p}`, import.meta.url));
   const manifest = JSON.parse(read("release.json"));
-  assert.equal(manifest.version, version);
+  assert.equal(manifest.version, "0.1.135");
   assert.equal(manifest.appJsSha256, createHash("sha256").update(read("app.js")).digest("hex"));
   assert.equal(manifest.sfxJsSha256, createHash("sha256").update(read("lib/altaraSfx.js")).digest("hex"));
-  assert.match(read("index.html").toString(), /release=0\.1\.130/);
+  assert.match(read("index.html").toString(), /release=0\.1\.135/);
+});
+
+
+test("new Windows/Linux release preserves the actual older Mac version and official release URL", async () => {
+  const payload = release();
+  payload.tag_name = "v0.1.135";
+  for (const asset of payload.assets) asset.browser_download_url = asset.browser_download_url.replace("/v0.1.130/", "/v0.1.135/");
+  for (const arch of ["arm64", "x64"]) {
+    const resolved = resolveMacRelease(payload, arch);
+    assert.equal(resolved.version, "0.1.130");
+    assert.equal(resolved.tagName, "v0.1.135");
+    const response = await createMacArtifactRedirectResponse(arch, async () => Response.json(payload));
+    assert.match(response.headers.get("location"), new RegExp("/v0\\.1\\.135/Altara\\.0\\.1\\.130\\.mac-" + arch));
+  }
+  payload.assets[0].browser_download_url = payload.assets[0].browser_download_url.replace("PinticeBTW", "Other");
+  assert.throws(() => resolveMacRelease(payload, "arm64"));
+});
+
+test("macOS never selects a future version or silently accepts duplicate preserved assets", () => {
+  const future = release(); future.tag_name = "v0.1.129";
+  assert.throws(() => resolveMacRelease(future, "arm64"));
+  const duplicate = release(); duplicate.tag_name = "v0.1.135";
+  for (const asset of duplicate.assets) asset.browser_download_url = asset.browser_download_url.replace("/v0.1.130/", "/v0.1.135/");
+  duplicate.assets.push(duplicate.assets[0]);
+  assert.throws(() => resolveMacRelease(duplicate, "arm64"));
 });

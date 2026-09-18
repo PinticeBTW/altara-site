@@ -75,7 +75,21 @@ export type MacArchitecture = "arm64" | "x64";
 
 export function resolveMacRelease(payload: unknown, architecture: MacArchitecture): WindowsReleaseArtifacts {
   if (architecture !== "arm64" && architecture !== "x64") fail("unsupported_macos_architecture");
-  const { assets, publishedAt, tagName, version } = parseRelease(payload, false);
+  const { assets, publishedAt, tagName, version: releaseVersion } = parseRelease(payload, false);
+  // A newer Windows/Linux release may carry the last published Mac artifacts.
+  // Keep their actual version while retaining the strict official URL checks.
+  const compare = (a: string, b: string) => {
+    const left = a.split(".").map(BigInt), right = b.split(".").map(BigInt);
+    for (let i = 0; i < 3; i++) if (left[i] !== right[i]) return left[i] < right[i] ? -1 : 1;
+    return 0;
+  };
+  const versions = assets.flatMap(asset => {
+    const match = /^Altara\.(\d+\.\d+\.\d+)\.mac-(arm64|x64)\.dmg$/.exec(asset.name);
+    const candidate = match && match[2] === architecture ? normalizeReleaseVersion(match[1]) : null;
+    return candidate && compare(candidate, releaseVersion) <= 0 ? [candidate] : [];
+  });
+  const version = versions.sort(compare).at(-1);
+  if (!version) fail("missing_macos_asset");
   const application = selectReleaseAsset(assets, `Altara.${version}.mac-${architecture}.dmg`, tagName, `macos_${architecture}`);
   if (!application) fail("missing_macos_asset");
   return { version, tagName, publishedAt, application };
