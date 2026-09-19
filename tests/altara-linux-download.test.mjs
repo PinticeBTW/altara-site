@@ -333,8 +333,11 @@ test("embedded app shell preserves the offline hotfix cache-buster", async () =>
   assert.match(patcher, /const offlineReconnectMarker/);
   assert.match(patcher, /hotfix=\$\{encodeURIComponent\(offlineReconnectMarker\)\}/);
   assert.match(patcher, /appJsQuery/);
-  assert.match(
-    appShell,
-    /src="\/app\/app\.js\?release=0\.1\.130&amp;v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"/,
-  );
+  const manifest = JSON.parse(await source("public/app/release.json"));
+  const script = appShell.match(/src="(\/app\/app\.js\?[^\"]+)"/)?.[1];
+  assert.ok(script);
+  const url = new URL(script.replaceAll("&amp;", "&"), "https://www.altaraapp.com");
+  assert.equal(url.searchParams.get("release"), manifest.version);
+  assert.equal(url.searchParams.get("v"), "server-read-message-history-ux-v3");
+  assert.equal(url.searchParams.get("hotfix"), "offline-auth-reconnect-v1");
 });

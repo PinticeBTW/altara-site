@@ -321,7 +321,6 @@ function buildPresenceAvatarHtml(u) {
   const url = typeof resolver === "function"
     ? String(resolver(u?.id || "", u?.avatar_url || "", u) || "").trim()
     : String(u?.avatar_url || "").trim();
-  if (!url) return "";
   const helper = typeof window !== "undefined" ? window.__altaraBuildAvatarMediaHtml : null;
   if (typeof helper === "function") {
     return helper(url, {
@@ -329,6 +328,7 @@ function buildPresenceAvatarHtml(u) {
       alt: "avatar",
     });
   }
+  if (!url) return "";
   return `<img src="${esc(url)}" alt="avatar" />`;
 }
 
@@ -392,6 +392,14 @@ function cardUser(u, right = "") {
   `;
 }
 
+// Sidebar/call owners must invalidate the cached paint when relinquishing its DOM.
+// A matching data signature is only reusable while that paint still exists.
+export function clearPresenceList(element) {
+  if (!element) return;
+  element.removeAttribute("data-presence-signature");
+  element.innerHTML = "";
+}
+
 export function renderPresenceUI({
   list,
   me,
@@ -413,7 +421,7 @@ export function renderPresenceUI({
       activeNowEl.removeAttribute("data-presence-signature");
       activeNowEl.innerHTML = `<div class="hint" role="status" data-cold-phase="${failed ? "error" : "loading"}" aria-busy="${!failed}">${esc(translate(failed ? "hydrate.presence_failed" : "hydrate.loading_activity", failed ? "Activity couldn't load. Try again." : "Loading activity…"))}${failed ? ` <button class="btn ghost" type="button" data-cold-retry="presence">${esc(translate("hydrate.retry", "Try again"))}</button>` : ""}</div>`;
     }
-    if (offlineListEl) { offlineListEl.innerHTML = ""; offlineListEl.removeAttribute("data-presence-signature"); }
+    clearPresenceList(offlineListEl);
     if (onlineCountEl) onlineCountEl.textContent = "—";
     return;
   }

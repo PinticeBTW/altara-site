@@ -3178,6 +3178,7 @@ export function createServerVoiceScreenshareLayer({
   participantUserId = (identity) => identity,
   logger = () => {},
   onStateChanged = () => {},
+  onPublicationStateChanged = () => {},
   onConversationChanged = () => {},
   shouldSubscribeToParticipant = () => true,
   openSourcePicker = null,
@@ -3263,6 +3264,7 @@ export function createServerVoiceScreenshareLayer({
   let localFirstFrameProbe = null;
   let remoteRenderStatsTimer = null;
   let remoteStageRefreshTimer = null;
+  let remoteStageRefreshDeadline = 0;
   let remoteRenderComparisonPromise = null;
   let privateOneToOneTransportProfile = PRIVATE_ONE_TO_ONE_SCREENSHARE_DEFAULT_PROFILE;
   let privateQualityController = null;
@@ -5651,13 +5653,18 @@ export function createServerVoiceScreenshareLayer({
   }
 
   function scheduleRemoteStageRefresh(record = null, delayMs = 140) {
+    // An immediate decoded-frame notification must not be postponed by the
+    // attachment's trailing refresh or another share's metadata/reconcile event.
+    const delay = Math.max(0, Number(delayMs) || 0);
+    const deadline = Date.now() + delay;
+    if (remoteStageRefreshTimer && remoteStageRefreshDeadline <= deadline) return;
     if (remoteStageRefreshTimer) clearTimeout(remoteStageRefreshTimer);
-    const expectedKey = normalizeId(record?.key || "");
+    remoteStageRefreshDeadline = deadline;
     remoteStageRefreshTimer = setTimeout(() => {
       remoteStageRefreshTimer = null;
-      if (expectedKey && !isRemoteShareRecordWatched(shareRecordsByKey.get(expectedKey))) return;
+      remoteStageRefreshDeadline = 0;
       emitStateChanged("remote_track_first_frame_ready", "scheduleRemoteStageRefresh");
-    }, Math.max(0, Number(delayMs) || 0));
+    }, delay);
   }
 
   function attachRemoteVideoElementImmediately(record = null) {
@@ -7881,6 +7888,29 @@ export function createServerVoiceScreenshareLayer({
     return localShareStopPromise;
   }
 
+  // Only publication changes enter the sound path. Subscription, playback,
+  // roster rendering and transport mute events cannot manufacture a share cue.
+  function reportSharePublication(participant, { publication = null, removed = false, baseline = false, reason = "publication" } = {}) {
+    if (!roomBound || room?.state !== "connected") return;
+    const resolved = resolveRemoteShareParticipant(participant, participantUserId);
+    if (!resolved?.ownerUserId || room.remoteParticipants?.get?.(participant?.identity) !== participant) return;
+    const publications = Array.from(room.remoteParticipants.values())
+      .filter(peer => resolveRemoteShareParticipant(peer, participantUserId)?.ownerUserId === resolved.ownerUserId)
+      .flatMap(peer => Array.from(peer.trackPublications?.values?.() || []));
+    // The SDK updates the publication map before emitting these events. A
+    // buffered publish for a track already removed cannot start a phantom share.
+    if (publication && !removed && participant.trackPublications?.get?.(publication.trackSid) !== publication) return;
+    const sharing = publications.some(candidate => String(candidate.kind || "").toLowerCase() === "video"
+      && isScreenSharePublication(candidate, candidate.track || null));
+    safeInvoke(onPublicationStateChanged, { userId: resolved.ownerUserId, sharing, baseline, reason });
+  }
+
+  function baselineSharePublications() {
+    for (const participant of room?.remoteParticipants?.values?.() || []) {
+      reportSharePublication(participant, { baseline: true, reason: "share_publication_baseline" });
+    }
+  }
+
   function handleRemoteTrackPublished(publication, participant, {
     triggerReason = "room_track_published",
     callerFunction = "handleRemoteTrackPublished",
@@ -7899,6 +7929,9 @@ export function createServerVoiceScreenshareLayer({
     const uid = remoteParticipant?.ownerUserId || "";
     const publisherIdentity = remoteParticipant?.publisherIdentity || "";
     if (!uid || !publisherIdentity || publisherIdentity === meId) return;
+    reportSharePublication(participant, {
+      publication, baseline: triggerReason !== "room_track_published", reason: triggerReason,
+    });
     for (const record of Array.from(shareRecordsByKey.values())) {
       if (!record.isLocal && record.publisherIdentity === publisherIdentity
         && (record.publisherParticipant !== participant || record.publisherSessionId !== normalizeId(participant.sid || ""))) {
@@ -8215,6 +8248,7 @@ export function createServerVoiceScreenshareLayer({
     const uid = remoteParticipant?.ownerUserId || "";
     const publisherIdentity = remoteParticipant?.publisherIdentity || "";
     if (!uid || !publisherIdentity || publisherIdentity === meId) return;
+    reportSharePublication(participant, { publication, removed: true, reason: triggerReason });
     const recordKey = resolveRemoteShareRecordKey({
       participantIdentity: publisherIdentity,
       publication,
@@ -8277,6 +8311,7 @@ export function createServerVoiceScreenshareLayer({
     if (!remoteViewingActive || String(room?.state || "") !== "connected") return;
     // Initial publications are present in the Room after connect, but the SDK
     // does not forward their TrackPublished events while it is Connecting.
+    baselineSharePublications();
     hydrateExistingRemoteShares();
     reconcileRemoteShares({ triggerReason: "room_connected" });
     emitStateChanged("room_connected", "handleRemoteShareConnected");
@@ -8284,6 +8319,7 @@ export function createServerVoiceScreenshareLayer({
 
   function handleRemoteShareReconnected() {
     if (!remoteViewingActive) return;
+    baselineSharePublications();
     hydrateExistingRemoteShares();
     reconcileRemoteShares({ triggerReason: "room_reconnected" });
     emitStateChanged("room_reconnected", "handleRemoteShareReconnected");
@@ -8367,6 +8403,7 @@ export function createServerVoiceScreenshareLayer({
     room.on(RoomEvent.TrackSubscriptionFailed, handleRemoteShareSubscriptionFailed);
     roomBound = true;
     remoteViewingActive = true;
+    baselineSharePublications();
     hydrateExistingRemoteShares();
     emitStateChanged("room_bound", "bindRoom");
   }
@@ -8462,6 +8499,7 @@ export function createServerVoiceScreenshareLayer({
     remoteRenderStatsTimer = null;
     if (remoteStageRefreshTimer) clearTimeout(remoteStageRefreshTimer);
     remoteStageRefreshTimer = null;
+    remoteStageRefreshDeadline = 0;
     for (const key of remotePresentationTimersByShareKey.keys()) {
       clearRemotePresentationTimer(key);
     }
@@ -8889,6 +8927,7 @@ export function createServerVoiceScreenshareLayer({
     convId = nextId;
     safeInvoke(onConversationChanged, nextId);
     reconcileRemoteShares({ triggerReason: "conversation_retargeted" });
+    baselineSharePublications();
     return true;
   }
 

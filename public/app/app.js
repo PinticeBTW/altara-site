@@ -1,3 +1,13 @@
+import { normalizeUploadedGifFavorite, uploadedGifFavoriteFromAttachment, uploadedGifFavoriteDescriptor } from "./lib/uploadedGifFavorites.js";
+import { createInlineVideoPreviews } from "./lib/inlineVideoPreviews.js";
+import { createMessageSelection, messageSelectionLabels } from "./lib/messageSelection.js";
+import { createMediaLightbox } from "./lib/mediaLightbox.js";
+import { mediaLightboxLabels } from "./lib/mediaLightboxLabels.js";
+import { dmMediaKey, dmMediaDimensions, rememberDmMediaDimensions, createDmMediaPresenter, canonicalMediaContent, reconcileDmTimeline, retainAuthorizedDmMedia } from "./lib/dmMediaPresentation.js";
+import { createDmGifMetadata } from "./lib/dmGifMetadata.js";
+import { isKlipyMediaUrl, normalizeGifPickerMetadata, mergeGifPickerMetadata, isUnavailableGifImage, isUnavailableGifItem, prepareGifPreview } from "./lib/gifPresentation.js";
+import { GifPickerCache, createGifThumbnailViewport } from "./lib/gifPickerCache.js";
+import { createComposerAttachmentMenu } from "./lib/composerAttachmentMenu.js";
 import { normalizeFriendUsername, createFriendRequestTargetResolver, friendRequestErrorKey } from "./lib/friendRequestTarget.js";
 import { serverVoiceMoveDiagnostics, showServerVoiceMoveProof } from "./lib/serverVoiceMoveDiagnostics.js";
 import { createServerVoiceChannelMedia, serverVoiceChannelRoom, serverVoiceMediaUserId } from "./lib/serverVoiceChannelMedia.js";
@@ -137,7 +147,7 @@ import { createPrivateCallAcceptPipelineTracker } from "./lib/privateCallAcceptP
 import { createPrivateCallInboxController } from "./lib/privateCallInbox.js";
 import { createGroupDmCallSessionClient } from "./lib/groupDmCallSession.js";
 import { createGroupDmCallPopoutController } from "./lib/groupDmCallPopout.js";
-import { resolveAvatarPresentationUrl, resolveAssignedDefaultAvatarUrl } from "./defaultAvatarPool.js";
+import { resolveAvatarPresentationUrl, resolveAssignedDefaultAvatarUrl, resolveAvatarImageSource, getDefaultAvatarPresentationUrl, replaceAvatarWithDefault } from "./defaultAvatarPool.js";
 import { createGroupDmRejoinWait } from "./lib/groupDmRejoinReadiness.js";
 import { createGroupDmCallerPresentation, deriveGroupDmJoinPresentation, deriveGroupDmMediaPresentation, computeGroupDmGridLayout, syncGroupDmStageGeometry } from "./lib/groupDmCallPresentation.js";
 import { createPrivateCallDeclineLifecycle } from "./lib/privateCallDeclineLifecycle.js";
@@ -180,6 +190,7 @@ import {
   createServerVoiceOperationLifecycle,
   isServerVoiceLeaveFeedbackCurrent,
 } from "./lib/serverVoiceOperationLifecycle.js";
+import { createCallMediaSoundLifecycle } from "./lib/callMediaSoundLifecycle.js";
 import { createServerVoiceSoundLifecycle } from "./lib/serverVoiceSoundLifecycle.js";
 import {
   ALTARA_SFX_CUE_REGISTRY,
@@ -258,6 +269,7 @@ import {
 import {
   createTrustedAttachmentDeliveryRefreshQueue,
   hydrateTrustedAttachmentRows,
+  hasExpiredTrustedAttachmentDelivery,
   mergeTrustedAttachmentDeliveryRows,
   markTrustedAttachmentDeliveryFromDescriptors,
   persistedTrustedAttachment,
@@ -384,7 +396,7 @@ import {
 } from "./theme/engine.js";
 import { createPresenceSystem } from "./presence.js";
 import { createRelationshipPresenceSystem } from "./lib/relationshipPresence.js";
-import { classifyPresenceState, renderPresenceUI } from "./presence-ui.js";
+import { classifyPresenceState, clearPresenceList, renderPresenceUI } from "./presence-ui.js";
 import { getMyStatus, getStoredMyStatus, setMyStatus } from "./statusstore.js";
 import { createRuntimePerfDiagnostics } from "./lib/runtimePerfDiagnostics.js";
 import { createDmOpenStabilityTracker } from "./lib/dmOpenStability.js";
@@ -829,11 +841,8 @@ try {
           ].join("");
         }
       }
-      const activeNow = queryFirst(["#activeNow", "[data-active-now]", ".activeNow"]);
-      if (activeNow && shouldPatchShellSection(activeNow, "activeNow")) {
-        activeNow.setAttribute("data-immediate-shell", "1");
-        activeNow.innerHTML = '<div class="hint">No one online right now.</div>';
-      }
+      // Active Now is painted by updatePresenceRender after locale/readiness
+      // initialization. The boot watchdog must not overwrite that owned paint.
       const friendsList = queryFirst(["#friendsList"]);
       if (friendsList && isLoadingText(safeText(friendsList))) {
         friendsList.setAttribute("data-immediate-shell", "1");
@@ -2418,7 +2427,23 @@ function messagePerfNow() {
     : Date.now();
 }
 
+const dmTimelineMetricSamples = new WeakMap();
 function getDmOpenTimelineMetrics(container = document.getElementById("dmMessages")) {
+  if (!container) return {};
+  let sample = dmTimelineMetricSamples.get(container);
+  if (!sample) { sample = { metrics: {}, pending: false }; dmTimelineMetricSamples.set(container, sample); }
+  // These fields are diagnostics only. Scroll anchoring/pagination read their
+  // own live geometry; recording a phase must not flush a just-written timeline.
+  if (!sample.pending) {
+    sample.pending = true;
+    requestAnimationFrame(() => {
+      sample.pending = false;
+      if (container.isConnected) sample.metrics = readDmOpenTimelineMetrics(container);
+    });
+  }
+  return sample.metrics;
+}
+function readDmOpenTimelineMetrics(container = document.getElementById("dmMessages")) {
   if (!container) {
     return {
       rowCount: 0,
@@ -2859,7 +2884,7 @@ if (typeof window !== "undefined") {
   if (isAltaraLocalhostDebugContext()) {
     window.__ALTARA_DM_OPEN_DEBUG__ = () => {
       syncDmTimelineScrollDiagnostics();
-      return dmOpenStabilityTracker.snapshot(getDmOpenTimelineMetrics());
+      return dmOpenStabilityTracker.snapshot(readDmOpenTimelineMetrics());
     };
   }
   if (typeof window.__ALTARA_PERF_TRACE_CLICK__ === "undefined") window.__ALTARA_PERF_TRACE_CLICK__ = false;
@@ -7226,7 +7251,7 @@ let privateStageControlDebugState = Object.freeze({
   cameraDisabledReason: "no_private_call_surface",
 });
 
-function readPrivateStageDomSnapshot() {
+function readPrivateStageDomSnapshot({ measureVisibility = true } = {}) {
   const stage = document.getElementById("callStage");
   const controls = stage?.querySelector?.(".callStageControls") || null;
   const timeline = document.getElementById("dmMessages");
@@ -7240,6 +7265,7 @@ function readPrivateStageDomSnapshot() {
   const hangupButton = document.getElementById("btnCallEndStage");
   const readVisibility = (element) => {
     if (!element || !element.isConnected || element.hidden) return false;
+    if (!measureVisibility) return element.style.display !== "none" && element.style.visibility !== "hidden";
     try {
       const style = window.getComputedStyle(element);
       if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") return false;
@@ -7277,7 +7303,7 @@ function readPrivateStageDomSnapshot() {
   };
 }
 
-function getPrivateStageDebugCurrentSnapshot() {
+function getPrivateStageDebugCurrentSnapshot(domSnapshot = null) {
   let runtime = {};
   try {
     runtime = typeof privateStageDebugSnapshotProvider === "function"
@@ -7286,7 +7312,7 @@ function getPrivateStageDebugCurrentSnapshot() {
   } catch (error) {
     runtime = { snapshotError: String(error?.message || error || "snapshot_failed").slice(0, 220) };
   }
-  return { ...runtime, ...readPrivateStageDomSnapshot() };
+  return { ...runtime, ...(domSnapshot || readPrivateStageDomSnapshot()) };
 }
 
 function privateStageDomSignature(snapshot = null) {
@@ -7323,7 +7349,7 @@ function recordPrivateStageTransition({
     privateStageDebugLastDomSnapshot = afterSnapshot;
     return null;
   }
-  const current = getPrivateStageDebugCurrentSnapshot();
+  const current = getPrivateStageDebugCurrentSnapshot(afterSnapshot);
   const entry = Object.freeze({
     sequence: privateStageDebugHistory.length
       ? Number(privateStageDebugHistory[privateStageDebugHistory.length - 1]?.sequence || 0) + 1
@@ -7363,11 +7389,11 @@ function recordPrivateStageTransition({
 }
 
 function mutatePrivateStageDom({ functionName = "unknown", reason = "mutation", mutate = null, details = null } = {}) {
-  const before = { ...readPrivateStageDomSnapshot() };
+  const before = readPrivateStageDomSnapshot({ measureVisibility: false });
   try {
     if (typeof mutate === "function") mutate();
   } finally {
-    const after = { ...readPrivateStageDomSnapshot() };
+    const after = readPrivateStageDomSnapshot({ measureVisibility: false });
     recordPrivateStageTransition({ functionName, reason, before, after, details });
   }
 }
@@ -7388,8 +7414,12 @@ function installPrivateStageDebugObserver() {
   if (!stage || !body) return;
   privateStageDebugLastDomSnapshot = readPrivateStageDomSnapshot();
   privateStageDebugMutationObserver = new MutationObserver((mutations) => {
-    const before = privateStageDebugLastDomSnapshot || readPrivateStageDomSnapshot();
-    const after = readPrivateStageDomSnapshot();
+    const before = privateStageDebugLastDomSnapshot || readPrivateStageDomSnapshot({ measureVisibility: false });
+    // Preserve the live visibility/repair invariant for an active call. Outside
+    // that surface, diagnostic observation must not force layout on every nav.
+    let runtime = {};
+    try { runtime = typeof privateStageDebugSnapshotProvider === "function" ? privateStageDebugSnapshotProvider() : {}; } catch (_) {}
+    const after = readPrivateStageDomSnapshot({ measureVisibility: runtime?.privateSurface === "FULL_CALL_STAGE" });
     if (privateStageDomSignature(before) === privateStageDomSignature(after)) return;
     const targets = mutations.map((mutation) => {
       const target = mutation.target;
@@ -7402,7 +7432,7 @@ function installPrivateStageDebugObserver() {
       after,
       details: { targets },
     });
-    const current = getPrivateStageDebugCurrentSnapshot();
+    const current = getPrivateStageDebugCurrentSnapshot(after);
     const invariantBroken = !!(
       current.privateSurface === "FULL_CALL_STAGE"
       && (!after.stageMounted || !after.stageActuallyVisible || !after.controlsMounted)
@@ -8633,7 +8663,15 @@ function smoothAltaraScrollTo(container, targetTop) {
       altaraSmoothScrollRuntime.delete(container);
       return;
     }
+    const previousTop = container.scrollTop;
     container.scrollTop += distance * 0.34;
+    // Fractional Electron zoom can round the eased step to zero forever.
+    if (container.scrollTop === previousTop) {
+      container.scrollTop = runtime.target;
+      runtime.raf = 0;
+      altaraSmoothScrollRuntime.delete(container);
+      return;
+    }
     runtime.raf = requestAnimationFrame(tick);
   };
   runtime.raf = requestAnimationFrame(tick);
@@ -9238,6 +9276,7 @@ const APP_LANG_LABELS = Object.freeze({
     "hydrate.loading": "Loading…",
     "hydrate.failed": "Couldn't load this section. Try again.",
     "hydrate.retry": "Try again",
+    "dm.media_unavailable": "Media unavailable",
     "hydrate.friends": "FRIENDS",
     "hydrate.no_servers": "No servers yet.",
     "hydrate.no_pinned_dms": "No pinned DMs. Search for a friend to open a conversation.",
@@ -9268,6 +9307,17 @@ const APP_LANG_LABELS = Object.freeze({
     "surface.saving_role_order": "Saving role order...",
     "surface.could_not_verify_the_saved_role_order_try_again": "Could not verify the saved role order. Try again.",
     "surface.role_order_saved": "Role order saved.",
+    "server.roles.loading": "Checking your role permissions...",
+    "server.roles.permission": "You need permission to manage roles in this server.",
+    "server.roles.self": "You cannot change your own roles.",
+    "server.roles.owner": "The server owner's roles cannot be changed here.",
+    "server.roles.protected": "This role or member is managed automatically and cannot be changed here.",
+    "server.roles.highest": "You need an assigned role above the roles you want to manage.",
+    "server.roles.member_hierarchy": "This member's highest role is equal to or above yours.",
+    "server.roles.role_hierarchy": "You can only manage roles below your highest role.",
+    "server.roles.none": "There are no roles you can change for this member.",
+    "server.roles.unavailable": "Role information is unavailable. Try again.",
+    "server.roles.assignable": "Assignable",
     "surface.role_hierarchy_blocks_one_or_more_selected_roles": "Role hierarchy blocks one or more selected roles.",
     "surface.saving_roles": "Saving roles...",
     "surface.saved_the_member_list_will_refresh_again_shortly": "Saved. The member list will refresh again shortly.",
@@ -10507,6 +10557,24 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.server_invite.join": "Join Server",
     "dm.server_invite.open": "Open Server",
     "dm.view_full_profile": "View Full Profile",
+    "gif.search": "Search GIFs",
+    "gif.browse": "Browse GIFs",
+    "gif.trending": "Trending GIFs",
+    "gif.favorites": "Favorites",
+    "gif.saved": "{count} saved",
+    "gif.loading": "Loading GIFs...",
+    "gif.searching": "Searching for \"{query}\"...",
+    "gif.unavailable": "Online GIFs are unavailable. You can still use your favorites and the local collection.",
+    "gif.setup": "Online GIF search is not available yet. You can still use your favorites and the local collection.",
+    "gif.rate": "Too many searches. Wait a moment and try again.",
+    "gif.empty": "No GIFs found for this search.",
+    "gif.no_favorites": "No favorites yet. Select the star to save a GIF.",
+    "gif.no_gifs": "No GIFs available.",
+    "gif.results": "Results",
+    "gif.add_favorite": "Add to favorites",
+    "gif.remove_favorite": "Remove from favorites",
+    "gif.error_send": "Could not send GIF. Try again.",
+    "gif.tip": "Use Tab to navigate and Enter to send",
     "dm.attach": "Attach file",
     "dm.composer_actions": "Message actions",
     "dm.text_color": "Choose text color",
@@ -10700,6 +10768,7 @@ const APP_LANG_LABELS = Object.freeze({
     "hydrate.loading": "A carregar…",
     "hydrate.failed": "Não foi possível carregar esta secção. Tenta novamente.",
     "hydrate.retry": "Tentar novamente",
+    "dm.media_unavailable": "Multimédia indisponível",
     "hydrate.friends": "AMIGOS",
     "hydrate.no_servers": "Ainda não tens servidores.",
     "hydrate.no_pinned_dms": "Sem DMs fixadas. Procura um amigo para abrir uma conversa.",
@@ -10730,6 +10799,17 @@ const APP_LANG_LABELS = Object.freeze({
     "surface.saving_role_order": "A guardar a ordem dos cargos...",
     "surface.could_not_verify_the_saved_role_order_try_again": "Não foi possível verificar a ordem guardada. Tenta novamente.",
     "surface.role_order_saved": "Ordem dos cargos guardada.",
+    "server.roles.loading": "A verificar as tuas permissões de cargos...",
+    "server.roles.permission": "Precisas de permissão para gerir cargos neste servidor.",
+    "server.roles.self": "Não podes alterar os teus próprios cargos.",
+    "server.roles.owner": "Os cargos do dono do servidor não podem ser alterados aqui.",
+    "server.roles.protected": "Este cargo ou membro é gerido automaticamente e não pode ser alterado aqui.",
+    "server.roles.highest": "Precisas de um cargo acima dos cargos que queres gerir.",
+    "server.roles.member_hierarchy": "O cargo mais alto deste membro é igual ou superior ao teu.",
+    "server.roles.role_hierarchy": "Só podes gerir cargos abaixo do teu cargo mais alto.",
+    "server.roles.none": "Não há cargos que possas alterar para este membro.",
+    "server.roles.unavailable": "As informações dos cargos estão indisponíveis. Tenta novamente.",
+    "server.roles.assignable": "Pode ser atribuído",
     "surface.role_hierarchy_blocks_one_or_more_selected_roles": "A hierarquia impede a alteração de um ou mais cargos selecionados.",
     "surface.saving_roles": "A guardar cargos...",
     "surface.saved_the_member_list_will_refresh_again_shortly": "Guardado. A lista de membros será atualizada em breve.",
@@ -12247,6 +12327,24 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.server_invite.join": "Entrar no Server",
     "dm.server_invite.open": "Abrir Server",
     "dm.view_full_profile": "Ver Perfil Completo",
+    "gif.search": "Pesquisar GIFs",
+    "gif.browse": "Explorar GIFs",
+    "gif.trending": "GIFs em destaque",
+    "gif.favorites": "Favoritos",
+    "gif.saved": "{count} guardados",
+    "gif.loading": "A carregar GIFs...",
+    "gif.searching": "A pesquisar \"{query}\"...",
+    "gif.unavailable": "Os GIFs online estão indisponíveis. Podes continuar a usar os favoritos e a coleção local.",
+    "gif.setup": "A pesquisa de GIFs online ainda não está disponível. Podes continuar a usar os favoritos e a coleção local.",
+    "gif.rate": "Demasiadas pesquisas. Aguarda um momento e tenta novamente.",
+    "gif.empty": "Não foram encontrados GIFs para esta pesquisa.",
+    "gif.no_favorites": "Ainda não tens favoritos. Seleciona a estrela para guardar um GIF.",
+    "gif.no_gifs": "Sem GIFs disponíveis.",
+    "gif.results": "Resultados",
+    "gif.add_favorite": "Adicionar aos favoritos",
+    "gif.remove_favorite": "Remover dos favoritos",
+    "gif.error_send": "Não foi possível enviar o GIF. Tenta novamente.",
+    "gif.tip": "Usa Tab para navegar e Enter para enviar",
     "dm.attach": "Anexar ficheiro",
     "dm.composer_actions": "Ações de mensagem",
     "dm.text_color": "Escolher cor do texto selecionado",
@@ -17740,7 +17838,8 @@ async function getDesktopActivityAppCandidates({ force = false, includeSystem = 
   for (const api of apis) {
     try {
       logFocusAppPickerDebug("api called", { api: api.kind, reason });
-      const result = await api.list({ includeSystem, showSystemApps: includeSystem, source: "focus", force });
+      // source/force describe renderer scheduling, not the desktop IPC contract.
+      const result = await api.list({ includeSystem, showSystemApps: includeSystem });
       if (result?.supported === false) unsupported = true;
       const rows = unwrapFocusDesktopAppRows(result);
       rawCount += rows.length;
@@ -23540,10 +23639,10 @@ function syncActiveNowPanelForCall(active = false) {
     el.removeAttribute("aria-hidden");
   };
 
-  if (activeNowEl && !activeNowVisible) activeNowEl.innerHTML = "";
+  if (!activeNowVisible) clearPresenceList(activeNowEl);
   toggleHiddenState(activeNowEl, !activeNowVisible, { withAria: true });
 
-  if (offlineListEl && !activeNowVisible) offlineListEl.innerHTML = "";
+  if (!activeNowVisible) clearPresenceList(offlineListEl);
   toggleHiddenState(offlineListEl, !activeNowVisible, { withAria: true });
 
   if (onlineCountEl) {
@@ -23682,11 +23781,7 @@ applyAppearanceSettings(loadAppearanceSettings());
 bindThemeSystemModeSyncOnce();
 
 /* ========================= GIF CONFIG ========================= */
-const TENOR_API_BASE = "https://g.tenor.com/v1";
-const TENOR_DEFAULT_API_KEY = "LIVDSRZULELA";
-const TENOR_CLIENT_KEY = "altara_chat";
-function getTenorApiKey(){ return (localStorage.getItem("altara_tenor_api_key") || TENOR_DEFAULT_API_KEY).trim(); }
-function setTenorApiKey(key){ localStorage.setItem("altara_tenor_api_key", key); }
+// GIF provider credentials are held only by the authenticated gif-search function.
 
 const GIF_PACK = [
   // fallback pack: links diretos válidos (.gif)
@@ -24263,6 +24358,8 @@ function sanitizeAttachmentPayload(raw) {
     kind,
     spoiler,
   };
+  const gifProvider = raw?.gifProvider ? normalizeGifPickerMetadata(raw.gifProvider) : null;
+  if (gifProvider && kind === "image" && mime === "image/gif") out.gifProvider = gifProvider;
   if (storageFileName) out.storage_file_name = storageFileName.slice(0, 180);
   if (previewUrl && (previewUrl !== url || previewUrl.startsWith("blob:"))) out.previewUrl = previewUrl;
   if (previewSize !== null) out.previewSize = previewSize;
@@ -26177,21 +26274,11 @@ function setAvatar(el, url, userId = "") {
         )
       );
     }
-    if (!resolvedUrl) {
-      ensureMeStatusDot();
-      syncAvatarContainerVisualState(el);
-      queueManagedGifPlaybackSync(el);
-      return;
-    }
   }
-
-  if (!resolvedUrl && currentUrl) {
-    syncAvatarContainerVisualState(el);
-    queueManagedGifPlaybackSync(el);
-    return;
-  }
-  if (resolvedUrl && currentUrl && resolvedUrl === currentUrl) {
-    syncAvatarContainerVisualState(el, { loaded: true });
+  resolvedUrl = resolveAvatarImageSource(resolvedUrl, normalizedUserId);
+  const currentImage = el.querySelector?.("img.profileAvatarMedia, img");
+  if (resolvedUrl && currentImage && (currentImage.dataset.avatarSrc || currentUrl) === resolvedUrl) {
+    syncAvatarContainerVisualState(el, { loaded: currentImage.complete && currentImage.naturalWidth > 0 });
     queueManagedGifPlaybackSync(el);
     return;
   }
@@ -26218,7 +26305,7 @@ function syncAvatarContainerVisualState(containerEl, { loaded = null, failed = n
   if (!(containerEl instanceof HTMLElement)) return;
   const image = containerEl.querySelector?.("img.profileAvatarMedia, img") || null;
   const hasImage = !!(image && String(image.getAttribute("src") || image.currentSrc || "").trim());
-  const isLoaded = loaded === true || (!!hasImage && failed !== true);
+  const isLoaded = loaded === true || (loaded !== false && !!hasImage && failed !== true && image.complete && image.naturalWidth > 0);
   const isFailed = failed === true || (!hasImage && loaded !== true);
   containerEl.classList.toggle("is-loaded", isLoaded);
   containerEl.classList.toggle("avatar-loaded", isLoaded);
@@ -26250,20 +26337,17 @@ function resolveAvatarFallbackInitial(userId = "", fallbackChar = "", alt = "") 
 }
 
 function getAvatarFallbackHtml(userId = "", fallbackChar = "", alt = "", className = "profileAvatarFallback") {
-  const initial = resolveAvatarFallbackInitial(userId, fallbackChar, alt);
-  return `<span class="${escAttr(className)}">${esc(initial)}</span>`;
+  return buildAvatarMediaHtml(null, { userId, fallbackChar, alt });
 }
 
 function rowUser(u, rightHtml = "", userIdParaDot = null, opts = {}) {
   const profileIdForColor = opts.userIdForColor || u?.other_user_id || u?.user_id || u?.id || null;
   const nameColorAttrs = buildUserNameColorAttrs(profileIdForColor, u?.name_color);
-  const avatar = u.avatar_url
-    ? buildAvatarMediaHtml(u.avatar_url, {
+  const avatar = buildAvatarMediaHtml(u.avatar_url, {
       userId: profileIdForColor,
       alt: "avatar",
       fallbackChar: (u.display_name || u.username || "U"),
-    })
-    : (opts.showInitial ? `<span class="socialAvatarInitial" aria-hidden="true">${esc(String(u.display_name || u.username || "?").charAt(0).toUpperCase())}</span>` : "");
+    });
   const dot = userIdParaDot
     ? `<span class="statusDot" data-status-dot="${escAttr(userIdParaDot)}" data-status="offline"></span>`
     : "";
@@ -26410,7 +26494,7 @@ function updateDmHeaderAvatar() {
   host.classList.toggle("dmHeaderAvatar--group", isGroupLike);
   host.setAttribute("aria-label", label ? `${label} avatar` : "Conversation avatar");
   host.title = label || "";
-  host.innerHTML = avatarUrl
+  host.innerHTML = (avatarUrl || !isGroupLike)
     ? buildAvatarMediaHtml(avatarUrl, {
       userId: peerUserId,
       alt: label || "avatar",
@@ -26649,8 +26733,10 @@ function buildAvatarMediaHtml(url, {
   deferAnimatedStorage = false,
   fallbackChar = "",
 } = {}) {
-  const safeUrl = resolveAvatarPresentationUrl(url);
+  const safeUrl = resolveAvatarImageSource(url, userId);
   if (!safeUrl) return "";
+  const fallbackUrl = getDefaultAvatarPresentationUrl(userId, undefined, safeUrl);
+  const fallbackAttrs = ` data-avatar-user-id="${escAttr(userId)}" data-avatar-fallback-src="${escAttr(fallbackUrl)}"`;
   const resolvedCrop = normalizeMediaCropSnapshot(
     crop || resolveUserAvatarCrop(userId, profile),
     "avatar"
@@ -26683,7 +26769,7 @@ function buildAvatarMediaHtml(url, {
     const onErrorAttr = ' onerror="window.__altaraHandleAvatarImageError && window.__altaraHandleAvatarImageError(this)"';
     const onLoadAttr = ' onload="window.__altaraHandleAvatarImageLoad && window.__altaraHandleAvatarImageLoad(this)"';
     const clipLoadedClass = gifInitialSrcAttr ? " is-loaded" : "";
-    return `<span class="profileAvatarMediaClip profileAvatarMediaClip--lazyGif${clipLoadedClass}" data-avatar-fallback="${escAttr(fallbackInitial)}" data-avatar-deferred="${deferAnimatedStorage ? "animated-storage" : "gif-policy"}" data-managed-gif-root="avatar" data-gif-url="${escAttr(safeUrl)}"><img class="profileAvatarMedia"${gifInitialSrcAttr}${gifLiveAttrs} data-media-source="${escAttr(gifContext)}" data-media-load-reason="${escAttr(lazyReason)}" data-media-kind="gif" alt="${escAttr(alt)}"${lazyLoadingAttr}${styleAttr} data-managed-gif-media="1"${managedGifAttrs}${onErrorAttr}${onLoadAttr} /></span>`;
+    return `<span class="profileAvatarMediaClip profileAvatarMediaClip--lazyGif${clipLoadedClass}" data-avatar-fallback="${escAttr(fallbackInitial)}" data-avatar-deferred="${deferAnimatedStorage ? "animated-storage" : "gif-policy"}" data-managed-gif-root="avatar" data-gif-url="${escAttr(safeUrl)}"><img class="profileAvatarMedia"${fallbackAttrs}${gifInitialSrcAttr}${gifLiveAttrs} data-media-source="${escAttr(gifContext)}" data-media-load-reason="${escAttr(lazyReason)}" data-media-kind="gif" alt="${escAttr(alt)}"${lazyLoadingAttr}${styleAttr} data-managed-gif-media="1"${managedGifAttrs}${onErrorAttr}${onLoadAttr} /></span>`;
   }
   const rootAttrs = shouldManageGif
     ? ` data-managed-gif-root="avatar" data-gif-url="${escAttr(safeUrl)}"`
@@ -26692,20 +26778,7 @@ function buildAvatarMediaHtml(url, {
   const managedGifAttrs = shouldManageGif ? buildManagedGifMediaHtmlAttrs() : "";
   const onErrorAttr = ' onerror="window.__altaraHandleAvatarImageError && window.__altaraHandleAvatarImageError(this)"';
   const onLoadAttr = ' onload="window.__altaraHandleAvatarImageLoad && window.__altaraHandleAvatarImageLoad(this)"';
-  return `<span class="profileAvatarMediaClip" data-avatar-fallback="${escAttr(fallbackInitial)}"${rootAttrs}><img class="profileAvatarMedia" src="${esc(safeUrl)}" data-avatar-src="${escAttr(safeUrl)}" alt="${escAttr(alt)}"${loadingAttr}${styleAttr}${mediaAttrs}${managedGifAttrs}${onErrorAttr}${onLoadAttr} /></span>`;
-}
-
-function buildAvatarRetryUrl(url = "", attempt = 1) {
-  const raw = String(url || "").trim();
-  if (!raw || raw.startsWith("data:image/") || raw.startsWith("blob:")) return raw;
-  try {
-    const u = new URL(raw, window.location.href);
-    u.searchParams.set("_altara_avatar_retry", String(attempt));
-    return u.href;
-  } catch (_) {
-    const joiner = raw.includes("?") ? "&" : "?";
-    return `${raw}${joiner}_altara_avatar_retry=${encodeURIComponent(String(attempt))}`;
-  }
+  return `<span class="profileAvatarMediaClip" data-avatar-fallback="${escAttr(fallbackInitial)}"${rootAttrs}><img class="profileAvatarMedia"${fallbackAttrs} src="${esc(safeUrl)}" data-avatar-src="${escAttr(safeUrl)}" alt="${escAttr(alt)}"${loadingAttr}${styleAttr}${mediaAttrs}${managedGifAttrs}${onErrorAttr}${onLoadAttr} /></span>`;
 }
 
 function handleAvatarImageError(imageEl) {
@@ -26735,31 +26808,13 @@ function handleAvatarImageError(imageEl) {
     scheduleManagedGifStillFrameCapture(root, imageEl, liveUrl);
     return;
   }
-  // Group surfaces show the canonical initials fallback during retries as well;
-  // a failed image must never expose the browser's broken-image glyph.
-  if (imageEl.closest('.groupDmJoinCard__avatar, .dmGroupMemberRow__avatar, #callStage.is-group-private-call-ui, #globalCallOverlay[data-incoming-call-type="group"]')) {
-    const failedClip = imageEl.closest(".profileAvatarMediaClip");
-    failedClip?.classList.add("is-error");
-    failedClip?.classList.remove("is-loaded");
-    imageEl.style.display = "none";
-  }
-  const originalUrl = String(imageEl.dataset.avatarSrc || imageEl.getAttribute("src") || "").trim();
-  const attempts = Number.parseInt(String(imageEl.dataset.avatarRetry || "0"), 10) || 0;
-  if (originalUrl && attempts < 2 && !originalUrl.startsWith("data:image/") && !originalUrl.startsWith("blob:")) {
-    const nextAttempt = attempts + 1;
-    imageEl.dataset.avatarRetry = String(nextAttempt);
-    setTimeout(() => {
-      if (!(imageEl instanceof HTMLImageElement) || !imageEl.isConnected) return;
-      imageEl.src = buildAvatarRetryUrl(originalUrl, nextAttempt);
-    }, nextAttempt * 250);
-    return;
-  }
   const clip = imageEl.closest(".profileAvatarMediaClip");
   if (clip) clip.classList.add("is-error");
   if (clip) clip.classList.remove("is-loaded");
-  const container = imageEl.closest("#meAvatar,.avatar,.presenceAvatar,.serverVoiceMember__avatar,.serverMemberRow__avatar,.msg__avatar,.meProfilePopout__avatar,.spatialAudioRoom__avatarMedia,.botSlashCommandPicker__avatar,.desktopInboxItem__avatar");
+  const container = imageEl.closest("#meAvatar,.avatar,.presenceAvatar,.serverVoiceMember__avatar,.serverMemberRow__avatar,.msg__avatar,.dmHeaderAvatar,.dmProfileAvatar,.userCardAvatar,.meProfilePopout__avatar,.spatialAudioRoom__avatarMedia,.botSlashCommandPicker__avatar,.desktopInboxItem__avatar");
   syncAvatarContainerVisualState(container, { failed: true });
   imageEl.style.display = "none";
+  replaceAvatarWithDefault(imageEl);
 }
 
 function handleAvatarImageLoad(imageEl) {
@@ -26768,7 +26823,7 @@ function handleAvatarImageLoad(imageEl) {
   const clip = imageEl.closest(".profileAvatarMediaClip");
   if (clip) clip.classList.remove("is-error");
   if (clip) clip.classList.add("is-loaded");
-  const container = imageEl.closest("#meAvatar,.avatar,.presenceAvatar,.serverVoiceMember__avatar,.serverMemberRow__avatar,.msg__avatar,.meProfilePopout__avatar,.spatialAudioRoom__avatarMedia,.botSlashCommandPicker__avatar,.desktopInboxItem__avatar");
+  const container = imageEl.closest("#meAvatar,.avatar,.presenceAvatar,.serverVoiceMember__avatar,.serverMemberRow__avatar,.msg__avatar,.dmHeaderAvatar,.dmProfileAvatar,.userCardAvatar,.meProfilePopout__avatar,.spatialAudioRoom__avatarMedia,.botSlashCommandPicker__avatar,.desktopInboxItem__avatar");
   syncAvatarContainerVisualState(container, { loaded: true });
   imageEl.style.removeProperty("display");
 }
@@ -35445,6 +35500,9 @@ function setAppLanguage(lang, { persist = true, rerender = true, syncForm = true
   document.documentElement.lang = localeDocumentLanguage(next);
   applyLanguageToStaticUi();
   setSettingsTab(settingsActiveTab || "account");
+  // Locale hydration and later language changes share the snapshot render path,
+  // independently of hidden Widgets/Friends or the optional full UI rerender.
+  schedulePresenceRender("locale");
   if (rerender) {
     renderWidgets();
     renderFriends();
@@ -35963,6 +36021,7 @@ function setSettingsTab(tabId = "account") {
 }
 
 function openProfileOverlay() {
+  if (typeof dmMessageSelection !== "undefined") dmMessageSelection?.reset();
   markPerfStart("settings_open");
   closeActivePopover();
   const p = document.getElementById("profileOverlay");
@@ -42382,6 +42441,7 @@ function dockStageIntoDm(yes, { barInSidebar = false } = {}) {
 }
 
 function setMidMode(mode, options = {}) {
+  if (typeof dmMessageSelection !== "undefined" && mode !== "dm") dmMessageSelection?.reset();
   const dmMain = document.getElementById("dmMain");
   if (!dmMain) return;
   const midPanel = dmMain.closest(".panel.mid");
@@ -46417,6 +46477,14 @@ function hydrateServerVoiceV2MemberMediaState(row = {}, {
       serverId: normalized.serverId,
       channelId: normalized.channelId,
       sessionId: normalized.sessionId,
+    });
+  }
+  if (mediaStateDecision.apply && effective?.hasSelfMuted) {
+    trackAuthoritativeCallMediaState(normalized.conversationId, normalized.userId, {
+      muted: effective.selfMuted,
+      baseline: /snapshot|hydrate|reconcile|reconnect/.test(source) || mediaStateDecision.reason === "replacement_session_fallback"
+        || !!(previous?.conversationId && previous.conversationId !== normalized.conversationId),
+      reason: `ordered_${source}`,
     });
   }
   return { decision: mediaStateDecision, effective };
@@ -51109,6 +51177,8 @@ function buildServerRailIncomingOrbHtml({
 }
 
 function beginMainContentNavigationIntent({ reason = "main-navigation", serverId = "", conversationId = "" } = {}) {
+  dmAttachmentActionsMenu?.close();
+  closeGifModal();
   dmOpenIntentSeq += 1;
   dmShowRequestSeq += 1;
   const navigationVersion = markServerChannelUserNavigation({
@@ -61024,16 +61094,14 @@ function getServerVoiceMemberModerationContext({
     || isActiveServerBotTargetForRoleManagement(sid, targetBotId)
   );
   const targetHasVoiceMembership = !!getServerVoiceV2Member(uid);
-  // Voice Move permits the canonical owner as a target. Other moderation
-  // actions continue using the existing hierarchy/protected-owner decision.
-  const targetIsServerOwner = uid === normId(getCanonicalServerOwnerUserIdSync(sid));
-  const moveTargetEligible = !isSelf && !targetIsActiveBot
-    && (targetIsServerOwner || ability?.canTouchTarget === true);
+  // Movement has its own permission; role hierarchy applies to role management
+  // and other moderation actions, not to moving a human voice participant.
+  const moveTargetEligible = !isSelf && !targetIsActiveBot;
   const dragPermission = resolveServerVoiceDragPermission({
     actorUserId: meId,
     targetUserId: uid,
     actorIsOwner,
-    permissionResolved: actorIsOwner || !!actorFlags,
+    permissionResolved: actorIsOwner || isCurrentServerPermissionSnapshotResolved(sid),
     hasMoveMembersPermission,
     targetEligible: moveTargetEligible,
     targetIsActiveBot,
@@ -61456,6 +61524,28 @@ function getCurrentUserVisibleVoiceChannelId() {
   const row = Array.from(document.querySelectorAll(".server-voice-member-row[data-voice-member-user-id]"))
     .find((el) => normId(el.getAttribute("data-voice-member-user-id") || "") === meId) || null;
   return resolveVoiceMemberSourceChannelId(row);
+}
+
+function getServerVoiceStageMembershipState(conversationId) {
+  const convId = normId(conversationId || "");
+  // Same canonical membership projection used by the header/sidebar; never DOM/media counts.
+  const participantIds = getServerVoiceChannelParticipantIds(convId, {
+    triggerReason: "stage_empty_state", callerFunction: "getServerVoiceStageMembershipState",
+  });
+  let baselineReady = false;
+  if (isCurrentServerVoiceV3Session({ conversationId: convId })) {
+    const snapshot = getServerVoiceTransportSnapshot(convId);
+    baselineReady = snapshot?.connectionState === "connected"
+      && (snapshot?.connected === true || snapshot?.local?.roomConnected === true);
+  } else if (isServerVoiceV2Enabled()) {
+    const serverId = normId(resolveServerVoiceServerIdByConversation(convId) || "");
+    const hydration = getServerVoiceOccupancyHydrationState(serverId);
+    const baseline = serverVoiceOccupancyBaselineGateByServerId.get(serverId)?.getSnapshot?.();
+    baselineReady = hydration.loaded === true && baseline?.baselineReady === true;
+  } else {
+    baselineReady = getServerVoiceControlPlaneOccupancySnapshot(convId, { allowFallback: false }).authoritative === true;
+  }
+  return { participantCount: participantIds.length, empty: baselineReady && participantIds.length === 0 };
 }
 
 function ensureServerVoiceStageEmptyState({
@@ -63185,6 +63275,10 @@ async function switchCurrentUserServerVoiceChannelFromDrag({
   const sid = normId(serverId || currentServerVoiceV2Session?.serverId || "");
   const targetConversationId = getActiveConversationIdForChannel(channelId, sid);
   if (!channelId || !sid || !targetConversationId || !currentServerVoiceV2Session) return false;
+  const moveContext = getServerVoiceMemberModerationContext({
+    userId: state.user?.id, serverId: sid, conversationId: currentServerVoiceV2Session.conversationId,
+  });
+  if (!moveContext?.canMoveSelf) return false;
   setCallStatus("A mudar de canal…", true);
   refreshCallUI();
   const switched = await switchServerVoiceChannelV2({
@@ -63865,11 +63959,59 @@ function isActiveServerBotTargetForRoleManagement(serverId = "", targetUserId = 
   ));
 }
 
-function canCurrentUserManageMemberRoles(serverId = "", targetUserId = "") {
+function getServerMemberRoleActionState(serverId = "", targetUserId = "", roleId = "") {
   const ctx = getServerMemberManagementContext(serverId, targetUserId);
-  if (!ctx.serverId || !ctx.targetUserId || ctx.isSelf || ctx.targetIsOwner) return false;
-  if (isActiveServerBotTargetForRoleManagement(ctx.serverId, ctx.targetUserId)) return false;
-  return !!(ctx.canManageRoles && (ctx.actorIsOwner || ctx.targetBelowActor));
+  const rid = normId(roleId || "");
+  let reason = "";
+  if (!ctx.serverId || !ctx.actorUserId || !ctx.targetUserId) reason = "unavailable";
+  else if (!ctx.actorIsOwner && !isCurrentServerPermissionSnapshotResolved(ctx.serverId)) reason = "loading";
+  else if (!ctx.canManageRoles) reason = "permission";
+  else if (ctx.isSelf) reason = "self";
+  else if (ctx.targetIsOwner) reason = "owner";
+  else if (isActiveServerBotTargetForRoleManagement(ctx.serverId, ctx.targetUserId)) reason = "protected";
+  else if (!ctx.actorIsOwner && !Number.isFinite(ctx.actorRank)) reason = "highest";
+  else if (!ctx.actorIsOwner && !ctx.targetBelowActor) reason = "member_hierarchy";
+  if (!reason && rid) {
+    const role = (serverRoleListByServerId.get(ctx.serverId) || []).find((entry) => normId(entry?.id || "") === rid);
+    if (!role || isVirtualServerRole(role)) reason = "unavailable";
+    else if (isDefaultServerRole(role) || isManagedServerRole(role)
+      || String(role.managed_kind || role.managedKind || "").trim()) reason = "protected";
+    else if (!ctx.actorIsOwner && !(Number.isFinite(getRoleHierarchyRank(role)) && getRoleHierarchyRank(role) > ctx.actorRank)) reason = "role_hierarchy";
+  }
+  return { allowed: !reason, reason, context: ctx };
+}
+
+function getServerRoleActionReasonText(reason = "") {
+  const messages = {
+    loading: ["server.roles.loading", "Checking your role permissions..."],
+    permission: ["server.roles.permission", "You need permission to manage roles in this server."],
+    self: ["server.roles.self", "You cannot change your own roles."],
+    owner: ["server.roles.owner", "The server owner's roles cannot be changed here."],
+    protected: ["server.roles.protected", "This role or member is managed automatically and cannot be changed here."],
+    highest: ["server.roles.highest", "You need an assigned role above the roles you want to manage."],
+    member_hierarchy: ["server.roles.member_hierarchy", "This member's highest role is equal to or above yours."],
+    role_hierarchy: ["server.roles.role_hierarchy", "You can only manage roles below your highest role."],
+    none: ["server.roles.none", "There are no roles you can change for this member."],
+    unavailable: ["server.roles.unavailable", "Role information is unavailable. Try again."],
+  };
+  const message = messages[reason];
+  return message ? t(message[0], message[1]) : "";
+}
+
+function getServerMemberRolesMenuState(serverId = "", targetUserId = "") {
+  const action = getServerMemberRoleActionState(serverId, targetUserId);
+  const roles = serverRoleListByServerId.get(action.context.serverId) || [];
+  const eligibleRoleIds = action.allowed ? roles.filter((role) => (
+    normId(role?.id || "") && getServerMemberRoleActionState(serverId, targetUserId, role.id).allowed
+  )).map((role) => normId(role.id)) : [];
+  const reason = action.reason || (eligibleRoleIds.length ? "" : "none");
+  return { canOpen: !reason, reason: getServerRoleActionReasonText(reason),
+    hasRoles: roles.length > 0, isSelf: action.context.isSelf,
+    canTouchTarget: action.allowed, eligibleRoleIds };
+}
+
+function canCurrentUserManageMemberRoles(serverId = "", targetUserId = "") {
+  return getServerMemberRoleActionState(serverId, targetUserId).allowed;
 }
 
 function canCurrentUserKickServerMember(serverId = "", targetUserId = "") {
@@ -63967,15 +64109,7 @@ function getServerNicknameActionState(serverId = "", targetUserId = "") {
 }
 
 function canCurrentUserAssignServerRoleToMember(serverId = "", targetUserId = "", roleId = "") {
-  const sid = normId(serverId || "");
-  const rid = normId(roleId || "");
-  if (!sid || !rid || !canCurrentUserManageMemberRoles(sid, targetUserId)) return false;
-  const role = (serverRoleListByServerId.get(sid) || []).find((entry) => normId(entry?.id || "") === rid) || null;
-  if (!role || isDefaultServerRole(role) || isManagedServerRole(role) || isVirtualServerRole(role)) return false;
-  const ctx = getServerMemberManagementContext(sid, targetUserId);
-  if (ctx.actorIsOwner) return true;
-  const roleRank = getRoleHierarchyRank(role);
-  return Number.isFinite(ctx.actorRank) && Number.isFinite(roleRank) && roleRank > ctx.actorRank;
+  return !!normId(roleId || "") && getServerMemberRoleActionState(serverId, targetUserId, roleId).allowed;
 }
 
 async function setServerRoleMembershipForServer(serverId, {
@@ -64006,19 +64140,30 @@ async function setServerMemberRolesForServer(serverId, {
   const ids = normalizeUuidArray(roleIds);
   if (!sid || !uid) return { data: null, error: { message: "server_id/user_id invalido" } };
   if (!canCurrentUserManageMemberRoles(sid, uid)) {
-    return { data: null, error: { message: "You don't have permission to manage this member's roles." } };
+    return { data: null, error: { message: getServerRoleActionReasonText(getServerMemberRoleActionState(sid, uid).reason) } };
   }
   const existingRoleIds = new Set(getServerMemberRoleIds(sid, uid));
-  const addedRoleIds = ids.filter((rid) => !existingRoleIds.has(rid));
-  const blockedRole = addedRoleIds.find((rid) => !canCurrentUserAssignServerRoleToMember(sid, uid, rid));
+  const desiredRoleIds = new Set(ids);
+  const changedRoleIds = [...new Set([...existingRoleIds, ...desiredRoleIds])]
+    .filter((rid) => existingRoleIds.has(rid) !== desiredRoleIds.has(rid));
+  const blockedRole = changedRoleIds.find((rid) => !canCurrentUserAssignServerRoleToMember(sid, uid, rid));
   if (blockedRole) {
-    return { data: null, error: { message: "You can only assign roles below your highest role." } };
+    return { data: null, error: { message: getServerRoleActionReasonText(getServerMemberRoleActionState(sid, uid, blockedRole).reason) } };
   }
-  return supabase.rpc("set_server_member_roles_v2", {
+  const result = await supabase.rpc("set_server_member_roles_v2", {
     p_server_id: sid,
     p_target_user_id: uid,
     p_role_ids: ids,
   });
+  if (!result?.error) return result;
+  const code = String(result.error.message || "");
+  const reason = /member_role_hierarchy_blocked/.test(code) ? "member_hierarchy"
+    : /role_hierarchy_blocked/.test(code) ? "role_hierarchy"
+      : /missing_manage_roles|permission_escalation_denied/.test(code) ? "permission"
+        : /self_role_management_denied/.test(code) ? "self"
+          : /target_is_server_owner/.test(code) ? "owner"
+            : /protected_role|everyone_role|active_bot/.test(code) ? "protected" : "unavailable";
+  return { ...result, error: { ...result.error, message: getServerRoleActionReasonText(reason) } };
 }
 
 async function kickServerMemberFromServerV2(serverId, {
@@ -77332,15 +77477,15 @@ function renderServerSettingsMemberRolesModal() {
     ? roles.map((role) => {
         const rid = normId(role?.id || "");
         const checked = currentRoleIds.has(rid);
-        const disabled = !canCurrentUserAssignServerRoleToMember(sid, uid, rid) || serverSettingsMembersMutating;
-        const managed = isManagedServerRole(role);
+        const action = getServerMemberRoleActionState(sid, uid, rid);
+        const disabled = !action.allowed || serverSettingsMembersMutating;
         return `
           <label class="serverSettingsRoleMemberRow">
             <input type="checkbox" data-server-settings-member-role-checkbox="${escAttr(rid)}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} />
             <span class="serverSettingsRoleSwatch" style="--role-color:${escAttr(role.color || SERVER_ROLE_DEFAULT_COLOR)}"></span>
             <span class="serverSettingsRoleMemberText">
               <span class="serverSettingsRoleMemberName">${esc(role.name || t("surface.role", "Role"))}</span>
-              <span class="serverSettingsRoleMemberMeta">${managed ? t("surface.managed_role", "Managed role") : (disabled ? t("surface.above_or_equal_to_your_highest_role", "Above or equal to your highest role") : "Assignable")}</span>
+              <span class="serverSettingsRoleMemberMeta">${esc(getServerRoleActionReasonText(action.reason) || t("server.roles.assignable", "Assignable"))}</span>
             </span>
           </label>
         `;
@@ -84996,7 +85141,7 @@ function sanitizeRightSidebarForContext(context = "server_members") {
       });
     }
     if (activeNowEl) {
-      activeNowEl.innerHTML = "";
+      clearPresenceList(activeNowEl);
       activeNowEl.style.display = "none";
       activeNowEl.setAttribute("aria-hidden", "true");
     }
@@ -85059,12 +85204,12 @@ function setRightSidebarToServerMembers({
   if (activeNowEl) {
     activeNowEl.style.display = showMembersPanel ? "none" : "";
     activeNowEl.setAttribute("aria-hidden", showMembersPanel ? "true" : "false");
-    if (showMembersPanel) activeNowEl.innerHTML = "";
+    if (showMembersPanel) clearPresenceList(activeNowEl);
   }
   if (offlineListEl) {
     offlineListEl.style.display = "none";
     offlineListEl.setAttribute("aria-hidden", "true");
-    if (showMembersPanel) offlineListEl.innerHTML = "";
+    if (showMembersPanel) clearPresenceList(offlineListEl);
   }
   labels.forEach((el) => {
     el.style.display = showMembersPanel ? "none" : "";
@@ -85094,7 +85239,7 @@ function setRightSidebarToServerNoChannelState(serverName = "Server") {
   if (membersList) membersList.replaceChildren();
   [activeNowEl, offlineListEl].forEach((el) => {
     if (!el) return;
-    el.replaceChildren();
+    clearPresenceList(el);
     el.style.display = "none";
     el.setAttribute("aria-hidden", "true");
   });
@@ -90785,7 +90930,7 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
         data-server-member-row-key="${escAttr(uid)}"
       >
         <div class="serverMemberRow__avatar">
-          ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { userId: uid, alt: "avatar", deferAnimatedStorage: true }) : `<span class="groupDmAvatarFallback">${esc(getGroupOrbFallbackChar(displayName, "U"))}</span>`}
+          ${buildAvatarMediaHtml(avatarUrl, { userId: uid, alt: "avatar", fallbackChar: getGroupOrbFallbackChar(displayName, "U"), deferAnimatedStorage: true })}
           <span class="statusDot" data-status-dot="${escAttr(uid)}" data-status="${escAttr(m.presenceStatus || "offline")}"></span>
         </div>
         <div class="serverMemberRow__text">
@@ -93107,6 +93252,8 @@ function bindDmGroupEditModalOnce() {
 }
 
 function renderWidgets() {
+  // Hidden widgets are rebuilt from current state when the Widgets tab activates.
+  if (!isWidgetsViewActive()) return;
   const trace = getRelationshipCurrentTrace();
   const traceLabel = relationshipTracePhaseStart(trace, "renderWidgets");
   try {
@@ -100198,7 +100345,7 @@ async function loadDmList(options = {}) {
       ${typingContextAttrs}
     >
       <div class="avatar">
-        ${avatarUrl ? buildAvatarMediaHtml(avatarUrl, { userId: uid || "", alt: "avatar", deferAnimatedStorage: true }) : ""}
+        ${buildAvatarMediaHtml(avatarUrl, { userId: uid || "", alt: "avatar", deferAnimatedStorage: true })}
         <span class="statusDot" data-status-dot="${escAttr(uid || "")}" data-status="offline"></span>
       </div>
       <div class="dm-text">
@@ -100287,7 +100434,7 @@ async function loadDmList(options = {}) {
     return [
       '<div ' + attrs.join(' ') + '>',
         '<div class="avatar">',
-          (row?.avatarUrl || row?.avatar_url ? buildAvatarMediaHtml(row.avatarUrl || row.avatar_url, { userId: uid || "", alt: "avatar", deferAnimatedStorage: true }) : ''),
+          buildAvatarMediaHtml(row?.avatarUrl || row?.avatar_url, { userId: uid || "", alt: "avatar", deferAnimatedStorage: true }),
           '<span class="statusDot" data-status-dot="' + escAttr(uid || "") + '" data-status="offline"></span>',
         '</div>',
         '<div class="dm-text">',
@@ -103288,6 +103435,8 @@ let dmEmojiShortcodeMenuState = {
   selectedIndex: 0,
   suggestions: [],
 };
+let dmMediaLightbox = null;
+const dmLightboxAuthorizedRows = new Map();
 let dmAttachmentModalBound = false;
 let activeDmAttachmentModalPayload = null;
 let dmDragDropBound = false;
@@ -107144,6 +107293,7 @@ function applyDmComposerCapabilityUi() {
   if (sendBtn) {
     sendBtn.disabled = requestPreviewActive || conversationLocked || (!requestDraftActive && privateTextRequired && ["local_missing", "local_error", "peer_missing", "peer_error"].includes(blockStatus));
   }
+  syncDmAttachmentInputState();
   const currentStatus = document.getElementById("dmComposerInlineStatus");
   if (!currentStatus || currentStatus.dataset.encryptionStatus === "1") {
     const status = setDmComposerInlineStatus(privateTextRequired && blockStatus ? getDirectDmE2eeComposerPlaceholder(blockStatus) : "");
@@ -107873,7 +108023,8 @@ async function hydrateDmRowsForDisplay(rows, { conversationId = "" } = {}) {
     return normalized;
   });
   if (!list.length || !state.user?.id) return list;
-  list = await hydrateTrustedAttachmentRows({ supabase, rows: list });
+  list = (await hydrateTrustedAttachmentRows({ supabase, rows: list }))
+    .map(row => ({ ...row, _attachmentDeliveryResolved: true }));
   const caps = await ensureDmFeatureCaps();
   if (!caps?.e2eeMessages) return list;
   if (!isDirectDmE2eeEnabled()) {
@@ -107956,6 +108107,20 @@ function getAuthoritativeRealtimePlainTextFastPathRow(row = {}, conversationId =
   };
 }
 
+function getAuthoritativeRealtimeMediaFirstPaintRow(row = {}, conversationId = "") {
+  const convId = normId(conversationId);
+  if (!convId || normId(row?.conversation_id) !== convId || !normId(row?.id) || row.deleted_at) return null;
+  if (isEncryptedDmMessageRow(row) || String(row.message_mode || "").toLowerCase() !== "plaintext") return null;
+  if (normalizeTrustedServerEventType(row.trusted_event_type || "")) return null;
+  const context = getKnownIncomingMessageContext(row, { sourceTable: "messages" });
+  if (!context || context.type === "server_channel" || isGroupDmConversationRevoked(convId)) return null;
+  const parsed = safeParseMessageContent(row.content);
+  if (!["gif", "attachment", "attachments"].includes(parsed?.type)) return null;
+  // This row came from the authorized Postgres subscription, not a broadcast.
+  // Its private URLs still require the separate attachment delivery capability.
+  return { ...row, _attachmentDeliveryResolved: false };
+}
+
 function getAuthoritativeRealtimeTrustedSystemRow(row = {}, conversationId = "") {
   const convId = normId(conversationId || row?.conversation_id || row?.conversationId || "");
   if (!convId || normId(row?.conversation_id || row?.conversationId || "") !== convId) return null;
@@ -108032,6 +108197,16 @@ async function handleAuthoritativeRealtimeMessageForActiveConversation(row = {},
     return true;
   }
 
+  const mediaFirstPaint = getAuthoritativeRealtimeMediaFirstPaintRow(row, convId);
+  const mediaOwner = mediaFirstPaint ? captureDmE2eeUiOwner() : null;
+  const mediaOpenToken = activeDmMessageOpenToken;
+  if (mediaFirstPaint && !getMessageById(row.id)) {
+    const inserted = appendMessage(mediaFirstPaint);
+    if (inserted && eventReceivedAt) finishRemoteRealtimeMessageDomTiming(eventReceivedAt);
+  }
+  // Hold the current content identity so an edit/delete/navigation during the
+  // broker request cannot be undone by this late hydration result.
+  const mediaBeforeHydration = mediaFirstPaint ? getMessageById(row.id) : null;
   recordRemoteRealtimeMessagePhase("optional_hydration_start", eventReceivedAt);
   let authoritativeRow = row;
   if (row?.id) {
@@ -108045,11 +108220,22 @@ async function handleAuthoritativeRealtimeMessageForActiveConversation(row = {},
   }
   const [resolvedRow] = await hydrateDmRowsForDisplay([authoritativeRow], { conversationId: convId });
   recordRemoteRealtimeMessagePhase("optional_hydration_finish", eventReceivedAt);
+  if (mediaFirstPaint) {
+    const current = getMessageById(row.id);
+    if (!mediaOwner?.isCurrent() || mediaOpenToken !== activeDmMessageOpenToken
+      || isGroupDmConversationRevoked(convId) || !current || authoritativeRow.deleted_at
+      || current.content !== mediaBeforeHydration?.content) return false;
+  }
   if (convId !== normId(activeDmId || state.activeDm?.conversationId || "")) return false;
   if (!canCurrentUserRenderServerChannelConversation(convId)) return false;
   recordRemoteRealtimeMessagePhase("render_eligible", eventReceivedAt);
   const finalRow = resolvedRow || authoritativeRow;
-  const inserted = appendMessage(finalRow);
+  // The first-paint row is already confirmed. Reconciliation intentionally
+  // ignores repeated confirmed own-message echoes; delivery hydration is not
+  // such an echo and must update its private capabilities and media controls.
+  const inserted = mediaFirstPaint && !isOptimisticDmMessage(getMessageById(row.id))
+    ? appendTimelineMessage(convId, finalRow, { source: "messages", reason: "message-media-hydration", keepBottom: true, render: true, persist: true })?.changed
+    : appendMessage(finalRow);
   if (inserted && eventReceivedAt) finishRemoteRealtimeMessageDomTiming(eventReceivedAt);
   void hydrateMessageAuthorProfiles([finalRow], {
     conversationId: convId,
@@ -108187,6 +108373,7 @@ function createOptimisticOutgoingMessage({
   retryPayload = null,
   previewUrls = [],
   trustedAttachmentDescriptors = [],
+  messageId = "",
 } = {}) {
   const convId = normId(conversationId || "");
   if (!convId || !state.user?.id || !canOptimisticallyRenderConversationMessage(convId)) return null;
@@ -108199,7 +108386,7 @@ function createOptimisticOutgoingMessage({
     name_color: profile.name_color,
   });
 
-  const tempId = createOptimisticMessageIdentity({
+  const tempId = messageId || createOptimisticMessageIdentity({
     conversationId: convId,
     sequence: ++optimisticMessageSeq,
   });
@@ -108322,8 +108509,11 @@ function reconcileOptimisticOutgoingMessage(tempMessageId = "", realMessageInput
     ? rows.findIndex((row) => normId(row?.id || "") === realId)
     : -1;
   if (idx < 0 && existingRealIdx >= 0) {
-    recordDmMessageSendPerfPhase("reconciled", { source });
-    return true;
+    if (!isOptimisticDmMessage(rows[existingRealIdx])) {
+      recordDmMessageSendPerfPhase("reconciled", { source });
+      return true;
+    }
+    idx = existingRealIdx;
   }
   if (idx < 0) idx = findMatchingOptimisticMessageIndex(realMessage, rows);
   if (idx < 0) {
@@ -108618,25 +108808,6 @@ function logMessageInsertDebugSnapshot(phase, snapshot, error = null) {
   console.info("[ALTARA][message-insert-rls]", String(phase || "insert"), details);
 }
 
-const messageSentCueDedupeUntilByKey = new Map();
-function playMessageSentCueOnce(sendId = "", messageId = "") {
-  const key = String(sendId || messageId || "").trim();
-  if (!key) return false;
-  const now = Date.now();
-  const seenUntil = Number(messageSentCueDedupeUntilByKey.get(key) || 0);
-  if (Number.isFinite(seenUntil) && seenUntil > now) return false;
-  messageSentCueDedupeUntilByKey.set(key, now + 120_000);
-  for (const [candidate, until] of messageSentCueDedupeUntilByKey.entries()) {
-    if (!Number.isFinite(until) || until <= now) messageSentCueDedupeUntilByKey.delete(candidate);
-  }
-  void playUiCue("message_sent", {
-    ownerType: "messages",
-    ownerKey: buildAltaraSfxOwnerKey({ ownerType: "messages", operation: key }),
-    reason: "message_insert_accepted",
-  });
-  return true;
-}
-
 async function insertMessageRowAndHydrate(insertPayload, conversationId, { sendId = "", contentLength = null, owner = null } = {}) {
   if (owner) assertDmE2eeUiOwner(owner);
   const convId = normId(conversationId || "");
@@ -108706,13 +108877,14 @@ async function insertMessageRowAndHydrate(insertPayload, conversationId, { sendI
     recordMessageSendState("started", { conversationId: convId, sendId, contentLength: Number(contentLength || 0) || 0, insertStarted: true, pendingCount: getOptimisticSendingMessagesSnapshot().length });
   }
 
-  const debugSnapshot = await altaraWithTimeout(
-    buildSafeMessageInsertDebugSnapshot(insertPayload, convId),
-    2500,
-    "message insert debug snapshot"
-  ).catch((error) => ({ conversationId: convId, snapshotError: String(error?.message || error || "") }));
+  let debugSnapshot = null;
+  // Diagnostics must never delay persistence (and must do no I/O when disabled).
+  if (MESSAGE_INSERT_RLS_DEBUG_ENABLED) {
+    void altaraWithTimeout(buildSafeMessageInsertDebugSnapshot(insertPayload, convId), 2500, "message insert debug snapshot")
+      .then(snapshot => { debugSnapshot = snapshot; logMessageInsertDebugSnapshot("insert_payload", snapshot); })
+      .catch(() => {});
+  }
   if (owner) assertDmE2eeUiOwner(owner);
-  logMessageInsertDebugSnapshot("insert_payload", debugSnapshot);
 
   let insertResult = null;
   try {
@@ -108764,8 +108936,6 @@ async function insertMessageRowAndHydrate(insertPayload, conversationId, { sendI
     });
     return { row: null, error };
   }
-
-  playMessageSentCueOnce(sendId, data?.id || "");
 
   try {
     const [resolvedRow] = await altaraWithTimeout(
@@ -108833,17 +109003,17 @@ async function retryFailedOptimisticMessage(messageId) {
     return;
   }
 
-  removeMessageFromCacheAndUi(mid);
-
   if (retry.kind === "gif") {
-    await sendGifMessage(retry.gifUrl || "", {
-      conversationId: retry.conversationId || activeDmId,
-      replyToId: retry.replyToId || null,
-      preview: retry.preview || "",
-      title: retry.title || "",
-    });
+    const resumed = resumeFailedOptimisticMessage(mid, retry.conversationId);
+    if (!resumed) return;
+    await sendGifMessage(retry.gifProvider.url, {
+      ...retry.gifProvider, conversationId: retry.conversationId,
+      replyToId: retry.replyToId, optimisticMessageId: mid,
+    }).catch(() => {}); // The retained row presents the localized failure/retry state.
     return;
   }
+
+  removeMessageFromCacheAndUi(mid);
 
   if (retry.kind === "attachment_batch") {
     const attachBtn = document.getElementById("btnAttach") || null;
@@ -109351,6 +109521,8 @@ function restoreDmScrollAnchor(container, anchor, reason = "anchor_restore") {
     const rect = node.getBoundingClientRect();
     const delta = (rect.top - containerRect.top) - Number(anchor.offset || 0);
     if (Number.isFinite(delta) && Math.abs(delta) > 0.5) {
+      // A hydration/prepend anchor supersedes a wheel target in the old layout.
+      cancelAltaraSmoothScroll(container);
       container.scrollTop = Math.max(0, Number(container.scrollTop || 0) + delta);
       dmTimelineScrollMode.noteProgrammaticScroll();
       dmOpenStabilityTracker.noteProgrammaticScroll(reason, getDmOpenTimelineMetrics(container));
@@ -110274,6 +110446,7 @@ function cloneMessageForConversationCache(row = {}, { persistent = false } = {})
     delete next._clientMessageId;
     delete next._optimisticRetry;
     delete next._optimisticPreviewUrls;
+    delete next._attachmentDeliveryResolved;
   }
   return next;
 }
@@ -110675,6 +110848,25 @@ function mergeConversationMessageRows(existingRows = [], freshRows = [], { prese
   });
   return sortConversationMessagesAsc(Array.from(byId.values()));
 }
+function mergeConcurrentDmHistory(currentRows, freshRows, baselineRows = null) {
+  const merged = mergeConversationMessageRows(currentRows, freshRows, { preserveOptimistic: true });
+  if (!baselineRows) return merged;
+  const key = row => normId(row?.id);
+  const stamp = row => [canonicalMediaContent(persistedTrustedMessageContent(row.content)),
+    row.updated_at || row.edited_at || "", row.deleted_at || "", !!row.is_pinned].join("|");
+  const baseline = new Map(baselineRows.map(row => [key(row), row]));
+  const current = new Map(currentRows.map(row => [key(row), row]));
+  const fresh = new Map(freshRows.map(row => [key(row), row]));
+  const result = new Map(merged.map(row => [key(row), row]));
+  for (const [id, row] of current) {
+    const previous = baseline.get(id), incoming = fresh.get(id);
+    if (isOptimisticDmMessage(row) && incoming && !isOptimisticDmMessage(incoming)) continue;
+    if ((!previous || stamp(row) !== stamp(previous)) && (!incoming || stamp(row) !== stamp(incoming))) result.set(id, row);
+  }
+  // A deletion observed while the request was in flight also wins over its snapshot.
+  for (const id of baseline.keys()) if (!current.has(id)) result.delete(id);
+  return sortConversationMessagesAsc([...result.values()]);
+}
 function upsertConversationMessageCacheRow(conversationId = "", row = null, { persist = true, source = "row-upsert" } = {}) {
   const convId = getMessageCacheConversationId(conversationId || row?.conversation_id || "");
   if (!convId || !row || typeof row !== "object") return null;
@@ -110706,11 +110898,31 @@ function removeConversationMessageCacheRow(conversationId = "", messageId = "", 
 }
 
 
+let dmAppliedOpeningSnapshot = null;
 function applyConversationMessageCacheEntry(conversationId = "", entry = null, { source = "cache", render = true, keepBottom = false } = {}) {
   const convId = getMessageCacheConversationId(conversationId);
   if (!convId || !entry || !Array.isArray(entry.messages) || !entry.messages.length) return false;
   if (normId(activeDmId || state.activeDm?.conversationId || "") !== convId) return false;
   if (!canCurrentUserRenderServerChannelConversation(convId)) return false;
+  const box = document.getElementById("dmMessages");
+  const last = dmAppliedOpeningSnapshot;
+  // A bounded recent-message cache may contain fewer rows than the current
+  // authoritative snapshot. Reapplying that subset must not shrink the timeline.
+  if (state.activeDm?.kind === "dm" && dmLastRenderedMessagesConversationId === convId
+    && box?.querySelector("[data-msg-id]") && dmMessagesCache.length > entry.messages.length) {
+    const currentById = new Map(dmMessagesCache.map(row => [normId(row?.id), row]));
+    if (entry.messages.every(row => {
+      const current = currentById.get(normId(row?.id));
+      return current && canonicalMediaContent(persistedTrustedMessageContent(current.content))
+        === canonicalMediaContent(persistedTrustedMessageContent(row.content));
+    })) return true;
+  }
+  // Only coalesce the identical private-DM opening snapshot. New entries, renders,
+  // navigation generations and server permission/history decisions still execute.
+  if (render && !keepBottom && state.activeDm?.kind === "dm"
+    && last?.entry === entry && last.token === activeDmMessageOpenToken
+    && last.rows === dmMessagesCache && last.box === box && box?.firstChild === last.firstChild
+    && dmLastRenderedMessagesConversationId === convId) return true;
   dmMessagesCache = normalizeConversationMessageRowsForCache(
     filterRowsForServerMessageHistory(convId, entry.messages),
     {
@@ -110729,6 +110941,7 @@ function applyConversationMessageCacheEntry(conversationId = "", entry = null, {
     recordDmMessagePerfPhase("snapshot", activeDmMessageOpenToken, { visibleMessageCount: dmMessagesCache.length });
     recordDmMessagePerfPhase("timeline", activeDmMessageOpenToken, { visibleMessageCount: dmMessagesCache.length });
     markPerfEnd("dm-open-cache-render", { conversationId: convId, source, count: dmMessagesCache.length });
+    dmAppliedOpeningSnapshot = { entry, token: activeDmMessageOpenToken, rows: dmMessagesCache, box, firstChild: box?.firstChild };
   }
   return true;
 }
@@ -110756,18 +110969,21 @@ async function tryRenderPersistentCachedConversationMessages(conversationId = ""
     void deletePersistentConversationMessageCache(convId).catch(() => false);
     return false;
   }
+  if (getConversationMessageMemoryCache(convId)?.messages?.length) {
+    return tryRenderMemoryCachedConversationMessages(convId, { source: `${source}-newer-memory` });
+  }
   if (!entry?.messages?.length) {
     markPerfEnd("dm-open-cache-render", { conversationId: convId, source, count: 0 });
     return false;
   }
-  setConversationMessageMemoryCache(convId, entry.messages, {
+  const memoryEntry = setConversationMessageMemoryCache(convId, entry.messages, {
     fetchedAt: entry.fetchedAt,
     hasMoreBefore: entry.hasMoreBefore,
     lastMessageAt: entry.lastMessageAt,
     newestMessageId: entry.newestMessageId,
     source,
   });
-  const applied = applyConversationMessageCacheEntry(convId, entry, { source, render: true, keepBottom: false });
+  const applied = applyConversationMessageCacheEntry(convId, memoryEntry, { source, render: true, keepBottom: false });
   if (!applied) markPerfEnd("dm-open-cache-render", { conversationId: convId, source, stale: true, count: entry.messages.length });
   return applied;
 }
@@ -110796,7 +111012,10 @@ function getAuthorizedFirstPaintRows(rows = []) {
       continue;
     }
     const parsed = safeParseMessageContent(row.content);
-    if (parsed?.type === "text" || isParsedSystemChipMessage(parsed)) projected.push(row);
+    // Rows are already authorized by the message query. Attachment delivery is a
+    // separate capability: paint its inert container now, never drop its row.
+    if (parsed?.type === "text" || isParsedSystemChipMessage(parsed)
+      || parsed?.type === "gif" || parsed?.type === "attachment" || parsed?.type === "attachments") projected.push(row);
   }
   return projected;
 }
@@ -110804,7 +111023,7 @@ function getAuthorizedFirstPaintRows(rows = []) {
 function renderAuthorizedPlainTextRowsBeforeMediaHydration(
   conversationId = "",
   rows = [],
-  { requestGeneration = 0, reason = "fresh" } = {}
+  { requestGeneration = 0, reason = "fresh", baselineRows = null } = {}
 ) {
   const convId = getMessageCacheConversationId(conversationId);
   const generation = Number(requestGeneration || 0);
@@ -110814,7 +111033,14 @@ function renderAuthorizedPlainTextRowsBeforeMediaHydration(
   if (Number(activeToken.generation || 0) !== generation || !isCurrentDmMessageOpenToken(activeToken)) return false;
   if (isGroupDmConversationRevoked(convId) || getServerMessageHistoryContext(convId)) return false;
 
-  const textRows = getAuthorizedFirstPaintRows(rows);
+  const cachedById = new Map(dmMessagesCache.map(row => [normId(row?.id), row]));
+  const textRows = getAuthorizedFirstPaintRows(rows).map(row => {
+    const cached = cachedById.get(normId(row?.id));
+    // Preserve an unchanged row's delivery grant during revalidation. The fresh
+    // broker response still replaces it (including a revoked/omitted grant).
+    return cached && canonicalMediaContent(persistedTrustedMessageContent(cached.content)) === canonicalMediaContent(persistedTrustedMessageContent(row.content))
+      ? { ...cached, ...row, content: cached.content } : row;
+  });
   if (!textRows.length) return false;
   const systemRowCount = textRows.reduce((count, row) => (
     count + (row?._displayProjection?.trusted === true ? 1 : 0)
@@ -110831,7 +111057,7 @@ function renderAuthorizedPlainTextRowsBeforeMediaHydration(
       return !!messageId && renderedStampByMessageId.get(messageId) === getDmMessageRenderStamp(row);
     })
   );
-  dmMessagesCache = mergeConversationMessageRows(dmMessagesCache, textRows, { preserveOptimistic: true });
+  dmMessagesCache = mergeConcurrentDmHistory(dmMessagesCache, textRows, baselineRows);
   dmMessageIds = new Set(dmMessagesCache.map((row) => normId(row?.id || "")).filter(Boolean));
   cacheMessageAuthorProfiles(dmMessagesCache);
   refreshDmHistoryCursorFromCache();
@@ -110845,6 +111071,45 @@ function renderAuthorizedPlainTextRowsBeforeMediaHydration(
   recordDmOpenTimelinePhase("first_text_rows_inserted", { hydrationCount: textRows.length });
   recordDmMessagePerfPhase("timeline", activeToken, { visibleMessageCount: dmMessagesCache.length });
   return true;
+}
+
+async function hydrateDmHistoryRowsProgressively(rows, { conversationId, requestGeneration = 0 } = {}) {
+  // Fresh private history arrives newest first. Do not make the visible uploads
+  // wait for every older attachment in a large broker request.
+  if (!requestGeneration || state.activeDm?.kind !== "dm"
+    || rows.some(isEncryptedDmMessageRow)) return hydrateDmRowsForDisplay(rows, { conversationId });
+  const token = getCurrentDmMessageOpenToken(conversationId, requestGeneration);
+  if (!token) return hydrateDmRowsForDisplay(rows, { conversationId });
+  const output = new Array(rows.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < rows.length) {
+      const start = cursor; cursor += 8;
+      const originals = rows.slice(start, start + 8);
+      const hydrated = await hydrateDmRowsForDisplay(originals, { conversationId });
+      hydrated.forEach((row, index) => { output[start + index] = row; });
+      if (!isCurrentDmMessageOpenToken(token)
+        || normId(activeDmId) !== normId(conversationId)
+        || !canCurrentUserRenderServerChannelConversation(conversationId)) continue;
+      const byId = new Map(originals.map(row => [normId(row.id), row]));
+      const current = dmMessagesCache.filter(row => {
+        const original = byId.get(normId(row.id));
+        return original && !isOptimisticDmMessage(row)
+          && canonicalMediaContent(persistedTrustedMessageContent(row.content))
+            === canonicalMediaContent(persistedTrustedMessageContent(original.content));
+      });
+      // Merge only delivery provenance/content into the still-current rows.
+      // Navigated, edited, removed or newly sent rows keep their current owner.
+      const resolved = hydrated.map(row => ({ ...row, _attachmentDeliveryResolved: true }));
+      const ids = new Set(current.map(row => normId(row.id)));
+      dmMessagesCache = mergeTrustedAttachmentDeliveryRows(dmMessagesCache, current, resolved)
+        .map(row => ids.has(normId(row.id)) ? { ...row, _attachmentDeliveryResolved: true } : row);
+      updateActiveConversationMessageCache({ persist: false, source: "attachment-batch-ready" });
+      renderMessagesFromCache({ keepBottom: false, reason: "attachment-batch-ready", force: true });
+    }
+  };
+  await Promise.all([worker(), worker()]);
+  return output;
 }
 
 async function loadFreshConversationMessagesForCache(conversationId = "", {
@@ -110917,6 +111182,9 @@ async function loadFreshConversationMessagesForCache(conversationId = "", {
       return { ok: false, denied: true, rows: [], hasMoreBefore: false, error: null };
     }
 
+    const baselineRows = getConversationMessageCacheKind(convId) === "dm"
+      ? (normId(activeDmId) === convId ? dmMessagesCache : getConversationMessageMemoryCache(convId)?.messages || []).slice()
+      : null;
     const { data, error } = await runDmMessageSelectWithSchemaFallback((selectColumns) => {
       let query = supabase
         .from("messages")
@@ -110995,6 +111263,7 @@ async function loadFreshConversationMessagesForCache(conversationId = "", {
     renderAuthorizedPlainTextRowsBeforeMediaHydration(convId, authoritativeRows, {
       requestGeneration,
       reason,
+      baselineRows,
     });
     const rowsForHydration = Array.isArray(data) ? data : [];
     recordDmOpenTimelinePhase("attachment_resolution_started", {
@@ -111003,7 +111272,9 @@ async function loadFreshConversationMessagesForCache(conversationId = "", {
     });
     let hydratedRows;
     try {
-      hydratedRows = await hydrateDmRowsForDisplay(rowsForHydration, { conversationId: convId });
+      hydratedRows = await hydrateDmHistoryRowsProgressively(rowsForHydration, {
+        conversationId: convId, requestGeneration,
+      });
     } finally {
       recordDmOpenTimelinePhase("attachment_resolution_finished", {
         hydrationCount: rowsForHydration.length,
@@ -111023,7 +111294,7 @@ async function loadFreshConversationMessagesForCache(conversationId = "", {
     const existingCacheRows = getConversationMessageMemoryCache(convId)?.messages || [];
     const rowsForCache = filterRowsForServerMessageHistory(
       convId,
-      mergeConversationMessageRows(existingCacheRows, rows, { preserveOptimistic: true })
+      mergeConcurrentDmHistory(existingCacheRows, rows, baselineRows)
     );
     updateConversationMessageCacheFromRows(convId, rowsForCache, {
       hasMoreBefore,
@@ -111050,6 +111321,7 @@ async function loadFreshConversationMessagesForCache(conversationId = "", {
       rows,
       hasMoreBefore,
       historyGeneration,
+      baselineRows,
       error: null,
     };
   });
@@ -111589,6 +111861,7 @@ function queueManagedGifPlaybackSync(root = document) {
 
 function getPotentialGifImageLiveUrl(img) {
   if (!(img instanceof HTMLImageElement)) return "";
+  if (img.dataset.avatarFallbackApplied === "1") return "";
   if (
     shouldBlockAutomaticChatMediaImageLoad(img)
     && img.dataset.mediaLoaded !== "1"
@@ -112674,7 +112947,7 @@ function bindLazyMediaImages(root = document) {
 
   const observer = getLazyMediaImageObserver();
   images.forEach((img) => {
-    if (!(img instanceof HTMLImageElement)) return;
+    if (!(img instanceof HTMLImageElement) || img.closest("[data-dm-progressive]")) return;
     img.loading = "lazy";
     img.decoding = "async";
     const rawSrc = String(img.dataset?.mediaSrc || img.getAttribute("data-media-src") || "").trim();
@@ -112892,7 +113165,7 @@ function cacheManagedGifStillFrame(liveUrl = "", stillFrame = "", { persist = fa
 
 function buildManagedGifStaticUrlCandidates(liveUrl = "") {
   const raw = String(liveUrl || "").trim();
-  if (!raw || !isGifLikeUrl(raw)) return [];
+  if (!raw || !isGifLikeUrl(raw) || isKlipyMediaUrl(raw)) return [];
   const out = [];
   const push = (value = "") => {
     const next = String(value || "").trim();
@@ -113139,6 +113412,7 @@ function resolveManagedGifPausedSrc(root, img) {
 }
 
 function shouldPlayManagedGif(root) {
+  if (dmMediaLightbox?.isOpen && root?.closest?.("#dmMessages")) return false;
   if (!(root instanceof HTMLElement)) return true;
   if (!shouldApplyManagedGifPerformanceRules(root)) return true;
   const img = getManagedGifMediaElement(root);
@@ -113300,6 +113574,7 @@ function bindGifPolicyInteractionLoaders(root = document) {
 }
 
 function syncAllMessageGifPlaybackStates(root = document) {
+  dmMediaPresenter.sync();
   bindGifPolicyInteractionLoaders(root);
   bindLazyMediaImages(root);
   syncManagedGifBackgrounds(root);
@@ -113390,6 +113665,8 @@ function bindManagedGifPlaybackObserverOnce() {
 
 function bindDmGifAutoscroll(container) {
   if (!container) return;
+  dmMediaPresenter.bind(container);
+  bindDmPendingMediaRetry(container);
   bindLazyMediaImages(container);
   bindChatMediaLayoutAndFallbacks(container);
   const onMediaReady = (mediaEl) => {
@@ -113476,12 +113753,32 @@ function formatVideoTimeLabel(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function bindDmVideoPlayerUi(container) {
+let inlineVideoPreviews = null;
+function bindInlineVideoPreviews(container) {
+  if (typeof IntersectionObserver === "undefined") return;
+  inlineVideoPreviews ||= createInlineVideoPreviews({
+    authorize: video => {
+      if (!video.closest("#dmMessages") || video.dataset.mediaSource !== "chat-message"
+        || getServerMessageHistoryContext(activeDmId)
+        || video.closest(".is-spoiler:not(.is-revealed)")) return null;
+      return readAttachmentFromNode(video);
+    },
+    record: (video, url) => recordMediaEgressLoad(url, {
+      element: video, source: "chat-message", reason: "visible-video-metadata", automatic: true, kind: "src",
+    }),
+  });
+  inlineVideoPreviews.bind(container);
+}
+
+function bindDmVideoPlayerUi(container, { signal = null, lightboxLabels = null } = {}) {
+  const listen = (el, event, fn) => el.addEventListener(event, fn, signal ? { signal } : undefined);
   if (!container) return;
+  const labels = lightboxLabels || mediaLightboxLabels(typeof appLanguage === "string" ? appLanguage : "en");
   container.querySelectorAll("[data-video-player]").forEach((player) => {
     if (player.dataset.videoUiBound === "1") return;
     const video = player.querySelector("video.msg__attachmentVideo");
     const playBtn = player.querySelector("[data-video-play]");
+    const startBtn = player.querySelector("[data-video-start]");
     const muteBtn = player.querySelector("[data-video-mute]");
     const fsBtn = player.querySelector("[data-video-fullscreen]");
     const seek = player.querySelector("[data-video-seek]");
@@ -113499,18 +113796,20 @@ function bindDmVideoPlayerUi(container) {
 
     const updatePlay = () => {
       const paused = video.paused || video.ended;
-      playBtn.textContent = paused ? UI_GLYPHS.play : UI_GLYPHS.pause;
-      playBtn.setAttribute("aria-label", paused ? "Play" : "Pause");
-      playBtn.setAttribute("title", paused ? "Play" : "Pause");
+      playBtn.innerHTML = paused ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>';
+      player.classList.toggle("is-playing", !paused);
+      playBtn.setAttribute("aria-label", paused ? (labels?.play || "Play") : (labels?.pause || "Pause"));
+      playBtn.setAttribute("title", paused ? (labels?.play || "Play") : (labels?.pause || "Pause"));
     };
 
     const updateVolume = () => {
       const muted = !!video.muted || Number(video.volume || 0) <= 0.001;
       const volPct = muted ? 0 : Math.round(Math.max(0, Math.min(1, Number(video.volume || 0))) * 100);
       if (Number(vol.value) !== volPct) vol.value = String(volPct);
-      muteBtn.textContent = muted ? UI_GLYPHS.volumeOff : UI_GLYPHS.volumeOn;
-      muteBtn.setAttribute("aria-label", muted ? "Unmute" : "Mute");
-      muteBtn.setAttribute("title", muted ? "Unmute" : "Mute");
+      muteBtn.innerHTML = callIconSvg(muted ? "volumeOff" : "volume");
+
+      muteBtn.setAttribute("aria-label", muted ? (labels?.unmute || "Unmute") : (labels?.mute || "Mute"));
+      muteBtn.setAttribute("title", muted ? (labels?.unmute || "Unmute") : (labels?.mute || "Mute"));
     };
 
     const updateTimeline = () => {
@@ -113522,7 +113821,7 @@ function bindDmVideoPlayerUi(container) {
       const nextSeek = Math.round(ratio * 1000);
       if (Number(seek.value) !== nextSeek) seek.value = String(nextSeek);
       currentEl.textContent = formatVideoTimeLabel(safeCur);
-      durationEl.textContent = formatVideoTimeLabel(safeDur);
+      durationEl.textContent = safeDur ? formatVideoTimeLabel(safeDur) : "—:—";
       remainEl.textContent = `-${formatVideoTimeLabel(Math.max(0, safeDur - safeCur))}`;
     };
 
@@ -113533,9 +113832,10 @@ function bindDmVideoPlayerUi(container) {
 
     const updateFullscreenBtn = () => {
       const on = isPlayerFullscreen();
-      fsBtn.textContent = on ? "?" : "?";
-      fsBtn.setAttribute("aria-label", on ? "Sair fullscreen" : "Fullscreen");
-      fsBtn.setAttribute("title", on ? "Sair fullscreen" : "Fullscreen");
+      fsBtn.innerHTML = callIconSvg("fullscreen"); fsBtn.classList.toggle("is-fullscreen", on);
+
+      fsBtn.setAttribute("aria-label", on ? (labels?.exitFullscreen || "Sair fullscreen") : (labels?.fullscreen || "Fullscreen"));
+      fsBtn.setAttribute("title", on ? (labels?.exitFullscreen || "Sair fullscreen") : (labels?.fullscreen || "Fullscreen"));
     };
 
     const requestFullscreenFrom = async (el) => {
@@ -113567,6 +113867,7 @@ function bindDmVideoPlayerUi(container) {
       clearTimeout(volHideTimer);
       volHideTimer = null;
     };
+    signal?.addEventListener("abort", clearVolHideTimer, { once: true });
     const openVolPopup = () => {
       if (!volWrap) return;
       clearVolHideTimer();
@@ -113581,18 +113882,24 @@ function bindDmVideoPlayerUi(container) {
       }, delay);
     };
     if (volWrap) {
-      volWrap.addEventListener("pointerenter", openVolPopup);
-      volWrap.addEventListener("pointerleave", () => closeVolPopupSoon(320));
-      volWrap.addEventListener("focusin", openVolPopup);
-      volWrap.addEventListener("focusout", () => {
+      listen(volWrap, "pointerenter", openVolPopup);
+      listen(volWrap, "pointerleave", () => closeVolPopupSoon(320));
+      listen(volWrap, "focusin", openVolPopup);
+      listen(volWrap, "focusout", () => {
         setTimeout(() => {
-          if (!volWrap.contains(document.activeElement)) closeVolPopupSoon(220);
+          if (!signal?.aborted && !volWrap.contains(document.activeElement)) closeVolPopupSoon(220);
         }, 0);
       });
     }
 
     const toggleVideoPlayback = async () => {
       if (video.paused || video.ended) {
+        if (!lightboxLabels && video.error) {
+          let entry = getDmLightboxItems().find(item => item.host.contains(video));
+          if (entry?.resolve) entry = await entry.resolve(new AbortController().signal);
+          if (!video.isConnected || !entry?.url) return;
+          video.removeAttribute("src"); video.dataset.mediaSrc = entry.url;
+        }
         if (!ensureDeferredMediaSrc(video)) return;
         try { await video.play(); } catch (_) {}
       } else {
@@ -113600,20 +113907,28 @@ function bindDmVideoPlayerUi(container) {
       }
     };
 
-    playBtn.addEventListener("click", async (e) => {
+    if (startBtn) {
+      startBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>';
+      startBtn.setAttribute("aria-label", labels.play); startBtn.title = labels.play;
+      listen(startBtn, "click", async e => { e.preventDefault(); e.stopPropagation(); await toggleVideoPlayback(); });
+    }
+    seek.setAttribute("aria-label", labels.seek); vol.setAttribute("aria-label", labels.volume);
+
+    listen(playBtn, "click", async (e) => {
       e.preventDefault();
       e.stopPropagation();
       await toggleVideoPlayback();
     });
 
-    video.addEventListener("click", async (e) => {
+    listen(video, "click", async (e) => {
       if (e?.target !== video) return;
       e.preventDefault();
       e.stopPropagation();
+      if (!lightboxLabels && !isPlayerFullscreen() && openDmMediaLightboxFromNode(video)) return;
       await toggleVideoPlayback();
     });
 
-    muteBtn.addEventListener("click", (e) => {
+    listen(muteBtn, "click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       openVolPopup();
@@ -113626,18 +113941,18 @@ function bindDmVideoPlayerUi(container) {
       updateVolume();
     });
 
-    seek.addEventListener("input", () => {
+    listen(seek, "input", () => {
       const dur = Number(video.duration);
       if (!Number.isFinite(dur) || dur <= 0) return;
       const ratio = Math.max(0, Math.min(1, Number(seek.value || 0) / 1000));
       video.currentTime = dur * ratio;
       updateTimeline();
     });
-    seek.addEventListener("pointerdown", (e) => {
+    listen(seek, "pointerdown", (e) => {
       e.stopPropagation();
     });
 
-    vol.addEventListener("input", (e) => {
+    listen(vol, "input", (e) => {
       if (e) e.stopPropagation();
       openVolPopup();
       const next = Math.max(0, Math.min(1, Number(vol.value || 0) / 100));
@@ -113646,12 +113961,12 @@ function bindDmVideoPlayerUi(container) {
       updateVolume();
     });
 
-    vol.addEventListener("pointerdown", (e) => {
+    listen(vol, "pointerdown", (e) => {
       e.stopPropagation();
       openVolPopup();
     });
 
-    fsBtn.addEventListener("click", async (e) => {
+    listen(fsBtn, "click", async (e) => {
       e.preventDefault();
       e.stopPropagation();
       const isFs = isPlayerFullscreen();
@@ -113682,23 +113997,24 @@ function bindDmVideoPlayerUi(container) {
       updateFullscreenBtn();
     });
 
-    video.addEventListener("loadedmetadata", updateTimeline);
-    video.addEventListener("durationchange", updateTimeline);
-    video.addEventListener("timeupdate", updateTimeline);
-    video.addEventListener("play", updatePlay);
-    video.addEventListener("pause", updatePlay);
-    video.addEventListener("ended", updatePlay);
-    video.addEventListener("volumechange", updateVolume);
-    video.addEventListener("emptied", updateTimeline);
-    player.addEventListener("fullscreenchange", updateFullscreenBtn);
-    player.addEventListener("webkitfullscreenchange", updateFullscreenBtn);
-    player.addEventListener("msfullscreenchange", updateFullscreenBtn);
+    listen(video, "loadedmetadata", updateTimeline);
+    listen(video, "durationchange", updateTimeline);
+    listen(video, "timeupdate", updateTimeline);
+    listen(video, "play", updatePlay);
+    listen(video, "pause", updatePlay);
+    listen(video, "ended", updatePlay);
+    listen(video, "volumechange", updateVolume);
+    listen(video, "emptied", updateTimeline);
+    listen(player, "fullscreenchange", updateFullscreenBtn);
+    listen(player, "webkitfullscreenchange", updateFullscreenBtn);
+    listen(player, "msfullscreenchange", updateFullscreenBtn);
 
     updatePlay();
     updateVolume();
     updateTimeline();
     updateFullscreenBtn();
   });
+  if (!lightboxLabels) bindInlineVideoPreviews(container);
 }
 
 function bindDmAudioPlayerUi(container) {
@@ -115423,6 +115739,7 @@ function markDmMessagesRendered(conversationId = activeDmId, reason = "unknown")
   const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
   dmLastRenderedMessagesConversationId = convId;
   dmLastRenderedMessagesSignature = getDmMessagesRenderSignature(convId, dmMessagesCache);
+  if (typeof dmMessageSelection !== "undefined") dmMessageSelection?.sync();
   return dmLastRenderedMessagesSignature;
 }
 
@@ -115528,6 +115845,7 @@ function replaceDmMessageNodeAtIndex(indexInput, previousMessageId = "", { keepB
   tpl.innerHTML = html;
   const nextNode = tpl.content.firstElementChild;
   if (!nextNode) return false;
+  retainAuthorizedDmMedia(node, nextNode);
   node.replaceWith(nextNode);
   enforceServerMessageMediaEgressGuards(nextNode);
   bindDmGifAutoscroll(msgsBox);
@@ -115666,6 +115984,15 @@ function renderMessagesFromCache({ keepBottom = true, reason = "unknown", force 
 
   const finalRows = filterRowsForServerMessageHistory(convId, getConversationTimelineRows(convId));
   const finalStats = getTimelineRowStats(finalRows);
+  if (state.activeDm?.kind === "dm" && patchDmMediaOnlyRender(msgsBox, convId, finalRows)) {
+    markDmMessagesRendered(convId, renderReason);
+    observeDmInitialLatestLayoutRows(msgsBox);
+    if (shouldStickToBottom) maintainDmInitialLatestBottom(renderReason, msgsBox);
+    else restoreDmScrollAnchorSoon(msgsBox, scrollAnchor, renderReason);
+    updateDmJumpLatestButton(msgsBox);
+    finishRuntimeMessageRender("media_only");
+    return;
+  }
   logMessageLoadState("render_input", {
     reason: renderReason,
     conversationId: convId,
@@ -115679,7 +116006,9 @@ function renderMessagesFromCache({ keepBottom = true, reason = "unknown", force 
   const nextMessagesHtml = `${historyStateHtml}${sanitizeChatMessageMediaHtml(buildMessagesHtml(finalRows))}`;
   let timelineReplaced = false;
   preserveComposerDuring(() => {
-    timelineReplaced = setElementHtmlIfChanged(msgsBox, nextMessagesHtml);
+    timelineReplaced = state.activeDm?.kind === "dm"
+      ? reconcileDmTimeline(msgsBox, nextMessagesHtml)
+      : setElementHtmlIfChanged(msgsBox, nextMessagesHtml);
     if (!timelineReplaced) {
       logRenderChatDebug("skipped unchanged messages", {
         reason: renderReason,
@@ -115693,6 +116022,7 @@ function renderMessagesFromCache({ keepBottom = true, reason = "unknown", force 
     reason: renderReason,
     metrics: getDmOpenTimelineMetrics(msgsBox),
   });
+  rememberDmMediaRender(msgsBox, convId, finalRows);
   markDmMessagesRendered(convId, renderReason);
   if (initialBottomAnchorPrepared) completeDmInitialTimelineBottomAnchor(convId);
   if (finalStats.botCount > 0 && isAltaraLocalhostDebugContext()) {
@@ -116320,6 +116650,7 @@ function applyMessageComposerPermissionUi(options = {}) {
       btn.removeAttribute("aria-label");
     }
   });
+  syncDmAttachmentInputState();
 }
 async function refreshActiveMessageComposerPermission(options = {}) {
   const context = getActiveMessageComposerPermissionContext();
@@ -119420,16 +119751,13 @@ function syncDmInputRichMirrorMetrics(inputEl = null) {
   const mirror = document.getElementById("dmInputRichMirror");
   if (!input || !mirror) return;
   const style = window.getComputedStyle(input);
-  mirror.style.color = "var(--text-main)";
-  mirror.style.font = style.font;
-  mirror.style.letterSpacing = style.letterSpacing;
-  mirror.style.fontSize = style.fontSize;
-  mirror.style.lineHeight = style.lineHeight;
-  mirror.style.paddingTop = style.paddingTop;
-  mirror.style.paddingRight = style.paddingRight;
-  mirror.style.paddingBottom = style.paddingBottom;
-  mirror.style.paddingLeft = style.paddingLeft;
-  mirror.style.textAlign = style.textAlign;
+  // Computed styles are live: finish all reads before changing the mirror.
+  const metrics = Object.fromEntries(["font", "letterSpacing", "fontSize", "lineHeight",
+    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "textAlign"].map(key => [key, style[key]]));
+  metrics.color = "var(--text-main)";
+  for (const [key, value] of Object.entries(metrics)) {
+    if (mirror.style[key] !== value) mirror.style[key] = value;
+  }
 }
 
 function getDmComposerActiveTypingFontSize(inputEl = null) {
@@ -119515,8 +119843,6 @@ function updateDmComposerPreview() {
     mirror.innerHTML = "";
     wrap.classList.remove("has-rich-preview");
     resetComposerInputTypography();
-    syncDmInputRichMirrorMetrics(input);
-    syncDmInputRichMirrorScroll(input);
     return;
   }
 
@@ -119531,8 +119857,6 @@ function updateDmComposerPreview() {
     mirror.innerHTML = "";
     wrap.classList.remove("has-rich-preview");
     resetComposerInputTypography();
-    syncDmInputRichMirrorMetrics(input);
-    syncDmInputRichMirrorScroll(input);
     return;
   }
 
@@ -119554,8 +119878,6 @@ function updateDmComposerPreview() {
     wrap.classList.remove("has-rich-preview");
     wrap.dataset.richReady = "0";
     resetComposerInputTypography();
-    syncDmInputRichMirrorMetrics(input);
-    syncDmInputRichMirrorScroll(input);
     return;
   }
 
@@ -122386,7 +122708,7 @@ function ensureDmUserListMenu() {
     let hierarchyReason = "";
     if (context.isSelf) hierarchyReason = "You cannot moderate yourself.";
     else if (context.targetIsOwner) hierarchyReason = "The server owner cannot be moderated.";
-    else if (!hierarchyAllowed) hierarchyReason = "This member has an equal or higher role.";
+    else if (!hierarchyAllowed) hierarchyReason = getServerRoleActionReasonText("member_hierarchy");
     return {
       serverId: sid,
       targetUserId: uid,
@@ -122583,37 +122905,7 @@ function ensureDmUserListMenu() {
   };
 
   function getDmUserRoleMenuMeta(serverId, targetUserId) {
-    const sid = normId(serverId || "");
-    const uid = normId(targetUserId || "");
-    const base = {
-      canOpen: false,
-      reason: "",
-      hasRoles: false,
-      isSelf: false,
-      canTouchTarget: false,
-    };
-    if (!sid || !uid) return base;
-
-    const roleList = serverRoleListByServerId.get(sid) || [];
-    const hasRoles = Array.isArray(roleList) && roleList.length > 0;
-    const meId = normId(state.user?.id || "");
-    const isSelf = !!(meId && uid === meId);
-    const caps = getServerCapabilityMeta(sid);
-    const canManageRoles = currentUserCanManageRoles(sid);
-    const moderation = canServerActorModerateTargetWithPermission({
-      serverId: sid,
-      actorUserId: meId,
-      targetUserId: uid,
-    });
-    const canTouchTarget = !!(isSelf || moderation?.canTouchTarget);
-    const canOpen = !!(canManageRoles && hasRoles && canTouchTarget);
-
-    let reason = "";
-    if (!canManageRoles) reason = "Sem permissao para gerir roles.";
-    else if (!hasRoles) reason = "Sem roles custom neste server.";
-    else if (!canTouchTarget) reason = "Nao podes gerir roles deste membro.";
-
-    return { canOpen, reason, hasRoles, isSelf, canTouchTarget };
+    return getServerMemberRolesMenuState(serverId, targetUserId);
   }
 
   function buildDmUserRoleMenuHtml(context = {}) {
@@ -122636,18 +122928,21 @@ function ensureDmUserListMenu() {
       if (isEveryoneServerRole(role)) return "";
   const roleName = normalizeServerRoleName(role?.name || "Role") || "Role";
       const roleColor = normalizeServerRoleColor(role?.color || SERVER_ROLE_DEFAULT_COLOR);
+      const action = getServerMemberRoleActionState(sid, uid, rid);
+      const disabled = disabledAll || !action.allowed;
+      const hint = getServerRoleActionReasonText(action.reason);
       return `
         <button
-          class="msgMenu__item${disabledAll ? " is-disabled" : ""}"
+          class="msgMenu__item${disabled ? " is-disabled" : ""}"
           data-user-role-act="toggle_role"
           data-user-role-server-id="${escAttr(sid)}"
           data-user-role-user-id="${escAttr(uid)}"
           data-user-role-role-id="${escAttr(rid)}"
-          ${disabledAll ? "disabled" : ""}
+          ${disabled ? "disabled" : ""} title="${escAttr(hint)}"
         >
           <span class="msgMenuRoleMain">
             <span class="msgMenuRoleSwatch" style="--role-color:${escAttr(roleColor)}"></span>
-            <span>${esc(roleName)}</span>
+            <span>${esc(roleName)}${hint ? `<span class="msgMenu__itemHint">${esc(hint)}</span>` : ""}</span>
           </span>
           <span class="msgMenuRoleCheck${assigned ? " is-on" : ""}" aria-hidden="true">${assigned ? "&#10003;" : ""}</span>
         </button>
@@ -122713,7 +123008,7 @@ function ensureDmUserListMenu() {
       dmUserRoleMenuBusy = false;
 
       if (res?.error) {
-        alert(`Erro a atualizar role: ${res.error?.message || res.error}`);
+        alert(res.error?.message || getServerRoleActionReasonText("unavailable"));
         if (dmUserRoleMenuTarget) {
           menu.innerHTML = buildDmUserRoleMenuHtml(dmUserRoleMenuTarget);
         }
@@ -123440,25 +123735,9 @@ function openDmUserListMenuAt({
     else blockUserHint = "Nao e possivel bloquear este utilizador agora.";
   }
   const caps = getServerCapabilityMeta(serverVoiceServerId);
-  const canManageRoles = serverVoiceServerId ? currentUserCanManageRoles(serverVoiceServerId) : false;
-  const roleList = serverVoiceServerId ? (serverRoleListByServerId.get(serverVoiceServerId) || []) : [];
-  const roleModeration = canServerActorModerateTargetWithPermission({
-    serverId: serverVoiceServerId,
-    actorUserId: meId,
-    targetUserId: uid,
-  });
-  const canOpenServerRolesMenu = !!(
-    serverVoiceServerId
-    && canManageRoles
-    && roleList.length
-    && (uid === meId || roleModeration?.canTouchTarget)
-  );
-  let roleMenuHint = "";
-  if (serverVoiceServerId && !canOpenServerRolesMenu) {
-    if (!canManageRoles) roleMenuHint = "Sem permissao para gerir roles.";
-    else if (!roleList.length) roleMenuHint = "Sem roles custom.";
-    else roleMenuHint = "Nao podes gerir roles deste membro.";
-  }
+  const roleMenuState = getServerMemberRolesMenuState(serverVoiceServerId, uid);
+  const canOpenServerRolesMenu = roleMenuState.canOpen;
+  const roleMenuHint = roleMenuState.reason;
   const moderationContext = getServerMemberManagementContext(serverVoiceServerId, uid);
   const nicknameAction = getServerNicknameActionState(serverVoiceServerId, uid);
   const moderationPermissionResolved = !!(
@@ -123485,7 +123764,7 @@ function openDmUserListMenuAt({
     if (!moderationPermissionResolved) moderationMenuHint = "Checking permissions...";
     else if (moderationContext.isSelf && !nicknameAction.allowed) moderationMenuHint = "Requires Change Own Nickname.";
     else if (moderationContext.targetIsOwner) moderationMenuHint = "Cannot moderate the server owner.";
-    else if (!(moderationContext.actorIsOwner || moderationContext.targetBelowActor)) moderationMenuHint = "No available actions: equal or higher role.";
+    else if (!(moderationContext.actorIsOwner || moderationContext.targetBelowActor)) moderationMenuHint = getServerRoleActionReasonText("member_hierarchy");
     else moderationMenuHint = "Requires Manage Nicknames, Kick Members, Ban Members, or Timeout Members.";
   }
   const canShowDmLockControls = isFriend && !serverVoiceServerId;
@@ -124495,9 +124774,7 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
   }
   if (avatarEl) {
     const avatarStatusDotHtml = `<span class="statusDot dmProfileAvatarStatusDot" data-status="${escAttr(status || "offline")}"></span>`;
-    avatarEl.innerHTML = avatarUrl
-      ? `${buildAvatarMediaHtml(avatarUrl, { userId: uid, profile, alt: "avatar", loading: "lazy", controlledGif: true })}${avatarStatusDotHtml}`
-      : `<span class="msg__avatarFallback">${esc(initial)}</span>${avatarStatusDotHtml}`;
+    avatarEl.innerHTML = `${buildAvatarMediaHtml(avatarUrl, { userId: uid, profile, alt: "avatar", fallbackChar: initial, loading: "lazy", controlledGif: true })}${avatarStatusDotHtml}`;
     queueManagedGifPlaybackSync(avatarEl);
   }
   if (nameEl) {
@@ -129422,8 +129699,7 @@ function renderUserCard(profile = {}, { loading = false, forceWidgetPanelRender 
   if (avatarEl) {
     const avatarSignature = [id, avatarUrl, initial, status, statusLabel].join("|");
     const statusDotHtml = '<span class="statusDot userCardAvatarStatusDot" data-status-dot="' + escAttr(id) + '" data-status="' + escAttr(status || "offline") + '" aria-label="' + escAttr(statusLabel) + '"></span>';
-    const avatarHtml = avatarUrl
-      ? '<div class="userCardAvatarMedia">'
+    const avatarHtml = '<div class="userCardAvatarMedia">'
         + buildAvatarMediaHtml(avatarUrl, {
           userId: id,
           profile,
@@ -129432,8 +129708,6 @@ function renderUserCard(profile = {}, { loading = false, forceWidgetPanelRender 
           fallbackChar: initial,
         })
         + '</div>'
-        + statusDotHtml
-      : '<div class="userCardAvatarMedia"><span class="msg__avatarFallback">' + esc(initial) + '</span></div>'
         + statusDotHtml;
     if (avatarEl.dataset.userCardAvatarSignature !== avatarSignature || avatarEl.innerHTML !== avatarHtml) {
       avatarEl.innerHTML = avatarHtml;
@@ -131581,6 +131855,42 @@ function closeMessageMenu(reason = "action") {
   if (wasOpen) recordAltaraContextMenuClose("message", reason);
 }
 
+let dmMessageSelection = null;
+function canSelectMessageForDeletion(message) {
+  if (!message || message.deleted_at || isOptimisticDmMessage(message) || isLegacyCallRecordMessage(message)
+    || isSystemChipMessage(getAuthoritativeMessageContent(message)) || isBotCommandInvocationMessage(message)) return false;
+  const context = getServerMessageModerationContext(message);
+  return context.isServerTextChannel ? context.canDelete : isOwnMessage(message);
+}
+
+function getDmMessageSelection() {
+  if (dmMessageSelection) return dmMessageSelection;
+  const root = document.getElementById("dmMessages"), composer = document.querySelector(".dmComposer");
+  if (!root || !composer) return null;
+  const getScope = () => state.user?.id && activeDmId ? `${state.user.id}:${activeDmId}` : "";
+  dmMessageSelection = createMessageSelection({
+    root, composer, getScope, getRows: () => dmMessagesCache,
+    canDelete: canSelectMessageForDeletion,
+    labels: () => messageSelectionLabels(appLanguage),
+    confirm: (message, labels) => requestAppConfirm(message, {
+      title: labels.title, okText: labels.remove, cancelText: labels.cancel, danger: true,
+    }),
+    deleteOne: async (message, scope) => {
+      if (getScope() !== scope || !canSelectMessageForDeletion(message)) throw new Error("message_selection_changed");
+      const context = getServerMessageModerationContext(message);
+      return context.isServerTextChannel
+        ? supabase.rpc(context.selectedRpc, {
+          p_server_id: context.serverId,
+          [context.sourceTable === "bot_channel_messages" ? "p_bot_message_id" : "p_message_id"]: context.sourceMessageId,
+          p_reason: null,
+        })
+        : softDeleteMessageRpc(message.id, message.conversation_id || activeDmId);
+    },
+    onDeleted: ids => removeMessageFromCacheAndUi(ids),
+  });
+  return dmMessageSelection;
+}
+
 function ensureMessageMenu() {
   let menu = document.getElementById("msgActionMenu");
   if (menu) return menu;
@@ -131606,7 +131916,8 @@ function ensureMessageMenu() {
     const msgId = btn.getAttribute("data-msg-id");
     if (!action || !msgId) return;
 
-    if (action === "reply") setDmReplyTarget(msgId);
+    if (action === "select") getDmMessageSelection()?.start(msgId);
+    else if (action === "reply") setDmReplyTarget(msgId);
     else if (action === "react") {
       const rect = btn.getBoundingClientRect();
       closeMessageMenu();
@@ -131690,6 +132001,7 @@ function openMessageMenu(messageId, anchorEl, point = null) {
     parsed.type === "text" ? `<button class="msgMenu__item" data-msg-menu-act="copy" data-msg-id="${escAttr(m.id)}"><span>Copiar texto</span><span>&#x29C9;</span></button>` : "",
     `<button class="msgMenu__item" data-msg-menu-act="copy_id" data-msg-id="${escAttr(m.id)}"><span>Copy Message ID</span><span>&#x29C9;</span></button>`,
     canReport ? `<button class="msgMenu__item msgMenu__item--danger" data-msg-menu-act="report" data-msg-id="${escAttr(m.id)}"><span>${esc(t("report.modal.title_message", "Report Message"))}</span></button>` : "",
+    canSelectMessageForDeletion(m) ? `<button class="msgMenu__item" data-msg-menu-act="select" data-msg-id="${escAttr(m.id)}"><span>${esc(messageSelectionLabels(appLanguage).select)}</span><span aria-hidden="true">☑</span></button>` : "",
     canDelete ? `<button class="msgMenu__item msgMenu__item--danger" data-msg-menu-act="delete" data-msg-id="${escAttr(m.id)}"><span>Delete Message</span><span>&#x1F5D1;</span></button>` : "",
   ].filter(Boolean).join("");
 
@@ -131972,6 +132284,7 @@ function attachmentDataAttrs(att) {
   const widthAttr = Number.isFinite(Number(safe.width)) ? String(Math.round(Number(safe.width))) : "";
   const heightAttr = Number.isFinite(Number(safe.height)) ? String(Math.round(Number(safe.height))) : "";
   return [
+    `data-att-key="${escAttr(dmMediaKey(safe))}"`,
     `data-att-url="${escAttr(safe.url)}"`,
     `data-att-original-url="${escAttr(safe.originalUrl || safe.url)}"`,
     `data-att-preview-url="${escAttr(safe.previewUrl || "")}"`,
@@ -132019,8 +132332,11 @@ function buildChatMediaSizingAttrs(widthInput = 0, heightInput = 0, {
 
 function getAttachmentMediaSizingAttrs(att, opts = {}) {
   const safe = sanitizeAttachmentPayload(att);
-  if (!safe?.width || !safe?.height) return "";
-  return buildChatMediaSizingAttrs(safe.width, safe.height, opts);
+  if (!safe) return "";
+  if (safe.width && safe.height) return buildChatMediaSizingAttrs(safe.width, safe.height, opts);
+  if (safe.kind !== "image" && safe.kind !== "video") return "";
+  const { width, height } = dmMediaDimensions(safe);
+  return buildChatMediaSizingAttrs(width, height, opts);
 }
 
 function readStoredChatMediaDisplayWidth(mediaEl, hosts = []) {
@@ -132116,6 +132432,8 @@ function syncLoadedChatMediaDimensions(mediaEl, {
     : Number(el.naturalHeight || 0);
   if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) return false;
   el.classList.add("is-media-ready");
+  const mediaKey = el.closest("[data-dm-media-key]")?.dataset.dmMediaKey;
+  if (mediaKey) rememberDmMediaDimensions(mediaKey, width, height);
   return applyChatMediaDimensions(el, width, height, { modal });
 }
 
@@ -132219,6 +132537,7 @@ function bindChatMediaLayoutAndFallbacks(root = document, {
   scope?.querySelectorAll?.("img.msg__attachmentImage,img.msg__gif,img.dmAttachmentPreview--image,video.msg__attachmentVideo,video.dmAttachmentPreview--video").forEach((el) => items.push(el));
   items.forEach((el) => {
     if (!(el instanceof HTMLImageElement) && !(el instanceof HTMLVideoElement)) return;
+    if (el.closest("[data-dm-progressive]")) return;
     applyKnownChatMediaDimensions(el, { modal });
     if (el.dataset.chatMediaLayoutBound !== "1") {
       el.dataset.chatMediaLayoutBound = "1";
@@ -132337,6 +132656,7 @@ function replaceDmMessageNodesAtIndexes(indexInputs = [], { keepBottom = true, r
     Array.from(nextNode.attributes).forEach((attribute) => {
       node.setAttribute(attribute.name, attribute.value);
     });
+    retainAuthorizedDmMedia(node, nextNode);
     node.replaceChildren(...Array.from(nextNode.childNodes));
     enforceServerMessageMediaEgressGuards(node);
     updateMessageReactionsUi(messageId);
@@ -132514,7 +132834,144 @@ function loadDeferredAttachmentPreviewFromButton(buttonEl) {
   if (img.complete && Number(img.naturalWidth || 0) > 0) finish(true);
 }
 
+
+function getDmLightboxItems() {
+  const box = document.getElementById("dmMessages");
+  const conversationId = normId(activeDmId || "");
+  if (!box || !conversationId || !canCurrentUserRenderServerChannelConversation(conversationId)) return [];
+  const labels = mediaLightboxLabels(normalizeAppLanguage(state.me?.theme_settings?.app_language, appLanguage || readStoredAppLanguage()));
+  const entries = [];
+  for (const node of box.querySelectorAll(".msg[data-msg-id]")) {
+    if (node.hidden || node.classList.contains("hidden")) continue;
+    const original = getMessageById(node.dataset.msgId);
+    if (!original || normId(original.conversation_id) !== conversationId || original.deleted_at || original.is_deleted) continue;
+    const contentKey = canonicalMediaContent(persistedTrustedMessageContent(original.content));
+    const cached = dmLightboxAuthorizedRows.get(node.dataset.msgId);
+    const row = cached?.contentKey === contentKey ? cached.row : original;
+    const parsed = getAuthoritativeMessageContent(row);
+    const attachments = parsed?.type === "gif" && parsed.attachment
+      ? [sanitizeAttachmentPayload(parsed.attachment)] : extractParsedAttachments(parsed);
+    attachments.forEach((attachment, index) => {
+      if (!attachment || !["image", "video"].includes(attachment.kind)) return;
+      const hosts = [...node.querySelectorAll(".msg__attachment")];
+      const host = hosts.find(el => el.dataset.attKey === dmMediaKey(attachment)
+        || el.querySelector("[data-dm-media-key]")?.dataset.dmMediaKey === dmMediaKey(attachment))
+        || hosts.find(el => !el.dataset.attKey && el.dataset.attName === attachment.name);
+      if (!host || host.hidden || !host.querySelector("[data-att-open], video")) return;
+      if (attachment.spoiler && !host.querySelector(".msg__attachmentMedia.is-revealed")) return;
+      const provider = attachment.gifProvider ? dmGifMetadata.peek(attachment.gifProvider) : null;
+      // A public provider preview is not a grant for its durable private attachment.
+      // Enumerating neighbours is read-only; it must never enqueue history/grant refreshes.
+      const url = resolveTrustedAttachmentDeliveryUrl(row, attachment)
+        || (isLocallyTrustedOptimisticAttachmentUrl(row, attachment.url) ? attachment.url : "");
+      const expired = hasExpiredTrustedAttachmentDelivery(row);
+      if (!provider?.url && !url && !expired) return;
+      let safe = null;
+      if (url) {
+        safe = { ...attachment, url, originalUrl: url,
+          previewUrl: resolveTrustedAttachmentDeliveryUrl(row, attachment, { preview: true }) || "" };
+        trustedRenderableAttachmentPayloads.add(safe);
+      }
+      const gif = !!provider || isGifLikeAttachment(attachment);
+      const favorite = provider || (gif ? uploadedGifFavoriteFromAttachment(attachment) : null);
+      const dimensions = dmMediaDimensions(attachment);
+      const size = formatBytesLabel(attachment.size);
+      const entry = { key: `${row.id}:${index}`, host, provider, favorite, resolve: async (signal) => {
+        const context = `${state.user?.id}:${activeDmId}`;
+        const [fresh] = await hydrateTrustedAttachmentRows({ supabase, rows: [original] });
+        const current = getMessageById(original.id);
+        if (signal.aborted || context !== `${state.user?.id}:${activeDmId}` || !current || current.deleted_at || current.is_deleted) return null;
+        // Cache normalization rewrites delivery URLs while retaining the same upload IDs.
+        // Compare persisted content, then merge only this fresh broker grant. Edits fail closed.
+        if (canonicalMediaContent(persistedTrustedMessageContent(current.content)) !== contentKey) return null;
+        const [merged] = mergeTrustedAttachmentDeliveryRows([current], [{ ...original, content: current.content }], [fresh]);
+        if (merged === current) return null;
+        dmLightboxAuthorizedRows.set(original.id, { contentKey, row: merged });
+        while (dmLightboxAuthorizedRows.size > 24) dmLightboxAuthorizedRows.delete(dmLightboxAuthorizedRows.keys().next().value);
+        // The selected entry already passed gallery visibility checks. Hydration can
+        // rebuild its host concurrently; complete this selection from the authorized
+        // response, never by rediscovering a transient timeline DOM node.
+        const updated = getAuthoritativeMessageContent(merged);
+        const updatedAttachments = updated?.type === "gif" && updated.attachment
+          ? [sanitizeAttachmentPayload(updated.attachment)] : extractParsedAttachments(updated);
+        const updatedAttachment = updatedAttachments[index];
+        if (!updatedAttachment || dmMediaKey(updatedAttachment) !== dmMediaKey(attachment)) return null;
+        const updatedUrl = resolveTrustedAttachmentDeliveryUrl(merged, updatedAttachment);
+        if (!updatedUrl) return null;
+        const updatedSafe = { ...updatedAttachment, url: updatedUrl, originalUrl: updatedUrl,
+          previewUrl: resolveTrustedAttachmentDeliveryUrl(merged, updatedAttachment, { preview: true }) || "" };
+        trustedRenderableAttachmentPayloads.add(updatedSafe);
+        return { ...entry, url: updatedUrl, preview: updatedSafe.previewUrl, download: favorite ? null : updatedSafe };
+      }, download: favorite ? null : safe,
+        kind: attachment.kind, zoomable: attachment.kind === "image" && !gif,
+        title: provider ? (provider.title || "GIF") : formatAttachmentDisplayName(attachment.name, attachment.kind),
+        meta: [gif ? "GIF" : labels[attachment.kind], attachment.width && attachment.height && `${dimensions.width} × ${dimensions.height}`, size].filter(Boolean).join(" · "),
+        width: dimensions.width, height: dimensions.height, dimensionsKnown: !!(attachment.width && attachment.height),
+        url: provider?.url || url,
+        // Copy only already-decoded pixels from the selected visible message. This
+        // makes no request with an expired capability and never exports private pixels.
+        makePreview: !provider ? () => {
+          const image = host.querySelector(attachment.kind === "video" ? "video" : "img");
+          const decoded = attachment.kind === "video" ? image?.readyState >= 2 : image?.complete;
+          const mediaWidth = image?.videoWidth || image?.naturalWidth;
+          const mediaHeight = image?.videoHeight || image?.naturalHeight;
+          if (!decoded || !mediaWidth || !mediaHeight) return null;
+          try {
+            const canvas = document.createElement("canvas");
+            const ratio = Math.min(1, 640 / Math.max(mediaWidth, mediaHeight));
+            canvas.width = Math.max(1, Math.round(mediaWidth * ratio));
+            canvas.height = Math.max(1, Math.round(mediaHeight * ratio));
+            canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+            return canvas;
+          } catch (_) { return null; }
+        } : null,
+        preview: provider ? (dmMediaPresenter.peekPoster(provider) || provider.preview) : (safe?.previewUrl || ""),
+      };
+      entries.push(entry);
+    });
+  }
+  return entries;
+}
+
+function openDmMediaLightboxFromNode(node) {
+  const entry = getDmLightboxItems().find(item => item.host.contains(node));
+  if (!entry) return false;
+  if (!dmMediaLightbox) {
+    dmMediaLightbox = createMediaLightbox({
+      labels: () => mediaLightboxLabels(normalizeAppLanguage(state.me?.theme_settings?.app_language, appLanguage || readStoredAppLanguage())),
+      getContext: () => `${normId(state.user?.id)}:${normId(activeDmId)}:${Number(serverChannelUserNavigationVersion || 0)}`,
+      getItems: getDmLightboxItems, bindVideo: bindDmVideoPlayerUi,
+      isFavorite: isFav, toggleFavorite: item => { toggleFav(item); renderGifQuickTags(); },
+      download: triggerAttachmentDownload,
+      getScrollElement: () => document.getElementById("dmMessages"),
+      prefetch: (item, signal) => {
+        if (item.provider) void prepareGifPreview(item.provider, { signal });
+        else if (item.preview && item.preview !== item.url) {
+          const image = new Image(); image.decoding = "async";
+          signal.addEventListener("abort", () => image.removeAttribute("src"), { once: true });
+          image.src = item.preview;
+        }
+      },
+      onOpen: () => {
+        const box = document.getElementById("dmMessages");
+        cancelAltaraSmoothScroll(box);
+        enterDmReadingHistory("media_viewer", box);
+        document.querySelectorAll("#dmMessages video").forEach(video => video.pause());
+        dmMediaPresenter.sync(); queueManagedGifPlaybackSync(document.getElementById("dmMessages"));
+      },
+      onClose: () => { dmLightboxAuthorizedRows.clear(); dmMediaPresenter.sync(); queueManagedGifPlaybackSync(document.getElementById("dmMessages")); },
+      onRestore: () => {
+        const box = document.getElementById("dmMessages");
+        refreshDmReadingHistoryAnchor(box);
+        if (isDmNearBottom(box, 2)) enterDmFollowLatest("media_viewer_close");
+      },
+    });
+  }
+  return dmMediaLightbox.open(entry.key);
+}
+
 function closeDmAttachmentModal() {
+  dmMediaLightbox?.close();
   const modal = document.getElementById("dmAttachmentModal");
   if (!modal) return;
   modal.classList.add("hidden");
@@ -132726,6 +133183,147 @@ function bindReportUserModalOnce() {
   });
 }
 
+
+const dmGifMetadata = createDmGifMetadata({
+  lookup: async item => {
+    const cached = gifMetadataCache.get(item.id);
+    if (cached?.preview && cached.preview !== cached.url) return cached;
+    // Use the existing authenticated provider endpoint, never a renderer API key.
+    const { data, error } = await supabase.functions.invoke("gif-search", {
+      body: { action: "lookup", ids: [item.id], limit: 1, locale: appLanguage },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!error && data?.ok) return data.results?.find(result => result.id === item.id) || null;
+    // Older hosted versions have no ID lookup. An exact ID match from title
+    // search can recover a legacy rendition without guessing any CDN paths.
+    if (!item.title) return null;
+    const search = await supabase.functions.invoke("gif-search", {
+      body: { action: "search", q: item.title.slice(0, 160), limit: 30, locale: appLanguage },
+      signal: AbortSignal.timeout(8000),
+    });
+    return search.data?.results?.find(result => result.id === item.id) || null;
+  },
+});
+const dmMediaPresenter = createDmMediaPresenter({
+  preparePreview: prepareGifPreview,
+  resolveMetadata: (item, options) => dmGifMetadata.resolve(item, options),
+  onMetadata: frame => refreshRenderedGifFavoriteButtons(frame.closest(".msg") || frame.parentElement),
+  account: () => normId(state.user?.id),
+  canAnimate: frame => !dmMediaLightbox?.isOpen && !shouldPauseGifInBackground() && (shouldLoadGifOnVisible("chat-message")
+    || (shouldLoadGifOnHover("chat-message") && (frame.matches(":hover") || frame.contains(document.activeElement)))),
+});
+
+function dmMediaFrameStyle(att) {
+  const { width, height } = dmMediaDimensions(att);
+  return `--chat-media-width:${getConstrainedChatMediaWidth(width, height)}px;--chat-media-ratio:${width} / ${height};`;
+}
+
+function dmPendingAttachmentHtml(att, messageRow) {
+  const safe = sanitizeAttachmentPayload(att);
+  if (!safe || !messageRow) return `<span>(anexo indisponivel)</span>`;
+  const media = safe.kind === "image" || safe.kind === "video";
+  const unavailable = messageRow._attachmentDeliveryResolved === true && !hasExpiredTrustedAttachmentDelivery(messageRow);
+  return `<div class="msg__attachment${media ? " msg__attachment--image" : ""}" data-dm-media-key="${escAttr(dmMediaKey(safe))}">
+    <div class="${media ? "msg__attachmentMedia dmMediaFrame" : "dmMediaFilePending"}" style="${media ? dmMediaFrameStyle(safe) : ""}" data-media-state="${unavailable ? "error" : "pending"}">
+      <span class="dmMediaStatus" role="status">${esc(unavailable ? t("dm.media_unavailable", "Media unavailable") : t("hydrate.loading", "Loading…"))}</span>
+      <button type="button" class="dmMediaRetry" data-dm-media-retry ${unavailable ? "" : "hidden"}>${esc(t("hydrate.retry", "Try again"))}</button>
+    </div>
+    <div class="msg__attachmentCaption"><span class="msg__attachmentInfo">${esc(attachmentMetaLabel(safe))}</span></div>
+  </div>`;
+}
+
+function dmProgressiveGifHtml(safe, { dataAttrs, deleteCornerBtnHtml, name, deliveryUrl = "" }) {
+  const provider = dmGifMetadata.peek(safe.width > 0 && safe.height > 0
+    ? { ...safe.gifProvider, width: safe.width, height: safe.height, dimensionsKind: "original" }
+    : safe.gifProvider);
+  dmGifMetadata.remember(provider);
+  const poster = dmMediaPresenter.peekPoster(provider);
+  const dimensions = dmMediaDimensions({ ...safe, gifProvider: provider });
+  return `<div class="msg__attachment msg__attachment--image msg__attachment--gif msg__providerGif" ${dataAttrs} ${gifFavoriteDataAttrs(provider)}>
+    <div class="msg__attachmentMedia dmMediaFrame" style="${dmMediaFrameStyle({ ...safe, gifProvider: provider })}" data-dm-progressive data-dm-media-key="${escAttr(dmMediaKey(safe))}"
+      data-error-label="${escAttr(t("dm.media_unavailable", "Media unavailable"))}" data-dm-delivery="${escAttr(deliveryUrl)}" data-dm-provider-id="${escAttr(provider.id)}" data-dm-width="${escAttr(dimensions.width)}" data-dm-height="${escAttr(dimensions.height)}" data-dm-preview="${escAttr(provider.preview)}" data-dm-provider-url="${escAttr(provider.url)}" data-dm-animation="${escAttr(provider.animatedPreview || "")}" data-dm-preview-kind="${escAttr(provider.previewKind)}" data-dm-dimensions-kind="${escAttr(provider.dimensionsKind || "")}" data-media-state="${poster ? "preview" : "pending"}">
+      <button class="msg__attachmentPreview" type="button" data-att-open="1" aria-label="${escAttr(name)}">
+        <img class="dmProgressiveImage" alt="${escAttr(name)}" decoding="async" loading="lazy" ${poster ? `src="${escAttr(poster)}" data-media-preview="1"` : ""} />
+      </button>
+      <span class="dmMediaStatus" role="status"></span>
+      <button type="button" class="dmMediaRetry" data-dm-media-retry hidden>${esc(t("hydrate.retry", "Try again"))}</button>
+      ${deleteCornerBtnHtml}${gifFavoriteButtonHtml(provider)}
+    </div>
+  </div>`;
+}
+
+function bindDmPendingMediaRetry(container) {
+  container.querySelectorAll("[data-dm-media-retry]").forEach(button => {
+    if (button.closest("[data-dm-progressive]") || button.dataset.retryBound) return;
+    button.dataset.retryBound = "1";
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      void fetchMessages(activeDmId, { reason: "media-retry", suppressLoading: true }).finally(() => { button.disabled = false; });
+    });
+  });
+}
+
+let dmMediaRenderSnapshot = null;
+function dmMediaStructureStamp(row) {
+  return [getDmMessageRenderStamp({ ...row, content: canonicalMediaContent(persistedTrustedMessageContent(row.content)) }),
+    row.user_id, row.message_mode, row.trusted_event_type, row.trusted_event_source_id,
+    row.suppress_embeds, row.e2eeState].join("|");
+}
+function rememberDmMediaRender(box, conversationId, rows) {
+  dmMediaRenderSnapshot = { box, conversationId, firstChild: box.firstChild,
+    domIds: [...box.querySelectorAll(".msg[data-msg-id]")].map(node => node.dataset.msgId).join("\n"),
+    signature: rows.map(dmMediaStructureStamp).join("\n"), rows: new Map(rows.map(row => [String(row.id), row])) };
+}
+function patchDmMediaOnlyRender(box, conversationId, rows) {
+  const snapshot = dmMediaRenderSnapshot;
+  if (!snapshot || snapshot.box !== box || snapshot.conversationId !== conversationId
+    || snapshot.firstChild !== box.firstChild || rows.map(dmMediaStructureStamp).join("\n") !== snapshot.signature
+    || [...box.querySelectorAll(".msg[data-msg-id]")].map(node => node.dataset.msgId).join("\n") !== snapshot.domIds) return false;
+  for (const row of rows) {
+    const parsed = safeParseMessageContent(row.content);
+    const attachments = parsed.type === "gif" && parsed.attachment ? [parsed.attachment] : extractParsedAttachments(parsed);
+    const message = getDmMessageNodeById(row.id);
+    for (const att of attachments) {
+      const host = [...(message?.querySelectorAll(".msg__attachment[data-dm-media-key]") || [])]
+        .find(node => node.dataset.dmMediaKey === dmMediaKey(att));
+      if (!host) return false;
+      const safe = resolveRenderableAttachmentPayload(att, { messageRow: row });
+      const progressive = host.querySelector("[data-dm-progressive]");
+      if (progressive && att.gifProvider) {
+        // Public provider presentation is independent of the private upload grant.
+        // Drop expired private action URLs, retaining the visible provider image.
+        if (!safe) {
+          for (const attribute of [...host.attributes]) if (attribute.name.startsWith("data-att-")) host.removeAttribute(attribute.name);
+          progressive.dataset.dmDelivery = "";
+          continue;
+        }
+        // Renew delivery/actions without touching the decoded image or its frame.
+        const tpl = document.createElement("template");
+        tpl.innerHTML = `<div ${attachmentDataAttrs(safe)}></div>`;
+        for (const attribute of tpl.content.firstElementChild.attributes) host.setAttribute(attribute.name, attribute.value);
+        progressive.dataset.dmDelivery = safe.url;
+        if (safe.width > 0 && safe.height > 0) {
+          progressive.style.cssText = dmMediaFrameStyle(safe);
+          progressive.dataset.dmWidth = safe.width;
+          progressive.dataset.dmHeight = safe.height;
+        }
+        continue;
+      }
+      const previousRow = snapshot.rows.get(String(row.id));
+      if (row.content === previousRow?.content && (!!safe === host.hasAttribute("data-att-url"))
+        && row._attachmentDeliveryResolved === previousRow?._attachmentDeliveryResolved) continue;
+      const tpl = document.createElement("template");
+      tpl.innerHTML = attachmentBodyHtml(att, { messageId: String(row.id), messageRow: row });
+      host.replaceWith(tpl.content);
+    }
+  }
+  rememberDmMediaRender(box, conversationId, rows);
+  bindDmGifAutoscroll(box);
+  bindDmVideoPlayerUi(box);
+  bindDmAudioPlayerUi(box);
+  return true;
+}
+
 function attachmentBodyHtml(att, {
   messageId = "",
   forceDeferredPreview = false,
@@ -132733,13 +133331,23 @@ function attachmentBodyHtml(att, {
   messageRow = null,
 } = {}) {
   const safe = resolveRenderableAttachmentPayload(att, { messageRow });
-  if (!safe) return `<span>(anexo indisponivel)</span>`;
+  const descriptor = safe || sanitizeAttachmentPayload(att);
+  // Message access/decryption is checked by the timeline before presentation.
+  // A public, allowlisted provider preview does not need a private upload grant.
+  if (messageRow && descriptor?.gifProvider && !descriptor.spoiler && sourceArea === "chat-message") {
+    const dataAttrs = `${safe ? attachmentDataAttrs(safe) : ""} data-dm-media-key="${escAttr(dmMediaKey(descriptor))}"`;
+    const deleteCornerBtnHtml = canDeleteSingleAttachmentFromMessage(messageId)
+      ? `<button class="msg__attachmentCornerBtn msg__attachmentCornerBtn--danger msg__attachmentCornerBtn--left" type="button" data-att-delete="1" title="Apagar anexo" aria-label="Apagar anexo">&#x1F5D1;</button>` : "";
+    return dmProgressiveGifHtml(descriptor, { dataAttrs, deleteCornerBtnHtml,
+      name: descriptor.gifProvider.title || "GIF", deliveryUrl: safe?.url || "" });
+  }
+  if (!safe) return dmPendingAttachmentHtml(att, messageRow);
   const mediaSource = String(sourceArea || "chat-message").trim() || "chat-message";
 
   const rawName = safe.name || "ficheiro";
   const name = formatAttachmentDisplayName(rawName, safe.kind);
   const meta = attachmentMetaLabel(safe);
-  const dataAttrs = attachmentDataAttrs(safe);
+  const dataAttrs = `${attachmentDataAttrs(safe)} data-dm-media-key="${escAttr(dmMediaKey(safe))}"`;
   const isSpoilerMedia = !!safe.spoiler && (safe.kind === "image" || safe.kind === "video");
   const isRevealed = isSpoilerMedia && isSpoilerAttachmentRevealed(messageId, safe.url);
   const canDeleteSingle = canDeleteSingleAttachmentFromMessage(messageId);
@@ -132755,19 +133363,25 @@ function attachmentBodyHtml(att, {
     const previewUrl = String(safe.previewUrl || "").trim();
     const mediaSizingAttrs = getAttachmentMediaSizingAttrs(safe);
     if (isGif && (!isSpoilerMedia || isRevealed)) {
+      const providerGif = safe.gifProvider;
+      if (providerGif && sourceArea === "chat-message") return dmProgressiveGifHtml(safe, {
+        dataAttrs, deleteCornerBtnHtml, name, deliveryUrl: safe.url,
+      });
+      const favoriteGif = providerGif || uploadedGifFavoriteFromAttachment(safe);
+      const favoriteAttrs = favoriteGif ? gifFavoriteDataAttrs(favoriteGif) : "";
       const gifPreview = resolveGifStaticPreviewUrl(previewUrl, safe.url) || previewUrl || safe.url;
       const posterAttrs = gifPreview && gifPreview !== safe.url && !isGifLikeUrl(gifPreview) && shouldLoadGifOnHover(mediaSource)
         ? ` src="${escAttr(gifPreview)}" data-media-preview="1" data-media-poster="1"`
         : "";
       const imageHtml = `<img class="msg__attachmentImage msg__gif lazyMediaImage" alt="${escAttr(name)}" loading="lazy" decoding="async"${posterAttrs} data-media-src="${escAttr(safe.url)}" data-media-source="${escAttr(mediaSource)}" data-media-load-reason="visible-gif-autoload" data-media-kind="gif" data-managed-gif-media="1" crossorigin="anonymous" referrerpolicy="no-referrer"${mediaSizingAttrs ? ` ${mediaSizingAttrs}` : ""} />`;
       return `
-        <div class="msg__attachment msg__attachment--image msg__attachment--gif" ${dataAttrs}>
+        <div class="msg__attachment msg__attachment--image msg__attachment--gif${providerGif ? " msg__providerGif" : ""}" ${dataAttrs} ${favoriteAttrs}>
           <div class="msg__attachmentMedia is-loaded ${isSpoilerMedia ? "is-spoiler" : ""} ${isRevealed ? "is-revealed" : ""}" data-managed-gif-root="message" data-gif-url="${escAttr(safe.url)}" data-gif-preview="${escAttr(gifPreview)}" data-gif-title="${escAttr(name)}">
             <button class="msg__attachmentPreview msg__attachmentPreview--gif" type="button" data-att-open="1" aria-label="Abrir GIF">
               ${imageHtml}
             </button>
             ${deleteCornerBtnHtml}
-            <button class="msg__attachmentCornerBtn" type="button" data-att-download="1" title="Download">Download</button>
+            ${favoriteGif ? gifFavoriteButtonHtml(favoriteGif) : ""}
           </div>
           <div class="msg__attachmentCaption">
             <span class="msg__attachmentInfo">${safe.spoiler ? "Blur - " : ""}${esc(meta)}</span>
@@ -132799,7 +133413,7 @@ function attachmentBodyHtml(att, {
           ${isSpoilerMedia && !isRevealed ? `<button class="msg__attachmentSpoilerMask" type="button" data-att-reveal="1">Blur - clicar para revelar</button>` : ""}
           ${deleteCornerBtnHtml}
           ${loadOriginalBtnHtml}
-          <button class="msg__attachmentCornerBtn" type="button" data-att-download="1" title="Download">Download</button>
+          ${isGif ? "" : `<button class="msg__attachmentCornerBtn" type="button" data-att-download="1" title="Download">Download</button>`}
         </div>
         <div class="msg__attachmentCaption">
           <span class="msg__attachmentInfo">${safe.spoiler ? "Blur - " : ""}${esc(meta)}</span>
@@ -132811,28 +133425,29 @@ function attachmentBodyHtml(att, {
   if (safe.kind === "video") {
     const videoSizingAttrs = getAttachmentMediaSizingAttrs(safe);
     return `
-      <div class="msg__attachment" ${dataAttrs}>
+      <div class="msg__attachment msg__attachment--video" ${dataAttrs}>
         <div class="msg__attachmentMedia ${isSpoilerMedia ? "is-spoiler" : ""} ${isRevealed ? "is-revealed" : ""}">
           <div class="msg__videoPlayer" data-video-player>
+            <button type="button" class="msgVideoStart" data-video-start aria-label="Play"></button>
             <video class="msg__attachmentVideo" data-media-src="${escAttr(safe.url)}" data-media-source="${escAttr(mediaSource)}" preload="none" playsinline${videoSizingAttrs ? ` ${videoSizingAttrs}` : ""}></video>
             <div class="msg__videoUi" data-video-ui>
-              <button class="msgVideoBtn msgVideoBtn--play" type="button" data-video-play aria-label="Play" title="Play">${UI_GLYPHS.play}</button>
+              <button class="msgVideoBtn msgVideoBtn--play" type="button" data-video-play aria-label="Play" title="Play"></button>
               <span class="msgVideoTime" data-video-current>0:00</span>
               <input class="msgVideoSeek" type="range" min="0" max="1000" step="1" value="0" data-video-seek aria-label="Posicao do video" />
               <span class="msgVideoTime msgVideoTime--duration" data-video-duration>0:00</span>
-              <span class="msgVideoRemain" data-video-remain>-0:00</span>
+              <span class="msgVideoRemain" data-video-remain hidden></span>
               <div class="msgVideoVolWrap">
                 <div class="msgVideoVolPopup">
                   <input class="msgVideoVolume msgVideoVolume--vertical" type="range" min="0" max="100" step="1" value="100" data-video-volume aria-label="Volume do video" />
                 </div>
-                <button class="msgVideoBtn msgVideoBtn--mute" type="button" data-video-mute aria-label="Mute" title="Mute">${UI_GLYPHS.volumeOn}</button>
+                <button class="msgVideoBtn msgVideoBtn--mute" type="button" data-video-mute aria-label="Mute" title="Mute"></button>
               </div>
-              <button class="msgVideoBtn msgVideoBtn--fs" type="button" data-video-fullscreen aria-label="Fullscreen" title="Fullscreen">${UI_GLYPHS.fullscreen}</button>
+              <button class="msgVideoBtn msgVideoBtn--fs" type="button" data-video-fullscreen aria-label="Fullscreen" title="Fullscreen"></button>
             </div>
           </div>
           ${isSpoilerMedia && !isRevealed ? `<button class="msg__attachmentSpoilerMask" type="button" data-att-reveal="1">Blur - clicar para revelar</button>` : ""}
           ${deleteCornerBtnHtml}
-          <button class="msg__attachmentCornerBtn" type="button" data-att-download="1" title="Download">Download</button>
+          <button class="msg__attachmentCornerBtn" type="button" data-att-download="1" title="Download" aria-label="Download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 17v4h14v-4"/></svg></button>
         </div>
         <div class="msg__attachmentCaption">
           <span class="msg__attachmentInfo">${safe.spoiler ? "Blur - " : ""}${esc(meta)}</span>
@@ -132882,17 +133497,18 @@ function attachmentBodyHtml(att, {
 
   return `
     <div class="msg__attachment msg__attachment--file" ${dataAttrs}>
-      <button class="msg__fileRow msg__fileRowBtn" type="button" data-att-open="1">
-        <span class="msg__fileIcon" aria-hidden="true">&#x1F4CE;</span>
+      <div class="msg__fileRow">
+      <button class="msg__fileMain" type="button" data-att-open="1">
+        <svg class="msg__fileIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
         <span class="msg__fileText">
           <span class="msg__fileName">${esc(name)}</span>
           <span class="msg__fileMeta">${esc(meta)}</span>
         </span>
       </button>
-      <div class="msg__attachmentCaption">
-        <span class="msg__attachmentInfo">${esc(meta)}</span>
-        ${canDeleteSingle ? `<button class="msg__attachmentOpen msg__attachmentOpen--danger" type="button" data-att-delete="1" title="Apagar anexo" aria-label="Apagar anexo">&#x1F5D1;</button>` : ""}
-        <button class="msg__attachmentOpen" type="button" data-att-download="1">Download</button>
+      <div class="msg__fileActions">
+        ${canDeleteSingle ? `<button class="msg__fileAction msg__fileAction--delete" type="button" data-att-delete="1" title="${escAttr(t("surface.delete", "Delete"))}" aria-label="${escAttr(t("surface.delete", "Delete"))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button>` : ""}
+        <button class="msg__fileAction" type="button" data-att-download="1" title="${escAttr(mediaLightboxLabels(typeof appLanguage === "string" ? appLanguage : "en").download)}" aria-label="${escAttr(mediaLightboxLabels(typeof appLanguage === "string" ? appLanguage : "en").download)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 17v4h14v-4"/></svg></button>
+      </div>
       </div>
     </div>
   `;
@@ -133061,6 +133677,16 @@ function enforceServerMessageMediaEgressGuards(root = document) {
   return replaced;
 }
 
+function gifFavoriteDataAttrs(gif) {
+  return `data-msg-gif-wrap="1" data-gif-id="${escAttr(gif.id)}" data-gif-url="${escAttr(gif.url)}" data-gif-preview="${escAttr(gif.preview || gif.url)}" data-gif-title="${escAttr(gif.title || "")}" data-gif-animation-preview="${escAttr(gif.animatedPreview || "")}" data-gif-preview-kind="${escAttr(gif.previewKind || "animated")}" data-gif-dimensions-kind="${escAttr(gif.dimensionsKind || "")}" data-gif-width="${escAttr(gif.width || 0)}" data-gif-height="${escAttr(gif.height || 0)}"`;
+}
+
+function gifFavoriteButtonHtml(gif) {
+  const favored = isFav(gif);
+  const label = favored ? t("gif.remove_favorite", "Remove from favorites") : t("gif.add_favorite", "Add to favorites");
+  return `<button class="msg__gifFavBtn${favored ? " is-fav" : ""}" type="button" data-msg-gif-fav="1" aria-pressed="${favored}" title="${escAttr(label)}" aria-label="${escAttr(label)}">${favored ? "&#9733;" : "&#9734;"}</button>`;
+}
+
 function deferredGifMessageBodyHtml(gif, safeUrl = "", {
   sourceArea = "chat-message",
 } = {}) {
@@ -133071,8 +133697,6 @@ function deferredGifMessageBodyHtml(gif, safeUrl = "", {
   const rawPreview = normalizeTrustedMessageGifUrl(gif?.preview || "");
   const gifPreview = normalizeTrustedMessageGifUrl(resolveGifStaticPreviewUrl(rawPreview, url)) || rawPreview || url;
   const gifTitle = String(gif?.title || "").trim();
-  const fav = isFav(gif);
-  const favTitle = fav ? "Remover dos favoritos" : "Guardar nos favoritos";
   const mediaSizingAttrs = buildChatMediaSizingAttrs(
     gif?.width || gif?.mediaWidth || 0,
     gif?.height || gif?.mediaHeight || 0,
@@ -133093,13 +133717,7 @@ function deferredGifMessageBodyHtml(gif, safeUrl = "", {
       data-gif-title="${escAttr(gifTitle)}"
     >
       ${imgHtml}
-      <button
-        class="msg__gifFavBtn${fav ? " is-fav" : ""}"
-        type="button"
-        data-msg-gif-fav="1"
-        title="${escAttr(favTitle)}"
-        aria-label="${escAttr(favTitle)}"
-      >&#9733;</button>
+      ${gifFavoriteButtonHtml(gif)}
     </span>
   `;
 }
@@ -133468,9 +134086,7 @@ function messageHtml(m, opts = {}) {
           <button class="msgActionBtn msgActionBtn--danger" type="button" data-msg-remove-local="${escAttr(mid)}" title="Remover">Remover</button>
         </div>
       ` : "";
-  const avatarHtml = avatarUrl
-    ? buildAvatarMediaHtml(avatarUrl, { userId: authorUserId, alt: "avatar", loading: "lazy", deferAnimatedStorage: isServerMsg })
-    : `<span class="msg__avatarFallback">${esc(avatarInitial)}</span>`;
+  const avatarHtml = buildAvatarMediaHtml(avatarUrl, { userId: authorUserId, alt: "avatar", fallbackChar: avatarInitial, loading: "lazy", deferAnimatedStorage: isServerMsg });
   const botProfileAttrs = isBotMsg ? ` data-bot-profile-open="1" data-bot-profile-bot-id="${escAttr(m?.bot_id || "")}" data-bot-profile-app-id="${escAttr(m?.app_id || "")}" data-bot-profile-public-id="${escAttr(m?.bot_public_id || "")}" data-bot-profile-name="${escAttr(name || "Bot")}" data-bot-profile-avatar="${escAttr(avatarUrl || "")}" data-bot-profile-description="${escAttr(m?.bot_description || "")}" data-bot-profile-public="${m?.is_public === true ? "1" : "0"}"` : "";
   const isPersistedBotChannelMessage = isPersistedBotChannelMessageRow(m);
   const botMessageRawId = isPersistedBotChannelMessage ? (getBotChannelMessageRawId(m) || normId(m?.bot_channel_message_id || m?.message_id || m?.response_message_id || m?.id || "")) : "";
@@ -133984,24 +134600,24 @@ function appendMessage(m) {
 }
 
 function removeMessageFromCacheAndUi(messageId) {
-  const mid = String(messageId || "");
-  if (!mid) return;
-
-  const existing = getMessageById(mid);
-  if (existing) releaseOptimisticMessageResources(existing);
-
-  dmMessagesCache = dmMessagesCache.filter((m) => String(m?.id || "") !== mid);
-  dmMessageIds.delete(mid);
-  updateActiveConversationMessageCache({ persist: true, source: "message-delete" });
-  dmReactionsByMessage.delete(mid);
-  for (const k of Array.from(dmMineReactionKeys)) {
-    if (k.startsWith(`${mid}|`)) dmMineReactionKeys.delete(k);
+  const ids = new Set((Array.isArray(messageId) ? messageId : [messageId]).map(id => String(id || "")).filter(Boolean));
+  if (!ids.size) return;
+  for (const mid of ids) {
+    const existing = getMessageById(mid);
+    if (existing) releaseOptimisticMessageResources(existing);
+    dmMessageIds.delete(mid);
+    dmReactionsByMessage.delete(mid);
   }
-  if (dmReplyTarget?.id === mid) {
+  dmMessagesCache = dmMessagesCache.filter((m) => !ids.has(String(m?.id || "")));
+  updateActiveConversationMessageCache({ persist: true, source: "message-delete" });
+  for (const k of Array.from(dmMineReactionKeys)) {
+    if (ids.has(k.split("|")[0])) dmMineReactionKeys.delete(k);
+  }
+  if (ids.has(dmReplyTarget?.id)) {
     dmReplyTarget = null;
     renderDmReplyBar();
   }
-  if (dmEditTarget?.id === mid) {
+  if (ids.has(dmEditTarget?.id)) {
     clearDmEditTarget({ clearInput: true, focusInput: false, render: true });
   }
   closeMessageMenu();
@@ -134358,13 +134974,20 @@ function bindDmMessageActions() {
         url: host?.getAttribute("data-gif-url") || "",
         preview: host?.getAttribute("data-gif-preview") || "",
         title: host?.getAttribute("data-gif-title") || "",
+        animatedPreview: host?.getAttribute("data-gif-animation-preview") || "",
+        previewKind: host?.getAttribute("data-gif-preview-kind") || "animated",
+        dimensionsKind: host?.getAttribute("data-gif-dimensions-kind") || "",
+        width: Number(host?.getAttribute("data-gif-width")) || 0,
+        height: Number(host?.getAttribute("data-gif-height")) || 0,
       });
       if (!gifObj) return;
       const nowFav = toggleFav(gifObj, { syncCloud: true });
-      const nextTitle = nowFav ? "Remover dos favoritos" : "Guardar nos favoritos";
+      const nextTitle = nowFav ? t("gif.remove_favorite", "Remove from favorites") : t("gif.add_favorite", "Add to favorites");
       gifFavBtn.classList.toggle("is-fav", nowFav);
       gifFavBtn.title = nextTitle;
       gifFavBtn.setAttribute("aria-label", nextTitle);
+      gifFavBtn.setAttribute("aria-pressed", String(nowFav));
+      gifFavBtn.textContent = nowFav ? "★" : "☆";
       renderGifQuickTags();
       if (gifMode === "favorites") loadGifFavorites();
       return;
@@ -134485,8 +135108,10 @@ function bindDmMessageActions() {
         media.classList.add("is-revealed");
         return;
       }
-      const att = readAttachmentFromNode(attOpenBtn);
-      if (att) openDmAttachmentModal(att);
+      if (!openDmMediaLightboxFromNode(attOpenBtn)) {
+        const att = readAttachmentFromNode(attOpenBtn);
+        if (att && !["image", "video"].includes(att.kind)) openDmAttachmentModal(att);
+      }
       closeMessageMenu();
       return;
     }
@@ -135056,7 +135681,7 @@ async function fetchMessages(conversationId, {
 
   const mergedRows = filterRowsForServerMessageHistory(
     convId,
-    mergeConversationMessageRows(dmMessagesCache, freshRows, { preserveOptimistic: true })
+    mergeConcurrentDmHistory(dmMessagesCache, freshRows, result.baselineRows)
   );
   dmMessagesCache = mergedRows;
   recordDmOpenTimelinePhase("authoritative_history_merged", {
@@ -139273,12 +139898,54 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
     return true;
   }
 }
+let dmAttachmentActionsMenu = null;
+
+function syncDmAttachmentInputState() {
+  const fileInput = document.getElementById("dmFileInput");
+  const button = document.getElementById("btnAttach");
+  const allowed = !!(activeDmId && state.user && button && !button.disabled
+    && !isAltaraConnectionBlockingNetworkActions() && canAttachFilesInCurrentContext()
+    && !activeDmSupportsEncryptedTextOnly() && !isActiveMessageRequestPreview()
+    && !isActiveMessageRequestDraft() && !shouldBlockDmAccess(state.user.id, activeDmId));
+  if (fileInput) {
+    fileInput.disabled = !allowed;
+    if (allowed) fileInput.removeAttribute("aria-disabled");
+    else fileInput.setAttribute("aria-disabled", "true");
+  }
+  if (!allowed) dmAttachmentActionsMenu?.close();
+  return allowed;
+}
+
+function bindDmAttachmentActionsOnce() {
+  if (dmAttachmentActionsMenu) return;
+  dmAttachmentActionsMenu = createComposerAttachmentMenu({
+    canOpen: syncDmAttachmentInputState,
+    onDenied: () => showAttachmentCapabilityDeniedFeedback({ source: "attachment_button" }),
+    label: () => t("dm.attach", "Attach file"),
+    onFiles: () => document.getElementById("dmFileInput")?.click(),
+    onGif: () => openGifModal({ anchorEl: document.getElementById("btnAttach") }),
+  });
+  document.addEventListener("change", (event) => {
+    if (event.target?.id !== "dmFileInput") return;
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (files.length && syncDmAttachmentInputState()) {
+      queueDmPendingAttachments(files, { source: "file_input_change" });
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (event.target?.id !== "dmFileInput" || syncDmAttachmentInputState()) return;
+    event.preventDefault();
+    showAttachmentCapabilityDeniedFeedback({ source: "file_input" });
+  }, true);
+}
+
 function wireDmComposer() {
+  bindDmAttachmentActionsOnce();
   const input = document.getElementById("dmInput");
   const send = document.getElementById("dmSend");
   const emojiBtn = document.getElementById("btnEmoji");
   const attachBtn = document.getElementById("btnAttach");
-  const fileInput = document.getElementById("dmFileInput");
   if (!input || !send) return;
   if (input.dataset.composerBound === "1") return;
   input.dataset.composerBound = "1";
@@ -139722,18 +140389,6 @@ function wireDmComposer() {
       const editingActive = !!(dmEditTarget?.id && normId(dmEditTarget?.conversationId || "") === normId(activeDmId || ""));
       if (!text && !hasPendingAttachments && !editingActive) return;
 
-      const attachFocused = node === attachBtn || !!node.closest?.("#btnAttach");
-      if (attachFocused) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!canAttachFilesInCurrentContext()) {
-          showAttachmentCapabilityDeniedFeedback({ source: "attachment_button_keyboard" });
-          return;
-        }
-        void doSend();
-        return;
-      }
-
       const isInteractive = typeof node.matches === "function" && node.matches(
         "button,a,input,textarea,select,video,audio,[role='button'],[role='menuitem'],[contenteditable=''],[contenteditable='true'],[contenteditable='plaintext-only']"
       );
@@ -139744,26 +140399,6 @@ function wireDmComposer() {
       void doSend();
     }, true);
   }
-  attachBtn?.addEventListener("click", () => {
-    if (!activeDmId || !state.user) return;
-    if (!canAttachFilesInCurrentContext()) {
-      showAttachmentCapabilityDeniedFeedback({ source: "attachment_button" });
-      return;
-    }
-    fileInput?.click();
-  });
-  fileInput?.addEventListener("click", (e) => {
-    if (canAttachFilesInCurrentContext()) return;
-    if (e?.cancelable) e.preventDefault();
-    try { e.stopPropagation(); } catch (_) {}
-    showAttachmentCapabilityDeniedFeedback({ source: "file_input" });
-  });
-  fileInput?.addEventListener("change", async (e) => {
-    const files = Array.from(e?.target?.files || []);
-    if (!files.length) return;
-    e.target.value = "";
-    queueDmPendingAttachments(files, { source: "file_input_change" });
-  });
   emojiBtn?.addEventListener("click", (e) => {
     e.preventDefault();
     closeDmEmojiShortcodeMenu();
@@ -139789,6 +140424,22 @@ let gifFolderTitle = "Favorites";
 let gifPickerAnchorEl = null;
 let gifPickerAnchorPoint = null;
 let gifPickerPositionRaf = 0;
+let gifCatalogController = null;
+let gifGridViewport = null;
+let gifDiscoveryViewport = null;
+let gifLookupSupported = false;
+const gifCatalogCache = new GifPickerCache();
+const gifMetadataCache = new GifPickerCache({ limit: 360, ttl: 86400000 });
+function beginGifRequest() {
+  clearTimeout(gifDebounce);
+  gifCatalogController?.abort();
+  gifCatalogController = new AbortController();
+  return ++gifRequestSeq;
+}
+function enrichGifFavorite(item) {
+  const cached = gifMetadataCache.get(item.id);
+  return mergeGifPickerMetadata(dmGifMetadata.peek(item), cached);
+}
 
 function favStorageKey() {
   const uid = state?.user?.id || "guest";
@@ -139797,8 +140448,70 @@ function favStorageKey() {
 
 const GIF_FAVORITES_MAX = 120;
 
+const uploadedGifPosters = new Map();
+async function resolveUploadedGifFavorite(item, signal) {
+  const favorite = normalizeUploadedGifFavorite(item);
+  const descriptor = uploadedGifFavoriteDescriptor(favorite);
+  const account = normId(state.user?.id);
+  if (!descriptor || !account) throw new Error("GIF unavailable");
+  signal?.throwIfAborted();
+  const [row] = await hydrateTrustedAttachmentRows({ supabase, rows: [{
+    id: favorite.id, content: JSON.stringify(descriptor),
+  }] });
+  signal?.throwIfAborted();
+  if (account !== normId(state.user?.id)) throw new Error("Session changed");
+  const attachment = sanitizeAttachmentPayload(JSON.parse(row.content));
+  const url = resolveTrustedAttachmentDeliveryUrl(row, attachment);
+  if (!url) throw new Error("GIF unavailable");
+  return { url, preview: resolveTrustedAttachmentDeliveryUrl(row, attachment, { preview: true }) || url };
+}
+
+async function prepareUploadedGifFavorite(item, { signal } = {}) {
+  const account = normId(state.user?.id);
+  const key = `${account}:${item.id}`;
+  const cached = uploadedGifPosters.get(key);
+  if (cached?.expires > Date.now()) return { ...item, poster: cached.poster };
+  const media = await resolveUploadedGifFavorite(item, signal);
+  const image = new Image(); image.crossOrigin = "anonymous"; image.referrerPolicy = "no-referrer";
+  try {
+    await new Promise((resolve, reject) => {
+      const finish = (error) => { clearTimeout(timer); signal?.removeEventListener("abort", abort); image.onload = image.onerror = null; error ? reject(error) : resolve(); };
+      const abort = () => finish(new DOMException("Aborted", "AbortError"));
+      const timer = setTimeout(() => finish(new Error("GIF unavailable")), 8000);
+      image.onload = () => finish(); image.onerror = () => finish(new Error("GIF unavailable"));
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort(); else image.src = media.preview;
+    });
+    if (account !== normId(state.user?.id)) return null;
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 320 / Math.max(image.naturalWidth, image.naturalHeight));
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+    const poster = canvas.toDataURL("image/webp");
+    uploadedGifPosters.delete(key); uploadedGifPosters.set(key, { poster, expires: Date.now() + 45000 });
+    while (uploadedGifPosters.size > 48) uploadedGifPosters.delete(uploadedGifPosters.keys().next().value);
+    return { ...item, poster };
+  } finally { image.removeAttribute("src"); }
+}
+
+async function sendUploadedGifFavorite(item, conversationId) {
+  const owner = captureDmE2eeUiOwner();
+  const permission = await verifyCanAttachFilesToConversation(conversationId, "gif-favorite-insert");
+  assertDmE2eeUiOwner(owner);
+  if (!permission.ok) throw permission.error;
+  const media = await resolveUploadedGifFavorite(item);
+  const response = await fetch(media.url, { credentials: "omit", referrerPolicy: "no-referrer", redirect: "error" });
+  if (!response.ok) throw new Error("GIF unavailable");
+  const bytes = await readBoundedRemoteGifBytes(response, getCurrentAltaraPlusUploadLimitBytes());
+  if (!["GIF87a", "GIF89a"].includes(String.fromCharCode(...bytes.slice(0, 6)))) throw new Error("Invalid GIF");
+  assertDmE2eeUiOwner(owner);
+  const name = sanitizeStorageFileName(item.title || "GIF", "GIF").replace(/\.gif$/i, "") + ".gif";
+  return sendAttachmentMessage(new File([bytes], name, { type: "image/gif" }), { conversationId });
+}
+
 function normalizeGifFavoriteUrl(value = "") {
-  return normalizeTrustedMessageGifUrl(value);
+  return normalizePrivateUploadReference(value) || normalizeTrustedMessageGifUrl(value);
 }
 
 function buildGifFavoriteTokenFromUrl(value = "") {
@@ -139807,6 +140520,8 @@ function buildGifFavoriteTokenFromUrl(value = "") {
   try {
     const parsed = new URL(normalizedUrl);
     const host = String(parsed.hostname || "").trim().toLowerCase();
+    // KLIPY CDN path tokens are case-sensitive; IDs remain the preferred identity.
+    if (host === "static.klipy.com") return normalizedUrl;
     const parts = String(parsed.pathname || "")
       .split("/")
       .map((part) => String(part || "").trim())
@@ -139851,14 +140566,23 @@ function isSameGifFavoriteEntry(a = null, b = null) {
 
 function normalizeGifFavoriteEntry(entry = null) {
   if (!entry || typeof entry !== "object") return null;
-  const url = normalizeGifFavoriteUrl(entry.url || entry.gif_url || "");
+  const uploaded = normalizeUploadedGifFavorite(entry);
+  if (uploaded) return uploaded;
+  const url = normalizeTrustedMessageGifUrl(entry.url || entry.gif_url || "");
   const legacyId = String(entry.id || entry.gif_id || "").trim();
   const token = buildGifFavoriteTokenFromUrl(url);
   const id = String(legacyId || token || url || "").trim().slice(0, 512);
   if (!id || !url) return null;
   const preview = normalizeGifFavoriteUrl(entry.preview || entry.preview_url || url) || url;
   const title = String(entry.title || "").trim().slice(0, 180);
-  return { id, url, preview, title };
+  return { id, url, preview, title,
+    provider: id.startsWith("klipy:") ? "klipy" : String(entry.provider || ""),
+    animatedPreview: normalizeGifFavoriteUrl(entry.animatedPreview || "") || (entry.previewKind !== "static" ? preview : ""),
+    previewKind: entry.previewKind === "static" || /\.(jpg|jpeg|png|webp)(?:[?#]|$)/i.test(preview) ? "static" : "animated",
+    dimensionsKind: entry.dimensionsKind === "original" ? "original" : "",
+    width: Math.max(0, Math.min(4096, Number(entry.width) || 0)),
+    height: Math.max(0, Math.min(4096, Number(entry.height) || 0)),
+  };
 }
 
 function normalizeGifFavoriteList(list = []) {
@@ -139899,6 +140623,7 @@ function setFavs(list) {
   const normalized = normalizeGifFavoriteList(list);
   localStorage.setItem(favStorageKey(), JSON.stringify(normalized));
   refreshRenderedGifFavoriteButtons();
+  dmMediaLightbox?.refreshFavorite();
   return normalized;
 }
 
@@ -139923,10 +140648,10 @@ function refreshRenderedGifFavoriteButtons(scope = null) {
   if (!root || typeof root.querySelectorAll !== "function") return;
 
   const favs = getFavs();
-  const wraps = Array.from(root.querySelectorAll("[data-msg-gif-wrap]"));
+  const wraps = Array.from(root.querySelectorAll("[data-msg-gif-wrap], [data-picker-gif]"));
   wraps.forEach((host) => {
     if (!(host instanceof Element)) return;
-    const btn = host.querySelector("[data-msg-gif-fav]");
+    const btn = host.querySelector("[data-msg-gif-fav], .gif-fav-btn");
     if (!(btn instanceof HTMLElement)) return;
 
     const gifObj = normalizeGifFavoriteEntry({
@@ -139934,14 +140659,21 @@ function refreshRenderedGifFavoriteButtons(scope = null) {
       url: host.getAttribute("data-gif-url") || "",
       preview: host.getAttribute("data-gif-preview") || "",
       title: host.getAttribute("data-gif-title") || "",
+      animatedPreview: host.getAttribute("data-gif-animation-preview") || "",
+      previewKind: host.getAttribute("data-gif-preview-kind") || "animated",
+      dimensionsKind: host.getAttribute("data-gif-dimensions-kind") || "",
+      width: Number(host.getAttribute("data-gif-width")) || 0,
+      height: Number(host.getAttribute("data-gif-height")) || 0,
     });
     if (!gifObj) return;
 
     const favored = favs.some((entry) => isSameGifFavoriteEntry(entry, gifObj));
-    const label = favored ? "Remover dos favoritos" : "Guardar nos favoritos";
+    const label = favored ? t("gif.remove_favorite", "Remove from favorites") : t("gif.add_favorite", "Add to favorites");
     btn.classList.toggle("is-fav", favored);
     btn.title = label;
     btn.setAttribute("aria-label", label);
+    btn.setAttribute("aria-pressed", String(favored));
+    btn.textContent = favored ? "★" : "☆";
   });
 }
 
@@ -139994,7 +140726,17 @@ async function syncGifFavoritesFromCloud({ force = false } = {}) {
       }))
     );
     const localOnly = localFavs.filter((item) => !remoteFavs.some((remoteItem) => isSameGifFavoriteEntry(remoteItem, item)));
-    const merged = setFavs([...remoteFavs, ...localOnly]);
+    // The cloud table stores identity/URLs only. Do not discard dimensions and
+    // lightweight renditions already recovered locally on every cloud refresh.
+    const enrichedRemote = remoteFavs.map(remote => {
+      const local = localFavs.find(item => isSameGifFavoriteEntry(item, remote) && item.url === remote.url);
+      return local ? { ...local, ...remote,
+        width: remote.width || local.width, height: remote.height || local.height,
+        dimensionsKind: remote.dimensionsKind || local.dimensionsKind,
+        animatedPreview: remote.animatedPreview || local.animatedPreview,
+      } : remote;
+    });
+    const merged = setFavs([...enrichedRemote, ...localOnly]);
 
     gifFavoritesCloudLastSyncAt = Date.now();
 
@@ -140193,7 +140935,7 @@ function queueGifPickerPosition() {
   });
 }
 
-function setGifFolderView(open, title = "Favoritos") {
+function setGifFolderView(open, title = t("gif.favorites", "Favorites")) {
   const modal = document.getElementById("gifModal");
   const folderTop = document.getElementById("gifFolderTop");
   const folderTitle = document.getElementById("gifFolderTitle");
@@ -140203,13 +140945,17 @@ function setGifFolderView(open, title = "Favoritos") {
 
   if (modal) modal.classList.toggle("gif-folder-open", shouldOpen);
   if (folderTop) folderTop.style.display = shouldOpen ? "flex" : "none";
-  if (folderTitle) folderTitle.textContent = shouldOpen ? (title || "Favoritos") : "";
+  if (folderTitle) folderTitle.textContent = shouldOpen ? (title || t("gif.favorites", "Favorites")) : "";
   if (searchRow) searchRow.style.display = "";
   if (quickTags) quickTags.style.display = shouldOpen ? "none" : "";
   queueGifPickerPosition();
 }
 
 function closeGifModal() {
+  beginGifRequest();
+  gifCatalogController.abort();
+  gifGridViewport?.dispose();
+  gifDiscoveryViewport?.dispose();
   const modal = document.getElementById("gifModal");
   if (!modal) return;
   const grid = document.getElementById("gifGrid");
@@ -140232,26 +140978,11 @@ function openGifModal({ anchorEl = null, point = null } = {}) {
     showAttachmentCapabilityDeniedFeedback({ source: "gif_picker" });
     return false;
   }
-  if (row?.deleted_at || row?.deletedAt) {
-    const removed = removePersistedBotChannelMessageFromTimeline(row, context, {
-      render: true,
-      source: `${source}-deleted`,
-    });
-    logBotLiveState("realtime_deleted", {
-      table: "bot_channel_messages",
-      eventType: payload?.eventType || payload?.event || "",
-      rowId,
-      serverId: normId(context.serverId || ""),
-      channelId: normId(context.channelId || ""),
-      conversationId: getTimelineCacheKeyForServerChannel(context),
-      removed,
-    });
-    return removed;
-  }
   const modal = document.getElementById("gifModal");
   const grid = document.getElementById("gifGrid");
   const searchInput = document.getElementById("gifSearch");
   if (!modal || !grid || !searchInput) return false;
+  dmAttachmentActionsMenu?.close();
   closeEmojiPicker();
 
   gifPickerAnchorEl = anchorEl || document.getElementById("btnGif");
@@ -140259,59 +140990,67 @@ function openGifModal({ anchorEl = null, point = null } = {}) {
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
   searchInput.value = "";
-  gifFolderTitle = "Favoritos";
+  searchInput.placeholder = t("gif.search", "Search GIFs");
+  searchInput.setAttribute("aria-label", searchInput.placeholder);
+  const footer = modal.querySelector(".gifFooterHint");
+  if (footer) footer.textContent = "Powered by KLIPY · " + t("gif.tip", "Use Tab to navigate and Enter to send");
+  gifFolderTitle = t("gif.favorites", "Favorites");
   setGifFolderView(false);
   setGifHint("");
   positionGifPicker(gifPickerAnchorEl, gifPickerAnchorPoint);
   queueGifPickerPosition();
   void syncGifFavoritesFromCloud({ force: false }).then((changed) => {
-    if (!changed) return;
+    if (!changed || modal.classList.contains("hidden")) return;
     renderGifQuickTags();
-    if (gifMode === "favorites") renderGifGrid(getFavs());
+    if (gifMode === "favorites") renderGifGrid(getFavs().map(enrichGifFavorite));
   }).catch(() => {});
   loadGifTrending();
   return true;
 }
 
-async function tenorFetch(endpoint, params = {}) {
-  const url = new URL(`${TENOR_API_BASE}/${endpoint}`);
-  url.searchParams.set("key", getTenorApiKey());
-  url.searchParams.set("client_key", TENOR_CLIENT_KEY);
-
-  Object.entries(params).forEach(([k, v]) => {
-    if (v === undefined || v === null || String(v) === "") return;
-    url.searchParams.set(k, String(v));
+async function gifCatalogFetch(action, params = {}) {
+  const signal = gifCatalogController?.signal;
+  const key = JSON.stringify([state.user?.id, appLanguage, action, params.q || "", params.ids || [], params.limit || 30]);
+  const cached = gifCatalogCache.get(key);
+  if (cached) return cached;
+  const edgeFunctionName = "gif-search";
+  const authReady = await ensureSupabaseFunctionInvokeAuthReady({
+    edgeFunctionName, functionPath: "/functions/v1/gif-search", requireUser: true,
+    logPrefix: "[gif-provider auth]", logEvent: "gif.auth_state", logChannel: "gif-provider",
+    failEvent: "gif.auth_missing",
   });
-
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`Tenor HTTP ${res.status}`);
-  const json = await res.json();
-  if (json?.error) throw new Error(String(json.error));
-  return json || {};
+  signal?.throwIfAborted();
+  if (!authReady.ok) throw Object.assign(new Error("gif_auth_required"), { code: "unauthorized" });
+  const { data, error } = await supabase.functions.invoke(edgeFunctionName, {
+    body: { action, q: params.q, ids: params.ids, limit: params.limit || 30, locale: appLanguage },
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
+  });
+  if (error || data?.ok !== true) {
+    let code = data?.error || "provider_unavailable";
+    const status = Number(error?.context?.status || 0);
+    if (status === 404) code = "provider_not_configured";
+    else if (error?.context?.clone) {
+      try { code = (await error.context.clone().json())?.error || code; } catch (_) {}
+    }
+    if (!["provider_not_configured", "rate_limited", "unauthorized"].includes(code)) code = "provider_unavailable";
+    throw Object.assign(new Error(code), { code, status });
+  }
+  signal?.throwIfAborted();
+  gifLookupSupported = data.capabilities?.includes("lookup") === true;
+  return gifCatalogCache.set(key, data);
 }
 
-function mapTenorToGifObj(item) {
-  const media = Array.isArray(item?.media) ? item.media[0] : null;
-  const tiny = media?.tinygif || media?.nanogif;
-  const gif = media?.gif || media?.mediumgif || tiny;
-  const url = gif?.url || tiny?.url || "";
-  const preview = tiny?.preview
-    || media?.tinymp4?.preview
-    || media?.tinywebm?.preview
-    || gif?.preview
-    || media?.webp?.preview
-    || media?.mp4?.preview
-    || buildManagedGifStaticUrlCandidates(tiny?.url || gif?.url || url)[0]
-    || tiny?.url
-    || url;
-  if (!url) return null;
+function gifCatalogErrorHint(error) {
+  const key = error?.code === "provider_not_configured" ? "gif.setup"
+    : error?.code === "rate_limited" ? "gif.rate" : "gif.unavailable";
+  return t(key, "Online GIFs are unavailable. You can still use your favorites and the local collection.");
+}
 
-  return {
-    id: String(item?.id || url),
-    preview,
-    url,
-    title: item?.content_description || item?.title || "",
-  };
+function mapCatalogToGifObj(item) {
+  const normalized = normalizeGifFavoriteEntry(item);
+  if (!normalized || isUnavailableGifItem(item)) return null;
+  gifMetadataCache.set(normalized.id, normalized);
+  return normalized;
 }
 
 function buildGifDiscoveryItems(rawItems = [], gifPool = []) {
@@ -140357,51 +141096,19 @@ function normalizeGifDiscoveryCache(items = []) {
 
 function resolveGifStaticPreviewUrl(previewUrl = "", liveUrl = "") {
   const preview = String(previewUrl || "").trim();
+  if (isKlipyMediaUrl(liveUrl || preview)) return managedGifStillFrameCache.get(liveUrl) || managedGifStillFrameCache.get(preview) || "";
   if (preview && !isGifLikeUrl(preview) && getMediaDomUrlKind(preview) !== "gif") return preview;
   const live = String(liveUrl || preview || "").trim();
   return buildManagedGifStaticUrlCandidates(live)[0] || "";
 }
 
 function setGifDiscoveryCardImage(el, imageUrl = "") {
-  if (!el) return;
-  const rawInput = String(imageUrl || "").trim();
-  const raw = resolveGifStaticPreviewUrl(rawInput, rawInput) || rawInput;
-  if (!raw) {
-    el.classList.remove("has-image");
-    clearManagedGifBackgroundElement(el, { clearUrl: true });
-    delete el.dataset.bgSrc;
-    return;
-  }
-  if (isLikelySupabaseStorageMediaUrl(raw)) {
-    el.classList.remove("has-image");
-    clearManagedGifBackgroundElement(el, { clearUrl: true });
-    el.dataset.bgSrc = raw;
-    return;
-  }
-  if (isManagedGifBackgroundUrl(raw)) {
+  if (!el || !imageUrl) return;
+  const item = { url: "", preview: imageUrl, previewKind: "static" };
+  gifDiscoveryViewport?.observe(el, item, result => {
+    if (!result?.poster) return;
+    el.style.setProperty("--gif-card-image", `url("${result.poster}")`);
     el.classList.add("has-image");
-    el.setAttribute("data-managed-gif-bg", "1");
-    el.setAttribute("data-managed-gif-bg-var", "--gif-card-image");
-    el.setAttribute("data-gif-bg-src", raw);
-    el.setAttribute("data-media-source", "gif-picker");
-    bindManagedGifBackgroundElement(el);
-    syncManagedGifBackgroundElement(el);
-    return;
-  }
-  el.removeAttribute("data-managed-gif-bg");
-  el.removeAttribute("data-managed-gif-bg-var");
-  el.removeAttribute("data-gif-bg-src");
-  el.classList.remove("is-gif-paused");
-  el.removeAttribute("data-gif-playback");
-  const safe = raw.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
-  el.classList.add("has-image");
-  el.style.setProperty("--gif-card-image", `url("${safe}")`);
-  recordMediaEgressLoad(raw, {
-    element: el,
-    source: "gif-picker",
-    reason: "gif-picker-open",
-    automatic: true,
-    kind: "background-image",
   });
 }
 
@@ -140436,6 +141143,8 @@ function renderGifQuickTags(tags = null, {
     box.style.display = "none";
     return;
   }
+  gifDiscoveryViewport?.dispose();
+  gifDiscoveryViewport = createGifThumbnailViewport(box, prepareGifPreview);
   box.innerHTML = "";
   const folderOpen = !!modal?.classList?.contains("gif-folder-open");
   const hasActiveSearchQuery = !!String(searchInput?.value || "").trim();
@@ -140456,24 +141165,25 @@ function renderGifQuickTags(tags = null, {
 
   const sectionTop = document.createElement("div");
   sectionTop.className = "gifBrowseTop";
-  sectionTop.innerHTML = `<div class="gifBrowseTitle">Explorar GIFs</div>`;
+  sectionTop.innerHTML = `<div class="gifBrowseTitle">${esc(t("gif.browse", "Browse GIFs"))}</div>`;
   box.appendChild(sectionTop);
 
   const favCount = getFavs().length;
   box.appendChild(
     makeShortcutButton(
-      "Favoritos",
-      `${favCount} guardados`,
+      t("gif.favorites", "Favorites"),
+      tf("gif.saved", { count: favCount }, "{count} saved"),
       () => loadGifFavorites(),
       "gif-shortcut--favorites",
+      getFavs().map(enrichGifFavorite)[0]?.preview || "",
     )
   );
 
   const trendingCardPreview = gifTrendingPreviewUrl || gifQuickTagsCache?.[0]?.preview || "";
   box.appendChild(
     makeShortcutButton(
-      "Trending GIFs",
-      "Feed global Tenor",
+      t("gif.trending", "Trending GIFs"),
+      "Powered by KLIPY",
       () => {
         const search = document.getElementById("gifSearch");
         if (search) search.value = "";
@@ -140511,12 +141221,18 @@ function renderGifLoading(text) {
   const gifGrid = document.getElementById("gifGrid");
   if (!gifGrid) return;
   setGifGridVisible(true);
-  gifGrid.innerHTML = "";
-  const loading = document.createElement("div");
-  loading.className = "gif-empty";
-  loading.textContent = text || t("app.loading", "Loading...");
-  gifGrid.appendChild(loading);
+  gifGrid.setAttribute("aria-busy", "true");
+  setGifHint(text || t("app.loading", "Loading..."));
+  // Keep useful results interactive while the next request is pending.
+  if (gifGrid.querySelector(".gif-item")) return;
+  gifGrid.innerHTML = '<div class="gifSkeletons" aria-hidden="true">' + '<div class="gifSkeleton"></div>'.repeat(6) + '</div>';
   queueGifPickerPosition();
+}
+
+function preparePickerGifResults(list, reqId = gifRequestSeq) {
+  if (reqId !== gifRequestSeq) return [];
+  // Metadata is cheap. Each visible tile validates/decodes its own tiny preview.
+  return (list || []).filter(item => !isUnavailableGifItem(item)).map(mapCatalogToGifObj).filter(Boolean);
 }
 
 function renderGifGrid(list) {
@@ -140529,17 +141245,23 @@ function renderGifGrid(list) {
     return;
   }
   setGifGridVisible(true);
+  gifGrid.setAttribute("aria-busy", "false");
+  setGifHint("");
+  gifGridViewport?.dispose();
+  gifGridViewport = createGifThumbnailViewport(gifGrid, (item, options) =>
+    normalizeUploadedGifFavorite(item) ? prepareUploadedGifFavorite(item, options) : prepareGifPreview(item, options));
   gifGrid.innerHTML = "";
+  gifGrid.scrollTop = 0;
 
   if (!list || list.length === 0) {
     const empty = document.createElement("div");
     empty.className = "gif-empty";
     empty.textContent =
-      gifMode === "favorites"
-        ? "Sem favoritos ainda. Clica na estrela para guardar."
+      gifMode === "favorites" && !getFavs().length
+        ? t("gif.no_favorites", "No favorites yet. Select the star to save a GIF.")
         : gifMode === "search"
-          ? "Nada encontrado para esta pesquisa."
-          : "Sem GIFs agora.";
+          ? t("gif.empty", "No GIFs found for this search.")
+          : t("gif.no_gifs", "No GIFs available.");
     gifGrid.appendChild(empty);
     queueGifPickerPosition();
     return;
@@ -140548,10 +141270,10 @@ function renderGifGrid(list) {
   const sectionTop = document.createElement("div");
   sectionTop.className = "gifGridSectionTop";
   const title = gifMode === "favorites"
-    ? "Favoritos"
+    ? t("gif.favorites", "Favorites")
     : gifMode === "search"
-      ? "Resultados"
-      : (gifFolderTitle || "Trending GIFs");
+      ? t("gif.results", "Results")
+      : (gifFolderTitle || t("gif.trending", "Trending GIFs"));
   sectionTop.innerHTML = `
     <div class="gifGridSectionTitle">${esc(title)}</div>
   `;
@@ -140566,6 +141288,7 @@ function renderGifGrid(list) {
   });
   gifGrid.appendChild(masonry);
 
+  const favorites = getFavs();
   list.forEach((gifObj, idx) => {
     if (!gifObj?.url) return;
 
@@ -140573,51 +141296,52 @@ function renderGifGrid(list) {
     const previewUrl = resolveGifStaticPreviewUrl(gifObj.preview || "", gifUrl);
     const item = document.createElement("div");
     item.className = "gif-item";
+    item.dataset.pickerGif = "1";
+    item.dataset.gifIndex = String(idx);
+    item.dataset.gifId = gifObj.id || gifUrl;
+    item.dataset.gifUrl = gifUrl;
+    item.dataset.gifPreview = gifObj.preview || gifUrl;
+    item.dataset.gifTitle = gifObj.title || "";
     item.tabIndex = 0;
     item.setAttribute("role", "button");
     item.setAttribute("aria-label", gifObj.title ? `Enviar GIF: ${gifObj.title}` : "Enviar GIF");
 
     const img = document.createElement("img");
-    if (previewUrl) {
-      img.src = previewUrl;
-      img.setAttribute("data-media-preview", "1");
-      img.setAttribute("data-media-poster", "1");
-      img.setAttribute("data-gif-preview", previewUrl);
-      img.setAttribute("data-media-preview-url", previewUrl);
-      img.dataset.mediaLoaded = "1";
-    }
-    img.setAttribute("data-media-src", gifUrl);
-    img.setAttribute("data-managed-gif-media", "1");
-    img.dataset.gifLiveSrc = gifUrl;
-    img.setAttribute("data-media-source", "gif-picker");
-    img.setAttribute("data-media-load-reason", "gif-picker-open");
-    img.setAttribute("data-media-kind", "gif");
     img.alt = gifObj.title || "GIF";
     img.loading = "lazy";
     img.decoding = "async";
     img.referrerPolicy = "no-referrer";
-    img.title = gifObj.title || "GIF";
-    img.addEventListener("error", () => {
-      if (!img.dataset.retryWithMain && gifUrl && String(img.dataset.mediaSrc || "") !== gifUrl) {
-        img.dataset.retryWithMain = "1";
-        img.removeAttribute("src");
-        img.removeAttribute("data-media-loaded");
-        img.setAttribute("data-media-src", gifUrl);
-        loadLazyMediaImage(img, {
-          force: true,
-          source: "gif-picker",
-          reason: "gif-picker-fallback",
-          automatic: true,
-        });
-        return;
-      }
-      item.classList.add("is-broken");
+    item.classList.add("is-preview-loading");
+    if (gifObj.width && gifObj.height) img.style.aspectRatio = `${gifObj.width} / ${gifObj.height}`;
+    // No data-media-src/live-src: the message animation manager must never
+    // replace picker thumbnails with full-size animated originals.
+    /* Failed tiles leave the layout; survivors compact across both columns. */
+    const removeFailedTile = () => {
+      if (!item.isConnected) return;
+      item.remove();
+      const survivors = columns.flatMap(column => [...column.children]).sort((a, b) => Number(a.dataset.gifIndex) - Number(b.dataset.gifIndex));
+      survivors.forEach((tile, index) => columns[index % columns.length].appendChild(tile));
+      if (!survivors.length) renderGifGrid([]);
+      queueGifPickerPosition();
+    };
+    img.addEventListener("load", () => {
+      if (isKlipyMediaUrl(gifUrl)) void isUnavailableGifImage(img).then(unavailable => { if (unavailable) removeFailedTile(); }).catch(removeFailedTile);
     });
+    img.addEventListener("error", removeFailedTile);
+
 
     const sendSelectedGif = () => {
+      const poster = img.complete && img.naturalWidth ? img.getAttribute("src") : "";
       closeGifModal();
+      if (normalizeUploadedGifFavorite(gifObj)) {
+        void sendUploadedGifFavorite(gifObj, activeDmId).catch(() => showDmComposerNotice(t("gif.error_send", "Could not send GIF.")));
+        return;
+      }
       void sendGifMessage(gifObj.url, {
-        preview: previewUrl || gifObj.preview || "",
+        ...gifObj,
+        poster,
+        id: gifObj.id || "",
+        preview: gifObj.preview || gifObj.url,
         title: gifObj.title || "",
       }).catch((err) => {
         console.warn("gif send failed", err);
@@ -140633,17 +141357,21 @@ function renderGifGrid(list) {
 
     const fav = document.createElement("button");
     fav.type = "button";
-    const initiallyFav = isFav(gifObj);
+    const initiallyFav = favorites.some(entry => isSameGifFavoriteEntry(entry, gifObj));
     fav.className = "gif-fav-btn" + (initiallyFav ? " is-fav" : "");
-    fav.title = initiallyFav ? "Remover dos favoritos" : "Adicionar aos favoritos";
+    fav.title = initiallyFav ? t("gif.remove_favorite", "Remove from favorites") : t("gif.add_favorite", "Add to favorites");
     fav.setAttribute("aria-label", fav.title);
-    fav.innerHTML = "&#9733;";
+    fav.setAttribute("aria-pressed", String(initiallyFav));
+    fav.textContent = initiallyFav ? "★" : "☆";
+    fav.addEventListener("keydown", e => e.stopPropagation());
     fav.addEventListener("click", (e) => {
       e.stopPropagation();
       const nowFav = toggleFav(gifObj, { syncCloud: true });
       fav.classList.toggle("is-fav", nowFav);
-      fav.title = nowFav ? "Remover dos favoritos" : "Adicionar aos favoritos";
+      fav.title = nowFav ? t("gif.remove_favorite", "Remove from favorites") : t("gif.add_favorite", "Add to favorites");
       fav.setAttribute("aria-label", fav.title);
+      fav.setAttribute("aria-pressed", String(nowFav));
+      fav.textContent = nowFav ? "★" : "☆";
       renderGifQuickTags();
       if (gifMode === "favorites") loadGifFavorites();
     });
@@ -140651,85 +141379,75 @@ function renderGifGrid(list) {
     item.appendChild(img);
     item.appendChild(fav);
     columns[idx % columns.length].appendChild(item);
+    const lightweight = !isKlipyMediaUrl(gifUrl) && previewUrl ? { ...gifObj, preview: previewUrl } : gifObj;
+    gifGridViewport.observe(item, lightweight, result => {
+      if (!result?.poster) { removeFailedTile(); return; }
+      img.src = result.poster;
+      item.classList.remove("is-preview-loading");
+    });
   });
-  bindLazyMediaImages(gifGrid);
   queueGifPickerPosition();
 }
 
 async function loadGifTrending() {
-  const reqId = ++gifRequestSeq;
-  setGifMode("trending");
-  setGifFolderView(false);
-  setGifHint("");
-  renderGifQuickTags([]);
-  setGifGridVisible(false);
-  const gifGrid = document.getElementById("gifGrid");
-  if (gifGrid) gifGrid.innerHTML = "";
-
+  const reqId = beginGifRequest();
+  setGifMode("trending"); setGifFolderView(false); setGifHint("");
+  renderGifQuickTags(); setGifGridVisible(false);
+  gifGridViewport?.dispose();
+  let gifs = [];
+  const render = () => {
+    if (reqId !== gifRequestSeq) return;
+    const labels = gifQuickTagsCache.length ? gifQuickTagsCache : ["miss you", "wink", "whatever", "hungry", "mood", "reaction"];
+    renderGifQuickTags(buildGifDiscoveryItems(labels, gifs), { trendingPreview: gifs[0]?.preview || "" });
+  };
+  // Trending's first image does not wait for categories or 29 other images.
+  void gifCatalogFetch("categories", { limit: 8 }).then(terms => {
+    if (reqId !== gifRequestSeq) return;
+    gifQuickTagsCache = normalizeGifDiscoveryCache(terms.results);
+    if (gifs.length) render();
+  }).catch(() => {});
   try {
-    const [data, terms] = await Promise.all([
-      tenorFetch("trending", { limit: 30, media_filter: "minimal", contentfilter: "medium" }),
-      tenorFetch("trending_terms", { limit: 8 }),
-    ]);
+    const data = await gifCatalogFetch("trending", { limit: 30 });
     if (reqId !== gifRequestSeq) return;
-
-    const gifs = (data?.results || []).map(mapTenorToGifObj).filter(Boolean);
-    const termsRaw = Array.isArray(terms?.results) ? terms.results : [];
-    let discoveryItems = buildGifDiscoveryItems(termsRaw, gifs);
-    if (!discoveryItems.length) {
-      discoveryItems = buildGifDiscoveryItems(["miss you", "wink", "whatever", "hungry", "mood", "reaction"], gifs);
-    }
-    renderGifQuickTags(discoveryItems, {
-      trendingPreview: String(gifs?.[0]?.preview || gifs?.[0]?.url || "").trim(),
-    });
-    setGifGridVisible(false);
-    setGifHint("");
-  } catch (e) {
-    console.error("Tenor trending error", e);
+    gifs = preparePickerGifResults(data.results, reqId); render();
+    hydrateGifFavoriteMetadata(gifs);
+  } catch (error) {
     if (reqId !== gifRequestSeq) return;
-    const fallback = fallbackGifList();
-    const fallbackItems = buildGifDiscoveryItems(
-      ["miss you", "wink", "whatever", "hungry", "mood", "reaction"],
-      fallback
-    );
-    renderGifQuickTags(fallbackItems, {
-      trendingPreview: String(fallback?.[0]?.preview || fallback?.[0]?.url || "").trim(),
-    });
-    setGifGridVisible(false);
-    setGifHint("Erro ao ligar ao Tenor. Usa as categorias.", true);
+    gifs = fallbackGifList(); render(); setGifHint(gifCatalogErrorHint(error), true);
   }
 }
 
 async function loadGifTrendingFolder() {
-  const reqId = ++gifRequestSeq;
-  gifFolderTitle = "Trending GIFs";
+  const reqId = beginGifRequest();
+  gifFolderTitle = t("gif.trending", "Trending GIFs");
   setGifMode("trending");
   setGifFolderView(true, gifFolderTitle);
   setGifHint("");
-  renderGifLoading("A carregar trending...");
+  renderGifLoading(t("gif.loading", "Loading GIFs..."));
 
   try {
-    const data = await tenorFetch("trending", {
+    const data = await gifCatalogFetch("trending", {
       limit: 30,
       media_filter: "minimal",
       contentfilter: "medium",
     });
     if (reqId !== gifRequestSeq) return;
 
-    const gifs = (data?.results || []).map(mapTenorToGifObj).filter(Boolean);
+    const gifs = preparePickerGifResults((data?.results || []).filter(item => !isUnavailableGifItem(item)).map(mapCatalogToGifObj).filter(Boolean), reqId);
+    if (reqId !== gifRequestSeq) return;
     if (gifs.length) {
       gifTrendingPreviewUrl = String(gifs[0]?.preview || gifs[0]?.url || "").trim();
       renderGifGrid(gifs);
       return;
     }
 
-    renderGifGrid(fallbackGifList());
-    setGifHint("Tenor sem resultados. A mostrar fallback.");
+    renderGifGrid([]);
+    setGifHint(t("gif.empty", "No GIFs found for this search."));
   } catch (e) {
-    console.error("Tenor trending folder error", e);
+    console.warn("[gif-provider] trending unavailable", { code: e?.code || "provider_unavailable", status: e?.status || 0 });
     if (reqId !== gifRequestSeq) return;
     renderGifGrid(fallbackGifList());
-    setGifHint("Erro ao ligar ao Tenor. A mostrar fallback.", true);
+    setGifHint(gifCatalogErrorHint(e), true);
   }
 }
 
@@ -140740,16 +141458,16 @@ async function loadGifSearch(q) {
     return;
   }
 
-  const reqId = ++gifRequestSeq;
+  const reqId = beginGifRequest();
   setGifMode("search");
   setGifFolderView(false);
   const quickTags = document.getElementById("gifQuickTags");
   if (quickTags) quickTags.style.display = "none";
   setGifHint("");
-  renderGifLoading(`A pesquisar "${query}"...`);
+  renderGifLoading(tf("gif.searching", { query }, 'Searching for "{query}"...'));
 
   try {
-    const data = await tenorFetch("search", {
+    const data = await gifCatalogFetch("search", {
       q: query,
       limit: 30,
       media_filter: "minimal",
@@ -140757,46 +141475,73 @@ async function loadGifSearch(q) {
     });
     if (reqId !== gifRequestSeq) return;
 
-    const gifs = (data?.results || []).map(mapTenorToGifObj).filter(Boolean);
+    const gifs = preparePickerGifResults((data?.results || []).filter(item => !isUnavailableGifItem(item)).map(mapCatalogToGifObj).filter(Boolean), reqId);
+    if (reqId !== gifRequestSeq) return;
     if (gifs.length) {
       gifTrendingPreviewUrl = String(gifs[0]?.preview || gifs[0]?.url || "").trim();
     }
 
     if (!gifs.length) {
       renderGifGrid([]);
-      setGifHint("Nada encontrado no Tenor para essa pesquisa.");
+      setGifHint(t("gif.empty", "No GIFs found for this search."));
       return;
     }
 
     renderGifGrid(gifs);
+    hydrateGifFavoriteMetadata(gifs);
+    setGifHint("");
   } catch (e) {
-    console.error("Tenor search error", e);
+    console.warn("[gif-provider] search unavailable", { code: e?.code || "provider_unavailable", status: e?.status || 0 });
     if (reqId !== gifRequestSeq) return;
-    renderGifGrid([]);
-    setGifHint("Erro ao pesquisar no Tenor.", true);
+    renderGifGrid(fallbackGifList());
+    setGifHint(gifCatalogErrorHint(e), true);
   }
 }
 
-function loadGifFavorites() {
-  ++gifRequestSeq;
-  gifFolderTitle = "Favoritos";
-  setGifMode("favorites");
-  setGifFolderView(true, gifFolderTitle);
-  setGifHint("");
-  renderGifGrid(getFavs());
-  void syncGifFavoritesFromCloud({ force: false }).then((changed) => {
-    if (!changed || gifMode !== "favorites") return;
-    renderGifQuickTags();
-    renderGifGrid(getFavs());
+async function loadGifFavorites() {
+  const reqId = beginGifRequest();
+  gifFolderTitle = t("gif.favorites", "Favorites");
+  setGifMode("favorites"); setGifFolderView(true, gifFolderTitle); setGifHint("");
+  renderGifGrid(getFavs().map(enrichGifFavorite));
+  // Never block existing favorites on cloud or metadata hydration.
+  void syncGifFavoritesFromCloud({ force: false }).then(changed => {
+    if (changed && reqId === gifRequestSeq) renderGifGrid(getFavs().map(enrichGifFavorite));
   }).catch(() => {});
+  // Favorites can open before discovery finishes (and abort that request).
+  // Missing discovery capabilities must not prevent the independent ID lookup.
+  const ids = getFavs().filter(x => x.id.startsWith("klipy:") && (x.previewKind !== "static" || x.dimensionsKind !== "original")).map(x => x.id).slice(0, 30);
+  if (!ids.length) return;
+  try {
+    const data = await gifCatalogFetch("lookup", { ids });
+    if (reqId !== gifRequestSeq) return;
+    const results = preparePickerGifResults(data.results, reqId);
+    if (hydrateGifFavoriteMetadata(results)) renderGifGrid(getFavs());
+  } catch { /* Retain every old favorite if its metadata cannot be recovered. */ }
+}
+
+function hydrateGifFavoriteMetadata(results) {
+  const byId = new Map(results.map(x => [x.id, x]));
+  let changed = false;
+  const favorites = getFavs().map(old => {
+    const fresh = byId.get(old.id);
+    if (!fresh || (fresh.previewKind !== "static" && old.previewKind === "static")) return old;
+    const merged = { ...old, ...fresh };
+    if (JSON.stringify(merged) === JSON.stringify(old)) return old;
+    changed = true;
+    queueGifFavoriteCloudWrite(merged, true);
+    return merged;
+  });
+  if (changed) setFavs(favorites);
+  return changed;
 }
 
 function bindGifPickerOnce() {
   if (gifBound) return;
   gifBound = true;
 
-  const gifBtn = document.getElementById("btnGif");
-  gifBtn?.addEventListener("click", (e) => {
+  document.addEventListener("click", (e) => {
+    const gifBtn = eventTargetElement(e)?.closest("#btnGif");
+    if (!gifBtn || gifBtn.disabled) return;
     e.preventDefault();
     const modal = document.getElementById("gifModal");
     if (modal && !modal.classList.contains("hidden")) {
@@ -140824,7 +141569,7 @@ function bindGifPickerOnce() {
 
   const search = document.getElementById("gifSearch");
   search?.addEventListener("input", (e) => {
-    clearTimeout(gifDebounce);
+    beginGifRequest();
     gifDebounce = setTimeout(() => {
       const value = e?.target?.value || "";
       loadGifSearch(value);
@@ -140847,7 +141592,7 @@ function bindGifPickerOnce() {
     const modal = document.getElementById("gifModal");
     if (!modal || modal.classList.contains("hidden")) return;
     if (target.closest("#gifModal")) return;
-    if (target.closest("#btnGif")) return;
+    if (target.closest("#btnGif,#btnAttach,[data-composer-action]")) return;
     closeGifModal();
   });
 
@@ -141035,34 +141780,26 @@ async function uploadDmAttachmentFile(file, {
   const contentType = String(file.type || "").trim() || "application/octet-stream";
   const attachmentKind = getAttachmentKindFromMime(contentType, fileName);
   const previewSource = previewSourceFile || file;
-  const previewCandidate = attachmentKind === "image"
-    ? await createDmImagePreviewFileForUpload(previewSource).catch((err) => {
-      console.warn("dm attachment preview generation failed:", err);
-      return null;
-    })
-    : null;
-
-  const upload = await uploadFileViaAltaraStorage(file, {
+  // Both objects have independent admission/completion checks. Preparing and
+  // uploading the thumbnail need not wait for the original's storage round trips.
+  const originalJob = uploadFileViaAltaraStorage(file, {
     fileName,
     contentType,
     cacheControl: "60",
     uploadContext: "dm_attachment",
     conversationId: targetConversationId,
   });
+  const previewJob = (async () => {
+    if (attachmentKind !== "image") return { previewCandidate: null, previewUpload: null };
+    const previewCandidate = await createDmImagePreviewFileForUpload(previewSource).catch(() => null);
+    const previewUpload = previewCandidate?.file
+      ? await uploadDmAttachmentPreviewFile(previewCandidate.file, { conversationId: targetConversationId }).catch(() => null)
+      : null;
+    return { previewCandidate, previewUpload };
+  })();
+  const [upload, { previewCandidate, previewUpload }] = await Promise.all([originalJob, previewJob]);
   const url = String(upload?.displayUrl || "").trim();
   if (!url || !upload?.uploadId) throw new Error("Nao consegui verificar o anexo.");
-
-  let previewUpload = null;
-  if (previewCandidate?.file) {
-    try {
-      previewUpload = await uploadDmAttachmentPreviewFile(previewCandidate.file, {
-        conversationId: targetConversationId,
-      });
-    } catch (previewErr) {
-      console.warn("dm attachment preview upload failed:", previewErr?.code || previewErr?.message || "preview_failed");
-      previewUpload = null;
-    }
-  }
 
   return sanitizeAttachmentPayload({
     type: "attachment",
@@ -141250,7 +141987,7 @@ async function downloadTrustedRemoteGifFile(gifUrl, title = "") {
     method: "GET",
     credentials: "omit",
     referrerPolicy: "no-referrer",
-    cache: "no-store",
+    cache: "default",
   });
   if (!response.ok || !normalizeTrustedRemoteGifUrl(response.url || trustedUrl)) {
     throw new Error("Nao foi possivel obter o GIF de forma segura.");
@@ -141263,64 +142000,108 @@ async function downloadTrustedRemoteGifFile(gifUrl, title = "") {
   return new File([bytes], `${baseName}.gif`, { type: "image/gif", lastModified: Date.now() });
 }
 
+const gifSendInFlight = new Set();
+
 async function sendGifMessage(gifUrl, {
-  conversationId = activeDmId,
-  replyToId = null,
-  preview = "",
-  title = "",
+  id = "", conversationId = activeDmId, replyToId = null,
+  preview = "", animatedPreview = "", title = "", width = 0, height = 0,
+  previewKind = "animated", dimensionsKind = "", poster = "", optimisticMessageId = "",
 } = {}) {
   const targetConversationId = normId(conversationId);
   if (!gifUrl || !targetConversationId || !state.user) return null;
-  if (
-    targetConversationId === normId(activeDmId || "")
-    && !canAttachFilesInCurrentContext()
-  ) {
+  if (targetConversationId === normId(activeDmId || "") && !canAttachFilesInCurrentContext()) {
     showAttachmentCapabilityDeniedFeedback({ source: "gif_insert" });
     return null;
   }
-  const attachmentPermission = await verifyCanAttachFilesToConversation(targetConversationId, "gif-message-insert");
-  if (!attachmentPermission.ok) {
-    showDmComposerNotice(attachmentPermission.error?.message || MESSAGE_ATTACHMENT_PERMISSION_TEXT, { title: "Uploads" });
-    return null;
-  }
-  if (isActiveMessageRequestPreview()) {
+  if (targetConversationId === normId(activeDmId || "") && isActiveMessageRequestPreview()) {
     showDmComposerNotice("Accept this request before replying.", { title: "Message Requests" });
     return null;
   }
-
-  const effectiveReplyToId = (
-    dmFeatureCaps.advancedMessages
-    && replyToId
-  ) ? replyToId : (
-    dmFeatureCaps.advancedMessages
-    && targetConversationId === normId(activeDmId || "")
-    && dmReplyTarget?.id
-  ) ? dmReplyTarget.id : null;
-
+  const gifProvider = normalizeGifPickerMetadata(enrichGifFavorite({ source: "gif-picker", id, url: gifUrl, preview, animatedPreview, title, width, height, previewKind, dimensionsKind }));
+  if (!gifProvider?.url) throw new Error("Fornecedor de GIF nao autorizado.");
+  const owner = captureDmE2eeUiOwner();
+  const effectiveReplyToId = dmFeatureCaps.advancedMessages
+    ? (replyToId || (targetConversationId === normId(activeDmId || "") ? dmReplyTarget?.id : null)) : null;
+  let optimisticMessage = optimisticMessageId
+    ? getConversationRowsForOptimisticMutation(targetConversationId).find(row => row.id === optimisticMessageId) : null;
+  const messageId = optimisticMessage?.id || crypto.randomUUID();
+  if (gifSendInFlight.has(messageId)) return null;
+  gifSendInFlight.add(messageId);
+  // Public metadata/poster are already on the selected tile. No I/O before this row.
+  dmMediaPresenter.seedPoster(gifProvider, poster);
+  const retry = optimisticMessage?._optimisticRetry || {
+    kind: "gif", conversationId: targetConversationId, replyToId: effectiveReplyToId || null,
+    gifProvider, attachment: null, insertAttempted: false,
+  };
   try {
-    await ensureConversationMessageRateLimit(targetConversationId);
-  } catch (error) {
-    if (isMessageSendRateLimitError(error)) {
-      showDmComposerNotice(
-        buildMessageSendRateLimitWarning(getMessageSendRateLimitRetryAfterSeconds(error)),
-        { title: "Messages" }
-      );
-      return null;
+    if (!optimisticMessage) {
+      const attachment = { type: "attachment", kind: "image", mime: "image/gif", url: gifProvider.url,
+        name: gifProvider.title || "GIF", width: gifProvider.width, height: gifProvider.height, isAnimated: true, gifProvider };
+      optimisticMessage = createOptimisticOutgoingMessage({
+        messageId, conversationId: targetConversationId,
+        content: JSON.stringify({ type: "gif", url: gifProvider.url, attachment }),
+        replyToId: effectiveReplyToId || null, retryPayload: retry,
+      });
+      if (optimisticMessage) finalizeLocalOutgoingEcho();
     }
+    const attachmentPermission = await verifyCanAttachFilesToConversation(targetConversationId, "gif-message-insert");
+    assertDmE2eeUiOwner(owner);
+    if (!attachmentPermission.ok) throw attachmentPermission.error;
+    // A lost HTTP response is not permission to create a second message on retry.
+    const recoverInserted = async () => {
+      const { data, error } = await supabase.from("messages").select(dmMessageSelectColumns())
+        .eq("id", messageId).eq("conversation_id", targetConversationId).eq("user_id", owner.userId).maybeSingle();
+      assertDmE2eeUiOwner(owner);
+      if (error) throw error;
+      return data || null;
+    };
+    let row = retry.insertAttempted ? await recoverInserted() : null;
+    if (!row) {
+      await ensureConversationMessageRateLimit(targetConversationId, { sendId: messageId });
+      assertDmE2eeUiOwner(owner);
+      if (!retry.attachment) {
+        const gifFile = await downloadTrustedRemoteGifFile(gifProvider.url, gifProvider.title);
+        assertDmE2eeUiOwner(owner);
+        const attachment = await uploadDmAttachmentFile(gifFile, {
+          conversationId: targetConversationId, spoiler: false, previewSourceFile: gifFile,
+        });
+        assertDmE2eeUiOwner(owner);
+        if (!attachment || !isGifLikeAttachment(attachment)) throw new Error("Nao consegui verificar o GIF.");
+        // Retain completed durability work for retries; never persist the local poster.
+        retry.attachment = { ...attachment, gifProvider };
+      }
+      const finalPermission = await verifyCanAttachFilesToConversation(targetConversationId, "attachment-message-insert");
+      assertDmE2eeUiOwner(owner);
+      if (!finalPermission.ok) throw finalPermission.error;
+      const attachment = persistedTrustedAttachment(retry.attachment);
+      const insertPayload = await buildConversationMessageInsertPayload({
+        conversationId: targetConversationId,
+        content: JSON.stringify({ type: "gif", url: attachment.url, attachment }),
+        replyToId: effectiveReplyToId || null, owner,
+      });
+      assertDmE2eeUiOwner(owner);
+      insertPayload.id = messageId;
+      if (optimisticMessage?.created_at) insertPayload.created_at = optimisticMessage.created_at;
+      retry.insertAttempted = true;
+      const result = await insertMessageRowAndHydrate(insertPayload, targetConversationId, { sendId: messageId, owner });
+      assertDmE2eeUiOwner(owner);
+      if (String(result.error?.code || "") === "23505") row = await recoverInserted();
+      else if (result.error) throw result.error;
+      else row = result.row;
+      if (!row) throw new Error("Message confirmation unavailable. Retry.");
+    }
+    reconcileOptimisticOutgoingMessage(messageId, row, { keepBottom: true, source: "gif-send" });
+    return row;
+  } catch (error) {
+    if (!owner.isCurrent()) return null;
+    const current = getConversationRowsForOptimisticMutation(targetConversationId).find(row => row.id === messageId);
+    // Realtime may already have confirmed an insert whose HTTP response was lost.
+    if (current && !isOptimisticDmMessage(current)) return current;
+    if (optimisticMessage) markOptimisticOutgoingMessageFailed(messageId, error, targetConversationId);
     throw error;
+  } finally {
+    gifSendInFlight.delete(messageId);
   }
-  const gifFile = await downloadTrustedRemoteGifFile(gifUrl, title);
-  const attachment = await uploadDmAttachmentFile(gifFile, {
-    conversationId: targetConversationId,
-    spoiler: false,
-    previewSourceFile: gifFile,
-  });
-  if (!attachment || !isGifLikeAttachment(attachment)) throw new Error("Nao consegui verificar o GIF.");
-  return sendAttachmentBatchMessage([attachment], {
-    conversationId: targetConversationId,
-    replyToId: effectiveReplyToId || null,
-    skipRateLimit: true,
-  });
 }
 /* ========================= CALLS (WebRTC + Signals) ========================= */
 let callPc = null;
@@ -143649,6 +144430,7 @@ const liveKitLocalVoiceAttributeQueueByController = new WeakMap();
 const liveKitLocalVoiceDataQueueByController = new WeakMap();
 const CALL_STATE_ATTRIBUTE_SELF_MUTED = "altara_self_muted";
 const CALL_STATE_ATTRIBUTE_SELF_DEAFENED = "altara_self_deafened";
+const CALL_STATE_ATTRIBUTE_AUDIO_CLOCK = "altara_self_audio_state_clock";
 const CALL_STATE_ATTRIBUTE_VERSION = "altara_call_state_version";
 let callMediaLastRemoteParticipantStateAt = null;
 const privateVoiceAccessDecisionByChannel = new Map();
@@ -143746,6 +144528,14 @@ const groupDmCallerPresentation = createGroupDmCallerPresentation({
 });
 const callConnectionSoundLifecycle = createConnectionSoundLifecycle({ player: altaraSfxPlayer });
 const screenShareSoundLifecycle = createScreenShareSoundLifecycle({ player: altaraSfxPlayer });
+const callMediaSoundLifecycle = createCallMediaSoundLifecycle({
+  playCue: (cue, options) => playUiCue(cue, {
+    ...options,
+    volumeScale: getEffectiveLocalDeafened(callConversationId) ? 0 : clampVolume01(voiceSpeakerMasterVolume),
+    prepareAudio: applyPreferredOutputDeviceToAudioEl,
+  }),
+  cancelOwner: (ownerKey) => altaraSfxPlayer.cancelOwner(ownerKey, "call_media_baseline_changed"),
+});
 const cameraSoundLifecycle = createCameraSoundLifecycle({ player: altaraSfxPlayer });
 const serverVoiceMoveSoundLifecycle = createServerVoiceMoveSoundLifecycle({ player: altaraSfxPlayer });
 
@@ -143798,6 +144588,7 @@ function cancelLocalVoiceControlOperations(conversationId = "", controller = nul
     cancelAnimationFrame(localVoiceControlRenderFrame);
     localVoiceControlRenderFrame = null;
   }
+  callMediaSoundLifecycle.clear();
   const target = controller || getActiveServerVoiceTransportController(convId);
   if (target) {
     liveKitLocalVoiceMediaQueueByController.get(target)?.cancel();
@@ -143856,11 +144647,64 @@ function trackCallTransportConnectionSfx(conversationId = "", connectionState = 
   });
 }
 
+function syncCallMediaSoundContext(conversationId, snapshot) {
+  const controller = getActiveServerVoiceTransportController(conversationId);
+  if (!controller || !snapshot) return;
+  const meId = normId(state.user?.id || "");
+  const serverCall = isServerVoiceConversationById(conversationId);
+  const members = serverCall
+    ? getServerVoiceTransportInChannelIdsFromSnapshot(conversationId, snapshot)
+    : Object.entries(snapshot.participantsByUser || {})
+      .filter(([uid, participant]) => uid === meId || participant.presentInRoom === true)
+      .map(([uid]) => uid);
+  const shares = getActiveServerVoiceScreenshareLayer(conversationId)?.getState?.()?.shares || [];
+  callMediaSoundLifecycle.sync({
+    sessionId: snapshot.controllerId || snapshot.joinAttemptId,
+    conversationId,
+    connected: inCall && snapshot.connectionState === "connected" && snapshot.mediaStateBaselineReady === true && !snapshot.disconnectRequested,
+    members: members.map(userId => ({
+      userId,
+      sessionId: String(snapshot.participantsByUser?.[userId]?.participantSids?.join("|") || userId),
+      // Share records describe publications even when the user is not watching.
+      sharing: shares.some(share => share.ownerUserId === userId),
+      muted: userId === meId ? !!micMuted
+        : readLiveKitCallStateAttribute(snapshot.participantsByUser?.[userId]?.attributes, CALL_STATE_ATTRIBUTE_SELF_MUTED),
+      mutedClock: Number(snapshot.participantsByUser?.[userId]?.attributes?.[CALL_STATE_ATTRIBUTE_AUDIO_CLOCK] || 0),
+    })),
+  });
+  if (!serverCall) {
+    for (const userId of members) {
+      if (userId === meId) continue;
+      const muted = readLiveKitCallStateAttribute(snapshot.participantsByUser?.[userId]?.attributes, CALL_STATE_ATTRIBUTE_SELF_MUTED);
+      callMediaSoundLifecycle.observe({ userId, muted,
+        mutedClock: Number(snapshot.participantsByUser?.[userId]?.attributes?.[CALL_STATE_ATTRIBUTE_AUDIO_CLOCK] || 0),
+        reason: "livekit_call_attributes" });
+    }
+  }
+}
+
+function trackAuthoritativeCallMediaState(conversationId, userId, patch = {}) {
+  const controller = getActiveServerVoiceTransportController(conversationId);
+  if (!inCall || !controller || normId(callConversationId) !== normId(conversationId)) return [];
+  // Refresh membership, including logical moves, before accepting an event.
+  // A new scope establishes a silent baseline; existing sessions keep their state.
+  syncCallMediaSoundContext(conversationId, controller.getSnapshot());
+  return callMediaSoundLifecycle.observe({ userId: normId(userId), ...patch });
+}
+
 function trackLocalScreenShareSfx(conversationId = "", eventName = "", details = {}) {
-  const owner = getCurrentCallSfxOwner(conversationId);
-  if (!owner) return { action: "suppressed", reason: "missing_call_owner" };
   const event = String(eventName || "").trim().toLowerCase();
   const reason = String(details?.triggerReason || details?.reason || event || "screen_share_event").trim();
+  if (getActiveServerVoiceTransportController(conversationId)) {
+    if (/(?:restart|replace|source_switch|change_source|quality|audio_change)/i.test(reason)) return;
+    return trackAuthoritativeCallMediaState(conversationId, state.user?.id, {
+      sharing: event === "screenshare.track_published" || event === "legacy_track_published",
+      baseline: /(?:disconnect|detach|leave|cleanup|reset|generation|shutdown|call_end)/i.test(reason),
+      reason,
+    });
+  }
+  const owner = getCurrentCallSfxOwner(conversationId);
+  if (!owner) return { action: "suppressed", reason: "missing_call_owner" };
   if (event === "screenshare.track_published" || event === "legacy_track_published") {
     return screenShareSoundLifecycle.published({ ...owner, reason });
   }
@@ -144682,6 +145526,8 @@ async function playUiCue(name, notificationOrDepth = 0, depth = 0) {
     isPlaybackCurrent: typeof notification?.isPlaybackCurrent === "function"
       ? notification.isPlaybackCurrent
       : undefined,
+    volumeScale: notification?.volumeScale,
+    prepareAudio: notification?.prepareAudio,
     registerCancellation: typeof notification?.registerCancellation === "function"
       ? notification.registerCancellation
       : undefined,
@@ -149701,6 +150547,9 @@ function handleServerVoiceSelfAudioStateLiveKitDataMessage(message = {}, event =
     sessionId: messageSessionId,
   });
   if (!mediaStateDecision.apply) return true;
+  trackAuthoritativeCallMediaState(conversationId, userId, {
+    muted: nextState.muted, mutedClock: Number(message?.state_clock || message?.stateClock || 0), reason: "ordered_livekit_data",
+  });
   setCallParticipantAudioState(conversationId, userId, {
     micMuted: nextState.muted,
     selfMuted: nextState.muted,
@@ -175111,6 +175960,12 @@ function reconcileCallParticipantAudioStateFromLiveKitSnapshot(conversationId, s
           selfDeafened: attributeSelfDeafened,
           source: "livekit-attributes",
         });
+    if (attributeDecision.apply && attributeSelfMuted != null) {
+      trackAuthoritativeCallMediaState(convId, uid, {
+        muted: attributeDecision.selfMuted, mutedClock: Number(attributes[CALL_STATE_ATTRIBUTE_AUDIO_CLOCK] || 0),
+        reason: "ordered_livekit_attributes",
+      });
+    }
     const trackDecision = trackMuted == null
       ? { apply: false, reason: "track_state_missing" }
       : serverVoiceMediaStateOrderFence.confirmTrack({
@@ -175189,6 +176044,7 @@ function setServerVoiceTransportSnapshot(conversationId, snapshot = null) {
   };
   serverVoiceTransportSnapshotByConversation.set(convId, nextSnapshot);
   recordAltaraLiveKitSnapshot(nextSnapshot, { source: "server-voice" });
+  syncCallMediaSoundContext(convId, nextSnapshot);
   if (isServerVoiceConversationById(convId)) {
     reconcileCallParticipantAudioStateFromLiveKitSnapshot(convId, nextSnapshot);
   }
@@ -176529,6 +177385,10 @@ function bindServerVoiceScreenshareLayer(conversationId, controller = null) {
     localUserId: meId,
     // Publication availability is independent of the viewer choosing to receive it.
     autoWatchRemoteShares: false,
+    onPublicationStateChanged: ({ userId, sharing, baseline, reason }) => {
+      if (getActiveServerVoiceTransportController(convId) !== controller) return;
+      trackAuthoritativeCallMediaState(convId, userId, { sharing, baseline, reason });
+    },
     onRemoteShareViewingStopped: (details) => {
       if (normId(state.user?.id || "") !== meId || getActiveServerVoiceScreenshareLayer(convId) !== layer) return;
       cleanupRemoteShareViewerMedia(convId, details);
@@ -178127,6 +178987,7 @@ function scheduleLiveKitLocalVoiceState(controller, {
         await controller.updateLocalParticipantAttributes({
           [CALL_STATE_ATTRIBUTE_SELF_MUTED]: nextState.muted ? "1" : "0",
           [CALL_STATE_ATTRIBUTE_SELF_DEAFENED]: nextState.deafened ? "1" : "0",
+          [CALL_STATE_ATTRIBUTE_AUDIO_CLOCK]: String(context.stateClock),
           [CALL_STATE_ATTRIBUTE_VERSION]: "1",
         }, { isCurrent });
       },
@@ -178135,7 +178996,10 @@ function scheduleLiveKitLocalVoiceState(controller, {
   }
 
   const queued = queue.enqueue(stateForTransport, { reason, conversationId: convId || null });
-  const attributeQueued = attributeQueue.enqueue(stateForTransport, { reason, conversationId: convId || null });
+  const attributeQueued = attributeQueue.enqueue(stateForTransport, {
+    reason, conversationId: convId || null,
+    stateClock: localVoiceStateSignalClock || nextLocalVoiceStateSeenAt(),
+  });
   void queued.completion.then((result) => {
     if (result?.outcome !== "failed") return;
     if (liveKitLocalCallStateSignatureByController.get(controller) === signature) {
@@ -184699,6 +185563,9 @@ function applyLocalVoiceState({
   cue = null,
 } = {}) {
   const nextState = normalizeLocalVoiceState({ muted, deafened: nextDeafened });
+  // Capture the existing local baseline before changing the canonical intent.
+  const mediaController = getActiveServerVoiceTransportController(callConversationId);
+  if (mediaController) syncCallMediaSoundContext(callConversationId, mediaController.getSnapshot());
   micMuted = nextState.muted;
   deafened = nextState.deafened;
 
@@ -184718,6 +185585,9 @@ function applyLocalVoiceState({
     });
   }
 
+  if (mediaController && canSyncCallState) {
+    callMediaSoundLifecycle.observe({ userId: meId, muted: nextState.muted, baseline: !cue, reason });
+  }
   applyMicMute(reason);
   applyDeafen(reason);
   if (canSyncCallState && convId && isServerVoiceConversationById(convId)) {
@@ -184751,7 +185621,7 @@ function applyLocalVoiceState({
 
   if (cue) {
     if (canSyncCallState) {
-      playAndBroadcastLocalCallCue(cue);
+      if (!mediaController || !["mute", "unmute", "mic_on", "mic_off"].includes(cue)) playAndBroadcastLocalCallCue(cue);
       void sendCallParticipantAudioStateSignal({ seenAt, localState: nextState });
     } else {
       playUiCue(cue);
@@ -187498,11 +188368,12 @@ function refreshCallUIUnsafe() {
   const currentUserVoiceChannelCtxForEmptyState = currentUserVoiceChannelIdForEmptyState
     ? findServerChannelContextByChannelId(currentUserVoiceChannelIdForEmptyState)
     : null;
+  const stageMembership = isServerVoiceCallUi ? getServerVoiceStageMembershipState(stageConvId) : null;
   ensureServerVoiceStageEmptyState({
     stageViewport,
-    show: !!(showStage && isServerVoiceCallUi && visibleTileIds.length === 0),
+    show: !!(showStage && stageMembership?.empty),
     channelName: groupCallLabel,
-    participantCount: visibleTileIds.length,
+    participantCount: stageMembership?.participantCount || 0,
     currentUserChannelName: currentUserVoiceChannelCtxForEmptyState?.channel?.name || "",
   });
   const focusedIdentity = parseStageParticipantTileId(stageFocusedTileId || "");
@@ -188640,9 +189511,7 @@ function setServerVoiceParticipantAvatar(element, identity, { retryFailed = fals
   if (!element || !identity?.userId) return;
   const signature = JSON.stringify([identity.userId, identity.avatar || "", identity.fallbackInitial || "U"]);
   const currentImage = element.querySelector("img.profileAvatarMedia");
-  const contentMatches = identity.avatar
-    ? currentImage?.getAttribute("data-avatar-src") === resolveAvatarPresentationUrl(identity.avatar)
-    : !currentImage && element.querySelector(".profileAvatarFallback")?.textContent === (identity.fallbackInitial || "U");
+  const contentMatches = currentImage?.getAttribute("data-avatar-src") === resolveAvatarImageSource(identity.avatar, identity.userId);
   const retryConfirmedImage = retryFailed && element.querySelector(".profileAvatarMediaClip.is-error");
   if (element.getAttribute("data-server-voice-avatar-signature") === signature && contentMatches && !retryConfirmedImage) return;
   element.setAttribute("data-server-voice-avatar-signature", signature);
@@ -198825,8 +199694,8 @@ async function onCallSignal(sig) {
             applyRemoteAudioVolumes();
           }
         }
-        // Remote media-state signalling remains visual only. Official mute,
-        // deafen, and screen-share cues are local explicit-control feedback.
+        // Raw UI cue packets remain visual only. Mute/share sounds consume
+        // accepted state/publications so replay cannot generate extra audio.
       }
       return;
     }
@@ -206540,6 +207409,7 @@ function startDirectDmOpenHistoryFetch(conversationId, options = {}) {
 }
 
 async function showDm(conversationId, opts = {}) {
+  dmMessageSelection?.reset();
   if (!state.user) return;
   const showRequestSeq = ++dmShowRequestSeq;
   const showUserId = normId(state.user?.id || "");
@@ -216365,6 +217235,22 @@ let activitySettingsRegisteredListBoundEl = null;
 let activitySettingsRegisteredListPendingHtml = "";
 let activitySettingsRegisteredListPendingSignature = "";
 let activitySettingsRegisteredListSignature = "";
+let activityRunningAppModalBound = false;
+let activityRunningApps = [];
+let activityRunningSelectedExecutable = "";
+let activityRunningSearchQuery = "";
+let activityRunningUnavailableMessage = "";
+let activityRunningShowSystemApps = false;
+let activityRunningResolveSeq = 0;
+let activityRunningResolverState = { loading: false, executable: "", query: "", metadata: null, candidates: [], error: "", privateFallback: false };
+let activityMetadataPickGameId = "";
+let activityMetadataResolveSeq = 0;
+const activityMetadataStatusByGameId = new Map();
+const removedManualActivityExecutables = new Set();
+const removedManualActivityGameIds = new Set();
+let activityRemoveConfirmModalBound = false;
+let activityRemoveConfirmInFlight = false;
+let activityRemoveConfirmGameId = "";
 let desktopActivityState = {
   supported: false,
   enabled: false,
@@ -216471,6 +217357,57 @@ function writeGameActivitySettings(settingsInput = null) {
 
 var gameActivitySettings = readGameActivitySettings();
 
+function normalizeGameActivityId(value = "") {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+}
+
+function normalizeGameMetadataProvider(value = "") {
+  const provider = String(value || "").trim().toLowerCase();
+  return ["local", "custom", "rawg", "catalog", "igdb", "steam", "steamgriddb"].includes(provider) ? provider : "";
+}
+
+function sanitizeGameMetadata(raw = null, fallbackName = "") {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const name = String(raw.name || raw.title || fallbackName || "").trim().slice(0, 96);
+  if (!name) return null;
+  const confidence = Number(raw.confidence ?? 1);
+  return {
+    provider: normalizeGameMetadataProvider(raw.provider || raw.source || "local"),
+    providerId: String(raw.providerId ?? raw.provider_id ?? raw.source_id ?? "").trim().slice(0, 80),
+    slug: String(raw.slug || "").trim().slice(0, 120),
+    name,
+    icon: normalizeActivityImageUrl(raw.icon || ""),
+    cover: normalizeActivityImageUrl(raw.cover || raw.background || ""),
+    background: normalizeActivityImageUrl(raw.background || raw.cover || ""),
+    description: String(raw.description || "").trim().slice(0, 500),
+    released: String(raw.released || "").trim().slice(0, 32),
+    genres: Array.isArray(raw.genres) ? raw.genres.map(item => String(item?.name || item || "").trim()).filter(Boolean).slice(0, 12) : [],
+    confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0,
+  };
+}
+
+function gameMetadataHasArtwork(metadata = null) {
+  return !!(metadata && [metadata.icon, metadata.cover, metadata.background].some(value => normalizeActivityImageUrl(value || "")));
+}
+
+function isIncompleteLocalGameMetadata(metadata = null) {
+  const safe = sanitizeGameMetadata(metadata);
+  return !!(safe && ["local", "custom"].includes(safe.provider) && !gameMetadataHasArtwork(safe));
+}
+
+function readRemovedManualActivityApps() {
+  const key = getGameActivityScopedStorageKey("altara.activity.removedManualApps.v1");
+  const stored = readGameActivityJsonStorage(key, null);
+  const entries = stored?.executables;
+  return { executables: entries && typeof entries === "object" && !Array.isArray(entries) ? { ...entries } : {} };
+}
+
+function writeRemovedManualActivityApps(value = {}) {
+  const key = getGameActivityScopedStorageKey("altara.activity.removedManualApps.v1");
+  const entries = value?.executables && typeof value.executables === "object" ? value.executables : {};
+  writeGameActivityJsonStorage(key, { executables: Object.fromEntries(Object.entries(entries).slice(-250)) });
+}
+
 function isLegacyActivityMetadataProvider(value = "") {
   const provider = normalizeGameMetadataProvider(value || "");
   return provider === "rawg" || provider === "catalog";
@@ -216526,7 +217463,7 @@ function getGameMetadataCacheKeys({ gameId = "", executable = "", query = "", pr
   const exe = normalizeActivityExecutableName(executable).toLowerCase();
   const q = normalizeGameMetadataComparableName(query);
   if (gid) keys.push(`game:${gid}`);
-  if (exe) keys.push(`exe:${exe}`);
+  if (exe && !/^installed-(?:steam|epic)-/.test(gid)) keys.push(`exe:${exe}`);
   if (q) keys.push(`query:${q}`);
   if (provider && providerId) keys.push(`provider:${normalizeGameMetadataProvider(provider)}:${String(providerId).trim()}`);
   return Array.from(new Set(keys));
@@ -216735,7 +217672,7 @@ function getLocalRegisteredActivityGamesForState(payloadGames = [], activityInpu
   const runningExecutable = normalizeActivityExecutableName(activity?.executable || "").toLowerCase();
   return customActivityGames.map((game) => {
     const gid = normalizeGameActivityId(game?.id || "");
-    const executableHit = !!(runningExecutable && Array.isArray(game.executables) && game.executables.some((exe) => normalizeActivityExecutableName(exe).toLowerCase() === runningExecutable));
+    const executableHit = !!(game.source === "manual" && runningExecutable && Array.isArray(game.executables) && game.executables.some((exe) => normalizeActivityExecutableName(exe).toLowerCase() === runningExecutable));
     return {
       id: gid,
       name: game.name,
@@ -216791,7 +217728,10 @@ function upsertDetectedActivityRegisteredGame(activityInput = null) {
   if (isRemovedManualActivitySuppressed(activity) || isGameActivityHidden(gid)) return false;
   const existingIdx = customActivityGames.findIndex((game) => (
     normalizeGameActivityId(game?.id || "") === gid
-    || (Array.isArray(game?.executables) && game.executables.some((item) => normalizeActivityExecutableName(item).toLowerCase() === executable.toLowerCase()))
+    || (!/^installed-(?:steam|epic)-/.test(gid)
+      && !/^installed-(?:steam|epic)-/.test(String(game?.gameId || game?.id || ""))
+      && game?.source === "manual"
+      && Array.isArray(game?.executables) && game.executables.some((item) => normalizeActivityExecutableName(item).toLowerCase() === executable.toLowerCase()))
   ));
   const existing = existingIdx >= 0 ? customActivityGames[existingIdx] : null;
   const nowMs = Date.now();
@@ -217081,7 +218021,8 @@ function getRegisteredActivityGameByExecutable(executable = "") {
     ...getLocalRegisteredActivityGamesForState(desktopActivityState.registeredGames, detectedGameActivity),
   ];
   return games.find((game) => (
-    Array.isArray(game?.executables)
+    !/^installed-(?:steam|epic)-/.test(String(game?.gameId || game?.id || ""))
+    && Array.isArray(game?.executables)
     && game.executables.some((item) => normalizeActivityExecutableName(item).toLowerCase() === exe)
   )) || null;
 }
@@ -217632,8 +218573,13 @@ async function resolveDetectedGameActivityMetadata(activityInput = null, { force
     name: baseActivity.name,
     registryGame,
   }, { force, allowProvider: true });
-  if (seq !== activityMetadataResolveSeq) return null;
-  const resolvedMetadata = result?.metadata || (Array.isArray(result?.candidates) ? result.candidates[0] : null);
+  if (seq !== activityMetadataResolveSeq
+    || !detectedGameActivity
+    || detectedGameActivity.gameId !== baseActivity.gameId
+    || detectedGameActivity.startedAt !== baseActivity.startedAt) return null;
+  // Ambiguous RAWG candidates stay available for the existing manual match UI;
+  // they must not silently replace a title confirmed by the local installation.
+  const resolvedMetadata = result?.metadata || null;
   if (resolvedMetadata) {
     if (registryGame && customActivityGames.some((item) => normalizeGameActivityId(item?.id || "") === normalizeGameActivityId(registryGame.id || ""))) {
       updateCustomActivityGameMetadata(registryGame.id, resolvedMetadata, {
@@ -220115,7 +221061,7 @@ function updatePresenceRender() {
     offlineLabelEl.style.display = "none";
   }
   if (offlineListEl) {
-    offlineListEl.innerHTML = "";
+    clearPresenceList(offlineListEl);
     offlineListEl.style.display = "none";
   }
 
@@ -220123,7 +221069,7 @@ function updatePresenceRender() {
 
   if (activeNowEl) {
     if (shouldHideActiveNowInCall) {
-      activeNowEl.innerHTML = "";
+      clearPresenceList(activeNowEl);
       activeNowEl.style.display = "none";
       if (onlineCountEl) onlineCountEl.textContent = "0";
     } else {
@@ -220307,6 +221253,8 @@ function clearPresenceForSignedOutSession(reason = "auth:signed_out") {
   presence = null;
   presenceOwnerUserId = "";
   presenceList = [];
+  clearPresenceList(document.getElementById("activeNow"));
+  clearPresenceList(document.getElementById("offlineList"));
   if (state.me) state.me.activity = null;
   spotifyActivityController?.stop?.({ clearActivity: false, reason: "spotify_signed_out" });
   connectedAccountsState.spotifyPlayback = null;
@@ -220370,6 +221318,7 @@ function startPresenceAuthStateListener() {
         serverVoiceStartupReadyUserId = "";
         serverVoiceStartupReadinessController.cancel("auth-user-changed");
         notifyServerVoiceStartupDependencyChange("auth-user-changed");
+        clearPresenceForSignedOutSession("auth:user-changed");
         return;
       }
       globalDmMessageAuthSuspended = false;
@@ -221456,8 +222405,6 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
   window.openDm = openDm;
   window.showDm = showDm;
   window.startDmWith = startDmWith;
-  window.setTenorApiKey = setTenorApiKey;
-  window.getTenorApiKey = getTenorApiKey;
   recordAltaraBootEvent("boot_done", { forcedEarlier: altaraBootDebugState.stuckLoadingRecovered || altaraBootDebugState.bootCompleted });
   recordAltaraBootEvent("normal_boot_done", { shellRendered: window.__ALTARA_SHELL_RENDERED__ === true, realHydratedContentPresent: window.__ALTARA_IS_REAL_HYDRATED_CONTENT_PRESENT__?.("any") === true });
   try { window.__ALTARA_NORMAL_BOOT_DONE__ = true; } catch (_) {}

@@ -176,6 +176,7 @@ function buildInitialSnapshot({
     disconnectedAt: null,
     joinPhase: "idle",
     connected: false,
+    mediaStateBaselineReady: false,
     reconnecting: false,
     disconnectRequested: false,
     lastError: null,
@@ -700,6 +701,7 @@ export function createServerVoiceLiveKitController({
     snapshot.connectionState = normalized;
     snapshot.connectionStateChangedAt = nowIso();
     snapshot.connected = normalized === "connected";
+    if (!snapshot.connected) snapshot.mediaStateBaselineReady = false;
     if (snapshot.connected && !snapshot.connectedAt) snapshot.connectedAt = nowIso();
     snapshot.reconnecting = normalized === "reconnecting" || normalized === "signalreconnecting";
     snapshot.local.roomConnected = snapshot.connected;
@@ -809,6 +811,9 @@ export function createServerVoiceLiveKitController({
       snapshot.lastError = null;
       syncConnectionState("connected");
       syncLocalParticipantPermission("room_reconnected");
+      getParticipantState(meId, room.localParticipant, { local: true });
+      for (const participant of room.remoteParticipants.values()) getParticipantState(participant.identity, participant);
+      snapshot.mediaStateBaselineReady = true;
       reconcileRemoteSubscriptions(undefined, { reason: "room_reconnected" });
       log("room.reconnected", {});
       safeInvoke(onReconnected, {
@@ -1301,6 +1306,7 @@ export function createServerVoiceLiveKitController({
       updateParticipantPresenceRuntime(participant?.identity || "", participant, { connected: true });
       getParticipantState(participant?.identity || "", participant);
     });
+    snapshot.mediaStateBaselineReady = true;
     reconcileRemoteSubscriptions(undefined, { reason: "room_connected" });
     log("room.connected", {
       remoteParticipantCount: room.remoteParticipants.size,

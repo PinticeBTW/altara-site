@@ -31,6 +31,56 @@ export function resolveAvatarPresentationUrl(value, appBaseUrl = import.meta.url
   return "";
 }
 
+// Rendering fallback only: never writes or replaces the account's assigned URL.
+// These four PNGs are shipped in every desktop/web build. Identity keeps the
+// choice stable across views, reloads and devices without a network lookup.
+export function getDefaultAvatarPresentationUrl(userId = "", appBaseUrl = import.meta.url, failedUrl = "") {
+  let hash = 2166136261;
+  for (const char of String(userId || "").trim().toLowerCase()) {
+    hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+  }
+  const index = hash % 4;
+  const candidate = resolveAvatarPresentationUrl(`${DEFAULT_AVATAR_FOLDER}/${index + 1}.png`, appBaseUrl);
+  return candidate === failedUrl
+    ? resolveAvatarPresentationUrl(`${DEFAULT_AVATAR_FOLDER}/${(index + 1) % 4 + 1}.png`, appBaseUrl)
+    : candidate;
+}
+
+export function resolveAvatarImageSource(value, userId = "", appBaseUrl = import.meta.url) {
+  return resolveAvatarPresentationUrl(value, appBaseUrl) || getDefaultAvatarPresentationUrl(userId, appBaseUrl);
+}
+
+// A fresh static node prevents GIF hover/lazy listeners and pending work from
+// restoring a failed URL. One fallback attempt; an unavailable pool stays on
+// the existing initials instead of entering an error/request loop.
+export function replaceAvatarWithDefault(image) {
+  if (!image?.isConnected || image.dataset.avatarFallbackApplied === "1") return false;
+  const clip = image.closest(".profileAvatarMediaClip");
+  if (!clip) return false;
+  const fallbackUrl = resolveAvatarPresentationUrl(image.dataset.avatarFallbackSrc)
+    || getDefaultAvatarPresentationUrl(image.dataset.avatarUserId, import.meta.url, image.getAttribute("src"));
+  if (!fallbackUrl) return false;
+  const replacement = image.ownerDocument.createElement("span");
+  replacement.className = "profileAvatarMediaClip is-error";
+  replacement.setAttribute("data-avatar-fallback", clip.getAttribute("data-avatar-fallback") || "?");
+  const fallback = image.ownerDocument.createElement("img");
+  fallback.className = "profileAvatarMedia";
+  fallback.alt = image.alt;
+  fallback.loading = "eager";
+  fallback.style.display = "none";
+  fallback.dataset.avatarSrc = image.dataset.avatarSrc || image.getAttribute("src") || "";
+  fallback.dataset.avatarUserId = image.dataset.avatarUserId || "";
+  fallback.dataset.avatarFallbackApplied = "1";
+  for (const event of ["onload", "onerror"]) {
+    const handler = image.getAttribute(event);
+    if (handler) fallback.setAttribute(event, handler);
+  }
+  replacement.appendChild(fallback);
+  clip.replaceWith(replacement);
+  fallback.src = fallbackUrl;
+  return true;
+}
+
 // Signup assigns a pool URL once, in avatar_url (also in Auth metadata).
 // Rendering must retain that assignment, never randomly pick another avatar.
 export function resolveAssignedDefaultAvatarUrl(...sources) {

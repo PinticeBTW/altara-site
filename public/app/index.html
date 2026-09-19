@@ -1159,7 +1159,7 @@
         </div>
 
         <div class="rightSectionLabel" data-altara-i18n="surface.active_now">ACTIVE NOW</div>
-        <div id="activeNow" class="list" data-static-fallback-shell="1"><div class="hint">No one online right now.</div></div>
+        <div id="activeNow" class="list" data-static-fallback-shell="1"><div class="hint" role="status" aria-busy="true">…</div></div>
 
         <div class="rightSectionLabel">OFFLINE</div>
         <div id="offlineList" class="list"></div>
@@ -2430,7 +2430,7 @@
         <div id="gifSearchRow" class="gifSearchRow">
           <div class="gifSearchField">
             <span class="gifSearchIcon" aria-hidden="true"></span>
-            <input id="gifSearch" class="input" placeholder="Search Tenor" />
+            <input id="gifSearch" class="input" placeholder="Search GIFs" aria-label="Search GIFs" />
           </div>
         </div>
         <button id="btnGifTrending" class="sr-only" type="button">Trending</button>
@@ -2438,7 +2438,7 @@
         <div id="gifQuickTags" class="gifQuickTags"></div>
         <div id="gifGrid" class="gifGrid"></div>
         <div id="gifHint" class="hint" style="margin-top:10px; display:none;"></div>
-        <div class="gifFooterHint">Dica: Use Tab para navegar e Enter para enviar</div>
+        <div class="gifFooterHint">Powered by KLIPY · Use Tab to navigate and Enter to send</div>
       </div>
     </div>
   </div>
@@ -3901,6 +3901,6 @@
     </div>
   </div>
 
-  <script type="module" src="/app/app.js?release=0.1.135&amp;v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"></script>
+  <script type="module" src="/app/app.js?release=0.1.136&amp;v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"></script>
 </body>
 </html>
