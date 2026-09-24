@@ -1,3 +1,7 @@
+import { setAccountSwitchCleanup, openDesktopAccountSwitcher, rememberDesktopAccount, getDesktopAccountsBridge, desktopAccountText } from "./lib/desktopAccounts.js";
+import { bindProfileActivityStacks, buildProfileActivityStackHtml } from "./lib/profileActivityStack.js";
+import { buildCompactActivityArtworkHtml } from "./lib/activityArtwork.js";
+import { selectPublishedActivity, selectPublishedActivities, withStableActivityStart, spotifyActivityIcon } from "./lib/presenceActivity.js";
 import { normalizeUploadedGifFavorite, uploadedGifFavoriteFromAttachment, uploadedGifFavoriteDescriptor } from "./lib/uploadedGifFavorites.js";
 import { createInlineVideoPreviews } from "./lib/inlineVideoPreviews.js";
 import { createMessageSelection, messageSelectionLabels } from "./lib/messageSelection.js";
@@ -5531,6 +5535,11 @@ let altaraPlusCheckoutReturnSignalConsumed = false;
 let altaraPlusPortalReturnSignalConsumed = false;
 let altaraPlusDesktopBillingEventsBound = false;
 let lastAltaraPlusStatusRpcSnapshot = null;
+const PUBLIC_ALTARA_PLUS_BADGE_REFRESH_MS = 15_000;
+let publicAltaraPlusBadgeSnapshot = { profileId: "", planKey: null };
+let publicAltaraPlusBadgeRequestToken = 0;
+let publicAltaraPlusBadgeRefreshTimer = null;
+let publicAltaraPlusBadgeWatchedProfileId = "";
 const DM_LOCK_STORAGE_VERSION = 2;
 const DM_LOCK_LEGACY_STORAGE_KEY_PREFIX = "altara:dm-locks:v1";
 const DM_LOCK_MIN_CODE_LENGTH = 4;
@@ -5858,27 +5867,76 @@ function resolveAltaraPlusPlanKeyForProfileBadge(profileInput = null, profileIdI
     return normalizeAltaraPlusPlanKey(status.planKey) || null;
   }
 
-  const hasAltaraPlusRaw = (
-    profile?.has_altara_plus
-    ?? profile?.hasAltaraPlus
-    ?? profile?.altara_plus_active
-    ?? profile?.altaraPlusActive
-    ?? null
-  );
-  const hasAltaraPlus = hasAltaraPlusRaw === true || String(hasAltaraPlusRaw || "").trim().toLowerCase() === "true";
-  if (!hasAltaraPlus) return null;
+  return publicAltaraPlusBadgeSnapshot.profileId === profileId
+    ? publicAltaraPlusBadgeSnapshot.planKey
+    : null;
+}
 
-  const planKeyCandidate = (
-    profile?.plan_key
-    ?? profile?.planKey
-    ?? profile?.altara_plus_plan_key
-    ?? profile?.altaraPlusPlanKey
-    ?? profile?.altara_plus_plan
-    ?? profile?.altaraPlusPlan
-    ?? ""
-  );
+async function fetchPublicAltaraPlusBadgePlanKey(profileIdInput = "") {
+  const profileId = normId(profileIdInput);
+  if (!profileId) return null;
+  if (profileId === normId(state.user?.id || "")) {
+    return resolveAltaraPlusPlanKeyForProfileBadge(null, profileId);
+  }
+  const requestToken = ++publicAltaraPlusBadgeRequestToken;
+  let planKey = null;
+  try {
+    const { data, error } = await supabase.rpc("get_public_altara_plus_badge_v1", { p_profile_id: profileId });
+    if (error) throw error;
+    planKey = data === "core" ? ALTARA_PLUS_PLAN_CORE : data === "nova" ? ALTARA_PLUS_PLAN_NOVA : null;
+  } catch (_) {}
+  if (requestToken !== publicAltaraPlusBadgeRequestToken || publicAltaraPlusBadgeWatchedProfileId !== profileId) return null;
+  const previous = publicAltaraPlusBadgeSnapshot;
+  publicAltaraPlusBadgeSnapshot = { profileId, planKey };
+  if (previous.profileId !== profileId || previous.planKey !== planKey) {
+    if (normId(userCardCurrentUserId) === profileId && !document.getElementById("userCardModal")?.classList.contains("hidden")) refreshOpenUserCard();
+    if (dmProfilePanelOpen && getActiveDmPeerUserId() === profileId) renderDmProfileAltaraPlusBadge(profileId);
+  }
+  return planKey;
+}
 
-  return normalizeAltaraPlusPlanKey(planKeyCandidate) || null;
+function stopPublicAltaraPlusBadgeRefresh() {
+  if (publicAltaraPlusBadgeRefreshTimer) clearInterval(publicAltaraPlusBadgeRefreshTimer);
+  publicAltaraPlusBadgeRefreshTimer = null;
+  document.removeEventListener("visibilitychange", refreshPublicAltaraPlusBadgeWhenVisible);
+  publicAltaraPlusBadgeRequestToken += 1;
+  publicAltaraPlusBadgeWatchedProfileId = "";
+  publicAltaraPlusBadgeSnapshot = { profileId: "", planKey: null };
+}
+
+function refreshPublicAltaraPlusBadgeWhenVisible() {
+  if (document.visibilityState !== "visible" || !publicAltaraPlusBadgeRefreshTimer) return;
+  const profileId = publicAltaraPlusBadgeWatchedProfileId;
+  if (profileId) void fetchPublicAltaraPlusBadgePlanKey(profileId);
+}
+
+function startPublicAltaraPlusBadgeRefresh(profileIdInput = "") {
+  const profileId = normId(profileIdInput);
+  if (!profileId || profileId === normId(state.user?.id || "")) {
+    stopPublicAltaraPlusBadgeRefresh();
+    return;
+  }
+  if (publicAltaraPlusBadgeWatchedProfileId === profileId && publicAltaraPlusBadgeRefreshTimer) return;
+  stopPublicAltaraPlusBadgeRefresh();
+  publicAltaraPlusBadgeWatchedProfileId = profileId;
+  void fetchPublicAltaraPlusBadgePlanKey(profileId);
+  document.addEventListener("visibilitychange", refreshPublicAltaraPlusBadgeWhenVisible);
+  publicAltaraPlusBadgeRefreshTimer = setInterval(() => {
+    if (document.visibilityState === "hidden" || publicAltaraPlusBadgeWatchedProfileId !== profileId) return;
+    void fetchPublicAltaraPlusBadgePlanKey(profileId);
+  }, PUBLIC_ALTARA_PLUS_BADGE_REFRESH_MS);
+}
+
+function syncPublicAltaraPlusBadgeRefresh() {
+  const modal = document.getElementById("userCardModal");
+  const fullProfileId = modal && !modal.classList.contains("hidden") ? normId(userCardCurrentUserId) : "";
+  const panel = document.getElementById("dmProfilePanel");
+  const previewProfileId = dmProfilePanelOpen && panel && !panel.classList.contains("hidden")
+    ? getActiveDmPeerUserId()
+    : "";
+  const profileId = fullProfileId || previewProfileId;
+  if (profileId) startPublicAltaraPlusBadgeRefresh(profileId);
+  else if (publicAltaraPlusBadgeWatchedProfileId) stopPublicAltaraPlusBadgeRefresh();
 }
 
 function buildCurrentUserAltaraPlusProfileBadgeHtml({
@@ -6424,7 +6482,6 @@ function rerenderOpenSelfMeProfilePopoutForAltaraPlus() {
   popout.innerHTML = buildMeProfilePopoutHtml(seedProfile, { loading: false });
   queueManagedGifPlaybackSync(popout);
   applyMeProfilePopoutBannerStyle(seedProfile);
-  renderMeProfilePopoutWidgetsPreview({ loading: false });
   positionMeProfilePopout();
 }
 
@@ -9307,6 +9364,8 @@ const APP_LANG_LABELS = Object.freeze({
     "surface.saving_role_order": "Saving role order...",
     "surface.could_not_verify_the_saved_role_order_try_again": "Could not verify the saved role order. Try again.",
     "surface.role_order_saved": "Role order saved.",
+    "server.roles.administrator_owner_only": "Only the server owner can grant or remove Administrator.",
+    "server.roles.administrator_unavailable": "Administrator is not available on this server yet.",
     "server.roles.loading": "Checking your role permissions...",
     "server.roles.permission": "You need permission to manage roles in this server.",
     "server.roles.self": "You cannot change your own roles.",
@@ -9813,7 +9872,8 @@ const APP_LANG_LABELS = Object.freeze({
     "add.hint": "Example: <b>silver</b>",
     "placeholder.search_friends": "Search friends...",
     "widgets.editor.title": "Editing mode",
-    "widgets.editor.hint": "Drag cards to position them in the grid. Some widgets have a fixed size. On resizable ones, drag the corner or click S/M/L/XL (right click shrinks). Remove or add widgets below.",
+    "widgets.editor.hint": "Drag cards to position them. Resize from the corner or use the size button; remove or add widgets below.",
+    "widgets.checklist.size_hint": "G: wide · V: tall",
     "settings.group.user": "User Settings",
     "settings.search.placeholder": "Search settings...",
     "settings.close.aria": "Close settings",
@@ -10089,6 +10149,29 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.grid.hint": "Show or hide the background pattern.",
     "settings.profile.save_username": "Save username",
     "settings.profile.save_profile": "Save profile",
+    "settings.profile.save_changes": "Save changes",
+    "settings.profile.details": "Profile details",
+    "settings.profile.details_hint": "Your name and bio appear on your profile.",
+    "settings.profile.appearance": "Profile appearance",
+    "settings.profile.appearance_hint": "Make your profile feel like yours.",
+    "settings.profile.optional": "Optional",
+    "settings.profile.widgets_hint": "Choose what appears on your profile.",
+    "settings.profile.manage_widgets": "Manage widgets",
+    "settings.profile.edit_media": "Edit banner or avatar",
+    "settings.profile.saved": "All changes saved",
+    "settings.profile.unsaved": "Unsaved changes",
+    "settings.profile.visibility": "On your profile.",
+    "settings.profile.username_hint": "Unique handle.",
+    "profile.widgets.item_options": "Item options",
+    "profile.widgets.item_count.one": "item",
+    "profile.widgets.item_count.many": "items",
+    "settings.profile.saving_username": "Saving username...",
+    "settings.profile.saving_profile": "Saving profile...",
+    "settings.profile.username_saved": "Username saved.",
+    "settings.profile.profile_saved": "Profile saved.",
+    "settings.profile.username_pending": "Profile saved. Username is still unsaved.",
+    "settings.profile.other_pending": "Username saved. Other changes are unsaved.",
+    "settings.profile.username_invalid": "Enter a valid username.",
     "settings.profile.pronouns": "Pronouns",
     "settings.profile.pronouns_placeholder": "e.g. he/him",
     "settings.profile.pronouns_hint": "Optional. Appears on your profile.",
@@ -10105,6 +10188,10 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.security.error_current_password_invalid": "Current password is incorrect.",
     "settings.security.error_current_password_verify": "Could not verify current password. Try again.",
     "settings.security.code.section": "Security code lock",
+    "settings.security.account.title": "Account security",
+    "settings.security.code.enabled": "Enabled",
+    "settings.security.code.disabled": "Disabled",
+    "settings.security.code.hint_short": "Add a code to lock this Security page.",
     "settings.security.code.hint": "Create a code to lock this Security tab. You will need it to open security options later.",
     "settings.security.code.state_none": "No security code configured.",
     "settings.security.code.state_locked": "Security is locked. Enter your code to continue.",
@@ -10351,6 +10438,9 @@ const APP_LANG_LABELS = Object.freeze({
     "widget.notes.placeholder": "Write quick notes here...",
     "widget.notes.clear": "Clear",
     "widget.todo.empty": "No tasks yet.",
+    "widget.todo.reorder": "Reorder task",
+    "widget.todo.move_up": "Move up",
+    "widget.todo.move_down": "Move down",
     "widget.todo.placeholder.limit": "Checklist is full.",
     "widget.todo.placeholder.add": "Add task...",
     "widget.todo.add": "Add",
@@ -10920,10 +11010,15 @@ const APP_LANG_LABELS = Object.freeze({
     "server.settings.apps": "Aplicações",
     "server.settings.delete": "Eliminar servidor",
     "server.settings.title": "Definições do servidor",
-    "server.settings.subtitle": "Altera o nome, o ícone e os cargos do servidor.",
+    "server.settings.subtitle": "Gere este servidor.",
     "server.settings.close": "Fechar definições do servidor",
     "server.settings.profile_title": "Perfil do servidor",
     "server.settings.profile_hint": "Personaliza a forma como este servidor aparece aos membros.",
+    "server.settings.identity_heading": "Identidade",
+    "server.settings.media_heading": "Pré-visualização",
+    "server.settings.media_hint": "Vê as alterações antes de guardares.",
+    "server.settings.change_image": "Alterar",
+    "server.settings.no_banner": "Ainda sem banner",
     "server.settings.icon": "Ícone do servidor",
     "server.settings.icon_hint": "Usa uma imagem quadrada para obteres o melhor recorte.",
     "server.settings.banner": "Banner do servidor",
@@ -11013,8 +11108,10 @@ const APP_LANG_LABELS = Object.freeze({
     "channel.settings.save": "Guardar alterações",
     "server.permission.add_reactions.hint": "Permite que os membros reajam às mensagens.",
     "server.permission.add_reactions.label": "Adicionar reações",
-    "server.permission.administrator.hint": "Planeado. A autoridade de administrador ainda não é suportada.",
+    "server.permission.administrator.hint": "Acesso total, sem restrições de cargos ou canais. Só o dono pode atribuir ou retirar Administrador. Não permite apagar o servidor, transferir a propriedade ou punir o dono.",
     "server.permission.administrator.label": "Administrador",
+    "server.roles.administrator_owner_only": "Só o dono do servidor pode atribuir ou retirar Administrador.",
+    "server.roles.administrator_unavailable": "Administrador ainda não está disponível neste servidor.",
     "server.permission.attach_files.hint": "Permite aos membros carregar imagens, vídeos e ficheiros.",
     "server.permission.attach_files.label": "Anexar ficheiros",
     "server.permission.ban_members.hint": "Permite aos membros banir e remover banimentos de membros elegíveis neste servidor.",
@@ -11515,7 +11612,8 @@ const APP_LANG_LABELS = Object.freeze({
     "add.hint": "Exemplo: <b>silver</b>",
     "placeholder.search_friends": "Pesquisar amigos...",
     "widgets.editor.title": "Modo de edicao",
-    "widgets.editor.hint": "Arrasta os cards para os posicionar no grid. Alguns widgets tem tamanho fixo. Nos que permitem, arrasta o canto para redimensionar e clica em P/M/G/XL para trocar tamanho rapido (botao direito diminui). Remove ou adiciona widgets abaixo.",
+    "widgets.editor.hint": "Arrasta os cards para os posicionar. Redimensiona pelo canto ou usa o botao de tamanho; remove ou adiciona widgets abaixo.",
+    "widgets.checklist.size_hint": "G: largo · V: vertical",
     "settings.group.user": "Definicoes de utilizador",
     "settings.search.placeholder": "Pesquisar definicoes...",
     "settings.close.aria": "Fechar definicoes",
@@ -11873,6 +11971,29 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.grid.hint": "Mostra ou esconde o padrao de fundo.",
     "settings.profile.save_username": "Guardar username",
     "settings.profile.save_profile": "Guardar perfil",
+    "settings.profile.save_changes": "Guardar alterações",
+    "settings.profile.details": "Dados do perfil",
+    "settings.profile.details_hint": "O teu nome e bio aparecem no teu perfil.",
+    "settings.profile.appearance": "Aspeto do perfil",
+    "settings.profile.appearance_hint": "Personaliza o aspeto do teu perfil.",
+    "settings.profile.optional": "Opcional",
+    "settings.profile.widgets_hint": "Escolhe o que aparece no teu perfil.",
+    "settings.profile.manage_widgets": "Gerir widgets",
+    "settings.profile.edit_media": "Editar banner ou avatar",
+    "settings.profile.saved": "Todas as alterações guardadas",
+    "settings.profile.unsaved": "Alterações por guardar",
+    "settings.profile.visibility": "No teu perfil.",
+    "settings.profile.username_hint": "Identificador único.",
+    "profile.widgets.item_options": "Opções do item",
+    "profile.widgets.item_count.one": "item",
+    "profile.widgets.item_count.many": "itens",
+    "settings.profile.saving_username": "A guardar username...",
+    "settings.profile.saving_profile": "A guardar perfil...",
+    "settings.profile.username_saved": "Username guardado.",
+    "settings.profile.profile_saved": "Perfil guardado.",
+    "settings.profile.username_pending": "Perfil guardado. O username continua por guardar.",
+    "settings.profile.other_pending": "Username guardado. Há outras alterações por guardar.",
+    "settings.profile.username_invalid": "Introduz um username válido.",
     "settings.profile.pronouns": "Pronomes",
     "settings.profile.pronouns_placeholder": "ex: ele/dele",
     "settings.profile.pronouns_hint": "Opcional. Aparece no teu perfil.",
@@ -11889,6 +12010,10 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.security.error_current_password_invalid": "A password atual esta errada.",
     "settings.security.error_current_password_verify": "Nao foi possivel validar a password atual. Tenta novamente.",
     "settings.security.code.section": "Bloqueio por codigo",
+    "settings.security.account.title": "Segurança da conta",
+    "settings.security.code.enabled": "Ativado",
+    "settings.security.code.disabled": "Desativado",
+    "settings.security.code.hint_short": "Adiciona um código para bloquear esta página.",
     "settings.security.code.hint": "Cria um codigo para bloquear este separador de Seguranca. Vais precisar dele para abrir estas opcoes.",
     "settings.security.code.state_none": "Nenhum codigo de seguranca configurado.",
     "settings.security.code.state_locked": "Seguranca bloqueada. Introduz o codigo para continuar.",
@@ -12121,6 +12246,9 @@ const APP_LANG_LABELS = Object.freeze({
     "widget.notes.placeholder": "Escreve notas rapidas aqui...",
     "widget.notes.clear": "Limpar",
     "widget.todo.empty": "Sem tarefas ainda.",
+    "widget.todo.reorder": "Reordenar tarefa",
+    "widget.todo.move_up": "Mover para cima",
+    "widget.todo.move_down": "Mover para baixo",
     "widget.todo.placeholder.limit": "Checklist no limite.",
     "widget.todo.placeholder.add": "Adicionar tarefa...",
     "widget.todo.add": "Adicionar",
@@ -12510,7 +12638,7 @@ const LEFT_SIDEBAR_WIDTH_MAX = FRIENDS_SIDEBAR_WIDTH_MAX;
 const LEFT_SIDEBAR_TIGHT_MAX = FRIENDS_SIDEBAR_TIGHT_MAX;
 const UI_ZOOM_MIN_FACTOR = 0.6;
 const UI_ZOOM_MAX_FACTOR = 1.7;
-const UI_ZOOM_DEFAULT_FACTOR = 0.85;
+const UI_ZOOM_DEFAULT_FACTOR = 0.9;
 const UI_ZOOM_DISPLAY_BASE_FACTOR = UI_ZOOM_DEFAULT_FACTOR;
 const UI_ZOOM_STEP_FACTOR = 0.05;
 const UI_ZOOM_STORAGE_KEY = "altara_ui_zoom_factor";
@@ -12647,7 +12775,7 @@ const ALTARA_SERVER_PERMISSION_CATALOG = Object.freeze([
   { key: "use_activities", label: "Use Activities", hint: "Planned. Human server Activities are not supported.", category: "App / Integration Permissions", risk: "normal", implemented: false, defaultEnabled: false },
   { key: "use_external_apps", label: "Use External Apps", hint: "Planned. Human use of external server apps is not supported.", category: "App / Integration Permissions", risk: "elevated", implemented: false, defaultEnabled: false },
   { key: "manage_apps", label: "Manage Apps", hint: "Allows members to install, configure, enable, disable, and remove approved apps in the server.", category: "App / Integration Permissions", risk: "dangerous", implemented: true, defaultEnabled: false },
-  { key: "administrator", label: "Administrator", hint: "Planned. Administrator authority is not supported.", category: "Advanced Permissions", risk: "dangerous", implemented: false, defaultEnabled: false },
+  { key: "administrator", label: "Administrator", hint: "Full server access, bypassing role hierarchy and channel restrictions. Only the owner can grant or remove Administrator. Cannot delete the server, transfer ownership, or punish the owner.", category: "Advanced Permissions", risk: "dangerous", implemented: true, defaultEnabled: false },
 ]);
 const SERVER_ROLE_PERMISSION_META = ALTARA_SERVER_PERMISSION_CATALOG;
 function localizedServerPermissionLabel(permission = {}) {
@@ -12945,6 +13073,7 @@ function normalizeServerRolePermissions(rawPermissions = {}, role = null) {
     out[key] = !!enabled;
     aliases.forEach((alias) => { out[alias] = !!enabled; });
   });
+  if (role && (defaultRole || isManagedServerRole(role))) out.administrator = false;
   return out;
 }
 
@@ -14029,7 +14158,7 @@ function resolveEffectivePresence(userId = "", options = {}) {
   const isVisibleOnline = classification.countsAsOnlineNow;
   const visibleToOthers = classification.countsAsOnlineNow;
   const activity = isVisibleOnline
-    ? (isSelf ? getCurrentPublicPresenceActivity() : sanitizePresenceActivity(entry?.activity || entry?.spotify_activity || entry?.spotifyActivity))
+    ? (isSelf ? getCurrentPublicPresenceActivity() : selectPublishedActivity(entry, sanitizePresenceActivity))
     : null;
   const spotifyActivity = activity?.type === "listening" && activity?.provider === SPOTIFY_PROVIDER
     ? activity
@@ -14049,9 +14178,10 @@ function resolveEffectivePresence(userId = "", options = {}) {
     dotLabel,
     label: dotLabel,
     activity,
+    activities: isVisibleOnline ? (isSelf ? getCurrentPublicPresenceActivities() : selectPublishedActivities(entry, sanitizePresenceActivity)) : [],
     spotifyActivity,
   };
-  const signature = [manualStatus, hasLiveSession ? "1" : "0", effectiveStatus, visibleToOthers ? "1" : "0", JSON.stringify(activity || null)].join("|");
+  const signature = [manualStatus, hasLiveSession ? "1" : "0", effectiveStatus, visibleToOthers ? "1" : "0", JSON.stringify(result.activities)].join("|");
   if (uid && presenceEffectiveStatusSignatureByUser.get(uid) !== signature) {
     presenceEffectiveStatusSignatureByUser.set(uid, signature);
     recordPresenceResolvedObservation(uid, result, entry);
@@ -22347,9 +22477,9 @@ function triggerAppearanceWhiteFlash() {
 }
 
 function playAppearanceWhiteEasterEggSound() {
-  void playUiCue("ui_warning", {
+  void playUiCue("appearance_flashbang", {
     ownerType: "ui",
-    reason: "appearance_white_theme_warning",
+    reason: "appearance_white_theme_confirmed",
   });
 }
 
@@ -24697,6 +24827,13 @@ function applyCallSpeakingStateToTiles() {
     ...document.querySelectorAll(".serverMemberRow--call, .serverVoiceMember"),
   ];
   tileEls.forEach((el) => {
+    const isShare = el.getAttribute("data-call-tile-type") === "screenshare"
+      || ["share", "screen_share"].includes(el.getAttribute("data-call-media-type"))
+      || (el.classList.contains("callStagePlaceholder") && stage.getAttribute("data-focused-source") === "screen_share");
+    if (isShare) {
+      el.classList.remove("is-speaking");
+      return;
+    }
     const uid = resolveSpeakingTileUserId(el);
     const detached = el.classList?.contains?.("is-detached")
       || el.getAttribute?.("data-server-voice-recovery-state") === "detached";
@@ -24870,6 +25007,7 @@ function tickCallSpeakingMeters() {
   }
 
   if (uiChanged) applyCallSpeakingStateToTiles();
+  publishServerVoicePreviewSpeaking();
 }
 
 function hasFreshRemoteCameraTrack(nowTs = Date.now()) {
@@ -32171,6 +32309,7 @@ async function persistSecuritySetupDismissedPreference(nextDismissed) {
 async function dismissSecuritySetupPrompt({ focusCodeInput = false } = {}) {
   settingsSecuritySetupDismissed = true;
   renderSecurityAccessUi();
+  if (focusCodeInput) setSecurityEditorOpen("settingsSecurityManageWrap", true);
   try {
     await persistSecuritySetupDismissedPreference(true);
   } catch (error) {
@@ -32345,6 +32484,18 @@ function renderDmE2eeBackupSettingsUi() {
   const canRestore = !!info.hasBackup && identityStatus !== "ready";
   const canSetupNew = !info.error && (identityStatus === "migration_requires_recovery"
     || (!info.hasBackup && identityStatus === "not_initialized"));
+  const vaultPrimary = document.getElementById("btnSettingsVaultPrimary");
+  if (vaultPrimary) {
+    vaultPrimary.hidden = !(canSave || canRestore || canSetupNew);
+    vaultPrimary.textContent = canRestore
+      ? t("settings.security.dm_backup.restore_btn", "Restore Vault messages")
+      : canSetupNew
+        ? t("settings.security.dm_backup.setup_new_btn", "Set up encrypted messages")
+        : info.hasBackup
+          ? t("settings.security.dm_backup.update_btn", "Change recovery password")
+          : t("settings.security.dm_backup.create_btn", "Set up Vault Recovery");
+    vaultPrimary.disabled = busy;
+  }
 
   const sectionTitle = document.getElementById("settingsSectionDmE2eeBackup");
   if (sectionTitle) sectionTitle.textContent = t("settings.security.dm_backup.section_title", "Encrypted messages");
@@ -32957,6 +33108,17 @@ function renderSecurityAccessUi() {
   if (setupScreen) setupScreen.hidden = !showSetupPrompt;
   const securityContent = document.getElementById("settingsSecurityContent");
   if (securityContent) securityContent.hidden = isLocked || showSetupPrompt;
+  const codeBadge = document.getElementById("settingsSecurityCodeBadge");
+  if (codeBadge) {
+    codeBadge.textContent = hasCode
+      ? t("settings.security.code.enabled", "Enabled")
+      : t("settings.security.code.disabled", "Disabled");
+    codeBadge.dataset.status = hasCode ? "enabled" : "disabled";
+  }
+  const codeEditBtn = document.getElementById("btnSecurityEditCode");
+  if (codeEditBtn) codeEditBtn.hidden = !hasCode || !isUnlocked;
+  const emailSummary = document.getElementById("settingsSecurityEmailSummary");
+  if (emailSummary) emailSummary.textContent = String(state.user?.email || document.getElementById("currentEmail")?.value || "Your account email");
 
   const lockedTitle = document.getElementById("settingsSecurityLockedTitle");
   if (lockedTitle) lockedTitle.textContent = t("settings.security.locked.title", "Security locked");
@@ -32964,9 +33126,9 @@ function renderSecurityAccessUi() {
   if (lockedHint) lockedHint.textContent = t("settings.security.locked.hint", "Enter your security code to access this tab.");
 
   const sectionTitle = document.getElementById("settingsSectionSecurityCode");
-  if (sectionTitle) sectionTitle.textContent = t("settings.security.code.section", "Security code lock");
+  if (sectionTitle) sectionTitle.textContent = t("settings.security.code.label", "Security code");
   const codeHint = document.getElementById("settingsSecurityCodeHint");
-  if (codeHint) codeHint.textContent = t("settings.security.code.hint", "Create a code to lock this Security tab. You will need it to open security options later.");
+  if (codeHint) codeHint.textContent = t("settings.security.code.hint_short", "Add a code to lock this Security page.");
   const stateHint = document.getElementById("settingsSecurityCodeState");
   if (stateHint) {
     const stateKey = !hasCode
@@ -32980,6 +33142,7 @@ function renderSecurityAccessUi() {
         : "No security code configured.")
       : (isUnlocked ? "Security is unlocked for this session." : "Security is locked. Enter your code to continue.");
     stateHint.textContent = t(stateKey, fallback);
+    stateHint.hidden = !hasCode;
   }
 
   const setupTitle = document.getElementById("settingsSecuritySetupTitle");
@@ -33044,6 +33207,7 @@ function renderSecurityAccessUi() {
   if (forgotCodeConfirmBtn) forgotCodeConfirmBtn.textContent = t("settings.security.code.forgot_confirm_btn", "Reset security code");
   const removeCodeWrap = document.getElementById("settingsSecurityRemoveVerifyWrap");
   if (removeCodeWrap) removeCodeWrap.hidden = !(hasCode && isUnlocked && settingsSecurityRemoveVerificationPending);
+  if (settingsSecurityRemoveVerificationPending && hasCode && isUnlocked) setSecurityEditorOpen("settingsSecurityManageWrap", true);
   const forgotCodeWrap = document.getElementById("settingsSecurityLockedResetWrap");
   if (forgotCodeWrap) forgotCodeWrap.hidden = !(hasCode && isLocked && settingsSecurityRemoveVerificationPending);
 
@@ -33055,6 +33219,9 @@ function renderSecurityAccessUi() {
   if (codeConfirmInput) codeConfirmInput.setAttribute("placeholder", "1234");
 
   if (isLocked) {
+    setSecurityEditorOpen("settingsSecurityManageWrap", false);
+    setSecurityEditorOpen("settingsSecurityEmailEditor", false);
+    setSecurityEditorOpen("settingsSecurityPasswordEditor", false);
     const securityCodeInput = document.getElementById("securityCode");
     if (securityCodeInput) securityCodeInput.value = "";
     const securityCodeConfirmInput = document.getElementById("securityCodeConfirm");
@@ -33062,6 +33229,15 @@ function renderSecurityAccessUi() {
   }
 
   renderDmE2eeBackupSettingsUi();
+}
+
+function setSecurityEditorOpen(id, open) {
+  const editor = document.getElementById(id);
+  if (!editor) return;
+  editor.hidden = !open;
+  const trigger = Array.from(document.querySelectorAll(`[aria-controls="${id}"]`))
+    .find((element) => !element.closest("[hidden]"));
+  if (trigger) trigger.setAttribute("aria-expanded", String(!!open));
 }
 
 async function showSecurityDialogMessage(message, { danger = false } = {}) {
@@ -33127,6 +33303,7 @@ async function saveSecurityAccessCode() {
     console.warn("persist security setup dismissal failed", error);
   }
   clearSecurityCodeInputs();
+  setSecurityEditorOpen("settingsSecurityManageWrap", false);
   renderSecurityAccessUi();
   await showSecurityDialogMessage(t("settings.security.code.saved", "Security code saved."));
 }
@@ -33268,6 +33445,7 @@ async function removeSecurityAccessCode() {
     console.warn("persist security setup dismissal failed", errorPersist);
   }
   clearSecurityCodeInputs();
+  setSecurityEditorOpen("settingsSecurityManageWrap", false);
   renderSecurityAccessUi();
   if (verifiedByLink) {
     await showSecurityDialogMessage(t("settings.security.code.remove_link_verified", "Verification link accepted. You can now remove the security code."));
@@ -34937,7 +35115,21 @@ function applyLanguageToStaticUi() {
   const closeSettings = document.getElementById("btnCloseProfile");
   if (closeSettings) closeSettings.setAttribute("aria-label", t("settings.close.aria", "Close settings"));
   const secProfile = document.getElementById("settingsSectionProfile");
-  if (secProfile) secProfile.textContent = t("settings.section.profile", "Profile");
+  if (secProfile) secProfile.textContent = t("settings.profile.details", "Profile details");
+  const accountPanel = document.querySelector('#profileOverlay [data-settings-panel="account"]');
+  const accountDetailsHint = accountPanel?.querySelector('.settingsAccountSectionHead p');
+  if (accountDetailsHint) accountDetailsHint.textContent = t("settings.profile.details_hint", "Your name and bio appear on your profile.");
+  const accountAppearanceTitle = document.getElementById("settingsSectionProfileAppearance");
+  if (accountAppearanceTitle) accountAppearanceTitle.textContent = t("settings.profile.appearance", "Profile appearance");
+  const accountAppearanceHint = accountAppearanceTitle?.parentElement?.querySelector('p');
+  if (accountAppearanceHint) accountAppearanceHint.textContent = t("settings.profile.appearance_hint", "Make your profile feel like yours.");
+  accountPanel?.querySelectorAll('.settingsOptional').forEach((el) => { el.textContent = t("settings.profile.optional", "Optional"); });
+  const widgetsHint = accountPanel?.querySelector('.settingsAccountWidgetsRow span');
+  if (widgetsHint) widgetsHint.textContent = t("settings.profile.widgets_hint", "Choose what appears on your profile.");
+  const widgetsButton = document.getElementById("btnOpenProfileWidgets");
+  if (widgetsButton) widgetsButton.textContent = t("settings.profile.manage_widgets", "Manage widgets");
+  const editMediaHint = accountPanel?.querySelector('.settingsIdentityEditHint');
+  if (editMediaHint) editMediaHint.textContent = t("settings.profile.edit_media", "Edit banner or avatar");
   const secStatus = document.getElementById("settingsSectionStatus");
   if (secStatus) secStatus.textContent = t("settings.section.status", "Status");
   const secAltaraPlus = document.getElementById("settingsSectionAltaraPlus");
@@ -34948,9 +35140,9 @@ function applyLanguageToStaticUi() {
   if (altaraPlusRefreshBtn) altaraPlusRefreshBtn.textContent = t("settings.altara_plus.refresh", "Refresh status");
   renderSettingsAltaraPlusPanel();
   const secSecurity = document.getElementById("settingsSectionSecurity");
-  if (secSecurity) secSecurity.textContent = t("settings.section.security", "Security");
+  if (secSecurity) secSecurity.textContent = t("settings.security.account.title", "Account security");
   const secSecurityCode = document.getElementById("settingsSectionSecurityCode");
-  if (secSecurityCode) secSecurityCode.textContent = t("settings.security.code.section", "Security code lock");
+  if (secSecurityCode) secSecurityCode.textContent = t("settings.security.code.label", "Security code");
   const secTheme = document.getElementById("settingsSectionTheme");
   if (secTheme) secTheme.textContent = t("settings.section.theme", "Theme");
   const secMore = document.getElementById("settingsSectionMore");
@@ -35180,13 +35372,15 @@ function applyLanguageToStaticUi() {
   const saveUsernameBtn = document.getElementById("btnSaveUsername");
   if (saveUsernameBtn) saveUsernameBtn.textContent = t("settings.profile.save_username", "Save username");
   const saveProfileBtn = document.getElementById("btnSaveProfile");
-  if (saveProfileBtn) saveProfileBtn.textContent = t("settings.profile.save_profile", "Save profile");
+  if (saveProfileBtn) saveProfileBtn.textContent = t("settings.profile.save_changes", "Save changes");
   const pronounsLabel = document.querySelector('label[for="pronouns"]');
-  if (pronounsLabel) pronounsLabel.textContent = t("settings.profile.pronouns", "Pronouns");
+  if (pronounsLabel?.firstChild) pronounsLabel.firstChild.textContent = t("settings.profile.pronouns", "Pronouns") + " ";
   const pronounsInput = document.getElementById("pronouns");
   if (pronounsInput) pronounsInput.placeholder = t("settings.profile.pronouns_placeholder", "e.g. he/him");
   const pronounsHint = document.getElementById("profilePronounsHint");
-  if (pronounsHint) pronounsHint.textContent = t("settings.profile.pronouns_hint", "Optional. Appears on your profile.");
+  if (pronounsHint) pronounsHint.textContent = t("settings.profile.visibility", "On your profile.");
+  const usernameHint = document.getElementById("profileUsernameHint");
+  if (usernameHint) usernameHint.textContent = t("settings.profile.username_hint", "Unique handle.");
   const nameColorLabel = document.querySelector('label[for="nameColor"]');
   if (nameColorLabel) nameColorLabel.textContent = t("settings.profile.name_color", "Name color");
   const callBgLabel = document.querySelector('label[for="callTileColor"]');
@@ -35415,10 +35609,15 @@ function applyServerAndChannelLocaleUi() {
     setText(`#serverSettingsModal [data-server-settings-nav="${name}"] span`, key, fallback);
   }
   setText("#serverSettingsTitle", "server.settings.title", "Server Settings");
-  setText("#serverSettingsSub", "server.settings.subtitle", "Change server name, icon and roles.");
+  setText("#serverSettingsSub", "server.settings.subtitle", "Manage this server.");
   setAttr("#btnServerSettingsClose", "aria-label", "server.settings.close", "Close server settings");
   setText('#serverSettingsModal [data-server-settings-panel="profile"] h2', "server.settings.profile_title", "Server Profile");
   setText('#serverSettingsModal [data-server-settings-panel="profile"] .serverSettingsPanelIntro p', "server.settings.profile_hint", "Customize how this server appears to members.");
+  setText("#serverSettingsModal .serverSettingsIdentityPanel .serverSettingsSectionHead h3", "server.settings.identity_heading", "Identity");
+  setText("#serverSettingsModal .serverSettingsMediaSection .serverSettingsSectionHead h3", "server.settings.media_heading", "Live preview");
+  setText("#serverSettingsModal .serverSettingsMediaSection .serverSettingsSectionHead p", "server.settings.media_hint", "See changes before you save.");
+  setText("#btnServerSettingsIconPick", "server.settings.change_image", "Change");
+  setText("#btnServerSettingsBannerPick", "server.settings.change_image", "Change");
   setText("#serverSettingsModal .serverSettingsIconRow .serverSettingsFieldLabel", "server.settings.icon", "Server Icon");
   setText("#serverSettingsModal .serverSettingsIconRow .serverSettingsFieldHint", "server.settings.icon_hint", "Use a square image for the cleanest crop.");
   setText("#serverSettingsModal .serverSettingsBannerBlock .serverSettingsFieldLabel", "server.settings.banner", "Server Banner");
@@ -35439,6 +35638,7 @@ function applyServerAndChannelLocaleUi() {
   }
   const roleName = document.getElementById("serverSettingsRoleName");
   if (roleName) roleName.placeholder = t("server.settings.new_role", "New role name");
+  setAttr("#serverSettingsRoleName", "aria-label", "server.settings.new_role", "New role name");
   setText('#serverSettingsModal [data-server-settings-panel="roles"] .serverSettingsRolesHead .label', "server.settings.create_role", "Create Role");
   setText('#serverSettingsModal [data-server-settings-panel="roles"] .serverSettingsRolesHead .hint', "server.settings.create_role_hint", "Choose a name, color, and permission preset.");
   setAttr("#serverSettingsRoleColor", "aria-label", "server.settings.role_color", "Role color");
@@ -35725,7 +35925,56 @@ function renderSettingsAccountLoadStatus() {
 function markSettingsAccountDirty() {
   if (myAccountHydrating) return;
   myAccountDirty = true;
+  renderSettingsAccountSaveUi();
+  renderSettingsAccountColorSwatches();
+  myAccountDirty = !document.getElementById("btnSaveUsername")?.disabled || !document.getElementById("btnSaveProfile")?.disabled;
   debugSettingsLog("[Settings] My Account dirty", { dirty: myAccountDirty, hydrated: myAccountHasHydratedRealProfile });
+}
+
+function getSettingsAccountDraft() {
+  return Object.fromEntries(["username", "displayName", "pronouns", "bio", "nameColor", "callTileColor"].map((id) => [
+    id, String(document.getElementById(id)?.value || ""),
+  ]));
+}
+
+function renderSettingsAccountColorSwatches() {
+  for (const [id, normalize, fallback] of [
+    ["nameColor", normalizeNameColor, "#f1f2f5"],
+    ["callTileColor", normalizeCallTileColor, "#1b2230"],
+  ]) {
+    const field = document.getElementById(id);
+    const swatch = field?.parentElement?.querySelector(".settingsAccountColorSwatch");
+    if (swatch) swatch.style.backgroundColor = normalize(field.value) || fallback;
+  }
+}
+
+function renderSettingsAccountSaveUi(message = "", tone = "") {
+  const status = document.getElementById("settingsAccountSaveStatus");
+  const usernameButton = document.getElementById("btnSaveUsername");
+  const profileButton = document.getElementById("btnSaveProfile");
+  const profile = getRealMyAccountProfileSnapshot(state.me || null);
+  const ready = !!(profile && myAccountHasHydratedRealProfile && !settingsProfileLoading);
+  const draft = getSettingsAccountDraft();
+  const usernameDirty = ready && draft.username.trim() !== String(profile.username || "").trim();
+  const profileDirty = ready && (
+    draft.displayName.trim() !== String(profile.display_name || "").trim() ||
+    normalizePronouns(draft.pronouns) !== normalizePronouns(profile.pronouns || "") ||
+    draft.bio.trim() !== String(profile.bio || "").trim() ||
+    normalizeNameColor(draft.nameColor) !== (normalizeNameColor(profile.name_color) || "#f1f2f5") ||
+    normalizeCallTileColor(draft.callTileColor) !== (normalizeCallTileColor(profile.call_tile_color) || "#1b2230")
+  );
+  const saving = tone === "saving";
+  if (usernameButton) usernameButton.disabled = !ready || !usernameDirty || saving;
+  if (profileButton) profileButton.disabled = !ready || !profileDirty || saving;
+  if (!status) return;
+  const hasChanges = usernameDirty || profileDirty;
+  const accountPanel = document.querySelector('#profileOverlay [data-settings-panel="account"]');
+  accountPanel?.classList.toggle("has-unsaved-changes", !!hasChanges);
+  accountPanel?.classList.toggle("has-account-feedback", !!message);
+  status.textContent = message || (!ready ? "Loading profile..." : hasChanges ? t("settings.profile.unsaved", "Unsaved changes") : t("settings.profile.saved", "All changes saved"));
+  const nextTone = tone || (hasChanges ? "dirty" : "");
+  if (nextTone) status.dataset.tone = nextTone;
+  else status.removeAttribute("data-tone");
 }
 
 function hydrateMyAccountFromProfile(profileInput = null, { reason = "settings", hydrateFields = true } = {}) {
@@ -35798,8 +36047,10 @@ function hydrateMyAccountFromProfile(profileInput = null, { reason = "settings",
   }
 
   syncProfileBioFieldUi();
+  renderSettingsAccountColorSwatches();
   renderSettingsIdentityProfilePreviewAltaraPlusBadge();
   renderSettingsAccountLoadStatus();
+  renderSettingsAccountSaveUi();
   debugSettingsLog("[Settings] hydrateMyAccountFromProfile", {
     reason,
     hydrateFields,
@@ -35844,6 +36095,7 @@ function maybeHydrateMyAccount(profileInput = null, { force = false, reason = "s
     settingsProfileLoading = false;
     settingsProfileLoadError = "";
     renderSettingsAccountLoadStatus();
+    renderSettingsAccountSaveUi();
     return true;
   }
 
@@ -36461,8 +36713,12 @@ function bindProfileOverlayOnce() {
     closeProfileOverlay();
   });
 
-  document.getElementById("btnSaveUsername")?.addEventListener("click", saveUsername);
-  document.getElementById("btnSaveProfile")?.addEventListener("click", saveProfile);
+  document.getElementById("btnSaveUsername")?.addEventListener("click", () => {
+    void saveUsername().catch((error) => renderSettingsAccountSaveUi(error?.message || "Couldn't save username.", "error"));
+  });
+  document.getElementById("btnSaveProfile")?.addEventListener("click", () => {
+    void saveProfile().catch((error) => renderSettingsAccountSaveUi(error?.message || "Couldn't save profile.", "error"));
+  });
   document.getElementById("btnOpenProfileWidgets")?.addEventListener("click", async () => {
     const uid = normId(state.user?.id || "");
     if (!uid) return;
@@ -36535,6 +36791,7 @@ function bindProfileOverlayOnce() {
     }
     settingsSecuritySetupDismissed = true;
     renderSecurityAccessUi();
+    setSecurityEditorOpen("settingsSecurityManageWrap", true);
     requestAnimationFrame(() => {
       const input = document.getElementById("securityCode");
       if (!(input instanceof HTMLInputElement)) return;
@@ -36544,6 +36801,29 @@ function bindProfileOverlayOnce() {
         try { input.focus(); } catch (_) {}
       }
     });
+  });
+  [
+    ["btnSecurityEditCode", "settingsSecurityManageWrap", "securityCode"],
+    ["btnSecurityEditEmail", "settingsSecurityEmailEditor", "newEmail"],
+    ["btnSecurityEditPassword", "settingsSecurityPasswordEditor", "currentPass"],
+  ].forEach(([buttonId, editorId, inputId]) => {
+    document.getElementById(buttonId)?.addEventListener("click", () => {
+      const nextOpen = !!document.getElementById(editorId)?.hidden;
+      setSecurityEditorOpen(editorId, nextOpen);
+      if (nextOpen) requestAnimationFrame(() => focusSecurityInput(document.getElementById(inputId)));
+    });
+  });
+  document.getElementById("btnSettingsVaultPrimary")?.addEventListener("click", () => {
+    const setup = document.getElementById("settingsDmE2eeBackupSetupWrap");
+    if (setup && !setup.hidden) {
+      document.getElementById("btnSettingsDmE2eeSetupNewKey")?.click();
+      return;
+    }
+    const area = document.getElementById("settingsVaultActionArea");
+    if (!area) return;
+    area.hidden = !area.hidden;
+    document.getElementById("btnSettingsVaultPrimary")?.setAttribute("aria-expanded", String(!area.hidden));
+    if (!area.hidden) requestAnimationFrame(() => focusSecurityInput(document.getElementById("settingsDmE2eeBackupRestoreWrap")?.hidden ? document.getElementById("settingsDmE2eeBackupPassword") : document.getElementById("settingsDmE2eeBackupRestoreMethod")));
   });
   document.getElementById("btnSecuritySaveCode")?.addEventListener("click", () => { void saveSecurityAccessCode(); });
   document.getElementById("btnSecurityRemoveCode")?.addEventListener("click", () => { void requestSecurityCodeRemovalVerification(); });
@@ -37307,13 +37587,14 @@ function setProfileDebug(obj) {
 
 async function saveUsername() {
   const u = document.getElementById("username").value.trim();
-  if (!validUsername(u)) return alert("Username inválido.");
+  if (!validUsername(u)) return renderSettingsAccountSaveUi(t("settings.profile.username_invalid", "Enter a valid username."), "error");
+
+  const draft = getSettingsAccountDraft();
+  renderSettingsAccountSaveUi(t("settings.profile.saving_username", "Saving username..."), "saving");
 
   const { error } = await supabase.rpc("set_my_username", { p_username: u });
   setProfileDebug({ set_my_username: { error } });
-  if (error) return alert("Erro: " + error.message);
-
-  alert("Username guardado.");
+  if (error) return renderSettingsAccountSaveUi(error.message || "Couldn't save username.", "error");
 
   state.me = await getMyProfile(state.user.id);
   state.me.name_color = normalizeNameColor(state.me.name_color);
@@ -37323,6 +37604,13 @@ async function saveUsername() {
   cacheProfileRow(state.me);
   myAccountDirty = false;
   hydrateMyAccountSettings(state.me, { force: true, reason: "profile_save_complete" });
+  for (const id of ["displayName", "pronouns", "bio", "nameColor", "callTileColor"]) {
+    const field = document.getElementById(id);
+    if (field) field.value = draft[id];
+  }
+  renderSettingsAccountSaveUi();
+  myAccountDirty = !document.getElementById("btnSaveProfile")?.disabled;
+  renderSettingsAccountSaveUi(myAccountDirty ? t("settings.profile.other_pending", "Username saved. Other changes are unsaved.") : t("settings.profile.username_saved", "Username saved."), myAccountDirty ? "dirty" : "");
   applyMeHeaderNameStyle();
   $("meName").textContent = state.me.display_name || state.me.username;
   $("meTag").textContent = "@" + state.me.username;
@@ -37347,14 +37635,17 @@ async function saveUsername() {
 }
 
 async function saveProfile() {
+  const usernameDraft = document.getElementById("username")?.value || "";
   const display_name = document.getElementById("displayName").value.trim();
   const pronouns = normalizePronouns(document.getElementById("pronouns")?.value || "");
   const bio = document.getElementById("bio").value.trim();
   const nameColor = normalizeNameColor(document.getElementById("nameColor")?.value || "");
   const callTileColor = normalizeCallTileColor(document.getElementById("callTileColor")?.value || "");
 
-  if (display_name.length > 32) return alert("Display name máximo: 32 caracteres");
-  if (bio.length > PROFILE_BIO_MAX_LEN) return alert(`Bio máxima: ${PROFILE_BIO_MAX_LEN} caracteres`);
+  if (display_name.length > 32) return renderSettingsAccountSaveUi("Display name can have up to 32 characters.", "error");
+  if (bio.length > PROFILE_BIO_MAX_LEN) return renderSettingsAccountSaveUi(`Bio can have up to ${PROFILE_BIO_MAX_LEN} characters.`, "error");
+
+  renderSettingsAccountSaveUi(t("settings.profile.saving_profile", "Saving profile..."), "saving");
 
   let payload = {
     display_name: display_name || null,
@@ -37387,18 +37678,16 @@ async function saveProfile() {
     if (stripped) {
       ({ error } = await supabase.from("profiles").update(payload).eq("id", state.user.id));
       if (!error) {
-        alert("Perfil guardado. Falta SQL no Supabase para campos novos (ex.: SQL/SUPABASE_PATCH_PROFILE_PRONOUNS.sql).");
         warnedMissingProfileCols = true;
       }
     }
   }
 
   setProfileDebug({ update_profile: { error } });
-  if (error) return alert("Erro: " + error.message);
+  if (error) return renderSettingsAccountSaveUi(error.message || "Couldn't save profile.", "error");
   if (Object.prototype.hasOwnProperty.call(payload, "name_color")) profileNameColorSupported = true;
   if (Object.prototype.hasOwnProperty.call(payload, "call_tile_color")) profileCallTileColorSupported = true;
 
-  if (!warnedMissingProfileCols) alert("Perfil guardado.");
   state.me = await getMyProfile(state.user.id);
   state.me.name_color = normalizeNameColor(state.me.name_color);
   state.me.call_tile_color = normalizeCallTileColor(state.me.call_tile_color);
@@ -37407,6 +37696,11 @@ async function saveProfile() {
   cacheProfileRow(state.me);
   myAccountDirty = false;
   hydrateMyAccountSettings(state.me, { force: true, reason: "profile_save_complete" });
+  const usernameInput = document.getElementById("username");
+  if (usernameInput) usernameInput.value = usernameDraft;
+  renderSettingsAccountSaveUi();
+  myAccountDirty = !document.getElementById("btnSaveUsername")?.disabled;
+  renderSettingsAccountSaveUi(warnedMissingProfileCols ? "Profile saved. Some appearance options may be unavailable." : myAccountDirty ? t("settings.profile.username_pending", "Profile saved. Username is still unsaved.") : t("settings.profile.profile_saved", "Profile saved."), myAccountDirty ? "dirty" : "");
   applyAppearanceSettings(loadAppearanceSettings({ force: true }));
   applyMeHeaderNameStyle();
   $("meName").textContent = state.me.display_name || state.me.username;
@@ -37466,6 +37760,8 @@ async function updateEmail() {
   const nextEmail = String(data?.user?.email || state.user?.email || email);
   if (state.user) state.user.email = nextEmail;
   if (currentEmailInput) currentEmailInput.value = nextEmail;
+  const emailSummary = document.getElementById("settingsSecurityEmailSummary");
+  if (emailSummary) emailSummary.textContent = nextEmail;
   if (newEmailInput) newEmailInput.value = "";
   await showSecurityDialogMessage("Pedido de troca de email feito (pode precisar de confirmação).");
 }
@@ -37588,35 +37884,38 @@ const WIDGET_IDS = Object.freeze([
   "timer",
 ]);
 
-const WIDGET_SIZE_ORDER = Object.freeze(["sm", "md", "lg", "xl"]);
+const WIDGET_SIZE_ORDER = Object.freeze(["sm", "md", "lg", "tall", "xl"]);
+const WIDGET_LAYOUT_VERSION = 4;
 const WIDGET_SIZE_LABELS = Object.freeze({
   sm: "P",
   md: "M",
   lg: "G",
+  tall: "V",
   xl: "XL",
 });
 const WIDGET_SIZE_CLASS_NAMES = Object.freeze([
   "widgetCard--size-sm",
   "widgetCard--size-md",
   "widgetCard--size-lg",
+  "widgetCard--size-tall",
   "widgetCard--size-xl",
 ]);
 const WIDGET_SIZE_DEFAULTS = Object.freeze({
   online: "sm",
   unread: "md",
   calendar: "sm",
-  call: "lg",
-  notes: "lg",
+  call: "md",
+  notes: "md",
   checklist: "lg",
   timer: "md",
 });
 const WIDGET_ALLOWED_SIZES = Object.freeze({
   online: Object.freeze(["sm"]),
-  unread: Object.freeze(["md"]),
+  unread: Object.freeze(["sm", "md"]),
   calendar: Object.freeze(["sm", "lg"]),
-  call: Object.freeze(["lg"]),
-  notes: Object.freeze(["lg"]),
-  checklist: Object.freeze(["lg"]),
+  call: Object.freeze(["md", "lg"]),
+  notes: Object.freeze(["md", "lg", "tall"]),
+  checklist: Object.freeze(["lg", "tall"]),
   timer: Object.freeze(["md", "lg"]),
 });
 
@@ -37654,6 +37953,7 @@ let widgetChecklistRenamingId = "";
 let widgetChecklistDeleteConfirmId = "";
 let widgetChecklistToastTimer = null;
 let widgetChecklistLastMessageIndex = -1;
+let widgetChecklistDrag = null;
 let widgetResizeDrag = null;
 let widgetsDropGridCell = null;
 let widgetTransparentDragImage = null;
@@ -37708,40 +38008,10 @@ function saveWidgetNotesText(text) {
   return next;
 }
 
-function getAvailableNotepadTextareaHeight(textarea) {
-  if (!textarea) return 180;
-  const card = textarea.closest?.(".widgetCard[data-widget-id='notes']");
-  if (!card) return 220;
-  const cardStyle = getComputedStyle(card);
-  const contentHeight = Math.max(
-    0,
-    Number(card.clientHeight || 0)
-      - (parseFloat(cardStyle.paddingTop) || 0)
-      - (parseFloat(cardStyle.paddingBottom) || 0)
-  );
-  const children = Array.from(card.children || []).filter((child) => {
-    if (!child || child === textarea) return false;
-    const style = getComputedStyle(child);
-    if (style.display === "none" || style.position === "absolute" || style.position === "fixed") return false;
-    return child.getBoundingClientRect().height > 0;
-  });
-  const fixedHeight = children.reduce((sum, child) => sum + child.getBoundingClientRect().height, 0);
-  const rowGap = parseFloat(cardStyle.rowGap || cardStyle.gap) || 0;
-  const visibleItems = children.length + 1;
-  const gapHeight = Math.max(0, visibleItems - 1) * rowGap;
-  const available = Math.floor(contentHeight - fixedHeight - gapHeight);
-  return Math.max(48, available || 180);
-}
-
 function autoResizeNotepadTextarea(textarea) {
   if (!(textarea instanceof HTMLTextAreaElement)) return;
-  const maxHeight = getAvailableNotepadTextareaHeight(textarea);
-  textarea.style.height = "auto";
-  textarea.style.overflowY = "hidden";
-  const scrollHeight = Math.ceil(textarea.scrollHeight || 0);
-  const nextHeight = Math.max(48, Math.min(scrollHeight, maxHeight));
-  textarea.style.height = `${nextHeight}px`;
-  textarea.style.overflowY = scrollHeight > maxHeight + 1 ? "auto" : "hidden";
+  textarea.style.height = "100%";
+  textarea.style.overflowY = "auto";
 }
 
 function resizeAllWidgetNotesTextareas(root = document) {
@@ -38082,7 +38352,13 @@ function mergeWidgetTodoCollections(localItems = [], remoteItems = []) {
     localById.delete(remoteItem.id);
   });
   localById.forEach((localItem) => merged.push(localItem));
-  return normalizeWidgetTodoItems(merged);
+  // A reorder stamps the existing updatedAt field on the entire ordered snapshot.
+  // Keep that order when reconnecting to an older cloud snapshot.
+  const newest = (items) => Math.max(0, ...items.map((item) => Date.parse(item.updatedAt) || 0));
+  const order = newest(local) >= newest(remote) ? local : remote;
+  const positions = new Map(order.map((item, index) => [item.id, index]));
+  return normalizeWidgetTodoItems(merged.sort((a, b) =>
+    (positions.get(a.id) ?? order.length) - (positions.get(b.id) ?? order.length)));
 }
 
 async function writeWidgetTodoSnapshotToCloud(itemsSnapshot = getWidgetTodoItems(), { remoteIds = null } = {}) {
@@ -38168,7 +38444,7 @@ async function writeWidgetTodoSnapshotToCloud(itemsSnapshot = getWidgetTodoItems
 async function syncWidgetTodoFromCloud({ force = false } = {}) {
   const meId = normId(state?.user?.id || "");
   if (!meId) return false;
-  if (!force && widgetTodoCloudSyncInFlight) return widgetTodoCloudSyncInFlight;
+  if (widgetTodoCloudSyncInFlight) return widgetTodoCloudSyncInFlight;
   const nowMs = Date.now();
   if (!force && (nowMs - Number(widgetTodoCloudLastSyncAt || 0)) < WIDGET_TODO_CLOUD_SYNC_COOLDOWN_MS) return false;
 
@@ -38176,6 +38452,10 @@ async function syncWidgetTodoFromCloud({ force = false } = {}) {
   const localFp = getWidgetTodoItemsFingerprint(localItems);
 
   const run = (async () => {
+    // Read after queued saves, and serialize any merged write through that queue too.
+    await widgetTodoCloudWriteQueue;
+    if (meId !== normId(state?.user?.id || "")
+      || localFp !== getWidgetTodoItemsFingerprint(getWidgetTodoItems())) return false;
     const { data, error } = await supabase
       .from(WIDGET_TODO_CLOUD_TABLE)
       .select("task_id, sort_order, text, is_done, due_date, due_time, reminder_preset, completed_at, notified_at, created_at, updated_at")
@@ -38193,6 +38473,10 @@ async function syncWidgetTodoFromCloud({ force = false } = {}) {
       return false;
     }
 
+    // Do not apply a read that started before a local edit/reorder or account switch.
+    if (meId !== normId(state?.user?.id || "")
+      || localFp !== getWidgetTodoItemsFingerprint(getWidgetTodoItems())) return false;
+
     widgetTodoCloudAvailable = true;
     const remoteItems = normalizeWidgetTodoItems(
       (Array.isArray(data) ? data : []).map((row) => ({
@@ -38209,7 +38493,6 @@ async function syncWidgetTodoFromCloud({ force = false } = {}) {
       }))
     );
 
-    const remoteIds = remoteItems.map((item) => item.id);
     const remoteFp = getWidgetTodoItemsFingerprint(remoteItems);
     const merged = mergeWidgetTodoCollections(localItems, remoteItems);
     const mergedFp = getWidgetTodoItemsFingerprint(merged);
@@ -38220,7 +38503,7 @@ async function syncWidgetTodoFromCloud({ force = false } = {}) {
     widgetTodoCloudLastSyncAt = Date.now();
 
     if (remoteChanged) {
-      await writeWidgetTodoSnapshotToCloud(merged, { remoteIds });
+      await queueWidgetTodoCloudSnapshotSync(merged);
     }
 
     if (localChanged) {
@@ -38583,14 +38866,28 @@ function moveWidgetTodoItem(itemId, direction = 1) {
   const id = String(itemId || "").trim();
   if (!id) return false;
   const current = getWidgetTodoItems();
-  const fromIdx = current.findIndex((item) => item.id === id);
-  if (fromIdx < 0) return false;
-  const toIdx = Math.max(0, Math.min(current.length - 1, fromIdx + (direction >= 0 ? 1 : -1)));
-  if (toIdx === fromIdx) return false;
-  const next = current.slice();
-  const [moved] = next.splice(fromIdx, 1);
-  next.splice(toIdx, 0, moved);
-  saveWidgetTodoItems(next);
+  const item = current.find((entry) => entry.id === id);
+  if (!item) return false;
+  const peers = current.filter((entry) => entry.done === item.done);
+  const from = peers.findIndex((entry) => entry.id === id);
+  const target = peers[from + (direction >= 0 ? 1 : -1)];
+  return target ? reorderWidgetTodoItem(id, target.id, direction >= 0) : false;
+}
+
+function reorderWidgetTodoItem(itemId, targetId, after = false) {
+  const current = getWidgetTodoItems();
+  const item = current.find((entry) => entry.id === itemId);
+  const target = current.find((entry) => entry.id === targetId);
+  if (!item || !target || item.id === target.id || item.done !== target.done) return false;
+  const peers = current.filter((entry) => entry.done === item.done && entry.id !== itemId);
+  const index = peers.findIndex((entry) => entry.id === targetId);
+  peers.splice(index + (after ? 1 : 0), 0, item);
+  let cursor = 0;
+  const next = current.map((entry) => entry.done === item.done ? peers[cursor++] : entry);
+  if (next.every((entry, i) => entry.id === current[i].id)) return false;
+  const updatedAt = new Date(Math.max(Date.now(), ...current.map((entry) =>
+    (Date.parse(entry.updatedAt) || 0) + 1))).toISOString();
+  saveWidgetTodoItems(next.map((entry) => ({ ...entry, updatedAt })));
   return true;
 }
 
@@ -38836,6 +39133,11 @@ function normalizeWidgetsLayout(raw) {
       sizes[id] = normalizeWidgetSize(raw.sizes[id], id);
     });
   }
+  if (raw && Number(raw.version || 0) < 2) {
+    // Call and Notepad were fixed at large before compact alternatives existed.
+    if (sizes.call === "lg") sizes.call = "md";
+    if (sizes.notes === "lg") sizes.notes = "md";
+  }
   // Legacy pinned positions are ignored to keep grid packing stable and gap-free.
   if (raw?.highlighted && typeof raw.highlighted === "object") {
     WIDGET_IDS.forEach((id) => {
@@ -38857,9 +39159,15 @@ function normalizeWidgetsLayout(raw) {
     order.push(id);
   });
 
-  sizes.notes = "lg";
-  sizes.checklist = "lg";
-  return { order, enabled, sizes, positions, highlighted };
+  // Unpack layouts saved by older versions without losing each widget's own size.
+  if (Array.isArray(raw?.stacks)) raw.stacks.forEach((candidate) => {
+    (Array.isArray(candidate?.members) ? candidate.members : []).forEach((id) => {
+      if (WIDGET_IDS.includes(id) && candidate?.savedSizes?.[id]) {
+        sizes[id] = normalizeWidgetSize(candidate.savedSizes[id], id);
+      }
+    });
+  });
+  return { version: WIDGET_LAYOUT_VERSION, order, enabled, sizes, positions, highlighted };
 }
 
 function loadWidgetsLayoutState() {
@@ -38919,7 +39227,9 @@ function setWidgetSize(widgetId, sizeInput) {
   const id = String(widgetId || "").trim();
   if (!WIDGET_IDS.includes(id)) return;
   widgetsLayoutState.sizes = widgetsLayoutState.sizes || {};
-  widgetsLayoutState.sizes[id] = normalizeWidgetSize(sizeInput, id);
+  const size = String(sizeInput || "").trim().toLowerCase();
+  if (!getWidgetAllowedSizes(id).includes(size)) return;
+  widgetsLayoutState.sizes[id] = size;
   saveWidgetsLayoutState();
 }
 
@@ -38990,11 +39300,8 @@ function setWidgetPinnedPosition(widgetId, colInput, rowInput, { prioritize = tr
 
 function getActiveWidgetIds() {
   ensureWidgetsLayoutState();
-  const active = (widgetsLayoutState?.order || [])
-    .filter((id) => WIDGET_IDS.includes(String(id || "").trim()))
-    .filter((id) => widgetsLayoutState?.enabled?.[id]);
-  if (active.length) return active;
-  return WIDGET_IDS.filter((id) => widgetsLayoutState?.enabled?.[id] !== false);
+  const active = (widgetsLayoutState?.order || []).filter((id) => WIDGET_IDS.includes(id) && widgetsLayoutState?.enabled?.[id]);
+  return active.length ? active : WIDGET_IDS.filter((id) => widgetsLayoutState?.enabled?.[id] !== false);
 }
 
 function shiftWidgetSize(widgetId, direction = 1) {
@@ -39031,10 +39338,14 @@ function getWidgetsGridMetrics() {
   return { grid, colCount, colGap, rowGap, cellWidth, cellHeight };
 }
 
-function getWidgetSizeDimensions(sizeInput, colCountInput) {
+function getWidgetSingleSizeDimensions(sizeInput, colCountInput, widgetId = "") {
   const size = normalizeWidgetSize(sizeInput);
   const colCount = Math.max(1, Number(colCountInput) || 4);
-  if (colCount <= 1) return { cols: 1, rows: 1 };
+  if (size === "tall") return { cols: Math.min(2, colCount), rows: 3 };
+  if (colCount <= 1) {
+    const rows = size === "xl" ? 3 : size === "lg" || (size === "md" && (widgetId === "timer" || widgetId === "call")) ? 2 : 1;
+    return { cols: 1, rows };
+  }
   const dims = {
     sm: { cols: 1, rows: 1 },
     md: { cols: Math.min(2, colCount), rows: 1 },
@@ -39044,11 +39355,15 @@ function getWidgetSizeDimensions(sizeInput, colCountInput) {
   return dims[size] || dims.md;
 }
 
+function getWidgetSizeDimensions(sizeInput, colCountInput, widgetId = "") {
+  return getWidgetSingleSizeDimensions(sizeInput, colCountInput, widgetId);
+}
+
 function getWidgetSizePreviewText(widgetId, sizeInput, colCountInput) {
   const id = String(widgetId || "").trim();
   const size = normalizeWidgetSize(sizeInput, id || "md");
   const colCount = Math.max(1, Number(colCountInput) || 4);
-  const dims = getWidgetSizeDimensions(size, colCount);
+  const dims = getWidgetSizeDimensions(size, colCount, id);
   const sizeLabel = WIDGET_SIZE_LABELS[size] || size.toUpperCase();
   return `${sizeLabel} ${dims.cols}x${dims.rows}`;
 }
@@ -39101,7 +39416,7 @@ function computeWidgetGridPlacements(activeIds, colCountInput, options = {}) {
     const sizeId = sizeOverrides && Object.prototype.hasOwnProperty.call(sizeOverrides, id)
       ? normalizeWidgetSize(sizeOverrides[id], id)
       : getWidgetSize(id);
-    const dims = getWidgetSizeDimensions(sizeId, colCount);
+    const dims = getWidgetSizeDimensions(sizeId, colCount, id);
     const slot = findFirstWidgetGridSlot(occupied, dims.cols, dims.rows, colCount, 1);
     placements[id] = {
       col: slot.col,
@@ -39153,7 +39468,7 @@ function pickWidgetSizeFromDims(targetColsInput, targetRowsInput, colCountInput,
   let bestId = candidates[0] || "md";
   let bestScore = Number.POSITIVE_INFINITY;
   for (const id of candidates) {
-    const dims = getWidgetSizeDimensions(id, colCount);
+    const dims = getWidgetSizeDimensions(id, colCount, widgetId);
     const score = (Math.abs(dims.cols - targetCols) * 3) + Math.abs(dims.rows - targetRows);
     if (score < bestScore) {
       bestScore = score;
@@ -39308,7 +39623,7 @@ function moveWidget(dragId, targetId = "", position = "before") {
   widgetsLayoutState.positions = widgetsLayoutState.positions || {};
   delete widgetsLayoutState.positions[from];
 
-  const next = widgetsLayoutState.order.filter((id) => id !== from);
+  const next = getActiveWidgetIds().filter((id) => id !== from);
 
   if (!to || !next.includes(to)) {
     next.push(from);
@@ -39860,7 +40175,7 @@ function getWidgetGridCellFromEvent(grid, e, widgetId = "", anchor = null, metri
   if (!grid || !e) return null;
   const metrics = metricsInput || getWidgetsGridMetrics();
   const colCount = Math.max(1, Number(metrics.colCount) || 4);
-  const dims = getWidgetSizeDimensions(getWidgetSize(widgetId), colCount);
+  const dims = getWidgetSizeDimensions(getWidgetSize(widgetId), colCount, widgetId);
   const rect = rectInput || grid.getBoundingClientRect();
   const colStep = Math.max(1, metrics.cellWidth + metrics.colGap);
   const rowStep = Math.max(1, metrics.cellHeight + metrics.rowGap);
@@ -40102,23 +40417,8 @@ function getWidgetTodoDisplayRank(item, nowInput = new Date()) {
 }
 
 function sortWidgetTodoItemsForDisplay(items = getWidgetTodoItems()) {
-  const now = new Date();
-  return normalizeWidgetTodoItems(items)
-    .map((item, index) => {
-      const due = getWidgetTodoDueDateTime(item, { fallbackHour: 23, fallbackMinute: 59 });
-      return {
-        item,
-        index,
-        rank: getWidgetTodoDisplayRank(item, now),
-        dueMs: due ? due.getTime() : Number.POSITIVE_INFINITY,
-      };
-    })
-    .sort((a, b) => (
-      a.rank - b.rank
-      || a.dueMs - b.dueMs
-      || a.index - b.index
-    ))
-    .map((entry) => entry.item);
+  const ordered = normalizeWidgetTodoItems(items);
+  return ordered.filter((item) => !item.done).concat(ordered.filter((item) => item.done));
 }
 
 function pickWidgetChecklistVisibleItems(items = [], limitInput = 3) {
@@ -40170,6 +40470,9 @@ function buildChecklistPriorityChipHtml(item = null) {
 function buildChecklistTaskRowHtml(item = null, index = 0, totalCount = 0, options = {}) {
   if (!item?.id) return "";
   const showActions = options.showActions !== false;
+  const peers = getWidgetTodoItems().filter((entry) => entry.done === item.done);
+  const peerIndex = peers.findIndex((entry) => entry.id === item.id);
+  const reorderDisabled = widgetsEditMode ? "disabled" : "";
   const schedule = getWidgetTodoScheduleMeta(item);
   const chipHtml = buildChecklistDueChipHtml(item) || buildChecklistPriorityChipHtml(item);
   const isRenaming = widgetChecklistRenamingId === item.id;
@@ -40214,13 +40517,18 @@ function buildChecklistTaskRowHtml(item = null, index = 0, totalCount = 0, optio
   }
 
   return `
-    <li class="${rowClass}">
+    <li class="${rowClass}" data-checklist-task-id="${escAttr(item.id)}" data-checklist-done="${item.done ? "true" : "false"}">
       <button class="profileChecklistCheckbox" type="button" data-widget-todo-toggle="${escAttr(item.id)}" aria-label="${escAttr(item.done ? t("widget.todo.mark_incomplete", "Mark incomplete") : t("widget.todo.mark_complete", "Mark complete"))}" aria-pressed="${item.done ? "true" : "false"}">
         <span aria-hidden="true"></span>
       </button>
       <span class="profileChecklistTaskTitle" title="${escAttr(item.text)}">${esc(item.text)}</span>
       ${chipHtml ? `<span class="profileChecklistTaskMeta">${chipHtml}</span>` : `<span class="profileChecklistTaskMeta" aria-hidden="true"></span>`}
       ${showActions ? `<div class="profileChecklistTaskActions">
+        <button class="profileChecklistMiniAction profileChecklistReorderHandle" type="button" data-checklist-reorder="${escAttr(item.id)}" ${reorderDisabled} aria-label="${escAttr(t("widget.todo.reorder", "Reorder task"))}" title="${escAttr(t("widget.todo.reorder", "Reorder task"))}"><svg viewBox="0 0 12 16" width="12" height="16" aria-hidden="true" fill="currentColor"><circle cx="4" cy="4" r="1"/><circle cx="8" cy="4" r="1"/><circle cx="4" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="8" cy="12" r="1"/></svg></button>
+        <span class="profileChecklistMoveControls">
+          <button class="profileChecklistMiniAction" type="button" data-widget-todo-move-up="${escAttr(item.id)}" ${widgetsEditMode || peerIndex <= 0 ? "disabled" : ""} aria-label="${escAttr(t("widget.todo.move_up", "Move up"))}" title="${escAttr(t("widget.todo.move_up", "Move up"))}">${getWidgetTodoIcon("up")}</button>
+          <button class="profileChecklistMiniAction" type="button" data-widget-todo-move-down="${escAttr(item.id)}" ${widgetsEditMode || peerIndex >= peers.length - 1 ? "disabled" : ""} aria-label="${escAttr(t("widget.todo.move_down", "Move down"))}" title="${escAttr(t("widget.todo.move_down", "Move down"))}">${getWidgetTodoIcon("down")}</button>
+        </span>
         <button class="profileChecklistMiniAction" type="button" data-widget-todo-edit="${escAttr(item.id)}" aria-label="${escAttr(t("widget.todo.rename", "Rename task"))}" title="${escAttr(t("widget.todo.rename", "Rename task"))}">${getWidgetTodoIcon("edit")}</button>
         <button class="profileChecklistMiniAction profileChecklistMiniAction--delete" type="button" data-widget-todo-remove="${escAttr(item.id)}" aria-label="${escAttr(t("widget.todo.delete", "Delete task"))}" title="${escAttr(t("widget.todo.delete", "Delete task"))}">${getWidgetTodoIcon("remove")}</button>
       </div>` : ""}
@@ -40421,7 +40729,7 @@ function renderChecklistWidgetMedium({ classes = "", id = "checklist", draggable
 
 function renderChecklistWidgetLarge({ classes = "", id = "checklist", draggable = "false", tools = "" } = {}) {
   const model = getWidgetChecklistModel();
-  const visibleItems = pickWidgetChecklistVisibleItems(model.sortedItems, 5);
+  const visibleItems = model.sortedItems;
   const subtitle = getWidgetChecklistSubtitle(model);
   const overdueChip = model.summary.overdue > 0
     ? `<span class="profileChecklistDueChip is-overdue">${esc(model.summary.overdue === 1 ? t("widget.todo.subtitle.overdue_one", "1 overdue") : tf("widget.todo.subtitle.overdue", { count: model.summary.overdue }, `${model.summary.overdue} overdue`))}</span>`
@@ -40851,7 +41159,8 @@ function syncWidgetTimerScheduler() {
   if (typeof document === "undefined") return;
   const cards = Array.from(document.querySelectorAll("[data-widget-timer-id]"));
   const widget = getWidgetTimerProfileAdapter(getWidgetSize("timer"));
-  const hasRunning = cards.some(() => getProfileTimerRenderModel(widget).runtime.isRunning);
+  const hasRunning = !!widgetsLayoutState?.enabled?.timer && cards.length > 0
+    && getProfileTimerRenderModel(widget).runtime.isRunning;
   if (hasRunning && !widgetTimerTicker) {
     widgetTimerTicker = setInterval(tickWidgetTimerWidgets, 1000);
   } else if (!hasRunning && widgetTimerTicker) {
@@ -40927,7 +41236,9 @@ function getWidgetAddCatalogEntry(widgetId = "") {
     label: isTimer ? t("widget.timer.add_label", "Focus Timer") : getWidgetLabel(id),
     description: isTimer
       ? t("widget.timer.add_subtitle", "Study 20 min - Break 5 min")
-      : t("widgets.add.default_subtitle", "Personalize your home grid."),
+      : id === "checklist"
+        ? t("widgets.checklist.size_hint", "G: wide · V: tall")
+        : t("widgets.add.default_subtitle", "Personalize your home grid."),
     iconHtml: isTimer ? "&#9201;" : "+",
     sizes: allowedSizes.map((size) => WIDGET_SIZE_LABELS[size] || String(size || "").toUpperCase()),
   };
@@ -40961,8 +41272,11 @@ function widgetEditorToolsHtml(widgetId) {
   const sizeId = getWidgetSize(widgetId);
   const sizeLabel = WIDGET_SIZE_LABELS[sizeId] || sizeId.toUpperCase();
   const canResize = getWidgetAllowedSizes(widgetId).length > 1;
+  const sizeTitle = widgetId === "checklist"
+    ? t("widgets.checklist.size_hint", "G: wide · V: tall")
+    : t("widget.edit.change_size", "Change widget size");
   const sizeControl = canResize
-    ? `<button class="widgetCardSizeBadge widgetCardSizeBadge--btn" type="button" data-widget-size-cycle="${escAttr(widgetId)}" title="${escAttr(t("widget.edit.change_size", "Change widget size"))}">${esc(sizeLabel)}</button>`
+    ? `<button class="widgetCardSizeBadge widgetCardSizeBadge--btn" type="button" data-widget-size-cycle="${escAttr(widgetId)}" title="${escAttr(sizeTitle)}" aria-label="${escAttr(sizeTitle)}">${esc(sizeLabel)}</button>`
     : `<span class="widgetCardSizeBadge">${esc(sizeLabel)}</span>`;
   const resizeHandle = canResize
     ? `<button class="widgetResizeHandle" type="button" data-widget-resize-handle="${escAttr(widgetId)}" title="${escAttr(t("widget.edit.resize", "Drag to resize"))}" aria-label="${escAttr(t("widget.edit.resize", "Drag to resize"))}">&#8690;</button>`
@@ -41196,7 +41510,7 @@ function renderWidgetsEditorUi(activeIds = []) {
     if (widgetsEditMode) {
       editBar.innerHTML = `
         <div class="widgetsEditBar__title">${esc(t("widgets.editor.title", "Editing mode"))}</div>
-        <div class="widgetsEditBar__hint">${esc(t("widgets.editor.hint", "Grab a card or the drag grip to move it. Resizable widgets snap while you drag the corner; clicking S/M/L/XL grows it and right click shrinks it. Remove or add widgets below."))}</div>
+        <div class="widgetsEditBar__hint">${esc(t("widgets.editor.hint", "Drag cards to position them. Resize from the corner or use the size button."))}</div>
       `;
     } else {
       editBar.innerHTML = "";
@@ -41206,8 +41520,7 @@ function renderWidgetsEditorUi(activeIds = []) {
   const addPanel = $("widgetsAddPanel");
   if (!addPanel) return;
 
-  const activeSet = new Set(activeIds);
-  const available = WIDGET_IDS.filter((id) => !activeSet.has(id));
+  const available = WIDGET_IDS.filter((id) => !widgetsLayoutState?.enabled?.[id]);
   addPanel.classList.toggle("hidden", !widgetsEditMode);
   addPanel.setAttribute("aria-hidden", widgetsEditMode ? "false" : "true");
 
@@ -41242,6 +41555,112 @@ function isWidgetsViewActive() {
     });
 }
 
+function renderWidgetChecklistReorder(itemId, control = "data-checklist-reorder") {
+  renderWidgets();
+  const row = Array.from(document.querySelectorAll("[data-checklist-task-id]"))
+    .find((entry) => entry.dataset.checklistTaskId === itemId);
+  const button = row?.querySelector(`[${control}]:not(:disabled)`)
+    || row?.querySelector("[data-checklist-reorder]");
+  button?.focus({ preventScroll: true });
+  row?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+function cancelWidgetChecklistDrag() {
+  const drag = widgetChecklistDrag;
+  if (!drag) return;
+  widgetChecklistDrag = null;
+  cancelAnimationFrame(drag.raf);
+  drag.row.classList.remove("is-task-dragging");
+  drag.list.querySelectorAll(".is-task-drop-before,.is-task-drop-after")
+    .forEach((row) => row.classList.remove("is-task-drop-before", "is-task-drop-after"));
+  try { drag.handle.releasePointerCapture(drag.pointerId); } catch (_) {}
+}
+
+function updateWidgetChecklistDropTarget() {
+  const drag = widgetChecklistDrag;
+  if (!drag?.active) return;
+  const bounds = drag.list.getBoundingClientRect();
+  const inside = drag.x >= bounds.left && drag.x <= bounds.right
+    && drag.y >= bounds.top && drag.y <= bounds.bottom;
+  drag.list.querySelectorAll(".is-task-drop-before,.is-task-drop-after")
+    .forEach((row) => row.classList.remove("is-task-drop-before", "is-task-drop-after"));
+  drag.targetId = "";
+  if (!inside) return;
+  const rows = Array.from(drag.list.querySelectorAll("[data-checklist-task-id]"))
+    .filter((row) => row !== drag.row && row.dataset.checklistDone === drag.row.dataset.checklistDone);
+  const before = rows.find((row) => {
+    const rect = row.getBoundingClientRect();
+    return drag.y < rect.top + rect.height / 2;
+  });
+  const target = before || rows[rows.length - 1];
+  if (!target) return;
+  drag.targetId = target.dataset.checklistTaskId;
+  drag.after = !before;
+  target.classList.add(drag.after ? "is-task-drop-after" : "is-task-drop-before");
+}
+
+function tickWidgetChecklistDrag(time) {
+  const drag = widgetChecklistDrag;
+  if (!drag) return;
+  if (!drag.list.isConnected || !isWidgetsViewActive()) {
+    cancelWidgetChecklistDrag();
+    return;
+  }
+  const elapsed = Math.min(32, time - (drag.lastTime || time));
+  drag.lastTime = time;
+  if (drag.active) {
+    const rect = drag.list.getBoundingClientRect();
+    if (drag.x >= rect.left && drag.x <= rect.right && drag.y >= rect.top && drag.y <= rect.bottom) {
+      const edge = Math.min(32, rect.height / 3);
+      const speed = drag.y < rect.top + edge ? -(1 - (drag.y - rect.top) / edge)
+        : drag.y > rect.bottom - edge ? 1 - (rect.bottom - drag.y) / edge : 0;
+      drag.list.scrollTop += speed * elapsed * 0.4;
+    }
+    updateWidgetChecklistDropTarget();
+  }
+  drag.raf = requestAnimationFrame(tickWidgetChecklistDrag);
+}
+
+function startWidgetChecklistDrag(event) {
+  if (widgetsEditMode || event.button !== 0 || event.isPrimary === false) return;
+  const handle = eventTargetElement(event)?.closest("[data-checklist-reorder]");
+  const row = handle?.closest("[data-checklist-task-id]");
+  const list = row?.closest(".profileChecklistTaskList");
+  if (!handle || handle.disabled || !row || !list) return;
+  event.preventDefault();
+  event.stopPropagation();
+  cancelWidgetChecklistDrag();
+  handle.focus({ preventScroll: true });
+  widgetChecklistDrag = {
+    handle, row, list, pointerId: event.pointerId, itemId: row.dataset.checklistTaskId,
+    startY: event.clientY, x: event.clientX, y: event.clientY,
+    active: false, targetId: "", after: false, raf: 0, lastTime: 0,
+  };
+  handle.setPointerCapture(event.pointerId);
+  widgetChecklistDrag.raf = requestAnimationFrame(tickWidgetChecklistDrag);
+}
+
+function moveWidgetChecklistDrag(event) {
+  const drag = widgetChecklistDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  drag.x = event.clientX;
+  drag.y = event.clientY;
+  if (!drag.active && Math.abs(drag.y - drag.startY) >= 4) {
+    drag.active = true;
+    drag.row.classList.add("is-task-dragging");
+  }
+  updateWidgetChecklistDropTarget();
+}
+
+function finishWidgetChecklistDrag(event, commit = false) {
+  const drag = widgetChecklistDrag;
+  if (!drag || (event?.pointerId != null && event.pointerId !== drag.pointerId)) return;
+  if (commit) moveWidgetChecklistDrag(event);
+  cancelWidgetChecklistDrag();
+  if (commit && drag.active && drag.targetId) reorderWidgetTodoItem(drag.itemId, drag.targetId, drag.after);
+  renderWidgetChecklistReorder(drag.itemId);
+}
+
 function cleanupWidgetsView() {
   disposeWidgetsViewBindings();
   if (!widgetsEditMode) return;
@@ -41256,6 +41675,7 @@ function cleanupWidgetsView() {
 }
 
 function disposeWidgetsViewBindings() {
+  cancelWidgetChecklistDrag();
   // Rebinding within Widgets disposes listeners/gestures without leaving the page.
   if (!widgetsUiRoot && !widgetsUiAbortController && !widgetResizeDrag && !widgetPointerDrag
     && !widgetsDragId && !widgetsResizeRaf) return;
@@ -41295,6 +41715,20 @@ function bindWidgetsUiOnce() {
   widgetsUiAbortController = new AbortController();
   const { signal } = widgetsUiAbortController;
   const listen = (target, type, handler) => target?.addEventListener(type, handler, { signal });
+
+  listen(root, "pointerdown", startWidgetChecklistDrag);
+  listen(root, "pointermove", moveWidgetChecklistDrag);
+  listen(root, "pointerup", (event) => finishWidgetChecklistDrag(event, true));
+  listen(root, "pointercancel", (event) => finishWidgetChecklistDrag(event));
+  listen(root, "lostpointercapture", (event) => finishWidgetChecklistDrag(event));
+  listen(window, "blur", () => finishWidgetChecklistDrag(null));
+  listen(root, "keydown", (event) => {
+    if (event.key === "Escape" && widgetChecklistDrag) {
+      event.preventDefault();
+      event.stopPropagation();
+      finishWidgetChecklistDrag(null);
+    }
+  });
 
   listen(window, "resize", () => {
     if (widgetsResizeRaf) cancelAnimationFrame(widgetsResizeRaf);
@@ -41454,7 +41888,7 @@ function bindWidgetsUiOnce() {
       const id = todoUpBtn.getAttribute("data-widget-todo-move-up");
       if (!id) return;
       if (!moveWidgetTodoItem(id, -1)) return;
-      renderWidgets();
+      renderWidgetChecklistReorder(id, "data-widget-todo-move-up");
       return;
     }
 
@@ -41464,7 +41898,7 @@ function bindWidgetsUiOnce() {
       const id = todoDownBtn.getAttribute("data-widget-todo-move-down");
       if (!id) return;
       if (!moveWidgetTodoItem(id, 1)) return;
-      renderWidgets();
+      renderWidgetChecklistReorder(id, "data-widget-todo-move-down");
       return;
     }
 
@@ -41562,7 +41996,7 @@ function bindWidgetsUiOnce() {
 
     const metrics = getWidgetsGridMetrics();
     const startSize = getWidgetSize(widgetId);
-    const startDims = getWidgetSizeDimensions(startSize, metrics.colCount);
+    const startDims = getWidgetSizeDimensions(startSize, metrics.colCount, widgetId);
     widgetsDragId = "";
     clearWidgetPreviewLayout($("widgetsGrid"), { animate: false });
     clearWidgetDropMarkers();
@@ -42371,6 +42805,9 @@ function syncServerVoiceTextCallUi(enabled = false) {
   for (const button of strip.querySelectorAll("[data-call-control-proxy]")) {
     const source = document.getElementById(button.dataset.callControlProxy);
     button.disabled = !source || source.disabled;
+    if (source?.id === "btnMicToggle" || source?.id === "btnDeafenToggle") {
+      syncLocalVoiceControlIcon(button, source.id === "btnMicToggle" ? "mic" : "headphones", source.getAttribute("aria-pressed") === "true");
+    }
     const pressed = source?.classList.contains("is-on") === true;
     button.classList.toggle("is-on", pressed);
     button.setAttribute("aria-pressed", pressed ? "true" : "false");
@@ -43304,6 +43741,8 @@ const serverVoiceCallEpochPublishPending = new Set();
 const serverVoiceCallEpochRequestAt = new Map();
 let serverVoiceScreenSharePublishedState = null;
 let serverVoiceScreenShareMembershipExpiry = null;
+let serverVoicePreviewSpeakingPublication = null;
+let serverVoicePreviewExpiryTimer = null;
 const serverVoiceScreenShareSnapshotRequestAtByServerId = new Map();
 const serverVoiceScreenShareSnapshotResponsesByRequestId = new Map();
 const SERVER_VOICE_V2_STALE_CLEANUP_INTERVAL_MS = 60000;
@@ -46385,6 +46824,9 @@ function mergeServerVoiceV2MemberMediaState(row = {}, previous = null) {
   const preserve = (flag, value) => row?.[flag] === true ? row?.[value] : previous?.[value];
   return {
     ...row,
+    // Ephemeral decoration follows only the same authoritative assignment.
+    previewSpeaking: row.serverId === previous.serverId && row.channelId === previous.channelId
+      && row.assignmentNonce === previous.assignmentNonce ? previous.previewSpeaking : null,
     selfMuted: !!preserve("hasSelfMuted", "selfMuted"),
     selfDeafened: !!preserve("hasSelfDeafened", "selfDeafened"),
     serverMuted: !!preserve("hasServerMuted", "serverMuted"),
@@ -48231,6 +48673,9 @@ async function ensureServerVoiceV2ControlPlaneSubscription(serverId = "", option
     ))
     .on("broadcast", { event: "server_voice_v2_screen_share_state" }, (event) => {
       if (ownsSubscription()) handleServerVoiceScreenShareStateBroadcast(event?.payload || {}, sid);
+    })
+    .on("broadcast", { event: "server_voice_v2_speaking" }, (event) => {
+      if (ownsSubscription()) handleServerVoicePreviewSpeaking(event?.payload || {}, sid);
     })
     .on("broadcast", { event: "server_voice_v2_screen_share_snapshot_request" }, (event) => {
       if (ownsSubscription()) handleServerVoiceScreenShareSnapshotRequest(event?.payload || {}, sid);
@@ -61066,6 +61511,7 @@ function getServerVoiceMemberModerationContext({
   const roles = serverRoleListByServerId.get(sid) || [];
   const roleMemberMap = serverRoleMemberMapByServerId.get(sid) || new Map();
   const isSelf = !!(meId && uid === meId);
+  const targetIsProtectedOwner = !isSelf && uid === normId(getCanonicalServerOwnerUserIdSync(sid));
   const moderationCapability = getServerVoiceModerationProtocolState(sid);
   const selfModerationAvailable = moderationCapability.enabled === true;
   const observedModeration = getCurrentServerVoiceModerationStore().get(sid, uid);
@@ -61096,7 +61542,7 @@ function getServerVoiceMemberModerationContext({
   const targetHasVoiceMembership = !!getServerVoiceV2Member(uid);
   // Movement has its own permission; role hierarchy applies to role management
   // and other moderation actions, not to moving a human voice participant.
-  const moveTargetEligible = !isSelf && !targetIsActiveBot;
+  const moveTargetEligible = !isSelf && !targetIsActiveBot && !targetIsProtectedOwner;
   const dragPermission = resolveServerVoiceDragPermission({
     actorUserId: meId,
     targetUserId: uid,
@@ -61115,15 +61561,15 @@ function getServerVoiceMemberModerationContext({
   const canDisconnect = canMoveMembers;
   // Self moderation uses the same authority as moderating another member.
   // Removing an existing voice lock needs its permission, not target hierarchy.
-  const muteTargetEligible = !targetIsActiveBot
+  const muteTargetEligible = !targetIsActiveBot && !targetIsProtectedOwner
     && (isSelf || audioState.serverMuted === true || ability?.canTouchTarget === true);
   const canMuteMic = hasMuteMembersPermission && muteTargetEligible && (!isSelf || selfModerationAvailable);
   const hasDeafenMembersPermission = !!meId && !!(actorIsOwner || actorFlags?.deafen_members || actorFlags?.voice_deafen_members);
-  const deafenTargetEligible = !targetIsActiveBot
+  const deafenTargetEligible = !targetIsActiveBot && !targetIsProtectedOwner
     && (isSelf || audioState.serverDeafened === true || ability?.canTouchTarget === true);
   const canDeafen = hasDeafenMembersPermission && deafenTargetEligible && (!isSelf || selfModerationAvailable);
-  const canKick = !!meId && !!(actorIsOwner || actorFlags?.kick_members || actorFlags?.server_kick_members);
-  const canBan = !!meId && !!(actorIsOwner || actorFlags?.ban_members || actorFlags?.server_ban_members);
+  const canKick = !targetIsProtectedOwner && !!meId && !!(actorIsOwner || actorFlags?.kick_members || actorFlags?.server_kick_members);
+  const canBan = !targetIsProtectedOwner && !!meId && !!(actorIsOwner || actorFlags?.ban_members || actorFlags?.server_ban_members);
   const canTouchTarget = !!meId && (isSelf || canDisconnect || canMuteMic || canDeafen || canKick || canBan);
   const canModerate = canDisconnect || canMuteMic || canDeafen || canKick || canBan;
 
@@ -62039,6 +62485,10 @@ function isCallParticipantScreenSharing(conversationId = "", userId = "") {
 
 function syncVoiceMemberRowLiveState(conversationId = "") {
   const convId = normId(conversationId || "");
+  const preview = document.getElementById("voiceChannelEmptyState");
+  if (preview && !preview.hidden && (!convId || preview.dataset.conversationId === convId)) {
+    syncServerVoiceEmptyState({ enabled: true, show: true, conversationId: preview.dataset.conversationId });
+  }
   for (const row of document.querySelectorAll(".server-voice-member-row[data-server-voice-conversation-id]")) {
     const rowConversationId = normId(row.getAttribute("data-server-voice-conversation-id") || "");
     if (convId && rowConversationId !== convId) continue;
@@ -63858,6 +64308,7 @@ async function canServerVoiceModeratorAffectTarget(conversationId, actorUserId, 
   if (!convId || !actorId || !targetId || !isServerVoiceConversationById(convId)) return false;
   const sid = resolveServerVoiceServerIdByConversation(convId);
   if (!sid) return false;
+  if (targetId !== actorId && targetId === normId(getCanonicalServerOwnerUserIdSync(sid))) return false;
 
   let members = serverMemberListByServerId.get(sid) || [];
   if (!Array.isArray(members) || !members.length) {
@@ -63921,7 +64372,8 @@ function getServerMemberManagementContext(serverId = "", targetUserId = "") {
   const targetRank = targetIsOwner ? 0 : getRoleHierarchyRank(targetTopRole);
   const perms = sid ? getEffectiveServerPermissionsForCurrentUser(sid) : {};
   const isSelf = !!(actorId && targetId && actorId === targetId);
-  const targetBelowActor = actorIsOwner
+  const actorIsAdministrator = perms.administrator === true && isCurrentServerPermissionSnapshotResolved(sid);
+  const targetBelowActor = actorIsOwner || actorIsAdministrator
     ? !targetIsOwner || isSelf
     : (!!targetId && !isSelf && !targetIsOwner && Number.isFinite(actorRank) && targetRank > actorRank);
   return {
@@ -63929,6 +64381,7 @@ function getServerMemberManagementContext(serverId = "", targetUserId = "") {
     actorUserId: actorId,
     targetUserId: targetId,
     actorIsOwner,
+    actorIsAdministrator,
     targetIsOwner,
     isSelf,
     actorTopRole,
@@ -63964,25 +64417,27 @@ function getServerMemberRoleActionState(serverId = "", targetUserId = "", roleId
   const rid = normId(roleId || "");
   let reason = "";
   if (!ctx.serverId || !ctx.actorUserId || !ctx.targetUserId) reason = "unavailable";
-  else if (!ctx.actorIsOwner && !isCurrentServerPermissionSnapshotResolved(ctx.serverId)) reason = "loading";
+  else if (!ctx.actorIsOwner && !ctx.actorIsAdministrator && !isCurrentServerPermissionSnapshotResolved(ctx.serverId)) reason = "loading";
   else if (!ctx.canManageRoles) reason = "permission";
   else if (ctx.isSelf) reason = "self";
   else if (ctx.targetIsOwner) reason = "owner";
   else if (isActiveServerBotTargetForRoleManagement(ctx.serverId, ctx.targetUserId)) reason = "protected";
-  else if (!ctx.actorIsOwner && !Number.isFinite(ctx.actorRank)) reason = "highest";
-  else if (!ctx.actorIsOwner && !ctx.targetBelowActor) reason = "member_hierarchy";
+  else if (!ctx.actorIsOwner && !ctx.actorIsAdministrator && !Number.isFinite(ctx.actorRank)) reason = "highest";
+  else if (!ctx.actorIsOwner && !ctx.actorIsAdministrator && !ctx.targetBelowActor) reason = "member_hierarchy";
   if (!reason && rid) {
     const role = (serverRoleListByServerId.get(ctx.serverId) || []).find((entry) => normId(entry?.id || "") === rid);
     if (!role || isVirtualServerRole(role)) reason = "unavailable";
     else if (isDefaultServerRole(role) || isManagedServerRole(role)
       || String(role.managed_kind || role.managedKind || "").trim()) reason = "protected";
-    else if (!ctx.actorIsOwner && !(Number.isFinite(getRoleHierarchyRank(role)) && getRoleHierarchyRank(role) > ctx.actorRank)) reason = "role_hierarchy";
+    else if (!ctx.actorIsOwner && role.permissions?.administrator === true) reason = "administrator_owner_only";
+    else if (!ctx.actorIsOwner && !ctx.actorIsAdministrator && !(Number.isFinite(getRoleHierarchyRank(role)) && getRoleHierarchyRank(role) > ctx.actorRank)) reason = "role_hierarchy";
   }
   return { allowed: !reason, reason, context: ctx };
 }
 
 function getServerRoleActionReasonText(reason = "") {
   const messages = {
+    administrator_owner_only: ["server.roles.administrator_owner_only", "Only the server owner can grant or remove Administrator."],
     loading: ["server.roles.loading", "Checking your role permissions..."],
     permission: ["server.roles.permission", "You need permission to manage roles in this server."],
     self: ["server.roles.self", "You cannot change your own roles."],
@@ -66821,6 +67276,15 @@ function resolveEffectiveServerPermissionsForUser({
     trace.rolesApplied.push(applied);
   });
 
+  if (member && permissions.administrator === true && !trace.missingData.length) {
+    Object.keys(permissions).forEach((key) => {
+      permissions[key] = true;
+      grants[key] = [...(grants[key] || []), { source: "administrator", roleId: null, roleName: "Administrator" }];
+    });
+    trace.administrator_bypass = true;
+  } else {
+    permissions.administrator = false;
+  }
   trace.permissions = { ...permissions };
   if (trace.missingData.length) {
     return { ok: false, isOwner: false, userId: uid, serverId: sid, memberId: uid, memberRoleIds, rolesApplied: trace.rolesApplied, permissions, trace, error: "permissions_not_fully_loaded" };
@@ -67377,11 +67841,12 @@ function resolveEffectiveChannelPermissionsForUser({
     trace.error = "missing_context";
     return { ok: false, permissions, trace, error: "missing_context" };
   }
-  if (base.isOwner) {
+  if (base.isOwner || (base.ok && base.permissions?.administrator === true)) {
     CHANNEL_PERMISSION_STORAGE_KEYS.forEach((key) => { permissions[key] = true; });
-    trace.owner_bypass = true;
+    trace.owner_bypass = base.isOwner === true;
+    trace.administrator_bypass = !base.isOwner;
     trace.finalPermissions = { ...permissions };
-    return { ok: base.ok, permissions, trace, isOwner: true };
+    return { ok: base.ok, permissions, trace, isOwner: base.isOwner === true };
   }
   const channel = (serverChannelListByServerId.get(sid) || []).find((row) => normId(row?.id || "") === cid) || null;
   const categoryId = normId(channel?.categoryId || "");
@@ -70265,6 +70730,7 @@ function constrainServerRolePermissionsToCurrentActor(serverId = "", permissions
   const normalized = normalizeServerRolePermissions(permissions || {});
   const caps = getServerCapabilityMeta(sid);
   if (caps.isActualOwner || caps.isOwner) return normalized;
+  normalized.administrator = false;
   const actorPermissions = getEffectiveServerPermissionsForCurrentUser(sid);
   SERVER_ROLE_PERMISSION_DEFINITIONS.forEach((definition) => {
     const key = normalizeServerPermissionKey(definition?.key || "");
@@ -70631,7 +71097,7 @@ function canCurrentUserTargetRoleForChannelPermissions(serverId = "", role = nul
   const roleId = normId(role?.id || "");
   const capability = getCurrentManageChannelsCapabilityState(sid);
   if (!sid || !roleId || isDefaultServerRole(role) || !capability.allowed) return false;
-  if (capability.isOwner) return true;
+  if (capability.isOwner || currentUserIsServerAdministrator(sid)) return true;
   const actorTopRole = getServerRoleHighestPositionForMember(sid, state.user?.id || "");
   const actorRank = getRoleHierarchyRank(actorTopRole);
   const targetRank = getRoleHierarchyRank(role);
@@ -70856,12 +71322,37 @@ function userCanViewChannels(server, currentMember, roles, memberRoleIds) {
   return getEffectiveServerPermissionsForMember(server, currentMember, roles, memberRoleIds).view_channels === true;
 }
 
+const serverAdministratorSupportByServerId = new Map();
+
+async function loadServerAdministratorSupport(serverId = "") {
+  const sid = normId(serverId);
+  if (!sid) return false;
+  if (serverAdministratorSupportByServerId.has(sid)) return serverAdministratorSupportByServerId.get(sid);
+  try {
+    const { data, error } = await supabase.rpc("get_my_server_administrator_support_v1", { p_server_id: sid });
+    const supported = !error && data === true;
+    serverAdministratorSupportByServerId.set(sid, supported);
+    return supported;
+  } catch (_) { return false; }
+}
+
+function currentUserIsServerAdministrator(serverId = "") {
+  const sid = normId(serverId || "");
+  return !!sid && isCurrentServerPermissionSnapshotResolved(sid)
+    && getEffectiveServerPermissionsForCurrentUser(sid).administrator === true;
+}
+
+function canDeleteServerRoleInSettings(serverId = "", role = null) {
+  return canEditServerRoleInSettings(serverId, role)
+    && (getServerRolePermissions(role).administrator !== true || isServerActualOwner(serverId));
+}
+
 function canActorManageTargetRole(actorContext = {}, targetRole = null, { action = "edit" } = {}) {
   if (!targetRole) return false;
   const act = String(action || "edit").trim().toLowerCase();
   if ((act === "delete" || act === "move") && isDefaultServerRole(targetRole)) return false;
   if ((act === "delete" || act === "permissions") && isManagedServerRole(targetRole) && !isDefaultServerRole(targetRole)) return false;
-  if (actorContext?.isOwner === true) return true;
+  if (actorContext?.isOwner === true || actorContext?.isAdministrator === true) return true;
   if (actorContext?.canManageRoles !== true) return false;
   const actorRank = Number(actorContext?.highestRoleRank ?? Number.POSITIVE_INFINITY);
   const targetRank = getRoleHierarchyRank(targetRole);
@@ -70878,7 +71369,7 @@ function getServerRoleHierarchyLimitForCurrentUser(serverId = "") {
   const sid = normId(serverId || "");
   const meId = normId(state.user?.id || "");
   if (!sid || !meId) return Number.POSITIVE_INFINITY;
-  if (isServerActualOwner(sid)) return 0;
+  if (isServerActualOwner(sid) || currentUserIsServerAdministrator(sid)) return 0;
   if (!currentUserCanReorderServerRoles(sid)) return Number.POSITIVE_INFINITY;
   const topRole = getServerRoleHighestPositionForMember(sid, meId);
   return getRoleHierarchyRank(topRole);
@@ -70903,7 +71394,7 @@ function getServerRoleReorderDenialReason(serverId = "", role = null, proposedRo
   const sid = normId(serverId || "");
   if (!sid || !role) return t("surface.role_information_is_still_loading", "Role information is still loading.");
   if (isDefaultServerRole(role)) return t("surface.everyone_must_remain_at_the_bottom", "@everyone must remain at the bottom.");
-  if (isServerActualOwner(sid)) return "";
+  if (isServerActualOwner(sid) || currentUserIsServerAdministrator(sid)) return "";
   if (!currentUserCanReorderServerRoles(sid)) return t("surface.you_do_not_have_permission_to_reorder_roles", "You do not have permission to reorder roles.");
   const limit = getServerRoleHierarchyLimitForCurrentUser(sid);
   const roleRank = getRoleHierarchyRank(role);
@@ -70957,6 +71448,8 @@ function canEditServerRolePermissionKeyInSettings(serverId = "", role = null, pe
   if (!canEditServerRolePermissionsInSettings(sid, role) || !canPersistServerRolePermissions(role)) return false;
   const meta = SERVER_ROLE_PERMISSION_DEFINITIONS.find((item) => normalizeServerPermissionKey(item?.key || "") === key) || null;
   if (meta?.implemented !== true) return false;
+  if (key === "administrator") return serverAdministratorSupportByServerId.get(sid) === true && isServerActualOwner(sid)
+    && !isDefaultServerRole(role) && !isManagedServerRole(role);
   if (nextEnabled !== true) return true;
   const caps = getServerCapabilityMeta(sid);
   if (caps.isActualOwner || caps.isOwner) return true;
@@ -71522,6 +72015,7 @@ async function loadServerRolePermissionCacheSnapshot(sid) {
   const [rolesRes, roleMembersRes] = await Promise.all([
     listServerRolesForServer(sid),
     listServerRoleMembersForServer(sid),
+    loadServerAdministratorSupport(sid),
   ]);
   const loadError = rolesRes?.error || roleMembersRes?.error || null;
   if (loadError) return { ok: false, error: loadError };
@@ -71550,7 +72044,7 @@ function getServerRolePermissionsForUser(serverId, userId, {
   if (!sid || !uid) return normalizeServerRolePermissions({});
 
   const baseRole = getServerMemberRoleFromCache(sid, uid, { members });
-  if (baseRole === "owner" || baseRole === "admin") {
+  if (baseRole === "owner") {
     return normalizeServerRolePermissions(SERVER_ROLE_PERMISSION_PRESETS.safe || {});
   }
 
@@ -71572,6 +72066,9 @@ function getServerRolePermissionsForUser(serverId, userId, {
     });
   });
 
+  if (merged.administrator === true && getCachedServerMemberForUser(sid, uid, { serverMembers: members })) {
+    getImplementedServerPermissionKeys().forEach((key) => { merged[key] = true; });
+  }
   return normalizeServerRolePermissions(merged);
 }
 
@@ -71599,7 +72096,7 @@ function canServerActorModerateTargetWithPermission({
   const actorRole = getServerMemberRoleFromCache(sid, actorId, { members });
   const targetRole = getServerMemberRoleFromCache(sid, targetId, { members });
   const actorIsOwner = actorRole === "owner";
-  const actorIsAdmin = actorRole === "admin" || actorIsOwner;
+  const actorIsAdmin = actorIsOwner || getServerRolePermissionsForUser(sid, actorId, { members, roles, roleMemberMap })?.administrator === true;
 
   // Batch 0A: this used to gate on coarse owner/admin/"member" role labels,
   // so two custom roles both at the "member" tier were treated as equals
@@ -71613,7 +72110,7 @@ function canServerActorModerateTargetWithPermission({
   const targetTopRole = getServerRoleHighestPositionForMember(sid, targetId);
   const actorRank = actorTopRole ? getRoleHierarchyRank(actorTopRole) : Number.POSITIVE_INFINITY;
   const targetRank = targetTopRole ? getRoleHierarchyRank(targetTopRole) : Number.POSITIVE_INFINITY;
-  const canTouchTarget = actorIsOwner
+  const canTouchTarget = actorIsOwner || actorIsAdmin
     ? targetRole !== "owner"
     : (targetRole !== "owner" && targetRank > actorRank);
 
@@ -72116,8 +72613,9 @@ function renderServerSettingsRolesUi() {
         const count = isDefaultRole ? memberList.length : (roleMemberMap.get(role.id)?.size || 0);
         const selected = roleUiId === serverSettingsRoleSelectedId;
         const permCount = countEnabledServerRolePermissions(getServerRolePermissions(role));
+        const permissionCountLabel = permCount === 1 ? tf("surface.count_permission", { count: formatUiNumber(permCount) }, "{count} permission") : tf("surface.count_permissions", { count: formatUiNumber(permCount) }, "{count} permissions");
         const managed = isManagedServerRole(role) && !isDefaultRole;
-        const canEditRole = canEditServerRoleInSettings(sid, role);
+        const canEditRole = canDeleteServerRoleInSettings(sid, role);
         const draggable = !!(canReorderRoles && realRoleId && !isDefaultRole && !serverSettingsRolesMutating && canReorderServerRoleInSettings(sid, role));
         const reorderDeniedReason = isDefaultRole
           ? t("surface.everyone_must_remain_at_the_bottom", "@everyone must remain at the bottom.")
@@ -72138,16 +72636,20 @@ function renderServerSettingsRolesUi() {
           + '<span class="serverSettingsRoleDragHandle server-role-drag-handle' + (draggable ? '' : ' is-disabled') + '" data-server-settings-role-drag-handle="1" data-role-id="' + escAttr(realRoleId || roleUiId) + '" title="' + escAttr(draggable ? t("surface.drag_to_reorder", "Drag to reorder") : reorderDeniedReason) + '" aria-label="' + escAttr(draggable ? t("surface.drag_to_reorder", "Drag to reorder") : reorderDeniedReason) + '" role="presentation"></span>'
           + '<div class="serverSettingsRolePick' + (selected ? " active" : "") + '" data-server-settings-role-pick="' + escAttr(roleUiId) + '" title="' + escAttr(role.name) + '" role="button" tabindex="0">'
           + '<span class="serverSettingsRoleSwatch" style="--role-color:' + escAttr(role.color) + '"></span>'
+          + '<span class="serverSettingsRoleSummary">'
           + '<span class="serverSettingsRoleName">' + esc(role.name) + '</span>'
+          + '<span class="serverSettingsRoleStats">'
           + (isDefaultRole ? `<span class="serverSettingsRolePermsBadge" title="${escAttr(t("surface.default_role", "Default role"))}">${esc(t("surface.default_2", "DEFAULT"))}</span>` : '')
           + (managed ? `<span class="serverSettingsRolePermsBadge" title="${escAttr(t("surface.bot_managed_role", "Bot managed role"))}">BOT</span>` : '')
-          + '<span class="serverSettingsRolePermsBadge" title="' + escAttr(permCount === 1 ? tf("surface.count_permission", { count: formatUiNumber(permCount) }, "{count} permission") : tf("surface.count_permissions", { count: formatUiNumber(permCount) }, "{count} permissions")) + '">' + permCount + 'P</span>'
-          + '<span class="serverSettingsRoleCount">' + count + '</span>'
+          + '<span class="serverSettingsRolePermsBadge" title="' + escAttr(permissionCountLabel) + '">' + esc(permissionCountLabel) + '</span>'
+          + '<span class="serverSettingsRoleCount">' + esc(count === 1 ? tf("surface.count_member", { count: formatUiNumber(count) }, "{count} member") : tf("surface.count_members", { count: formatUiNumber(count) }, "{count} members")) + '</span>'
+          + '</span></span>'
           + '</div>'
           + '<button class="btn ghost serverSettingsRoleDelete server-role-delete role-delete" type="button" data-server-settings-role-delete="' + escAttr(realRoleId) + '"'
           + (managed || isDefaultRole || !canEditRole || serverSettingsRolesMutating ? ' disabled' : '')
           + ' title="' + escAttr(isDefaultRole ? t("surface.default_role_cannot_be_deleted", "Default role cannot be deleted") : (managed ? t("surface.managed_role_permissions_are_controlled_by_the_bot", "Managed role permissions are controlled by the bot") : (!canEditRole ? t("surface.role_is_equal_to_or_above_your_highest_role", "Role is equal to or above your highest role") : t("surface.delete_role", "Delete role")))) + '">'
-          + (isDefaultRole ? t("surface.default", "Default") : (managed ? t("surface.managed", "Managed") : t("surface.delete", "Delete")))
+          + '<span class="sr-only">' + (isDefaultRole ? t("surface.default", "Default") : (managed ? t("surface.managed", "Managed") : t("surface.delete_role", "Delete role"))) + '</span>'
+          + (isDefaultRole || managed ? '<span aria-hidden="true">&#128274;</span>' : '<svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7M14 10v7"/></svg>')
           + '</button>'
           + '</div>';
       }).join("")
@@ -72191,7 +72693,11 @@ function renderServerSettingsRolesUi() {
           const risk = String(perm.risk || "normal").trim().toLowerCase() || "normal";
           const canActorEditThisPermission = implemented && canEditServerRolePermissionKeyInSettings(sid, selectedRole, perm.key, !checked);
           const disabled = permissionsBusy || !implemented || !canActorEditThisPermission;
-          const lockHint = implemented && !canActorEditThisPermission && selectedRoleEditable
+          const lockHint = perm.key === "administrator" && !canActorEditThisPermission
+            ? (serverAdministratorSupportByServerId.get(sid) !== true
+              ? t("server.roles.administrator_unavailable", "Administrator is not available on this server yet.")
+              : t("server.roles.administrator_owner_only", "Only the server owner can grant or remove Administrator."))
+            : implemented && !canActorEditThisPermission && selectedRoleEditable
             ? (checked ? t("surface.you_can_remove_this_permission", "You can remove this permission.") : t("surface.you_can_only_grant_permissions_you_already_have", "You can only grant permissions you already have."))
             : "";
           const statusLabel = implemented ? (risk === "dangerous" ? t("surface.dangerous", "Dangerous") : risk === "elevated" ? t("surface.elevated", "Elevated") : t("surface.implemented", "Implemented")) : t("surface.coming_soon", "Coming Soon");
@@ -72260,8 +72766,17 @@ function renderServerSettingsRolesUi() {
     `;
   }).join("")
           : `<div class="hint">${esc(t("surface.members_management_is_coming_next", "Members management is coming next."))}</div>`)));
+  const editorTab = membersEl.dataset.roleEditorTab === "members" ? "members" : "permissions";
   membersEl.innerHTML = `
-    <div class="serverSettingsRolePermsPanel">
+    <div class="serverSettingsRoleEditorHeading">
+      <span class="serverSettingsRoleSwatch" style="--role-color:${escAttr(selectedRole.color)}"></span>
+      <h3>${esc(selectedRole.name)}</h3>
+    </div>
+    <div class="serverSettingsRoleEditorTabs" role="group" aria-label="${escAttr(selectedRole.name)}">
+      <button type="button" data-server-settings-role-editor-tab="permissions" aria-pressed="${editorTab === "permissions"}">${esc(t("surface.permissions", "Permissions"))}</button>
+      <button type="button" data-server-settings-role-editor-tab="members" aria-pressed="${editorTab === "members"}">${esc(t("surface.members", "Members"))}<span>${formatUiNumber(assignedSet.size)}</span></button>
+    </div>
+    <div class="serverSettingsRoleEditorView serverSettingsRolePermsPanel" data-role-editor-view="permissions" ${editorTab === "permissions" ? "" : "hidden"}>
       <div class="serverSettingsRolePermsHead">
         <div>
           <p class="serverSettingsRoleMembersHead">${esc(t("surface.permissions", "Permissions"))}</p>
@@ -72287,16 +72802,30 @@ function renderServerSettingsRolesUi() {
         </div>
       </div>
       <div class="serverSettingsRolePermSearchWrap">
-        <input class="input serverSettingsRolePermSearch" type="search" data-server-settings-role-perm-search="1" placeholder="${escAttr(t("surface.search_permissions", "Search permissions..."))}" value="${escAttr(serverSettingsRolePermissionSearch || "")}" />
+        <input class="input serverSettingsRolePermSearch" type="search" data-server-settings-role-perm-search="1" aria-label="${escAttr(t("surface.search_permissions", "Search permissions..."))}" placeholder="${escAttr(t("surface.search_permissions", "Search permissions..."))}" value="${escAttr(serverSettingsRolePermissionSearch || "")}" />
       </div>
       <div class="serverSettingsRolePermGroups">
         ${permissionGroupsHtml || permissionEmptyHtml}
       </div>
     </div>
-    <div class="msgMenu__divider"></div>
+    <div class="serverSettingsRoleEditorView serverSettingsRoleAssignments" data-role-editor-view="members" ${editorTab === "members" ? "" : "hidden"}>
     <p class="serverSettingsRoleMembersHead">${selectedRoleDefault ? esc(tf("surface.role_default_role", { role: selectedRole.name }, "{role} - default role")) : (selectedRoleManaged ? esc(tf("surface.role_bot_managed_role", { role: selectedRole.name }, "{role} - bot managed role")) : esc(tf("surface.role_members", { role: selectedRole.name, members: (assignedSet.size === 1 ? tf("surface.count_member", { count: formatUiNumber(assignedSet.size) }, "{count} member") : tf("surface.count_members", { count: formatUiNumber(assignedSet.size) }, "{count} members")) }, "{role} - {members}")))}</p>
     ${selectedRoleManaged ? `<div class="hint">${esc(t("surface.this_role_is_controlled_by_the_bot_permission_update_flow", "This role is controlled by the bot permission update flow."))}</div>` : memberRowsHtml}
+    </div>
   `;
+}
+
+function setServerSettingsRoleEditorView(view = "permissions") {
+  const editor = document.getElementById("serverSettingsRoleMembers");
+  if (!editor) return;
+  const selected = view === "members" ? "members" : "permissions";
+  editor.dataset.roleEditorTab = selected;
+  editor.querySelectorAll("[data-server-settings-role-editor-tab]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.serverSettingsRoleEditorTab === selected));
+  });
+  editor.querySelectorAll("[data-role-editor-view]").forEach((panel) => {
+    panel.hidden = panel.dataset.roleEditorView !== selected;
+  });
 }
 
 function setServerSettingsMembersMeta(message = "", { error = false } = {}) {
@@ -78351,7 +78880,7 @@ async function submitServerSettingsRoleDelete(roleId) {
     renderServerSettingsRolesUi();
     return;
   }
-  if (!canEditServerRoleInSettings(sid, role)) {
+  if (!canDeleteServerRoleInSettings(sid, role)) {
     setServerSettingsRolesMeta(t("surface.you_cannot_delete_a_role_equal_to_or_above_your_highest_role", "You cannot delete a role equal to or above your highest role."), { error: true });
     renderServerSettingsRolesUi();
     return;
@@ -78697,6 +79226,7 @@ async function submitServerSettingsRolePermissionPreset(roleId, presetName) {
   }
 
   nextPermissions = constrainServerRolePermissionsToCurrentActor(sid, nextPermissions);
+  nextPermissions.administrator = currentPermissions.administrator === true;
 
   // Batch 0A: show exactly which permissions will change before applying --
   // both presets zero every implemented permission first, which previously
@@ -81019,10 +81549,10 @@ function renderServerSettingsBannerPreview() {
     preview.classList.toggle("has-banner", !!bannerUrl);
     preview.innerHTML = bannerUrl
       ? `<img src="${escAttr(bannerUrl)}" alt="${escAttr(label)} server banner" />`
-      : `<span>${esc(label || t("surface.server_banner", "Server Banner"))}</span>`;
+      : `<span>${esc(t("server.settings.no_banner", "No banner yet"))}</span>`;
   }
   const previewBanner = document.querySelector(".serverSettingsPreviewBanner");
-  if (previewBanner) {
+  if (previewBanner && previewBanner !== preview) {
     previewBanner.classList.toggle("has-banner", !!bannerUrl);
     previewBanner.innerHTML = bannerUrl ? `<img src="${escAttr(bannerUrl)}" alt="" />` : "";
   }
@@ -82445,6 +82975,11 @@ function bindServerSettingsModalOnce() {
   roleMembers?.addEventListener("click", async (e) => {
     const target = eventTargetElement(e);
     if (!target) return;
+    const viewButton = target.closest("[data-server-settings-role-editor-tab]");
+    if (viewButton) {
+      setServerSettingsRoleEditorView(viewButton.dataset.serverSettingsRoleEditorTab);
+      return;
+    }
     const presetBtn = target.closest("[data-server-settings-role-perm-preset]");
     if (!presetBtn || presetBtn.disabled) return;
     e.preventDefault();
@@ -93254,6 +93789,9 @@ function bindDmGroupEditModalOnce() {
 function renderWidgets() {
   // Hidden widgets are rebuilt from current state when the Widgets tab activates.
   if (!isWidgetsViewActive()) return;
+  if (widgetChecklistDrag && !widgetsEditMode) return;
+  cancelWidgetChecklistDrag();
+  const checklistScrollTop = document.querySelector("#widgetsGrid .profileChecklistTaskList")?.scrollTop || 0;
   const trace = getRelationshipCurrentTrace();
   const traceLabel = relationshipTracePhaseStart(trace, "renderWidgets");
   try {
@@ -93338,7 +93876,8 @@ function renderWidgets() {
   } else {
     grid.innerHTML = activeIds.map((id) => {
       try {
-        return widgetCardHtml(id, stats);
+        const cardHtml = widgetCardHtml(id, stats);
+        return cardHtml;
       } catch (error) {
         console.error("widgets: render failed", id, error);
         return `
@@ -93359,6 +93898,8 @@ function renderWidgets() {
   }
 
   renderWidgetsEditorUi(activeIds);
+  const checklistList = grid.querySelector(".profileChecklistTaskList");
+  if (checklistList) checklistList.scrollTop = checklistScrollTop;
   renderDesktopInboxPanel();
   queueWidgetNotesTextareaResize();
   syncWidgetTimerScheduler();
@@ -98224,11 +98765,14 @@ async function resolveServerConversationForEntry(serverId, fallbackConversationI
     const visibilityAuthority = await ensureServerChannelVisibilityAuthorityReadyForNavigation(sid, "server-entry");
     if (visibilityAuthority?.ok !== true || !hasCurrentServerChannelVisibilityAuthority(sid)) return "";
   }
-  if (isAltaraDefinitivelyOffline()) {
-    if (!hasCurrentServerChannelVisibilityAuthority(sid)) return "";
-    return normId(getPreferredVisibleServerChannel(sid, fallbackConvId)?.conversationId || "");
-  }
   if (!hasCurrentServerChannelVisibilityAuthority(sid)) return "";
+  // Returning from Home, DMs or another app surface restores the last selected
+  // channel. The server default is a fallback, not an explicit channel choice.
+  const rememberedId = getRememberedServerLastChannel(sid);
+  if (rememberedId) {
+    const remembered = getPreferredVisibleServerChannel(sid, rememberedId);
+    if (normId(remembered?.conversationId || "") === rememberedId) return rememberedId;
+  }
   return normId(getPreferredVisibleServerChannel(sid, fallbackConvId)?.conversationId || "");
 }
 
@@ -99443,15 +99987,15 @@ function scheduleDmChromeRender({
 
 function seedDmActivityFromFriends(friends = []) {
   ensureDmClientStateLoaded();
-  const base = Date.now();
+
   let changed = false;
   friends.forEach((f, idx) => {
     const uid = normId(f?.other_user_id || f?.id);
     if (!uid) return;
     const sinceTs = Date.parse(String(f?.since || ""));
-    const fallbackTs = Number.isFinite(sinceTs) && sinceTs > 0 ? sinceTs : (base - idx);
+    const fallbackTs = Number.isFinite(sinceTs) && sinceTs > 0 ? sinceTs : 0;
     const prev = Number(dmActivityByUserId.get(uid) || 0);
-    if (!prev || fallbackTs > prev) {
+    if (!prev && fallbackTs > 0) {
       dmActivityByUserId.set(uid, fallbackTs);
       changed = true;
     }
@@ -103330,6 +103874,7 @@ let profileWidgetItemCatalogSearchSeq = 0;
 let profileWidgetItemCatalogSearchAbortController = null;
 let profileWidgetItemCatalogSearchInFlight = false;
 let profileWidgetItemCatalogSelected = null;
+let profileWidgetItemReturnFocusEl = null;
 const profileWidgetCatalogSearchCache = new Map();
 let profileWidgetInlineSearchWidgetId = "";
 let profileWidgetInlineSearchQuery = "";
@@ -103461,6 +104006,7 @@ const resolveFriendRequestTarget = createFriendRequestTargetResolver({
   getOwnerId: () => state.user?.id,
   lookup: (query, options) => fetchProfileByUsername(query, { ...options, includeBio: true, authoritativeUsername: true, throwOnError: true }),
 });
+const PROFILE_WIDGET_VISIBLE_ITEMS = 6;
 const partyPickerSelectedIds = new Set();
 let serverCreateModalBound = false;
 let serverCreateName = "";
@@ -117724,6 +118270,9 @@ function getVisibleServerChannelAuthoritySignature(serverId = "") {
 }
 
 function getChangedRoleReconciliationPermissionKeys(before = {}, after = {}) {
+  // Administrator also changes hierarchy and channel-deny bypass even when
+  // every individual capability was already granted by another role.
+  if (Boolean(before?.administrator) !== Boolean(after?.administrator)) return getImplementedServerPermissionKeys();
   return getImplementedServerPermissionKeys().filter((key) => Boolean(before?.[key]) !== Boolean(after?.[key]));
 }
 
@@ -124702,6 +125251,18 @@ function renderDmProfileConnectionsPreview(userId = "", profileInput = {}, { loa
   el.setAttribute("aria-hidden", "false");
 }
 
+function renderDmProfileAltaraPlusBadge(profileIdInput = "") {
+  const badgeEl = document.getElementById("dmProfileAltaraPlusBadge");
+  if (!badgeEl) return;
+  const profileId = normId(profileIdInput);
+  const badgePlanKey = resolveAltaraPlusPlanKeyForProfileBadge(null, profileId);
+  const badgeHtml = badgePlanKey
+    ? buildAltaraPlusProfileBadgeHtmlForPlanKey(badgePlanKey, { className: "altaraPlusProfileBadge dmProfileAltaraPlusProfileBadge" })
+    : "";
+  badgeEl.hidden = !badgeHtml;
+  setElementHtmlIfChanged(badgeEl, badgeHtml);
+}
+
 function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
   const uid = String(profile?.id || "").trim();
   const canonicalName = profile?.display_name || profile?.username || "User";
@@ -124784,6 +125345,8 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
     if (nameColor) nameEl.style.setProperty("--user-name-color", nameColor);
     else nameEl.style.removeProperty("--user-name-color");
   }
+  syncPublicAltaraPlusBadgeRefresh();
+  renderDmProfileAltaraPlusBadge(uid);
   if (handleEl) {
     const handleSegments = [];
     if (hasFriendNickname) {
@@ -124805,7 +125368,7 @@ function renderDmProfilePanel(profile = {}, { loading = false } = {}) {
   if (statusTextEl) statusTextEl.textContent = dmStatusLabel(status);
   if (bioEl) bioEl.textContent = bio || (loading ? t("app.loading", "Loading...") : t("dm.profile_no_bio", "No bio yet."));
   if (activityPreviewEl) {
-    const activityHtml = buildGameActivityCardHtml(getPresenceActivityForUser(uid), { className: "dmProfileActivityCard" });
+    const activityHtml = getPresenceActivitiesForUser(uid).map(activity => buildGameActivityCardHtml(activity, { className: "dmProfileActivityCard" })).join("");
     activityPreviewEl.innerHTML = activityHtml;
     activityPreviewEl.classList.toggle("hidden", !activityHtml);
     activityPreviewEl.setAttribute("aria-hidden", activityHtml ? "false" : "true");
@@ -124992,6 +125555,7 @@ function syncDmPinsPanelState() {
   if (timeline && timelineLayoutState && previousSidePanelOpen !== (canShowPins || canShowProfile)) {
     restoreDmTimelineAfterLayoutChange(timeline, timelineLayoutState, "dm_side_panel_toggle");
   }
+  syncPublicAltaraPlusBadgeRefresh();
 }
 
 function closeDmPinsModal() {
@@ -125530,6 +126094,8 @@ function applyUserCardModalLayout(modeInput = "full") {
 function closeUserCardModal() {
   const modal = document.getElementById("userCardModal");
   if (!modal) return;
+  closeProfileWidgetContextMenu();
+  profileWidgetExpandedItemKeys.clear();
   const card = modal.querySelector(".userCardCard");
   if (card) {
     card.style.removeProperty("left");
@@ -125538,6 +126104,8 @@ function closeUserCardModal() {
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
   userCardCurrentUserId = null;
+  syncPublicAltaraPlusBadgeRefresh();
+  if (dmProfilePanelOpen) renderDmProfileAltaraPlusBadge(getActiveDmPeerUserId());
   userCardCurrentUsername = "";
   userCardAnchorEl = null;
   userCardAnchorPoint = null;
@@ -125798,14 +126366,11 @@ function buildProfileSpotifyCardHtml(activityInput = null) {
   const artistLine = activity.artist || activity.details || "Spotify";
   const albumLine = String(activity.album || "").trim();
   const artworkUrl = normalizeActivityImageUrl(activity.artworkUrl || "");
-  const artworkHtml = '<div class="profile-spotify-cover activityArtworkThumb" aria-hidden="true"' + (artworkUrl ? ' data-image-url="' + escAttr(artworkUrl) + '"' : '') + '>' +
-    '<span>SP</span>' +
-    (artworkUrl ? '<img src="' + escAttr(artworkUrl) + '" alt="" loading="lazy" />' : "") +
-  '</div>';
+  const artworkHtml = buildActivityArtworkThumbHtml({ artworkUrl }, activity.name, "profile-spotify-cover", { textFallback: false });
   return '<section class="profile-spotify-card" data-spotify-profile-activity="1">' +
     artworkHtml +
     '<div class="profile-spotify-info">' +
-      '<div class="profile-spotify-label">Listening to Spotify</div>' +
+      '<div class="profile-spotify-label">' + spotifyActivityIcon + 'Listening to Spotify</div>' +
       '<div class="profile-spotify-title" title="' + escAttr(activity.name) + '">' + esc(activity.name) + '</div>' +
       '<div class="profile-spotify-artist" title="' + escAttr(artistLine) + '">' + esc(artistLine) + '</div>' +
       (albumLine ? '<div class="profile-spotify-album" title="' + escAttr(albumLine) + '">' + esc(albumLine) + '</div>' : '') +
@@ -126348,7 +126913,7 @@ function renderUserCardOverviewConnections(profile = {}, { isSelf = false, loadi
     section = document.createElement("div");
     section.id = "userCardProfileConnections";
   }
-  const spotifyActivityCard = factsEl?.querySelector?.('[data-spotify-profile-activity="1"]') || null;
+  const spotifyActivityCard = factsEl?.querySelector?.('[data-profile-activity-stack]') || null;
   if (spotifyActivityCard) {
     spotifyActivityCard.insertAdjacentElement("afterend", section);
   } else {
@@ -128025,7 +128590,7 @@ function renderProfileWidgetItemReadonlyPreview(item = null, { visible = false }
     : `<div class="profileWidgetItemReadonlyPreviewFallback">${esc(initial)}</div>`;
   bindLazyMediaImages(mediaEl);
   titleEl.textContent = title;
-  metaEl.textContent = metaParts.join(" � ");
+  metaEl.textContent = metaParts.join(" · ");
   metaEl.style.display = metaParts.length ? "" : "none";
   wrap.classList.remove("hidden");
   wrap.setAttribute("aria-hidden", "false");
@@ -128821,67 +129386,37 @@ function buildProfileWidgetItemCardHtml(item = {}, {
   widgetType = "",
   isOwner = false,
   isFeatured = false,
-  allowMoveUp = false,
-  allowMoveDown = false,
 } = {}) {
   const title = String(item?.title || "").trim() || t("profile.widgets.item.untitled", "Untitled");
   const note = String(item?.note || "").trim();
-  const mood = String(item?.mood || "").trim();
   const coverUrl = getProfileWidgetArtworkUrl(item);
-  const externalUrl = normalizeCatalogExternalUrl(item?.external_url || "");
   const status = normalizeProfileWidgetStatus(item?.status || "");
   const statusLabel = getProfileWidgetStatusLabel(status);
   const stars = formatProfileWidgetStars(item?.rating);
-  const tags = normalizeProfileWidgetTags(item?.tags || []).slice(0, 4);
-  const meta = normalizeProfileWidgetItemMetadata(item?.metadata || {});
-  const sourceValue = String(meta?.source || item?.source || item?.provider || "").trim();
-  const sourceLabel = sourceValue ? getCatalogSourceLabel(sourceValue) : "";
   const normalizedWidgetType = normalizeProfileWidgetType(widgetType || "");
   const initial = String(title || "?").trim().charAt(0).toUpperCase() || "?";
-  const pillClass = "userCardWidgetBadge profileWidgetMetaPill";
 
   const mediaHtml = coverUrl
     ? lazyMediaImageHtml(coverUrl, { alt: title })
     : `<div class="userCardWidgetItemFallback profileWidgetItemFallback">${esc(initial)}</div>`;
 
-  const noteHtml = note ? `<div class="userCardWidgetItemNote profileWidgetItemNote">${esc(note)}</div>` : "";
-  const starsHtml = stars ? `<div class="userCardWidgetStars profileWidgetStars" aria-label="${escAttr(`${item?.rating || ""}/5`)}">${esc(stars)}</div>` : "";
-  const externalHtml = externalUrl
-    ? `<a class="userCardWidgetLink profileWidgetItemLink" href="${escAttr(externalUrl)}" target="_blank" rel="noopener noreferrer">${esc(t("profile.widgets.open_link", "Open link"))}</a>`
-    : "";
-  const moodHtml = mood ? `<span class="${pillClass}">${esc(mood)}</span>` : "";
-  const sourceHtml = sourceLabel ? `<span class="${pillClass}">${esc(sourceLabel)}</span>` : "";
-  const tagsHtml = tags.map((tag) => `<span class="${pillClass}">${esc(tag)}</span>`).join("");
+  const secondaryText = note || [statusLabel, stars].filter(Boolean).join(" · ");
 
-  const actionsHtml = isOwner ? `
-    <div class="userCardWidgetItemActions profileWidgetActions">
-      <button class="userCardWidgetItemActionBtn profileWidgetActionBtn" type="button" data-profile-widget-act="edit-item" data-widget-id="${escAttr(widgetId)}" data-item-id="${escAttr(item.id || "")}">${esc(t("profile.widgets.edit", "Edit"))}</button>
-      <button class="userCardWidgetItemActionBtn profileWidgetActionBtn" type="button" data-profile-widget-act="move-item-up" data-widget-id="${escAttr(widgetId)}" data-item-id="${escAttr(item.id || "")}" ${allowMoveUp ? "" : "disabled"}>${esc(t("profile.widgets.move_up", "Move up"))}</button>
-      <button class="userCardWidgetItemActionBtn profileWidgetActionBtn" type="button" data-profile-widget-act="move-item-down" data-widget-id="${escAttr(widgetId)}" data-item-id="${escAttr(item.id || "")}" ${allowMoveDown ? "" : "disabled"}>${esc(t("profile.widgets.move_down", "Move down"))}</button>
-      <button class="userCardWidgetItemActionBtn profileWidgetActionBtn is-danger" type="button" data-profile-widget-act="delete-item" data-widget-id="${escAttr(widgetId)}" data-item-id="${escAttr(item.id || "")}">${esc(t("profile.widgets.delete", "Delete"))}</button>
-    </div>
-  ` : "";
+  const cardContentTag = isOwner ? "button" : "div";
+  const cardContentAttrs = isOwner
+    ? `type="button" data-profile-widget-act="edit-item" data-widget-id="${escAttr(widgetId)}" data-item-id="${escAttr(item.id || "")}" aria-label="${escAttr(`${t("profile.widgets.edit", "Edit")}: ${title}`)}"`
+    : "";
 
   return `
-    <article class="userCardWidgetItem profileWidgetItem${isFeatured ? " userCardWidgetFeatured profileWidgetFeatured profileWidgetItem--featured" : " profileWidgetItem--tile"}${normalizedWidgetType ? ` profileWidgetItem--type-${escAttr(normalizedWidgetType)}` : ""}">
-      <div class="userCardWidgetItemMedia profileWidgetItemMedia">
-        ${mediaHtml}
-      </div>
-      <div class="userCardWidgetItemBody profileWidgetItemBody">
-        <div class="userCardWidgetItemHeading profileWidgetItemHeading">
+    <article class="userCardWidgetItem profileWidgetItem${isFeatured ? " userCardWidgetFeatured profileWidgetFeatured profileWidgetItem--featured" : " profileWidgetItem--tile"}${normalizedWidgetType ? ` profileWidgetItem--type-${escAttr(normalizedWidgetType)}` : ""}" data-profile-item-id="${escAttr(item.id || "")}" data-widget-id="${escAttr(widgetId)}">
+      <${cardContentTag} class="profileWidgetItemOpen" ${cardContentAttrs}>
+        <div class="userCardWidgetItemMedia profileWidgetItemMedia">${mediaHtml}</div>
+        <div class="userCardWidgetItemBody profileWidgetItemBody">
           <div class="userCardWidgetItemTitle profileWidgetItemTitle">${esc(title)}</div>
+          <div class="profileWidgetItemSecondary" title="${escAttr(secondaryText)}">${esc(secondaryText)}</div>
         </div>
-        <div class="userCardWidgetItemMeta profileWidgetItemMeta">
-          <span class="${pillClass}" data-status="${escAttr(status)}">${esc(statusLabel)}</span>
-          ${sourceHtml}
-          ${moodHtml}
-          ${tagsHtml}
-        </div>
-        ${starsHtml}
-        ${noteHtml}
-        ${externalHtml}
-        ${actionsHtml}
-      </div>
+      </${cardContentTag}>
+      ${isOwner ? `<span class="profileWidgetItemDragHandle" data-profile-drag-kind="item" data-profile-drag-id="${escAttr(item.id || "")}" data-widget-id="${escAttr(widgetId)}" role="button" tabindex="0" aria-label="${escAttr(t("profile.widgets.drag_item_keyboard", "Reorder item with arrow keys"))}">≡</span>` : ""}
     </article>
   `;
 }
@@ -129248,19 +129783,26 @@ function isProfileWidgetItemsExpanded(userId = "", widgetId = "") {
 function toggleProfileWidgetItemsExpanded(userId = "", widgetId = "") {
   const key = getProfileWidgetExpansionKey(userId, widgetId);
   if (!key) return;
-  if (profileWidgetExpandedItemKeys.has(key)) profileWidgetExpandedItemKeys.delete(key);
+  const wasExpanded = profileWidgetExpandedItemKeys.has(key);
+  if (wasExpanded) profileWidgetExpandedItemKeys.delete(key);
   else profileWidgetExpandedItemKeys.add(key);
   refreshOpenUserCard({ forceWidgetPanelRender: true });
+  requestAnimationFrame(() => {
+    const nextButton = Array.from(document.querySelectorAll("#userCardWidgetsPanel .profileWidgetShowMore"))
+      .find((button) => normId(button.getAttribute("data-widget-id") || "") === normId(widgetId));
+    nextButton?.focus({ preventScroll: true });
+    if (wasExpanded) nextButton?.scrollIntoView({ block: "nearest" });
+  });
 }
 
 function getProfileWidgetCategoryMark(typeInput = "") {
   const type = normalizeProfileWidgetType(typeInput || "");
-  if (type === "music") return "MU";
-  if (type === "games") return "GM";
-  if (type === "movies") return "MV";
-  if (type === "series") return "SR";
-  if (type === "anime") return "AN";
-  return "LN";
+  if (type === "music") return "♫";
+  if (type === "games") return "🎮";
+  if (type === "movies") return "🎞";
+  if (type === "series") return "▣";
+  if (type === "anime") return "✦";
+  return "◇";
 }
 
 function getProfileWidgetPrimaryItem(widget = null) {
@@ -129329,49 +129871,25 @@ function buildUserCardWidgetsPanelHtml(profile = {}, widgets = [], {
     </div>
   `;
 
-  const listHtml = safeWidgets.map((widget, widgetIndex) => {
+  const listHtml = safeWidgets.map((widget) => {
     const widgetId = normId(widget?.id || "");
     const widgetType = normalizeProfileWidgetType(widget?.widget_type || widget?.type || "");
-    const featured = getProfileWidgetFeaturedItem(widget);
     const itemList = Array.isArray(widget?.items) ? widget.items : [];
+    const expanded = isProfileWidgetItemsExpanded(profileUserId, widgetId);
+    const shownItems = expanded ? itemList : itemList.slice(0, PROFILE_WIDGET_VISIBLE_ITEMS);
     const canAddItem = itemList.length < PROFILE_WIDGET_LIMITS.maxItems;
-    const nonFeatured = featured
-      ? itemList.filter((item) => normId(item?.id || "") !== normId(featured?.id || ""))
-      : itemList.slice();
     const widgetTypeLabel = getProfileWidgetTypeLabel(widgetType || "");
     const visibilityLabel = getProfileWidgetVisibilityLabel(widget?.visibility || "");
+    const isPublicWidget = normalizeProfileWidgetVisibility(widget?.visibility || "") === "public";
     const addItemLabel = getProfileWidgetAddItemButtonLabel(widgetType || "");
     const categoryMark = getProfileWidgetCategoryMark(widgetType || "");
-    const isExpanded = isProfileWidgetItemsExpanded(profileUserId, widgetId);
-    const previewLimit = featured ? PROFILE_WIDGET_BOARD_FEATURED_REST_LIMIT : PROFILE_WIDGET_BOARD_PREVIEW_LIMIT;
-    const visibleItems = isExpanded ? nonFeatured : nonFeatured.slice(0, previewLimit);
-    const hiddenCount = Math.max(0, nonFeatured.length - visibleItems.length);
-
-    const featuredIndex = featured
-      ? itemList.findIndex((item) => normId(item?.id || "") === normId(featured?.id || ""))
-      : -1;
-    const featuredHtml = featured
-      ? buildProfileWidgetItemCardHtml(featured, {
-        widgetId: widget.id,
-        widgetType,
-        isOwner,
-        isFeatured: true,
-        allowMoveUp: featuredIndex > 0,
-        allowMoveDown: featuredIndex > -1 && featuredIndex < (itemList.length - 1),
-      })
-      : "";
-
-    const restHtml = visibleItems
-      .map((item, idx) => {
-        const originalIndex = itemList.findIndex((entry) => normId(entry?.id || "") === normId(item?.id || ""));
+    const itemsHtml = shownItems
+      .map((item) => {
         return buildProfileWidgetItemCardHtml(item, {
           widgetId: widget.id,
           widgetType,
           isOwner,
-          isFeatured: false,
-          allowMoveUp: originalIndex > 0,
-          allowMoveDown: originalIndex > -1 && originalIndex < (itemList.length - 1),
-          idx,
+          isFeatured: !!item.is_featured,
         });
       })
       .join("");
@@ -129379,16 +129897,6 @@ function buildUserCardWidgetsPanelHtml(profile = {}, widgets = [], {
     const ownerActions = isOwner ? `
       <div class="userCardWidgetHeaderActions profileWidgetHeaderActions">
         <button class="userCardWidgetBtn userCardWidgetAddBtn profileWidgetCapsuleBtn profileWidgetAddItemBtn" type="button" data-profile-widget-act="add-item" data-widget-id="${escAttr(widget.id || "")}" ${canAddItem ? "" : "disabled"}>${esc(addItemLabel)}</button>
-        <details class="userCardWidgetMenu profileWidgetMoreMenu">
-          <summary class="userCardWidgetMenuTrigger profileWidgetMoreTrigger" aria-label="${escAttr(t("profile.widgets.widget_options", "Widget options"))}">...</summary>
-          <div class="userCardWidgetMenuList profileWidgetMoreMenuList">
-            <button class="userCardWidgetMenuItem" type="button" data-profile-widget-act="edit-widget" data-widget-id="${escAttr(widget.id || "")}">${esc(t("profile.widgets.edit", "Edit"))}</button>
-            <button class="userCardWidgetMenuItem" type="button" data-profile-widget-act="toggle-widget" data-widget-id="${escAttr(widget.id || "")}">${widget.is_enabled ? esc(t("profile.widgets.hide", "Hide")) : esc(t("profile.widgets.show", "Show"))}</button>
-            <button class="userCardWidgetMenuItem" type="button" data-profile-widget-act="move-widget-up" data-widget-id="${escAttr(widget.id || "")}" ${widgetIndex > 0 ? "" : "disabled"}>${esc(t("profile.widgets.move_up", "Move up"))}</button>
-            <button class="userCardWidgetMenuItem" type="button" data-profile-widget-act="move-widget-down" data-widget-id="${escAttr(widget.id || "")}" ${widgetIndex < (safeWidgets.length - 1) ? "" : "disabled"}>${esc(t("profile.widgets.move_down", "Move down"))}</button>
-            <button class="userCardWidgetMenuItem is-danger" type="button" data-profile-widget-act="delete-widget" data-widget-id="${escAttr(widget.id || "")}">${esc(t("profile.widgets.delete", "Delete"))}</button>
-          </div>
-        </details>
       </div>
     ` : "";
     const inlineAddPopoverHtml = isOwner
@@ -129398,38 +129906,34 @@ function buildUserCardWidgetsPanelHtml(profile = {}, widgets = [], {
     const emptyItems = !itemList.length
       ? `<div class="userCardWidgetsHint profileWidgetEmptyState">${esc(isOwner ? t("profile.widgets.empty.widget_owner", "No items yet. Add your first item.") : t("profile.widgets.empty.widget_public", "No visible items in this widget."))}</div>`
       : "";
-    const showMoreHtml = nonFeatured.length > previewLimit
-      ? `<div class="profileWidgetShowMoreRow"><button class="profileWidgetShowMore" type="button" data-profile-widget-act="toggle-widget-items" data-widget-id="${escAttr(widget.id || "")}" aria-expanded="${isExpanded ? "true" : "false"}">${esc(isExpanded ? t("profile.widgets.show_less", "Show less") : t("profile.widgets.show_more", "Show more"))}${!isExpanded && hiddenCount ? `<span>+${esc(String(hiddenCount))}</span>` : ""}</button></div>`
-      : "";
+    const visibleItemCount = shownItems.length;
+    const hiddenItemCount = Math.max(0, itemList.length - PROFILE_WIDGET_VISIBLE_ITEMS);
+    const itemsGridId = `profileWidgetItems-${widgetId}`;
     const itemsAreaHtml = `
-      <div class="userCardWidgetItemsArea profileWidgetItemsArea${itemList.length ? "" : " is-empty"}${isExpanded ? " is-expanded" : ""}">
-        ${featuredHtml ? `<div class="profileWidgetFeaturedSlot">${featuredHtml}</div>` : ""}
-        ${restHtml ? `<div class="userCardWidgetItemGrid profileWidgetItemGrid">${restHtml}</div>` : ""}
-        ${showMoreHtml}
+      <div class="userCardWidgetItemsArea profileWidgetItemsArea${itemList.length ? "" : " is-empty"}">
+        ${visibleItemCount ? `<div id="${escAttr(itemsGridId)}" class="userCardWidgetItemGrid profileWidgetItemGrid profileWidgetItemGrid--count-${Math.min(visibleItemCount, 3)}">${itemsHtml}</div>` : ""}
         ${emptyItems}
+        ${hiddenItemCount ? `<button class="profileWidgetShowMore" type="button" data-profile-widget-act="toggle-widget-items" data-widget-id="${escAttr(widgetId)}" aria-controls="${escAttr(itemsGridId)}" aria-expanded="${expanded ? "true" : "false"}">${esc(expanded ? t("profile.widgets.show_less", "Show less") : t("profile.widgets.show_more", "Show more"))}${expanded ? "" : ` <span aria-hidden="true">+${hiddenItemCount}</span>`}</button>` : ""}
       </div>
     `;
 
     return `
-      <article class="userCardWidgetCard profileWidgetCard profileWidgetCard--${escAttr(widgetType || "custom")}" data-profile-widget-id="${escAttr(widget.id || "")}" data-profile-widget-type="${escAttr(widgetType || "custom")}">
+      <section class="userCardWidgetCard profileWidgetCard profileWidgetCard--${escAttr(widgetType || "custom")}${itemList.length === 1 ? " profileWidgetCard--single" : ""}" data-profile-widget-id="${escAttr(widget.id || "")}" data-profile-widget-type="${escAttr(widgetType || "custom")}">
         <div class="userCardWidgetTop profileWidgetTopRow">
           <div class="profileWidgetTitleBlock">
             <div class="profileWidgetCategoryLine">
+              ${isOwner ? `<span class="profileWidgetDragHandle" data-profile-drag-kind="widget" data-profile-drag-id="${escAttr(widget.id || "")}" role="button" tabindex="0" aria-label="${escAttr(t("profile.widgets.drag_widget_keyboard", "Reorder widget with arrow keys"))}">≡</span>` : ""}
               <span class="profileWidgetCategoryMark" aria-hidden="true">${esc(categoryMark)}</span>
-              <span class="profileWidgetCategoryLabel">${esc(widgetTypeLabel)}</span>
+              <h3 class="userCardWidgetTitle profileWidgetTitle">${esc(widgetTypeLabel)}</h3>
+              <span class="profileWidgetItemCount" aria-label="${escAttr(`${itemList.length} ${itemList.length === 1 ? t("profile.widgets.item_count.one", "item") : t("profile.widgets.item_count.many", "items")}`)}">${esc(String(itemList.length))}</span>
             </div>
-            <div class="userCardWidgetTitle profileWidgetTitle">${esc(widget.title || t("profile.widgets.item.untitled", "Untitled"))}</div>
-            <div class="userCardWidgetMeta profileWidgetMeta">
-              <span class="userCardWidgetBadge profileWidgetMetaPill">${esc(widgetTypeLabel)}</span>
-              ${isOwner ? `<span class="userCardWidgetBadge profileWidgetMetaPill">${esc(visibilityLabel)}</span>` : ""}
-              ${!widget.is_enabled && isOwner ? `<span class="userCardWidgetBadge profileWidgetMetaPill">${esc(t("profile.widgets.disabled", "Disabled"))}</span>` : ""}
-            </div>
+            ${isOwner && (!isPublicWidget || !widget.is_enabled) ? `<div class="userCardWidgetMeta profileWidgetMeta">${!isPublicWidget ? `<span>${esc(visibilityLabel)}</span>` : ""}${!widget.is_enabled ? `<span>${esc(t("profile.widgets.disabled", "Disabled"))}</span>` : ""}</div>` : ""}
           </div>
           ${ownerActions}
         </div>
         ${inlineAddPopoverHtml}
         ${itemsAreaHtml}
-      </article>
+      </section>
     `;
   }).join("");
 
@@ -129596,7 +130100,8 @@ function renderUserCard(profile = {}, { loading = false, forceWidgetPanelRender 
   const avatarUrl = resolveProfileAvatarUrl(profile?.avatar_url || profile?.avatarUrl || "", "");
   const status = getPresenceStatusForUser(id);
   const statusLabel = getPresenceStatusLabel(status, { self: id === normId(state.user?.id || "") });
-  const gameActivity = getPresenceActivityForUser(id);
+  const profileActivities = getPresenceActivitiesForUser(id);
+  const gameActivity = profileActivities[0] || null;
   const selfId = String(state.user?.id || "").trim();
   const isSelf = id === selfId;
   const friendNickname = isSelf ? "" : getDmFriendNickname(id);
@@ -129678,7 +130183,7 @@ function renderUserCard(profile = {}, { loading = false, forceWidgetPanelRender 
     relation: relation ? [relation.kind, relation.label, relation.tone, relation.since].join("|") : "",
     friendAction: friendAction ? [friendAction.kind, friendAction.label, friendAction.disabled, friendAction.requestId].join("|") : "",
     messageAction: messageAction ? [messageAction.action, messageAction.label, messageAction.disabled, messageAction.requestId, messageAction.route, messageAction.reason].join("|") : "",
-    activity: getPresenceActivityRenderSignature(gameActivity),
+    activity: profileActivities.map(getPresenceActivityRenderSignature).join("||"),
     insightsLoading: !!userCardInsightsLoading,
     currentServerName,
     currentServerJoinedAt: String(currentServerMembership?.joinedAt || ""),
@@ -129787,16 +130292,7 @@ function renderUserCard(profile = {}, { loading = false, forceWidgetPanelRender 
 
   if (factsEl) {
     const factParts = [];
-    if (gameActivity) {
-      if (!isPreviewLayout && gameActivity.type === "listening" && gameActivity.provider === SPOTIFY_PROVIDER) {
-        factParts.push(buildProfileSpotifyCardHtml(gameActivity));
-      } else {
-        const activityFactValue = gameActivity.type === "listening" && gameActivity.provider === SPOTIFY_PROVIDER
-          ? [gameActivity.name, gameActivity.artist || gameActivity.details || ""].filter(Boolean).join(" - ")
-          : `${gameActivity.name} ${formatGameActivityDurationText(gameActivity.startedAt)}`;
-        factParts.push(buildUserCardFactHtml(getActivityVerbLabel(gameActivity), activityFactValue));
-      }
-    }
+    factParts.push(buildUserProfileActivityStack(profileActivities, id, "overview"));
     if (hasFriendNickname) factParts.push(buildUserCardFactHtml(t("usercard.nickname", "Nickname"), friendNickname));
     if (createdAt) {
       factParts.push(buildUserCardFactHtml(t("usercard.account_created", "Account created"), formatUserCardDate(createdAt)));
@@ -129824,7 +130320,7 @@ function renderUserCard(profile = {}, { loading = false, forceWidgetPanelRender 
 
 
   if (activityPanelEl) {
-    const gameActivityPanelHtml = buildGameActivityCardHtml(gameActivity, { className: "userCardGameActivityCard" });
+    const gameActivityPanelHtml = profileActivities.map(activity => buildGameActivityCardHtml(activity, { className: "userCardGameActivityCard" })).join("");
     setElementHtmlIfChanged(activityPanelEl, gameActivityPanelHtml + buildUserCardActivityPanelHtml(profile, insights, {
       loading: !!(loading || userCardInsightsLoading),
       context: userCardCurrentContext,
@@ -130037,10 +130533,18 @@ function focusProfileWidgetInlineSearchInput(widgetIdInput = "") {
     );
     if (!(input instanceof HTMLInputElement)) return;
     try {
-      input.focus();
+      input.focus({ preventScroll: true });
       const pos = String(input.value || "").length;
       input.setSelectionRange(pos, pos);
     } catch (_) {}
+    const popover = input.closest(".profileWidgetInlinePopover");
+    const scroller = input.closest(".userCardPanels");
+    if (popover && scroller) {
+      const panelRect = scroller.getBoundingClientRect();
+      const menuRect = popover.getBoundingClientRect();
+      if (menuRect.bottom > panelRect.bottom - 12) scroller.scrollTop += menuRect.bottom - panelRect.bottom + 12;
+      else if (menuRect.top < panelRect.top + 12) scroller.scrollTop -= panelRect.top + 12 - menuRect.top;
+    }
   });
 }
 
@@ -130206,7 +130710,6 @@ function openProfileWidgetModal({ mode = "create", widget = null } = {}) {
   const modeInput = document.getElementById("profileWidgetMode");
   const idInput = document.getElementById("profileWidgetId");
   const typeInput = document.getElementById("profileWidgetType");
-  const titleInput = document.getElementById("profileWidgetTitleInput");
   const visibilityInput = document.getElementById("profileWidgetVisibility");
   const enabledInput = document.getElementById("profileWidgetEnabled");
 
@@ -130218,14 +130721,13 @@ function openProfileWidgetModal({ mode = "create", widget = null } = {}) {
   if (modeInput) modeInput.value = normalizedMode;
   if (idInput) idInput.value = normalizedMode === "edit" ? String(widget?.id || "") : "";
   if (typeInput) typeInput.value = normalizeProfileWidgetCreateType(widget?.widget_type || "games");
-  if (titleInput) titleInput.value = normalizedMode === "edit" ? String(widget?.title || "") : "";
   if (visibilityInput) visibilityInput.value = normalizeProfileWidgetVisibility(widget?.visibility || "public");
   if (enabledInput) enabledInput.checked = normalizedMode === "edit" ? widget?.is_enabled !== false : true;
 
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
   requestAnimationFrame(() => {
-    try { titleInput?.focus(); } catch (_) {}
+    try { typeInput?.focus(); } catch (_) {}
   });
 }
 
@@ -130239,6 +130741,9 @@ function closeProfileWidgetModal() {
 function openProfileWidgetItemModal({ mode = "create", widgetId = "", item = null } = {}) {
   const modal = document.getElementById("profileWidgetItemModal");
   if (!modal) return;
+  profileWidgetItemReturnFocusEl = document.activeElement instanceof HTMLElement && !modal.contains(document.activeElement)
+    ? document.activeElement
+    : null;
   const normalizedMode = String(mode || "create").trim().toLowerCase() === "edit" ? "edit" : "create";
   const isEditMode = normalizedMode === "edit";
   const titleEl = document.getElementById("profileWidgetItemModalTitle");
@@ -130331,6 +130836,8 @@ function openProfileWidgetItemModal({ mode = "create", widgetId = "", item = nul
 function closeProfileWidgetItemModal() {
   const modal = document.getElementById("profileWidgetItemModal");
   if (!modal) return;
+  const returnFocus = profileWidgetItemReturnFocusEl;
+  profileWidgetItemReturnFocusEl = null;
   if (profileWidgetItemCatalogSearchTimer) {
     clearTimeout(profileWidgetItemCatalogSearchTimer);
     profileWidgetItemCatalogSearchTimer = 0;
@@ -130343,6 +130850,7 @@ function closeProfileWidgetItemModal() {
   setProfileWidgetItemBaseFieldsVisible(true);
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
+  if (returnFocus?.isConnected) requestAnimationFrame(() => returnFocus.focus({ preventScroll: true }));
 }
 
 function closeProfileWidgetOptionMenus({ root = document, except = null } = {}) {
@@ -130358,12 +130866,78 @@ function closeProfileWidgetOptionMenus({ root = document, except = null } = {}) 
   return closed;
 }
 
+let profileWidgetContextMenu = null;
+function closeProfileWidgetContextMenu() {
+  profileWidgetContextMenu?.remove();
+  profileWidgetContextMenu = null;
+}
+
+function openProfileWidgetContextMenu(target, point, { focus = false } = {}) {
+  const modal = document.getElementById("userCardModal");
+  if (!modal || modal.classList.contains("hidden")) return false;
+  const itemCard = target?.closest?.(".profileWidgetItem[data-profile-item-id]");
+  const widgetCard = target?.closest?.(".profileWidgetCard[data-profile-widget-id]");
+  if (!widgetCard) return false;
+  const widgetId = normId(widgetCard.getAttribute("data-profile-widget-id") || "");
+  const owner = normId(userCardCurrentUserId || "") === normId(state.user?.id || "");
+  const itemId = itemCard ? normId(itemCard.getAttribute("data-profile-item-id") || "") : "";
+  const item = itemId ? findCurrentUserCardWidgetItem(widgetId, itemId) : null;
+  const link = item ? normalizeCatalogExternalUrl(item.external_url || "") : "";
+  if (itemCard && !link && !owner) return false;
+  if (!itemCard && !owner) return false;
+
+  closeProfileWidgetContextMenu();
+  const menu = document.createElement("div");
+  menu.className = "profileWidgetContextMenu";
+  menu.setAttribute("role", "menu");
+  const entries = itemCard
+    ? `${link ? `<a role="menuitem" href="${escAttr(link)}" target="_blank" rel="noopener noreferrer">${esc(t("profile.widgets.open_link", "Open link"))}</a>` : ""}${owner ? `<button type="button" role="menuitem" class="is-danger" data-profile-widget-act="delete-item" data-widget-id="${escAttr(widgetId)}" data-item-id="${escAttr(itemId)}">${esc(t("profile.widgets.delete", "Delete"))}</button>` : ""}`
+    : `<button type="button" role="menuitem" data-profile-widget-act="edit-widget" data-widget-id="${escAttr(widgetId)}">${esc(t("profile.widgets.edit", "Edit"))}</button><button type="button" role="menuitem" class="is-danger" data-profile-widget-act="delete-widget" data-widget-id="${escAttr(widgetId)}">${esc(t("profile.widgets.delete", "Delete"))}</button>`;
+  menu.innerHTML = entries;
+  document.body.appendChild(menu);
+  profileWidgetContextMenu = menu;
+  menu.addEventListener("click", (event) => {
+    const entry = eventTargetElement(event)?.closest?.("[role='menuitem']");
+    if (!entry) return;
+    if (entry instanceof HTMLButtonElement) {
+      closeProfileWidgetContextMenu();
+      void handleUserCardWidgetsPanelClick({ target: entry });
+    } else {
+      setTimeout(closeProfileWidgetContextMenu, 0);
+    }
+  });
+  menu.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeProfileWidgetContextMenu();
+      target?.focus?.({ preventScroll: true });
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+      const choices = Array.from(menu.querySelectorAll("[role='menuitem']"));
+      const current = choices.indexOf(document.activeElement);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1
+        : (current + (event.key === "ArrowDown" ? 1 : -1) + choices.length) % choices.length;
+      choices[next]?.focus({ preventScroll: true });
+      event.preventDefault();
+    }
+  });
+  openContextMenuAtCursor(point, menu, { width: 160, minHeight: 48, offset: 4 });
+  if (focus) menu.querySelector("[role='menuitem']")?.focus({ preventScroll: true });
+  return true;
+}
+
 function bindProfileEscapeGuardOnce() {
   if (profileEscapeGuardBound) return;
   profileEscapeGuardBound = true;
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (profileWidgetContextMenu) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeProfileWidgetContextMenu();
+      return;
+    }
     const target = eventTargetElement(e) || document.activeElement || null;
     const userCardModal = document.getElementById("userCardModal");
     const userCardOpen = !!userCardModal && !userCardModal.classList.contains("hidden");
@@ -130377,6 +130951,24 @@ function bindProfileEscapeGuardOnce() {
     const inProfileOverlay = profileOverlayOpen && target instanceof Element
       ? !!target.closest("#profileOverlay")
       : profileOverlayOpen;
+    const inWidgetItemModal = userCardOpen && target instanceof Element
+      ? !!target.closest("#profileWidgetItemModal")
+      : false;
+    const inWidgetModal = userCardOpen && target instanceof Element
+      ? !!target.closest("#profileWidgetModal")
+      : false;
+    if (inWidgetItemModal) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeProfileWidgetItemModal();
+      return;
+    }
+    if (inWidgetModal) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeProfileWidgetModal();
+      return;
+    }
     if (!inUserCard && !inProfileOverlay) return;
 
     const avatarEditorOpen = !document.getElementById("avatarEditorModal")?.classList.contains("hidden");
@@ -130439,18 +131031,12 @@ async function submitProfileWidgetModal() {
   const mode = String(document.getElementById("profileWidgetMode")?.value || "create").trim().toLowerCase();
   const widgetId = normId(document.getElementById("profileWidgetId")?.value || "");
   const widgetType = normalizeProfileWidgetCreateType(document.getElementById("profileWidgetType")?.value || "games");
-  const title = normalizeProfileWidgetTitle(document.getElementById("profileWidgetTitleInput")?.value || "");
+  const title = getProfileWidgetTypeLabel(widgetType);
   const visibility = normalizeProfileWidgetVisibility(document.getElementById("profileWidgetVisibility")?.value || "public");
   const isEnabled = !!document.getElementById("profileWidgetEnabled")?.checked;
 
-  if (!title) {
-    alert(t("profile.widgets.error.title_required", "Title is required."));
-    return;
-  }
-
   const payload = {
     widget_type: widgetType,
-    title,
     visibility,
     is_enabled: isEnabled,
   };
@@ -130663,6 +131249,25 @@ function getCurrentProfileWidgetOrderIds() {
   return getCurrentUserCardWidgets().map((widget) => normId(widget?.id || "")).filter(Boolean);
 }
 
+async function reorderProfileWidgetByStep(kind, widgetIdInput, itemIdInput, delta) {
+  const widgetId = normId(widgetIdInput || "");
+  const itemId = normId(itemIdInput || "");
+  const widget = kind === "item" ? findCurrentUserCardWidget(widgetId) : null;
+  const entries = kind === "item" ? (Array.isArray(widget?.items) ? widget.items : []) : getCurrentUserCardWidgets();
+  const id = kind === "item" ? itemId : widgetId;
+  const index = entries.findIndex((entry) => normId(entry?.id || "") === id);
+  const nextIndex = index + delta;
+  if (index < 0 || nextIndex < 0 || nextIndex >= entries.length) return false;
+  const reordered = entries.slice();
+  [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+  const ids = reordered.map((entry) => normId(entry?.id || "")).filter(Boolean);
+  if (kind === "item") await reorderProfileWidgetItemsRpc(widgetId, ids);
+  else await reorderProfileWidgetsRpc(ids);
+  await refreshUserCardWidgetsData({ force: true, keepLoading: true });
+  setUserCardActiveTab("widgets");
+  return true;
+}
+
 function applyLocalProfileWidgetOrder(widgetIds = []) {
   const ids = (Array.isArray(widgetIds) ? widgetIds : []).map((id) => normId(id || "")).filter(Boolean);
   if (!ids.length) return [];
@@ -130743,6 +131348,9 @@ async function handleUserCardWidgetsPanelClick(e) {
         status: defaultStatus,
       });
       applyLocalProfileWidgetItemAdded(widget.id, created);
+      if (itemCount >= PROFILE_WIDGET_VISIBLE_ITEMS) {
+        profileWidgetExpandedItemKeys.add(getProfileWidgetExpansionKey(uid, widget.id));
+      }
       closeProfileWidgetInlineSearchPopover({ refresh: true });
       setUserCardActiveTab("widgets");
       return;
@@ -130800,33 +131408,12 @@ async function handleUserCardWidgetsPanelClick(e) {
     }
 
     if ((action === "move-widget-up" || action === "move-widget-down") && widget) {
-      const list = getCurrentUserCardWidgets();
-      const idx = list.findIndex((entry) => normId(entry?.id || "") === widget.id);
-      if (idx < 0) return;
-      const nextIdx = action === "move-widget-up" ? idx - 1 : idx + 1;
-      if (nextIdx < 0 || nextIdx >= list.length) return;
-      const swapped = list.slice();
-      const tmp = swapped[idx];
-      swapped[idx] = swapped[nextIdx];
-      swapped[nextIdx] = tmp;
-      await reorderProfileWidgetsRpc(swapped.map((entry) => entry.id));
-      await refreshUserCardWidgetsData({ force: true, keepLoading: true });
-      setUserCardActiveTab("widgets");
+      await reorderProfileWidgetByStep("widget", widget.id, "", action === "move-widget-up" ? -1 : 1);
       return;
     }
 
     if ((action === "move-item-up" || action === "move-item-down") && widget && item) {
-      const items = Array.isArray(widget.items) ? widget.items.slice() : [];
-      const idx = items.findIndex((entry) => normId(entry?.id || "") === item.id);
-      if (idx < 0) return;
-      const nextIdx = action === "move-item-up" ? idx - 1 : idx + 1;
-      if (nextIdx < 0 || nextIdx >= items.length) return;
-      const tmp = items[idx];
-      items[idx] = items[nextIdx];
-      items[nextIdx] = tmp;
-      await reorderProfileWidgetItemsRpc(widget.id, items.map((entry) => entry.id));
-      await refreshUserCardWidgetsData({ force: true, keepLoading: true });
-      setUserCardActiveTab("widgets");
+      await reorderProfileWidgetByStep("item", widget.id, item.id, action === "move-item-up" ? -1 : 1);
       return;
     }
   } catch (error) {
@@ -130869,14 +131456,184 @@ function bindUserCardModalOnce() {
     setUserCardActiveTab(nextTab);
   });
   const userCardWidgetsPanel = document.getElementById("userCardWidgetsPanel");
+  let profileDrag = null;
+  const profileDragItems = (drag) => Array.from(drag?.container?.children || [])
+    .filter((el) => el.matches?.(drag.kind === "item" ? ".profileWidgetItem[data-profile-item-id]" : ".profileWidgetCard[data-profile-widget-id]"));
+  const profileDragIds = (drag) => profileDragItems(drag)
+    .map((el) => normId(el.getAttribute(drag.kind === "item" ? "data-profile-item-id" : "data-profile-widget-id") || ""))
+    .filter(Boolean);
+  const animateProfileDragLayout = (drag, before) => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    profileDragItems(drag).forEach((el) => {
+      if (el === drag.source || !el.animate) return;
+      const previous = before.get(el);
+      if (!previous) return;
+      const current = el.getBoundingClientRect();
+      const dx = previous.left - current.left;
+      const dy = previous.top - current.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      el.getAnimations().forEach((animation) => animation.cancel());
+      el.animate([{ transform: `translate3d(${dx}px, ${dy}px, 0)` }, { transform: "translate3d(0, 0, 0)" }], {
+        duration: 150,
+        easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+      });
+    });
+  };
+  const moveProfileDragPreview = (drag, x, y) => {
+    drag.clientX = x;
+    drag.clientY = y;
+    if (drag.previewRaf) return;
+    drag.previewRaf = requestAnimationFrame(() => {
+      drag.previewRaf = 0;
+      if (!drag.preview) return;
+      const left = Math.min(window.innerWidth - drag.preview.offsetWidth - 12, drag.clientX + 18);
+      const top = Math.min(window.innerHeight - drag.preview.offsetHeight - 12, drag.clientY + 18);
+      drag.preview.style.transform = `translate3d(${Math.max(8, left)}px, ${Math.max(8, top)}px, 0)`;
+    });
+  };
+  const startProfileDragPreview = (drag, x, y) => {
+    const preview = document.createElement("div");
+    preview.className = `profileWidgetPointerPreview profileWidgetPointerPreview--${drag.kind}`;
+    const media = drag.kind === "item" ? drag.source.querySelector(".profileWidgetItemMedia") : null;
+    if (media) {
+      const artwork = document.createElement("div");
+      artwork.className = "profileWidgetPointerPreview__media";
+      const image = media.querySelector("img");
+      if (image) artwork.appendChild(image.cloneNode(true));
+      else artwork.textContent = String(media.textContent || "").trim().charAt(0);
+      preview.appendChild(artwork);
+    }
+    const label = document.createElement("strong");
+    label.textContent = String(drag.source.querySelector(drag.kind === "item" ? ".profileWidgetItemTitle" : ".profileWidgetTitle")?.textContent || "").trim();
+    preview.appendChild(label);
+    document.body.appendChild(preview);
+    drag.preview = preview;
+    moveProfileDragPreview(drag, x, y);
+  };
+  const finishProfileDrag = async (e, { commit = true } = {}) => {
+    const drag = profileDrag;
+    if (!drag || (e && e.pointerId !== drag.pointerId)) return;
+    profileDrag = null;
+    try { userCardWidgetsPanel?.releasePointerCapture?.(drag.pointerId); } catch (_) {}
+    if (drag.previewRaf) cancelAnimationFrame(drag.previewRaf);
+    drag.preview?.remove();
+    drag.source.classList.remove("is-profile-dragging");
+    document.body.classList.remove("is-profile-widget-pointer-dragging");
+    if (!drag.active) return;
+    const ids = profileDragIds(drag);
+    if (!commit) {
+      drag.originalIds.forEach((id) => {
+        const el = profileDragItems(drag).find((entry) => normId(entry.getAttribute(drag.kind === "item" ? "data-profile-item-id" : "data-profile-widget-id") || "") === id);
+        if (el) drag.container.appendChild(el);
+      });
+      return;
+    }
+    if (ids.join("|") === drag.originalIds.join("|")) return;
+    userCardWidgetsMutating = true;
+    try {
+      if (drag.kind === "item") {
+        const visibleIds = new Set(ids);
+        const hiddenIds = (findCurrentUserCardWidget(drag.widgetId)?.items || [])
+          .map((item) => normId(item?.id || ""))
+          .filter((id) => id && !visibleIds.has(id));
+        await reorderProfileWidgetItemsRpc(drag.widgetId, [...ids, ...hiddenIds]);
+      }
+      else await reorderProfileWidgetsRpc(ids);
+      await refreshUserCardWidgetsData({ force: true, keepLoading: true });
+      setUserCardActiveTab("widgets");
+    } catch (error) {
+      alert(toProfileWidgetError(error, t("profile.widgets.error.generic", "Could not update widgets.")));
+      await refreshUserCardWidgetsData({ force: true, keepLoading: true });
+    } finally { userCardWidgetsMutating = false; }
+  };
+  userCardWidgetsPanel?.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || userCardWidgetsMutating || normId(userCardCurrentUserId || "") !== normId(state.user?.id || "")) return;
+    const handle = eventTargetElement(e)?.closest?.("[data-profile-drag-kind]");
+    if (!handle) return;
+    const kind = handle.getAttribute("data-profile-drag-kind");
+    const id = normId(handle.getAttribute("data-profile-drag-id") || "");
+    const widgetId = kind === "item" ? normId(handle.getAttribute("data-widget-id") || "") : "";
+    const source = kind === "item" ? handle.closest(".profileWidgetItem") : handle.closest(".profileWidgetCard");
+    const container = kind === "item" ? source?.closest(".profileWidgetItemGrid") : source?.closest(".profileWidgetBoard");
+    if (!id || !source || !container) return;
+    e.preventDefault();
+    profileDrag = { kind, id, widgetId, source, container, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, clientX: e.clientX, clientY: e.clientY, active: false, preview: null, previewRaf: 0 };
+    profileDrag.originalIds = profileDragIds(profileDrag);
+    try { userCardWidgetsPanel.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  userCardWidgetsPanel?.addEventListener("pointermove", (e) => {
+    const drag = profileDrag;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    if (!drag.active) {
+      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 6) return;
+      drag.active = true;
+      drag.source.classList.add("is-profile-dragging");
+      document.body.classList.add("is-profile-widget-pointer-dragging");
+      startProfileDragPreview(drag, e.clientX, e.clientY);
+    }
+    e.preventDefault();
+    moveProfileDragPreview(drag, e.clientX, e.clientY);
+    const scroller = userCardWidgetsPanel.closest(".userCardPanels");
+    if (scroller) {
+      const bounds = scroller.getBoundingClientRect();
+      if (e.clientY < bounds.top + 42) scroller.scrollTop -= 16;
+      else if (e.clientY > bounds.bottom - 42) scroller.scrollTop += 16;
+    }
+    const element = document.elementFromPoint(e.clientX, e.clientY);
+    const target = element?.closest?.(drag.kind === "item" ? ".profileWidgetItem[data-profile-item-id]" : ".profileWidgetCard[data-profile-widget-id]");
+    if (!target || target === drag.source || target.parentElement !== drag.container) return;
+    const rect = target.getBoundingClientRect();
+    const after = drag.kind === "widget" ? e.clientY >= rect.top + rect.height / 2 : e.clientX >= rect.left + rect.width / 2;
+    if ((after ? target.nextElementSibling : target) === drag.source) return;
+    const before = new Map(profileDragItems(drag).map((el) => [el, el.getBoundingClientRect()]));
+    drag.container.insertBefore(drag.source, after ? target.nextElementSibling : target);
+    animateProfileDragLayout(drag, before);
+  });
+  userCardWidgetsPanel?.addEventListener("pointerup", (e) => { void finishProfileDrag(e); });
+  userCardWidgetsPanel?.addEventListener("pointercancel", (e) => { void finishProfileDrag(e, { commit: false }); });
+  userCardWidgetsPanel?.addEventListener("lostpointercapture", (e) => { void finishProfileDrag(e, { commit: false }); });
   userCardWidgetsPanel?.addEventListener("click", (e) => {
+    closeProfileWidgetContextMenu();
     const target = eventTargetElement(e);
     const openMenu = target?.closest?.(".userCardWidgetMenu") || null;
     if (openMenu) closeProfileWidgetOptionMenus({ except: openMenu });
     void handleUserCardWidgetsPanelClick(e);
   });
+  userCardWidgetsPanel?.addEventListener("contextmenu", (e) => {
+    const target = eventTargetElement(e);
+    if (openProfileWidgetContextMenu(target, e)) e.preventDefault();
+  });
   userCardWidgetsPanel?.addEventListener("keydown", (e) => {
     const target = eventTargetElement(e);
+    if ((e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) && target?.closest?.(".profileWidgetItem,.profileWidgetTopRow")) {
+      const anchor = target.getBoundingClientRect();
+      if (openProfileWidgetContextMenu(target, { clientX: anchor.left + 12, clientY: anchor.bottom }, { focus: true })) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
+    const handle = target?.closest?.("[data-profile-drag-kind]");
+    if (handle && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (userCardWidgetsMutating || normId(userCardCurrentUserId || "") !== normId(state.user?.id || "")) return;
+      const kind = handle.getAttribute("data-profile-drag-kind");
+      const id = handle.getAttribute("data-profile-drag-id") || "";
+      const widgetId = kind === "item" ? handle.getAttribute("data-widget-id") || "" : id;
+      userCardWidgetsMutating = true;
+      void reorderProfileWidgetByStep(kind, widgetId, kind === "item" ? id : "", e.key === "ArrowUp" ? -1 : 1)
+        .catch((error) => alert(toProfileWidgetError(error, t("profile.widgets.error.generic", "Could not update widgets."))))
+        .finally(() => {
+          userCardWidgetsMutating = false;
+          requestAnimationFrame(() => {
+            const nextHandle = Array.from(userCardWidgetsPanel.querySelectorAll("[data-profile-drag-kind]"))
+              .find((el) => el.getAttribute("data-profile-drag-kind") === kind && el.getAttribute("data-profile-drag-id") === id);
+            nextHandle?.focus?.({ preventScroll: true });
+          });
+        });
+      return;
+    }
     const editable = getEditableTypingElementFromTarget(target);
     if (!editable) return;
     if (e.key === " " || e.key === "Enter") {
@@ -130894,6 +131651,7 @@ function bindUserCardModalOnce() {
   });
 
   document.addEventListener("pointerdown", (e) => {
+    if (e.button === 2) return;
     if (!profileWidgetInlineSearchWidgetId) return;
     const modal = document.getElementById("userCardModal");
     if (!modal || modal.classList.contains("hidden")) return;
@@ -130909,6 +131667,7 @@ function bindUserCardModalOnce() {
 
   document.addEventListener("pointerdown", (e) => {
     const target = eventTargetElement(e);
+    if (profileWidgetContextMenu && !target?.closest?.(".profileWidgetContextMenu")) closeProfileWidgetContextMenu();
     if (target?.closest?.(".userCardWidgetMenu")) return;
     closeProfileWidgetOptionMenus();
   });
@@ -130920,6 +131679,7 @@ function bindUserCardModalOnce() {
   };
   window.addEventListener("resize", keepAligned);
   window.addEventListener("scroll", keepAligned, true);
+  window.addEventListener("scroll", closeProfileWidgetContextMenu, true);
 
   document.getElementById("btnUserCardFriend")?.addEventListener("click", async () => {
     const uid = String(userCardCurrentUserId || "").trim();
@@ -131155,6 +131915,8 @@ async function openUserCardModal(userId, seed = {}, opts = {}) {
   queueUserCardModalPosition();
   markPerfEnd("profile_open", { userId: uid, shell: true });
   markPerfStart("profile_full_data", { source: "openUserCardModal", userId: uid });
+
+  startPublicAltaraPlusBadgeRefresh(uid);
 
   const [fetched, insights, widgetsResult, connectionsResult] = await Promise.all([
     dedupeRequest(`profile:full:${uid}`, () => fetchProfilesByIds([uid], { includeBio: true, force: false, maxAgeMs: PROFILE_CACHE_TTL_MS })).catch(() => []),
@@ -143714,11 +144476,16 @@ function syncPrivateCallOngoingPreviewPresence(conversationId, members = []) {
     }
     const hasMicMuted = Object.prototype.hasOwnProperty.call(normalized.meta, "micMuted");
     const hasDeafened = Object.prototype.hasOwnProperty.call(normalized.meta, "deafened");
-    if (hasMicMuted || hasDeafened) {
+    // Presence describes its published snapshot, not the time we repaint it.
+    // An old preview must never erase a newer mute/deafen signal.
+    const audioSeenAt = Number(normalized.meta.audioStateSeenAt || normalized.meta.presence_ts || 0)
+      || Date.parse(normalized.joinedAt || "") || 0;
+    const currentAudio = getCallParticipantAudioState(convId, normalized.userId);
+    if ((hasMicMuted || hasDeafened) && (!currentAudio || (audioSeenAt > 0 && audioSeenAt > currentAudio.seenAt))) {
       setCallParticipantAudioState(convId, normalized.userId, {
         micMuted: hasMicMuted ? !!normalized.meta.micMuted : null,
         deafened: hasDeafened ? !!normalized.meta.deafened : null,
-        seenAt: Date.now(),
+        seenAt: audioSeenAt || Date.now(),
       });
     }
   });
@@ -152545,28 +153312,28 @@ function ensureSpatialAudioPrototypeUi() {
     popover.setAttribute("aria-label", "Spatial Audio controls");
     popover.innerHTML =
       '<div class="spatialAudioPopover__head">' +
-        '<div><span class="spatialAudioPopover__eyebrow">Personal audio</span><strong>Spatial</strong></div>' +
+        '<div><span class="spatialAudioPopover__eyebrow">Only you hear this</span><strong>Spatial Audio</strong></div>' +
         '<span id="spatialAudioPopoverChip" class="spatialAudioChip">Off</span>' +
       '</div>' +
-      '<div id="spatialAudioStatus" class="spatialAudioPopover__status"></div>' +
       '<section class="spatialAudioSection spatialAudioSection--personal" aria-label="My Audio">' +
-        '<div class="spatialAudioSection__head"><span class="spatialAudioSection__title">My Audio</span><span class="spatialAudioSection__badge spatialAudioSection__badge--personal">Only you</span></div>' +
         '<label class="spatialAudioToggleRow">' +
-          '<span><strong>Spatial Audio</strong><small>Arrange how you hear people.</small></span>' +
+          '<span><strong>Enable spatial audio</strong><small>Hear voices from different directions. Best with headphones.</small></span>' +
           '<input id="spatialAudioPopoverEnabled" type="checkbox" data-spatial-setting="enabled" />' +
           '<span class="spatialAudioSwitch" aria-hidden="true"></span>' +
         '</label>' +
-        '<label class="spatialAudioField spatialAudioField--compact"><span><span>Spatial Blend</span><b class="spatialAudioValue" data-spatial-value="blend">80</b></span><small>How strongly voices are placed around you.</small><input type="range" min="0" max="100" step="1" data-spatial-setting="blend" /></label>' +
+        '<label class="spatialAudioField spatialAudioField--compact"><span><span>Sound style</span></span><small>Choose a starting point.</small><select class="spatialAudioSelect" data-spatial-preset></select></label>' +
+        '<label class="spatialAudioField spatialAudioField--compact"><span><span>Effect strength</span><b class="spatialAudioValue" data-spatial-value="blend">80</b></span><small>Subtle separation or a wider surround effect.</small><input type="range" min="0" max="100" step="1" data-spatial-setting="blend" /><span class="spatialAudioRangeEnds"><small>Subtle</small><small>Immersive</small></span></label>' +
+          '<button id="btnSpatialAudioPopoverOpenRoom" class="btn ghost spatialAudioPanelBtn spatialAudioPanelBtn--primary" type="button">Position people…</button>' +
+        '<details class="spatialAudioAdvanced"><summary>More options</summary><div class="spatialAudioAdvanced__content">' +
+        '<div id="spatialAudioStatus" class="spatialAudioPopover__status" role="status"></div>' +
         '<div id="spatialAudioLimitText" class="spatialAudioPlusHint"></div>' +
-        '<label class="spatialAudioField spatialAudioField--compact"><span><span>Personal Preset</span></span><small>Presets only change what you hear.</small><select class="spatialAudioSelect" data-spatial-preset></select></label>' +
-        '<label class="spatialAudioField spatialAudioField--compact"><span><span>Room Size</span><b class="spatialAudioValue" data-spatial-value="roomSize">4</b></span><small>Changes how far apart voices feel for you.</small><input type="range" min="1" max="10" step="1" data-spatial-setting="roomSize" /></label>' +
+        '<label class="spatialAudioField spatialAudioField--compact"><span><span>Voice distance</span><b class="spatialAudioValue" data-spatial-value="roomSize">4</b></span><small>Bring voices closer together or spread them out.</small><input type="range" min="1" max="10" step="1" data-spatial-setting="roomSize" /></label>' +
         '<label class="spatialAudioToggleRow spatialAudioToggleRow--compact">' +
           '<span><strong>Spatial Audio HD</strong><small>More depth for your personal mix.</small></span>' +
           '<input type="checkbox" data-spatial-setting="hdEnabled" />' +
           '<span class="spatialAudioSwitch" aria-hidden="true"></span>' +
         '</label>' +
         '<div class="spatialAudioPopover__actions spatialAudioPopover__actions--personal">' +
-          '<button id="btnSpatialAudioPopoverOpenRoom" class="btn ghost spatialAudioPanelBtn spatialAudioPanelBtn--primary" type="button">Open My Layout</button>' +
           '<button id="btnSpatialAudioPopoverAutoArrange" class="btn ghost spatialAudioPanelBtn" type="button">Auto arrange</button>' +
           '<button id="btnSpatialAudioSaveLayout" class="btn ghost spatialAudioPanelBtn" type="button">Save layout</button>' +
           '<button id="btnSpatialAudioPopoverDisable" class="btn ghost spatialAudioPanelBtn spatialAudioPanelBtn--danger" type="button">Disable</button>' +
@@ -152583,7 +153350,9 @@ function ensureSpatialAudioPrototypeUi() {
           '<div class="spatialAudioPlusRow" data-spatial-lock="core"><b>ALTARA+ Core</b><span>Save personal layouts, use Core presets, tune room size, and spatialize up to 10 speakers.</span></div>' +
           '<div class="spatialAudioPlusRow" data-spatial-lock="nova"><b>ALTARA+ Nova</b><span>HD Spatial Audio, smart auto-arrange, advanced presets, context profiles, and import/export.</span></div>' +
         '</div>' +
+        '</div></details>' +
       '</section>';
+    popover.querySelector(".spatialAudioAdvanced")?.addEventListener("toggle", positionSpatialAudioPopover);
     document.body.appendChild(popover);
   } else if (popover.parentElement !== document.body) {
     document.body.appendChild(popover);
@@ -152599,15 +153368,13 @@ function ensureSpatialAudioPrototypeUi() {
     overlay.innerHTML =
       '<div class="spatialAudioRoom__head">' +
         '<div class="spatialAudioRoom__titleBlock">' +
-          '<span id="spatialAudioRoomTitle" class="spatialAudioRoom__title">My Spatial Layout</span>' +
+          '<span id="spatialAudioRoomTitle" class="spatialAudioRoom__title">Your listening space</span>' +
           '<span id="spatialAudioRoomSubtitle" class="spatialAudioRoom__subtitle">Only you hear this</span>' +
           '<span id="spatialAudioRoomControlBadge" class="spatialAudioRoom__badge spatialAudioRoom__badge--personal">Personal</span>' +
         '</div>' +
         '<div class="spatialAudioRoom__actions">' +
           '<button id="btnSpatialAudioRoomAutoArrange" class="btn ghost spatialAudioRoom__btn" type="button">Auto arrange</button>' +
           '<button id="btnSpatialAudioRoomSaveLayout" class="btn ghost spatialAudioRoom__btn" type="button">Save layout</button>' +
-          '<button id="btnSpatialAudioRoomResetMyLayout" class="btn ghost spatialAudioRoom__btn" type="button">Reset My Layout</button>' +
-          '<button id="btnSpatialAudioRoomDisable" class="btn ghost spatialAudioRoom__btn spatialAudioRoom__btn--danger" type="button">Disable</button>' +
           '<button id="btnSpatialAudioClose" class="btn ghost spatialAudioRoom__iconBtn" type="button" aria-label="Close Spatial Layout">' + callIconSvg("close") + '</button>' +
         '</div>' +
       '</div>' +
@@ -152616,13 +153383,14 @@ function ensureSpatialAudioPrototypeUi() {
           '<section class="spatialAudioSection spatialAudioSection--personal">' +
             '<div class="spatialAudioSection__head"><span class="spatialAudioSection__title">My Audio</span><span class="spatialAudioSection__badge spatialAudioSection__badge--personal">Only you</span></div>' +
             '<label class="spatialAudioToggleRow spatialAudioToggleRow--compact">' +
-              '<span><strong>Spatial Audio</strong><small>Personal listening</small></span>' +
+              '<span><strong>Spatial Audio</strong><small>Hear voices around you</small></span>' +
               '<input id="spatialAudioRoomEnabled" type="checkbox" data-spatial-setting="enabled" />' +
               '<span class="spatialAudioSwitch" aria-hidden="true"></span>' +
             '</label>' +
-            '<label class="spatialAudioField"><span><span>Spatial Blend</span><b class="spatialAudioValue" data-spatial-value="blend">80</b></span><small>How strongly voices are placed around you.</small><input type="range" min="0" max="100" step="1" data-spatial-setting="blend" /></label>' +
-            '<label class="spatialAudioField"><span><span>Personal Preset</span></span><small>Only changes how you hear people.</small><select class="spatialAudioSelect" data-spatial-preset></select></label>' +
-            '<label class="spatialAudioField"><span><span>Room Size</span><b class="spatialAudioValue" data-spatial-value="roomSize">4</b></span><small>ALTARA+ Core tuning for your personal room.</small><input type="range" min="1" max="10" step="1" data-spatial-setting="roomSize" /></label>' +
+            '<label class="spatialAudioField"><span><span>Effect strength</span><b class="spatialAudioValue" data-spatial-value="blend">80</b></span><small>From subtle separation to immersive sound.</small><input type="range" min="0" max="100" step="1" data-spatial-setting="blend" /></label>' +
+            '<label class="spatialAudioField"><span><span>Sound style</span></span><small>Choose a starting point.</small><select class="spatialAudioSelect" data-spatial-preset></select></label>' +
+            '<details class="spatialAudioAdvanced"><summary>More options</summary><div class="spatialAudioAdvanced__content">' +
+            '<label class="spatialAudioField"><span><span>Voice distance</span><b class="spatialAudioValue" data-spatial-value="roomSize">4</b></span><small>Bring voices closer or spread them out.</small><input type="range" min="1" max="10" step="1" data-spatial-setting="roomSize" /></label>' +
             '<label class="spatialAudioToggleRow spatialAudioToggleRow--compact">' +
               '<span><strong>Spatial Audio HD</strong><small>Requires ALTARA+ Nova.</small></span>' +
               '<input type="checkbox" data-spatial-setting="hdEnabled" />' +
@@ -152640,9 +153408,12 @@ function ensureSpatialAudioPrototypeUi() {
               '<div class="spatialAudioPlusRow" data-spatial-lock="core"><b>Core personal layouts</b><span>Save layouts, Core presets, room tuning, and 10 spatialized speakers.</span></div>' +
               '<div class="spatialAudioPlusRow" data-spatial-lock="nova"><b>Nova personal tools</b><span>HD, auto-arrange, advanced presets, context profiles, and import/export.</span></div>' +
             '</div>' +
+          '<button id="btnSpatialAudioRoomResetMyLayout" class="btn ghost spatialAudioRoom__btn" type="button">Reset positions</button>' +
+          '<button id="btnSpatialAudioRoomDisable" class="btn ghost spatialAudioRoom__btn spatialAudioRoom__btn--danger" type="button">Disable</button>' +
+            '</div></details>' +
           '</section>' +
         '</section>' +
-        '<div id="spatialAudioRoomMap" class="spatialAudioRoom__map" aria-label="My spatial audio layout"></div>' +
+        '<div class="spatialAudioRoom__canvas"><p class="spatialAudioRoom__guide">Drag people to choose where their voices come from. Only you hear this.</p><div id="spatialAudioRoomMap" class="spatialAudioRoom__map" aria-label="My spatial audio layout"></div></div>' +
       '</div>';
     viewport.appendChild(overlay);
   } else if (overlay.parentElement !== viewport) {
@@ -153213,7 +153984,7 @@ function renderSpatialAudioPrototypeUi({ callActive = null, callUiVisible = null
     chip.classList.toggle("is-error", !!spatialAudioLastError);
   }
   if (statusEl) statusEl.textContent = statusText;
-  if (roomTitle) roomTitle.textContent = "My Spatial Layout";
+  if (roomTitle) roomTitle.textContent = "Your listening space";
   if (subtitle) subtitle.textContent = channelLabel + " � Only you hear this";
   if (badge) {
     badge.textContent = "Personal";
@@ -167567,6 +168338,13 @@ function renderGroupCallStageMembers() {
     tile.onclick = (ev) => {
       if (ev?.defaultPrevented || (ev && typeof ev.button === "number" && ev.button !== 0)) return;
       if (isPrivateCallSurfaceInteractiveDescendant(tile, eventTargetElement(ev))) return;
+      if (tile.getAttribute("data-call-tile-type") === "screenshare"
+        && isServerVoiceConversationById(normId(callConversationId || activeDmId || convId || ""))
+        && activatePrivateCallShareFocusFromPanel(tile, ev, { inputMethod: ev?.detail === 0 ? "keyboard" : "pointer" })) {
+        ev?.preventDefault?.();
+        ev?.stopPropagation?.();
+        return;
+      }
       const privateParticipantSurface = tile.getAttribute("data-private-call-participant-action") === "1";
       if (privateParticipantSurface) {
         const exactPrivateFocusTarget = resolveCallFocusEventTarget({
@@ -167849,6 +168627,13 @@ function renderGroupCallStageMembers() {
       });
       tile.setAttribute("data-call-focus-target", focusTargetId);
       tile.setAttribute("data-private-call-focus-target-id", focusTargetId);
+    } else if (entryTileType === "screenshare" && entry.shareKey && isServerVoiceConversationById(convId)) {
+      const focusTargetId = resolvePrivateCallFocusTarget({ surfaceType: "screenshare", screenShareTrackKey: entry.shareKey });
+      tile.setAttribute("data-call-focus-target", focusTargetId);
+      tile.setAttribute("data-private-call-focus-target-id", focusTargetId);
+      tile.setAttribute("aria-label", `Focus ${entry.label || "stream"}`);
+      tile.setAttribute("role", "button");
+      tile.tabIndex = 0;
     } else {
       tile.removeAttribute("data-call-focus-target");
       tile.removeAttribute("data-private-call-focus-target-id");
@@ -176025,6 +176810,31 @@ function reconcileCallParticipantAudioStateFromLiveKitSnapshot(conversationId, s
   });
 }
 
+function reconcilePrivateCallParticipantAudioStateFromLiveKitSnapshot(conversationId, snapshot = null) {
+  const convId = normId(conversationId || "");
+  const meId = normId(state.user?.id || "");
+  if (!convId || isServerVoiceConversationById(convId)) return;
+  for (const [rawUserId, participant] of Object.entries(snapshot?.participantsByUser || {})) {
+    const uid = normId(rawUserId || participant?.userId || "");
+    if (!uid || uid === meId || participant?.presentInRoom !== true) continue;
+    const attributes = participant.attributes || {};
+    const selfMuted = readLiveKitCallStateAttribute(attributes, CALL_STATE_ATTRIBUTE_SELF_MUTED);
+    const selfDeafened = readLiveKitCallStateAttribute(attributes, CALL_STATE_ATTRIBUTE_SELF_DEAFENED);
+    if (selfMuted == null && selfDeafened == null) continue;
+    const previous = getCallParticipantAudioState(convId, uid);
+    const clock = Number(attributes[CALL_STATE_ATTRIBUTE_AUDIO_CLOCK] || 0);
+    const hasClock = Number.isFinite(clock) && clock > 0 && clock <= Date.now() + 30000;
+    // Store the sender's state clock, never the snapshot's arrival time. Repeated
+    // snapshots must not make old state newer than a deafen/undeafen update.
+    if (previous && (!hasClock || clock < previous.seenAt)) continue;
+    setCallParticipantAudioState(convId, uid, {
+      selfMuted,
+      selfDeafened,
+      seenAt: hasClock ? clock : Date.now(),
+    });
+  }
+}
+
 function setServerVoiceTransportSnapshot(conversationId, snapshot = null) {
   const convId = normId(conversationId || snapshot?.conversationId || "");
   if (!convId) return null;
@@ -176047,6 +176857,8 @@ function setServerVoiceTransportSnapshot(conversationId, snapshot = null) {
   syncCallMediaSoundContext(convId, nextSnapshot);
   if (isServerVoiceConversationById(convId)) {
     reconcileCallParticipantAudioStateFromLiveKitSnapshot(convId, nextSnapshot);
+  } else if (isPrivateDmLiveKitTransportConversation(convId)) {
+    reconcilePrivateCallParticipantAudioStateFromLiveKitSnapshot(convId, nextSnapshot);
   }
   reconcileServerVoiceUiTransportSnapshotLeave(convId, previousSnapshot, nextSnapshot);
   return nextSnapshot;
@@ -177136,8 +177948,15 @@ function getServerVoiceScreensharePresentationEntries(conversationId = null) {
 
 function getServerVoiceScreenshareEntryForPanel(conversationId = null, panel = null) {
   if (!panel) return null;
-  return getServerVoiceScreensharePresentationEntries(conversationId)
-    .find((entry) => entry.panel === panel) || null;
+  const entries = getServerVoiceScreensharePresentationEntries(conversationId);
+  const owned = entries.find((entry) => entry.panel === panel);
+  if (owned) return owned;
+  // Grid share cards and the dedicated viewer are two surfaces of the same stream.
+  if (panel.getAttribute?.("data-call-tile-type") !== "screenshare") return null;
+  const key = String(panel.getAttribute("data-share-viewer-key") || "").trim().toLowerCase();
+  const ownerId = normId(panel.getAttribute("data-call-user-id") || "");
+  return entries.find((entry) => key && entry.shareKey === key
+    && normId(entry.share?.ownerUserId) === ownerId) || null;
 }
 
 function getServerVoiceActiveScreenshare(conversationId = null) {
@@ -185531,6 +186350,12 @@ function getLocalMicControlPresentation(conversationId = "") {
     : (muted ? t("call.unmute_mic", "Unmute microphone") : t("call.mute_mic", "Mute microphone"));
   return { muted, serverMuted, localMuted, label };
 }
+function syncLocalVoiceControlIcon(button, kind, muted) {
+  if (!button) return;
+  const name = kind + (muted ? "Off" : "");
+  const icon = button.querySelector("svg[data-call-icon]");
+  if (icon && icon.getAttribute("data-call-icon") !== name) icon.outerHTML = callIconSvg(name);
+}
 function refreshLocalVoiceControlButtons(conversationId = "") {
   const micControl = getLocalMicControlPresentation(conversationId);
   const outputMuted = getEffectiveLocalDeafened(conversationId);
@@ -185543,6 +186368,7 @@ function refreshLocalVoiceControlButtons(conversationId = "") {
     for (const id of ids) {
       const button = document.getElementById(id);
       if (!button) continue;
+      syncLocalVoiceControlIcon(button, ids[0] === "btnMicToggle" ? "mic" : "headphones", enabled);
       button.classList.toggle("is-on", enabled);
       button.setAttribute("aria-pressed", String(enabled));
       if (ids[0] === "btnMicToggle") {
@@ -186519,18 +187345,60 @@ function installServerVoiceJoinActionDelegation() {
   });
 }
 
+// Speaking is a short-lived decoration of admitted roster rows, never membership
+// authority. Only an already connected publisher sends on the existing channel.
+function publishServerVoicePreviewSpeaking() {
+  if (!inCall || !isServerVoiceV2Enabled()) return;
+  const context = captureCurrentServerVoiceMembershipAudioStateContext();
+  if (!context || !isCurrentServerVoiceMembershipAudioStateContext(context)) return;
+  const member = getServerVoiceV2Member(context.userId);
+  if (!member || member.sessionId !== context.sessionId || member.conversationId !== context.conversationId
+    || !isServerVoiceV2MemberRowFresh(member) || isServerVoiceV2AssignmentTerminallyLeft(member)) return;
+  const now = Date.now();
+  const key = `${member.serverId}:${member.sessionId}:${member.assignmentNonce}:${member.channelId}`;
+  const speaking = isCallSpeakingUiUserActive(context.userId) && !getEffectiveLocalMicMuted(context.conversationId);
+  const previous = serverVoicePreviewSpeakingPublication;
+  if (previous?.key === key && previous.speaking === speaking && (!speaking || now - previous.at < 1000)) return;
+  const clock = Math.max(now, (previous?.clock || 0) + 1);
+  serverVoicePreviewSpeakingPublication = { key, speaking, at: now, clock };
+  void broadcastServerVoiceV2ControlPlaneRow({
+    serverId: member.serverId, userId: member.userId, sessionId: member.sessionId,
+    channelId: member.channelId, assignmentNonce: member.assignmentNonce, speaking, clock,
+  }, "server_voice_v2_speaking").catch(() => false);
+}
+
+function handleServerVoicePreviewSpeaking(payload = {}, serverId = "") {
+  const signal = payload?.row || payload;
+  const member = getServerVoiceV2Member(signal?.userId);
+  if (!member || member.serverId !== normId(serverId) || signal.serverId !== member.serverId
+    || !member.sessionId || signal.sessionId !== member.sessionId || signal.channelId !== member.channelId
+    || signal.assignmentNonce !== member.assignmentNonce || typeof signal.speaking !== "boolean"
+    || !Number.isFinite(signal.clock) || signal.clock <= (member.previewSpeaking?.clock || 0)
+    || !isServerVoiceV2MemberRowFresh(member) || isServerVoiceV2AssignmentTerminallyLeft(member)) return false;
+  member.previewSpeaking = { clock: signal.clock, until: signal.speaking ? Date.now() + 2500 : 0 };
+  syncVoiceMemberRowLiveState(member.conversationId);
+  return true;
+}
+
 function syncServerVoiceEmptyState({
   enabled = false,
   show = false,
   conversationId = "",
-  connectedCount = 0,
 } = {}) {
   const dock = document.getElementById("dmCallDock");
   if (!dock) return;
 
   let card = document.getElementById("voiceChannelEmptyState");
-  if (!enabled) {
-    if (card) card.hidden = true;
+  const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
+  const selectedId = normId(activeDmId || state.activeDm?.conversationId || "");
+  if (enabled && convId !== selectedId) return;
+  if (!enabled || !show || isActiveServerVoiceCallJoined(convId)) {
+    if (card) {
+      card.hidden = true;
+      card.setAttribute("aria-hidden", "true");
+    }
+    if (serverVoicePreviewExpiryTimer) clearTimeout(serverVoicePreviewExpiryTimer);
+    serverVoicePreviewExpiryTimer = null;
     return;
   }
 
@@ -186538,18 +187406,22 @@ function syncServerVoiceEmptyState({
     card = document.createElement("section");
     card.id = "voiceChannelEmptyState";
     card.className = "voiceChannelEmptyState";
+    card.setAttribute("aria-labelledby", "voiceChannelPreviewTitle");
     card.hidden = true;
     card.innerHTML = `
       <div class="voiceChannelEmptyState__card">
-        <div class="voiceChannelEmptyState__title" data-voice-empty-title>Canal de voz</div>
-        <div class="voiceChannelEmptyState__sub" data-voice-empty-sub>Ninguem no canal de voz agora.</div>
-        <button class="btn primary voiceChannelEmptyState__join" type="button" data-voice-empty-join data-server-voice-join-action="enter-card">Entrar no canal</button>
+        <div class="voiceChannelPreview__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg></div>
+        <div class="voiceChannelPreview__eyebrow">VOICE CHANNEL</div>
+        <h2 id="voiceChannelPreviewTitle" class="voiceChannelEmptyState__title" data-voice-empty-title></h2>
+        <div class="voiceChannelEmptyState__sub" data-voice-empty-sub role="status" aria-live="polite" aria-atomic="true"></div>
+        <div class="voiceChannelPreview__participants" data-voice-preview-participants role="list" aria-label="People in voice"></div>
+        <p class="voiceChannelPreview__hint" data-voice-preview-hint></p>
+        <button class="btn primary voiceChannelEmptyState__join" type="button" data-voice-empty-join data-server-voice-join-action="enter-card">Join Voice</button>
       </div>
     `;
     dock.appendChild(card);
   }
 
-  const convId = normId(conversationId || activeDmId || state.activeDm?.conversationId || "");
   const channelContext = resolveServerChannelTimelineContext({ conversationId: convId, channelType: "voice" });
   const serverId = normId(channelContext?.serverId || state.activeDm?.serverId || "");
   const serverChannelId = normId(channelContext?.channelId || state.activeDm?.channelId || "");
@@ -186558,9 +187430,13 @@ function syncServerVoiceEmptyState({
   card.dataset.serverId = serverId;
   card.dataset.serverChannelId = serverChannelId;
   const meta = getActiveConversationMeta(convId) || getConversationMeta(convId) || {};
-  const channelName = normalizeConversationLabel(meta?.displayName || "Canal de voz", "Canal de voz");
+  const channelName = normalizeConversationLabel(channelContext?.channel?.name || meta?.displayName || "Voice channel", "Voice channel");
   const meId = normId(state.user?.id || "");
-  const visibleIds = getServerVoiceChannelOccupantIds(convId, {
+  const visibleIds = isServerVoiceV2Enabled()
+    ? getServerVoiceV2ChannelMembers(serverChannelId, serverId)
+      .filter((member) => member.conversationId === convId && !isServerVoiceV2AssignmentTerminallyLeft(member))
+      .map((member) => member.userId)
+    : getServerVoiceChannelOccupantIds(convId, {
     triggerReason: "sync_server_voice_empty_state",
     callerFunction: "syncServerVoiceEmptyState",
   });
@@ -186571,34 +187447,86 @@ function syncServerVoiceEmptyState({
     sourceKind: "channel_occupants_control_plane",
     usesUnifiedSource: true,
   });
-  const localVisible = !!(meId && visibleIds.includes(meId));
-  let count = Math.max(0, Number(connectedCount || 0));
-  if (localVisible && count <= 0) {
-    count = Math.max(1, visibleIds.length || 1);
-    logServerVoiceUiParticipantsEvent("ui.render_source_mismatch", convId, visibleIds, "sync_server_voice_empty_state", {
-      callerFunction: "syncServerVoiceEmptyState",
-      reason: "invariant.local_visible_but_empty_count_or_nobody_state",
-      localParticipantId: meId || null,
-      requestedCount: Math.max(0, Number(connectedCount || 0)),
-      correctedCount: count,
-    });
-  }
+  // The local exit fence takes effect before its membership DELETE arrives.
+  const occupantIds = visibleIds.filter((id) => id !== meId);
+  const count = occupantIds.length;
   const leavePending = !!(
     serverVoiceLeavingPresentation
     && normId(serverVoiceLeavingPresentation.conversationId || "") === convId
     && serverVoiceOperationLifecycle.getByGeneration(serverVoiceLeavingPresentation.generation)?.phase === "leaving"
   );
-  const showCard = !!(show && !localVisible && !leavePending);
+  const miniSession = getAuthoritativeCallMiniSession();
+  const switching = miniSession?.kind === "server" && normId(miniSession.conversationId) !== convId;
 
   const titleEl = card.querySelector("[data-voice-empty-title]");
   const subEl = card.querySelector("[data-voice-empty-sub]");
   const joinBtn = card.querySelector("[data-voice-empty-join]");
   if (titleEl) titleEl.textContent = channelName;
   if (subEl) {
-    subEl.textContent = count > 0
-      ? `${count} pessoa${count === 1 ? "" : "s"} no canal agora.`
-      : "Ninguem no canal de voz agora.";
+    const text = count > 0 ? `${count} ${count === 1 ? "person" : "people"} in voice` : "It's quiet in here.";
+    if (subEl.textContent !== text) subEl.textContent = text;
   }
+  const hint = card.querySelector("[data-voice-preview-hint]");
+  hint.textContent = switching ? "Joining will move you from your current voice channel."
+    : count ? "Join the conversation whenever you're ready." : "Be the first to join voice.";
+  const group = card.querySelector("[data-voice-preview-participants]");
+  const tileIds = occupantIds.slice(0, 8);
+  const slots = Math.min(count, 9);
+  group.style.setProperty("--voice-preview-columns", String(slots <= 4 ? Math.max(1, slots) : Math.ceil(slots / 2)));
+  const tiles = new Map(Array.from(group.querySelectorAll("[data-voice-preview-user]")).map((tile) => [tile.dataset.voicePreviewUser, tile]));
+  for (const [id, tile] of tiles) if (!tileIds.includes(id)) tile.remove();
+  let nextExpiry = Infinity;
+  for (const uid of occupantIds) {
+    const member = getServerVoiceV2Member(uid);
+    if (member) nextExpiry = Math.min(nextExpiry, getServerVoiceV2RowHeartbeatTime(member) + SERVER_VOICE_V2_STALE_MEMBER_MS + 1);
+  }
+  for (const uid of tileIds) {
+    let tile = tiles.get(uid);
+    if (!tile) {
+      tile = document.createElement("div");
+      tile.className = "voiceChannelPreview__participant";
+      tile.dataset.voicePreviewUser = uid;
+      tile.setAttribute("role", "listitem");
+      tile.innerHTML = '<div class="voiceChannelPreview__avatar"></div><div class="voiceChannelPreview__name"></div><div class="voiceChannelPreview__badges"></div>';
+    }
+    const identity = getGroupMemberIdentity(convId, uid);
+    setServerVoiceParticipantAvatar(tile.querySelector(".voiceChannelPreview__avatar"), identity);
+    const name = tile.querySelector(".voiceChannelPreview__name");
+    name.textContent = identity.label;
+    name.title = identity.label;
+    const badges = tile.querySelector(".voiceChannelPreview__badges");
+    const badgesHtml = buildCallAudioStateBadgesHtml(uid, convId)
+      + (isServerVoiceRosterParticipantScreenSharing(convId, uid) ? '<span class="voiceChannelPreview__live" title="Screen sharing" aria-label="Screen sharing">LIVE</span>' : "");
+    if (badges.innerHTML !== badgesHtml) badges.innerHTML = badgesHtml;
+    const member = getServerVoiceV2Member(uid);
+    const fresh = member?.conversationId === convId && isServerVoiceV2MemberRowFresh(member)
+      && !isServerVoiceV2AssignmentTerminallyLeft(member);
+    const until = fresh ? Number(member.previewSpeaking?.until || 0) : 0;
+    const audio = getParticipantAudioStateForUi(uid, convId);
+    tile.classList.toggle("is-speaking", until > Date.now() && !audio?.micMuted && !audio?.effectiveMuted);
+    if (until > Date.now()) nextExpiry = Math.min(nextExpiry, until);
+    if (fresh) nextExpiry = Math.min(nextExpiry, getServerVoiceV2RowHeartbeatTime(member) + SERVER_VOICE_V2_STALE_MEMBER_MS + 1);
+    if (group.children[tileIds.indexOf(uid)] !== tile) group.insertBefore(tile, group.children[tileIds.indexOf(uid)] || null);
+  }
+  let overflow = group.querySelector("[data-voice-preview-overflow]");
+  if (count > tileIds.length) {
+    if (!overflow) {
+      overflow = document.createElement("div");
+      overflow.className = "voiceChannelPreview__overflow";
+      overflow.setAttribute("data-voice-preview-overflow", "");
+      overflow.setAttribute("role", "listitem");
+      group.appendChild(overflow);
+    }
+    overflow.textContent = `+${count - tileIds.length}`;
+    overflow.setAttribute("aria-label", `${count - tileIds.length} more people in voice`);
+  } else overflow?.remove();
+  group.hidden = count === 0;
+  card.classList.toggle("has-participants", count > 0);
+  if (serverVoicePreviewExpiryTimer) clearTimeout(serverVoicePreviewExpiryTimer);
+  serverVoicePreviewExpiryTimer = Number.isFinite(nextExpiry) ? setTimeout(() => {
+    serverVoicePreviewExpiryTimer = null;
+    if (!card.hidden) syncServerVoiceEmptyState({ enabled: true, show: true, conversationId: card.dataset.conversationId });
+  }, Math.max(1, nextExpiry - Date.now())) : null;
   if (joinBtn) {
     joinBtn.disabled = leavePending || !convId || !serverId || !serverChannelId;
     joinBtn.setAttribute("aria-disabled", joinBtn.disabled ? "true" : "false");
@@ -186606,10 +187534,12 @@ function syncServerVoiceEmptyState({
     joinBtn.dataset.serverId = serverId;
     joinBtn.dataset.serverChannelId = serverChannelId;
     joinBtn.dataset.channelName = channelName;
+    joinBtn.textContent = leavePending ? "Leaving voice…" : switching ? "Switch to this channel" : "Join Voice";
   }
 
   installServerVoiceJoinActionDelegation();
-  card.hidden = !showCard;
+  card.hidden = false;
+  card.setAttribute("aria-hidden", "false");
 }
 
 function getPrivateCallSurfaceAuthorityDecision() {
@@ -187985,10 +188915,10 @@ function refreshCallUIUnsafe() {
     stagePlaceholder?.removeAttribute("data-call-reconnecting");
     stagePlaceholder?.removeAttribute("aria-busy");
   }
-  stagePlaceholder?.classList.toggle("is-speaking", !!mainUserId && isCallSpeakingUiUserActive(mainUserId));
+  stagePlaceholder?.classList.toggle("is-speaking", requestedFocusTileType !== "screenshare" && !!mainUserId && isCallSpeakingUiUserActive(mainUserId));
   stageViewport?.classList.toggle(
     "is-speaking-spotlight",
-    !!(stageLayoutMode === "focus" && mainUserId && isCallSpeakingUiUserActive(mainUserId))
+    !!(requestedFocusTileType !== "screenshare" && stageLayoutMode === "focus" && mainUserId && isCallSpeakingUiUserActive(mainUserId))
   );
   applyCallTileColorToEl(tileRemote, effectiveRemoteUserId, remoteTileColor, {
     conversationId: stageConvId,
@@ -188536,6 +189466,7 @@ function refreshCallUIUnsafe() {
   if (btnMicToggleSmall) btnMicToggleSmall.classList.toggle("is-on", !!effectiveMicMuted);
   [btnMicToggle, btnHeaderMicToggle, btnMicToggleSmall].forEach((button) => {
     if (!button) return;
+    syncLocalVoiceControlIcon(button, "mic", !!effectiveMicMuted);
     button.classList.toggle("is-server-muted", !!localServerMuted);
     button.classList.toggle("is-voice-permission-denied", speakPermissionDenied);
     button.setAttribute("data-server-muted", localServerMuted ? "1" : "0");
@@ -188550,6 +189481,8 @@ function refreshCallUIUnsafe() {
   });
   [btnDeafenToggle, btnHeaderDeafenToggle, btnDeafenToggleSmall].forEach((button) => {
     if (!button) return;
+    syncLocalVoiceControlIcon(button, "headphones", !!effectiveDeafened);
+    button.setAttribute("aria-pressed", String(!!effectiveDeafened));
     button.classList.toggle("is-server-deafened", !!localServerDeafened);
     button.setAttribute("data-server-deafened", localServerDeafened ? "1" : "0");
     button.removeAttribute("aria-disabled");
@@ -188948,12 +189881,6 @@ function refreshCallUIUnsafe() {
     activeViewedConvId &&
     (isServerVoiceConversationMeta(viewedMeta) || isServerVoiceConversationById(activeViewedConvId))
   );
-  const serverVoiceConnectedCount = serverVoiceConversationOpen
-    ? getServerVoiceChannelConnectedCount(activeViewedConvId, {
-      triggerReason: "refresh_call_ui_empty_state",
-      callerFunction: "refreshCallUI",
-    })
-    : 0;
   const serverVoiceCallJoinedInView = !!(
     serverVoiceConversationOpen
     && callActive
@@ -189023,9 +189950,8 @@ function refreshCallUIUnsafe() {
   });
   syncServerVoiceEmptyState({
     enabled: serverVoiceConversationOpen,
-    show: serverVoiceConversationOpen && !callActive && !inCall,
+    show: serverVoiceConversationOpen && !serverVoiceCallJoinedInView,
     conversationId: activeViewedConvId,
-    connectedCount: serverVoiceConnectedCount,
   });
   if (bar) bar.classList.toggle("is-server-voice-mini-panel", shouldUseSidebarMiniPanel);
 
@@ -196564,6 +197490,10 @@ function projectServerVoiceLocalExitImmediately(conversationId = "", previousVis
   syncCallStageLayoutState(false);
   setCallButtons("idle");
   setCallStatus("", false);
+  if (normId(activeDmId || state.activeDm?.conversationId || "") === convId) {
+    syncServerVoiceCallLayout(true, { activeCall: false });
+    syncServerVoiceEmptyState({ enabled: true, show: true, conversationId: convId });
+  }
   if (timing && !timing.targetedDomCommittedAt) timing.targetedDomCommittedAt = Date.now();
   return remoteParticipantIds;
 }
@@ -196581,7 +197511,6 @@ function finishServerVoiceLocalExitProjectionAfterPaint(
     enabled: true,
     show: true,
     conversationId: convId,
-    connectedCount: remoteParticipantIds.length,
   });
   return remoteParticipantIds;
 }
@@ -211747,7 +212676,6 @@ function ensureMeStatusMenu() {
 }
 
 let meProfilePopoutBound = false;
-let meProfilePopoutWidgetsRequestSeq = 0;
 let meProfilePopoutRequestSeq = 0;
 let meProfilePopoutTargetUserId = "";
 let meProfilePopoutTargetSeed = null;
@@ -211948,56 +212876,6 @@ function getMeProfilePopoutAvatarHtml(profile = null) {
   return getAvatarFallbackHtml(uid, seed, "avatar", "meProfilePopout__avatarFallback");
 }
 
-function buildMeProfilePopoutWidgetPreviewHtml(userId = "", { loading = false } = {}) {
-  const widgets = getProfileWidgetsForViewer(userId, getCachedProfileWidgetsForUser(userId)).slice(0, 3);
-  const previews = [];
-  for (const widget of widgets) {
-    const title = normalizeProfileWidgetTitle(widget?.title || "") || t("profile.widgets.card.title", "Widget");
-    const items = Array.isArray(widget?.items) ? widget.items : [];
-    const firstItem = getProfileWidgetFeaturedItem(widget) || items.find((item) => normalizeProfileWidgetTitle(item?.title || "")) || null;
-    const coverUrl = getProfileWidgetArtworkUrl(firstItem);
-    previews.push({
-      title: firstItem ? normalizeProfileWidgetTitle(firstItem.title) : title,
-      meta: firstItem ? title : t("profile.widgets.preview", "Profile widget"),
-      type: getProfileWidgetTypeLabel(widget?.widget_type || "") || t("profile.widgets.card.title", "Widget"),
-      coverUrl,
-    });
-    if (previews.length >= 2) break;
-  }
-
-  if (!previews.length) {
-    const message = loading
-      ? t("profile.widgets.loading.title", "Loading widgets...")
-      : t("profile.widgets.empty.preview", "Open the full profile to explore widgets.");
-    return `
-      <div class="meProfilePopout__emptyPreview">
-        <div class="meProfilePopout__emptyTitle">${esc(message)}</div>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="meProfilePopout__widgetList">
-      ${previews.map((item) => {
-        const initial = String(item.title || "?").trim().charAt(0).toUpperCase() || "?";
-        const mediaHtml = item.coverUrl
-          ? lazyMediaImageHtml(item.coverUrl, { alt: "", attrs: 'draggable="false"' })
-          : esc(initial);
-        return `
-          <button class="meProfilePopout__widgetCard" type="button" data-me-popout-act="view-full">
-            <span class="meProfilePopout__widgetMedia" aria-hidden="true">${mediaHtml}</span>
-            <span class="meProfilePopout__widgetBody">
-              <span class="meProfilePopout__widgetType">${esc(item.type)}</span>
-              <span class="meProfilePopout__widgetName">${esc(item.title)}</span>
-              <span class="meProfilePopout__widgetMeta">${esc(item.meta)}</span>
-            </span>
-          </button>
-        `;
-      }).join("")}
-    </div>
-  `;
-}
-
 function getServerMiniProfileJoinedValue(memberRow = null) {
   return memberRow?.joinedAt
     || memberRow?.joined_at
@@ -212179,16 +213057,12 @@ function buildServerMiniProfileActivityCompactHtml(activityInput = null) {
   const title = String(activity.name || (isSpotify ? "Spotify" : "Activity")).trim() || (isSpotify ? "Spotify" : "Activity");
   const meta = String(isSpotify ? (activity.artist || activity.details || "Spotify") : formatGameActivityDurationText(activity.startedAt)).trim();
   const eyebrow = isSpotify ? "Listening to Spotify" : getActivityVerbLabel(activity);
-  const artwork = getServerMiniProfileActivityArtwork(activity);
-  const initial = title.charAt(0).toUpperCase() || "?";
   const progressHtml = isSpotify ? buildSpotifyProgressHtml(activity) : "";
   return `
     <section class="serverMiniCompact__activity" data-server-mini-activity="${escAttr(isSpotify ? "spotify" : "activity")}">
-      <div class="serverMiniCompact__activityCover" aria-hidden="true">
-        ${artwork ? `<img src="${escAttr(artwork)}" alt="" loading="lazy" onerror="this.hidden=true" />` : `<span>${esc(initial)}</span>`}
-      </div>
+      ${buildCompactActivityArtworkHtml(activity, "serverMiniCompact__activityCover")}
       <div class="serverMiniCompact__activityBody">
-        <div class="serverMiniCompact__activityEyebrow">${esc(eyebrow)}</div>
+        <div class="serverMiniCompact__activityEyebrow">${isSpotify ? spotifyActivityIcon : ""}${esc(eyebrow)}</div>
         <div class="serverMiniCompact__activityTitle">${esc(title)}</div>
         <div class="serverMiniCompact__activityMeta">${esc(meta || (isSpotify ? "Spotify" : "Active now"))}</div>
         ${progressHtml}
@@ -212218,7 +213092,7 @@ function buildServerMiniProfileCompactHtml(profile = null, { loading = false } =
   const roles = serverCtx?.roles || [];
   const timeout = serverCtx?.timeout || null;
   const bio = String(profile?.bio || "").trim();
-  const activityHtml = buildServerMiniProfileActivityCompactHtml(getPresenceActivityForUser(uid));
+  const activityHtml = getPresenceActivitiesForUser(uid).map(buildServerMiniProfileActivityCompactHtml).join("");
   const messageAction = !isSelf ? `<button class="meProfilePopout__action meProfilePopout__action--primary" type="button" data-me-popout-act="server-message">Message</button>` : "";
   const manageRolesAction = serverCtx?.canManageRoles ? `<button class="meProfilePopout__action" type="button" data-me-popout-act="server-manage-roles">${esc(t("surface.manage_roles", "Manage Roles"))}</button>` : "";
   const nicknameAction = serverCtx?.canChangeNickname ? `<button class="meProfilePopout__action" type="button" data-me-popout-act="server-nickname">${esc(t("surface.change_server_nickname", "Change Server Nickname"))}</button>` : "";
@@ -212296,7 +213170,6 @@ function refreshOpenServerMiniProfileContext(reason = "server_profile_refresh") 
   popout.innerHTML = buildMeProfilePopoutHtml(profile, { loading: false });
   queueManagedGifPlaybackSync(popout);
   applyMeProfilePopoutBannerStyle(profile);
-  renderMeProfilePopoutWidgetsPreview({ loading: false });
   positionMeProfilePopout();
   logMeProfilePopoutDebug("server_profile.refreshed", { reason, serverId: sid, userId: uid });
   return true;
@@ -212344,7 +213217,6 @@ function buildMeProfilePopoutHtml(profileInput = null, { loading = false } = {})
     ? getCurrentMeProfileSnapshot(profileInput || null)
     : (profileInput || getCachedProfile(uid) || buildMiniProfileSeedForUser(uid, meProfilePopoutTargetSeed || {}) || {});
   const isSelf = isMeProfilePopoutSelf(uid);
-  const hasWidgetCache = userCardWidgetsCache.has(uid);
   const displayName = profile?.display_name || profile?.username || "User";
   const username = profile?.username || "";
   const pronouns = normalizePronouns(profile?.pronouns || "");
@@ -212360,34 +213232,19 @@ function buildMeProfilePopoutHtml(profileInput = null, { loading = false } = {})
   if (isServerContext) {
     return buildServerMiniProfileCompactHtml(profile, { loading });
   }
-  const statusControlHtml = isSelf
-    ? `
-            <button class="meProfilePopout__statusText" type="button" data-me-popout-act="status" aria-label="${escAttr(t("settings.section.status", "Status"))}: ${escAttr(statusLabel)}">
-              <span class="dotMini" data-status-mini="${escAttr(status)}"></span>
-              <span data-me-popout-status-label="1">${esc(statusLabel)}</span>
-            </button>
-            <button class="meProfilePopout__statusAction" type="button" data-me-popout-act="status">${esc(t("settings.section.status", "Status"))}</button>
-      `
-    : `
-            <div class="meProfilePopout__statusText meProfilePopout__statusText--readonly" aria-label="${escAttr(statusLabel)}">
-              <span class="dotMini" data-status-mini="${escAttr(status || "offline")}"></span>
-              <span data-me-popout-status-label="1">${esc(statusLabel)}</span>
-            </div>
-      `;
+  const statusControlHtml = isSelf ? "" : `<div class="meProfilePopout__statusLine meProfilePopout__statusLine--readonly"><div class="meProfilePopout__statusText meProfilePopout__statusText--readonly" aria-label="${escAttr(statusLabel)}"><span class="dotMini" data-status-mini="${escAttr(status || "offline")}"></span><span data-me-popout-status-label="1">${esc(statusLabel)}</span></div></div>`;
   const altaraBadgeHtml = isSelf
     ? buildCurrentUserAltaraPlusProfileBadgeHtml({ className: "altaraPlusProfileBadge meProfilePopout__altaraProfileBadge" })
     : "";
   const actionsHtml = isSelf
     ? `
         <button class="meProfilePopout__action" type="button" data-me-popout-act="edit">${esc(t("profile.edit", "Edit Profile"))}</button>
-        <button class="meProfilePopout__action" type="button" data-me-popout-act="settings">${esc(t("settings.title", "Settings"))}</button>
+        <button class="meProfilePopout__action" type="button" data-me-popout-act="${getDesktopAccountsBridge() ? "switch-account" : "settings"}">${esc(getDesktopAccountsBridge() ? desktopAccountText("switch") : t("settings.title", "Settings"))}</button>
       `
     : `
         <button class="meProfilePopout__action meProfilePopout__action--primary" type="button" data-me-popout-act="view-full">${esc(t("dm.view_full_profile", "View Full Profile"))}</button>
       `;
-  const gameActivityHtml = buildGameActivityCardHtml(getPresenceActivityForUser(uid), {
-    className: "meProfilePopout__activity",
-  });
+  const gameActivityHtml = buildUserProfileActivityStack(getPresenceActivitiesForUser(uid), uid, "mini");
   const aboutHtml = `
           <section class="meProfilePopout__about">
             <div class="meProfilePopout__sectionLabel">${esc(t("profile.about", "About"))}</div>
@@ -212413,20 +213270,9 @@ function buildMeProfilePopoutHtml(profileInput = null, { loading = false } = {})
           </button>
         </div>
         <div class="meProfilePopout__body">
-          <div class="meProfilePopout__statusLine${isSelf ? "" : " meProfilePopout__statusLine--readonly"}">
-            ${statusControlHtml}
-          </div>
-          ${gameActivityHtml}
+          ${statusControlHtml}
           ${aboutHtml}
-          ${buildMeProfilePopoutConnectionsHtml(profile, { loading })}
-          <section class="meProfilePopout__widgets">
-            <div class="meProfilePopout__sectionTop">
-              <div class="meProfilePopout__sectionLabel">${esc(t("profile.widgets.title", "Widgets"))}</div>
-            </div>
-            <div data-me-popout-widgets-preview>
-              ${buildMeProfilePopoutWidgetPreviewHtml(uid, { loading: loading || !hasWidgetCache })}
-            </div>
-          </section>
+          ${gameActivityHtml}
         </div>
       </div>
       <div class="meProfilePopout__actions">
@@ -212434,45 +213280,6 @@ function buildMeProfilePopoutHtml(profileInput = null, { loading = false } = {})
       </div>
     </div>
   `;
-}
-
-function buildMeProfilePopoutConnectionsHtml(profileInput = null, { loading = false } = {}) {
-  const uid = normId(profileInput?.id || getMeProfilePopoutTargetId());
-  if (!uid) return "";
-  const isSelf = isMeProfilePopoutSelf(uid);
-  const profile = isSelf ? getCurrentMeProfileSnapshot(profileInput || null) : (profileInput || getCachedProfile(uid) || {});
-  const html = buildProfileConnectionsCompactSectionHtml(profile, { userId: uid, isSelf, loading, title: "Connections" });
-  if (!html) return "";
-  return '<section class="meProfilePopout__connections">' + html + '</section>';
-}
-
-function renderMeProfilePopoutWidgetsPreview({ loading = false } = {}) {
-  const popout = document.getElementById("meProfilePopout");
-  if (!popout || !popout.classList.contains("is-open")) return;
-  const uid = getMeProfilePopoutTargetId();
-  const host = popout.querySelector("[data-me-popout-widgets-preview]");
-  if (!uid || !host) return;
-  host.innerHTML = buildMeProfilePopoutWidgetPreviewHtml(uid, { loading });
-  bindLazyMediaImages(host);
-}
-
-async function refreshMeProfilePopoutWidgetsPreview({ force = true } = {}) {
-  const uid = getMeProfilePopoutTargetId();
-  if (!uid) return;
-  const requestId = ++meProfilePopoutWidgetsRequestSeq;
-  const hasCachedWidgets = getCachedProfileWidgetsForUser(uid).length > 0;
-  renderMeProfilePopoutWidgetsPreview({ loading: !hasCachedWidgets });
-  try {
-    await fetchProfileWidgetsForUser(uid, { force: !!force });
-  } catch (_) {
-    // Keep the compact popout quiet; the full profile owns detailed widget errors.
-  }
-  if (requestId !== meProfilePopoutWidgetsRequestSeq) return;
-  const popout = document.getElementById("meProfilePopout");
-  if (!popout || !popout.classList.contains("is-open")) return;
-  if (uid !== getMeProfilePopoutTargetId()) return;
-  renderMeProfilePopoutWidgetsPreview({ loading: false });
-  positionMeProfilePopout();
 }
 
 function applyMeProfilePopoutBannerStyle(profileInput = null) {
@@ -212591,7 +213398,6 @@ function closeMeProfilePopout() {
   meProfilePopoutContext = null;
   clearActivePopover("profile-mini");
   meProfilePopoutRequestSeq += 1;
-  meProfilePopoutWidgetsRequestSeq += 1;
 }
 
 function getMeUserCardSeed() {
@@ -212729,7 +213535,6 @@ async function openProfileMiniPopoutForUser(userId, seed = {}, opts = {}) {
   applyMeProfilePopoutBannerStyle(initial);
   positionMeProfilePopout();
   const requestId = ++meProfilePopoutRequestSeq;
-  void refreshMeProfilePopoutWidgetsPreview({ force: true });
   logMeProfilePopoutDebug("user_popout.opened", { userId: uid });
   const serverContextForLoad = meProfilePopoutContext || {};
   const serverContextLoadPromise = String(serverContextForLoad.kind || "").trim().toLowerCase() === "server" && serverContextForLoad.serverId
@@ -212738,8 +213543,6 @@ async function openProfileMiniPopoutForUser(userId, seed = {}, opts = {}) {
 
   const [profilesResult] = await Promise.all([
     fetchProfilesByIds([uid], { includeBio: true, force: true }).catch(() => []),
-    fetchProfileWidgetsForUser(uid, { force: true }).catch(() => getCachedProfileWidgetsForUser(uid)),
-    fetchPublicConnectedAccountsForUser(uid, { force: true }).catch(() => getCachedPublicConnectedAccountsForUser(uid)),
     serverContextLoadPromise,
   ]);
   if (requestId !== meProfilePopoutRequestSeq || uid !== getMeProfilePopoutTargetId()) return;
@@ -212748,7 +213551,6 @@ async function openProfileMiniPopoutForUser(userId, seed = {}, opts = {}) {
   popout.innerHTML = buildMeProfilePopoutHtml(freshProfile, { loading: false });
   queueManagedGifPlaybackSync(popout);
   applyMeProfilePopoutBannerStyle(freshProfile);
-  renderMeProfilePopoutWidgetsPreview({ loading: false });
   positionMeProfilePopout();
 }
 
@@ -212812,6 +213614,11 @@ function bindMeProfilePopoutDockOnce() {
     e.preventDefault();
     e.stopPropagation();
     const action = String(actionBtn.getAttribute("data-me-popout-act") || "").trim();
+    if (action === "switch-account") {
+      closeMeProfilePopout();
+      void openDesktopAccountSwitcher({ profile: state.me });
+      return;
+    }
     const uid = getMeProfilePopoutTargetId();
     const isSelf = isMeProfilePopoutSelf(uid);
     if (action === "view-full") {
@@ -213581,9 +214388,12 @@ function getCurrentSpotifyPresenceActivity() {
 }
 
 function getCurrentPublicPresenceActivity() {
-  return getCurrentSpotifyPresenceActivity() || getCurrentPublicGameActivityForPresenceSafe();
+  return getCurrentPublicPresenceActivities()[0] || null;
 }
 
+function getCurrentPublicPresenceActivities() {
+  return selectPublishedActivities({ activities: [getCurrentSpotifyPresenceActivity(), getCurrentPublicGameActivityForPresenceSafe()] }, sanitizePresenceActivity);
+}
 
 function getPresenceActivitySignature(activity = null) {
   const normalized = sanitizePresenceActivity(activity || null);
@@ -213646,13 +214456,12 @@ function getCurrentPublicGameActivityForPresenceSafe() {
 }
 
 function syncCurrentPresenceActivityFromConnections({ publishPresence = true, render = true } = {}) {
-  const next = getCurrentSpotifyPresenceActivity() || getCurrentPublicGameActivityForPresenceSafe();
-  if (state.me) state.me.activity = next || null;
-  if (state.user?.id) cacheProfileRow({ id: state.user.id, activity: next || null });
-  if (!accountPrivacy.allowsActivity()) {
-    if (state.me) { state.me.spotify_activity = null; state.me.spotifyActivity = null; }
-    if (state.user?.id) cacheProfileRow({ id: state.user.id, spotify_activity: null, spotifyActivity: null });
-  }
+  const activities = getCurrentPublicPresenceActivities();
+  const next = activities[0] || null;
+  const spotify = activities.find(activity => activity.type === "listening" && activity.provider === SPOTIFY_PROVIDER) || null;
+  const published = { activities, activity: next || null, spotify_activity: spotify, spotifyActivity: spotify };
+  if (state.me) Object.assign(state.me, published);
+  if (state.user?.id) cacheProfileRow({ id: state.user.id, ...published });
   if (render) refreshConnectionActivityDisplays();
   if (publishPresence) {
     try { void presence?.refresh?.(); } catch (_) {}
@@ -213667,12 +214476,13 @@ function applySpotifyPlaybackActivity(activityInput = null, {
   reason = "spotify-activity-changed",
   previousActivityOverride = undefined,
 } = {}) {
+  const previousActivitiesSignature = getCurrentPublicPresenceActivities().map(getPresenceActivityRenderSignature).join("||");
   const previousActivity = typeof previousActivityOverride === "undefined"
     ? getCurrentPublicPresenceActivity()
     : sanitizePresenceActivity(previousActivityOverride || null);
   const previousSignature = getPresenceActivitySignature(previousActivity);
   const previousRenderSignature = getPresenceActivityRenderSignature(previousActivity);
-  const normalized = sanitizeSpotifyActivity(activityInput || null);
+  const normalized = withStableActivityStart(sanitizeSpotifyActivity(activityInput || null), connectedAccountsState.spotifyPlayback);
   connectedAccountsState.spotifyPlayback = normalized;
   if (normalized) {
     connectedAccountsState.spotifyPlaybackError = "";
@@ -213680,8 +214490,9 @@ function applySpotifyPlaybackActivity(activityInput = null, {
   const nextActivity = getCurrentPublicPresenceActivity();
   const nextSignature = getPresenceActivitySignature(nextActivity);
   const nextRenderSignature = getPresenceActivityRenderSignature(nextActivity);
-  const structureChanged = previousRenderSignature !== nextRenderSignature;
-  const presenceActivityChanged = previousSignature !== nextSignature;
+  const structureChanged = previousRenderSignature !== nextRenderSignature
+    || previousActivitiesSignature !== getCurrentPublicPresenceActivities().map(getPresenceActivityRenderSignature).join("||");
+  const presenceActivityChanged = previousSignature !== nextSignature || structureChanged;
   syncCurrentPresenceActivityFromConnections({
     publishPresence: publishPresence && presenceActivityChanged,
     render: render && structureChanged,
@@ -217377,6 +218188,9 @@ function sanitizeGameMetadata(raw = null, fallbackName = "") {
     slug: String(raw.slug || "").trim().slice(0, 120),
     name,
     icon: normalizeActivityImageUrl(raw.icon || ""),
+    logo: normalizeActivityImageUrl(raw.logo || raw.metadata?.logo || ""),
+    executableIcon: normalizeActivityImageUrl(raw.executableIcon || raw.metadata?.executableIcon || ""),
+    squareArtwork: normalizeActivityImageUrl(raw.squareArtwork || raw.metadata?.squareArtwork || ""),
     cover: normalizeActivityImageUrl(raw.cover || raw.background || ""),
     background: normalizeActivityImageUrl(raw.background || raw.cover || ""),
     description: String(raw.description || "").trim().slice(0, 500),
@@ -217697,6 +218511,9 @@ function getLocalRegisteredActivityGamesForState(payloadGames = [], activityInpu
       privateOnly: game.privateOnly === true,
       confirmed: game.confirmed !== false,
       icon: normalizeActivityImageUrl(game.icon || game.metadata?.icon || ""),
+      logo: normalizeActivityImageUrl(game.logo || game.metadata?.logo || ""),
+      executableIcon: normalizeActivityImageUrl(game.executableIcon || game.metadata?.executableIcon || ""),
+      squareArtwork: normalizeActivityImageUrl(game.squareArtwork || game.metadata?.squareArtwork || ""),
       cover: normalizeActivityImageUrl(game.cover || game.metadata?.cover || ""),
       running: runningIds.has(gid) || executableHit,
     };
@@ -217745,6 +218562,9 @@ function upsertDetectedActivityRegisteredGame(activityInput = null) {
     slug: activity.slug || "",
     name: activity.name || fallbackName,
     icon: activity.icon || "",
+    logo: activity.logo || "",
+    executableIcon: activity.executableIcon || "",
+    squareArtwork: activity.squareArtwork || "",
     cover: activity.cover || "",
     background: activity.background || "",
     description: activity.description || "",
@@ -217834,6 +218654,9 @@ function sanitizeGameActivity(raw = null) {
     activityVerb,
     startedAt,
     icon: normalizeActivityImageUrl(raw.icon || raw.metadata?.icon || ""),
+    logo: normalizeActivityImageUrl(raw.logo || raw.metadata?.logo || ""),
+    executableIcon: normalizeActivityImageUrl(raw.executableIcon || raw.metadata?.executableIcon || ""),
+    squareArtwork: normalizeActivityImageUrl(raw.squareArtwork || raw.metadata?.squareArtwork || ""),
     cover: normalizeActivityImageUrl(raw.cover || raw.metadata?.cover || raw.background || raw.metadata?.background || ""),
     background: normalizeActivityImageUrl(raw.background || raw.metadata?.background || raw.cover || raw.metadata?.cover || ""),
     description: String(raw.description || raw.metadata?.description || "").trim().slice(0, 500),
@@ -217883,6 +218706,7 @@ function sanitizeSpotifyActivity(raw = null) {
     isPlaying: true,
     fetchedAt,
     startedAt,
+    activityStartedAt: Number.isFinite(Number(raw.activityStartedAt)) && Number(raw.activityStartedAt) > 0 ? Number(raw.activityStartedAt) : startedAt,
     updatedAt: fetchedAt,
     externalUrl: String(raw.externalUrl || raw.external_url || "").trim().slice(0, 512),
     showOnProfile: raw.showOnProfile !== false && raw.show_on_profile !== false,
@@ -218040,6 +218864,9 @@ function getLocalMetadataForRegisteredGame(game = null) {
       provider: fromMetadata.provider || (game.custom ? "custom" : "local"),
       name: fromMetadata.name || game.name,
       icon: fromMetadata.icon || normalizeActivityImageUrl(game.icon || ""),
+      logo: fromMetadata.logo || normalizeActivityImageUrl(game.logo || ""),
+      executableIcon: fromMetadata.executableIcon || normalizeActivityImageUrl(game.executableIcon || ""),
+      squareArtwork: fromMetadata.squareArtwork || normalizeActivityImageUrl(game.squareArtwork || ""),
       cover: fromMetadata.cover || normalizeActivityImageUrl(game.cover || ""),
       background: fromMetadata.background || normalizeActivityImageUrl(game.cover || ""),
       confidence: fromMetadata.confidence || 1,
@@ -218051,6 +218878,9 @@ function getLocalMetadataForRegisteredGame(game = null) {
     provider: game.custom ? "custom" : "local",
     name,
     icon: normalizeActivityImageUrl(game.icon || ""),
+    logo: normalizeActivityImageUrl(game.logo || ""),
+    executableIcon: normalizeActivityImageUrl(game.executableIcon || ""),
+    squareArtwork: normalizeActivityImageUrl(game.squareArtwork || ""),
     cover: normalizeActivityImageUrl(game.cover || ""),
     background: normalizeActivityImageUrl(game.cover || ""),
     confidence: 1,
@@ -218310,7 +219140,7 @@ function catalogItemToGameMetadata(item = {}, confidence = 0.75) {
   const meta = normalizeProfileWidgetItemMetadata(normalized?.metadata || raw.metadata || raw || {});
   const provider = normalizeGameMetadataProvider(normalized?.source || raw.source || raw.provider || meta.source || "rawg") || "rawg";
   const providerId = normalized?.source_id || raw.source_id || raw.providerId || raw.id || meta.source_id || "";
-  const icon = raw.icon || raw.icon_url || raw.iconUrl || raw.thumbnail || raw.thumbnail_url || raw.cover || raw.cover_url || raw.coverUrl || raw.background_image || raw.background || raw.image || raw.image_url || raw.imageUrl || normalized?.cover_url || "";
+  const icon = raw.icon || raw.icon_url || raw.iconUrl || "";
   const cover = raw.cover || raw.cover_url || raw.coverUrl || normalized?.cover_url || raw.background_image || raw.background || raw.image || raw.image_url || raw.imageUrl || raw.thumbnail || raw.thumbnail_url || "";
   const background = raw.background || raw.background_image || raw.cover || raw.cover_url || raw.coverUrl || normalized?.cover_url || raw.image || raw.image_url || raw.imageUrl || "";
   const genres = Array.isArray(meta.genres) ? meta.genres : (Array.isArray(raw.genres) ? raw.genres : []);
@@ -218320,6 +219150,9 @@ function catalogItemToGameMetadata(item = {}, confidence = 0.75) {
     slug: meta.slug || raw.slug || raw.rawgSlug || "",
     name: title,
     icon,
+    logo: raw.logo,
+    executableIcon: raw.executableIcon,
+    squareArtwork: raw.squareArtwork,
     cover,
     background,
     description: raw.description || raw.description_raw || raw.summary || "",
@@ -218538,6 +219371,9 @@ function applyGameMetadataToActivity(activityInput = null, metadataInput = null,
     ...activity,
     name: metadata.name || activity.name,
     icon: metadata.icon || activity.icon,
+    logo: metadata.logo || activity.logo || "",
+    executableIcon: metadata.executableIcon || activity.executableIcon || "",
+    squareArtwork: metadata.squareArtwork || activity.squareArtwork || "",
     cover: metadata.cover || activity.cover,
     background: metadata.background || activity.background || metadata.cover || activity.cover,
     description: metadata.description || activity.description,
@@ -218655,6 +219491,9 @@ function getPublicGameActivity(activity = null) {
     gameId: normalized.gameId,
     startedAt: normalized.startedAt,
     ...(normalized.icon ? { icon: normalized.icon } : {}),
+    ...(normalized.logo ? { logo: normalized.logo } : {}),
+    ...(normalized.executableIcon ? { executableIcon: normalized.executableIcon } : {}),
+    ...(normalized.squareArtwork ? { squareArtwork: normalized.squareArtwork } : {}),
     ...(normalized.cover ? { cover: normalized.cover } : {}),
     ...(normalized.background ? { background: normalized.background } : {}),
     ...(normalized.provider ? { provider: normalized.provider } : {}),
@@ -218670,20 +219509,18 @@ function getCurrentPublicGameActivity() {
 }
 
 function getPresenceActivityForUser(userId = "") {
+  return getPresenceActivitiesForUser(userId)[0] || null;
+}
+
+function getPresenceActivitiesForUser(userId = "") {
   const uid = normId(userId || "");
-  if (!uid) return null;
-  if (uid === normId(state.user?.id || "")) {
-    const resolved = resolveEffectivePresence(uid);
-    const activity = resolved.isVisibleOnline ? getCurrentPublicPresenceActivity() : null;
-    if (activity?.type === "listening" && activity.provider === SPOTIFY_PROVIDER && activity.showOnProfile === false) return getCurrentPublicGameActivity();
-    return activity;
-  }
-  const hit = getPresenceEntryForUser(uid);
-  const resolved = resolveEffectivePresence(uid, { presenceEntry: hit });
-  if (!resolved.isVisibleOnline) return null;
-  const activity = sanitizePresenceActivity(resolved.activity || hit?.activity || hit?.spotify_activity || hit?.spotifyActivity);
-  if (activity?.type === "listening" && activity.provider === SPOTIFY_PROVIDER && activity.showOnProfile === false) return null;
-  return activity;
+  if (!uid) return [];
+  const resolved = resolveEffectivePresence(uid);
+  if (!resolved.isVisibleOnline) return [];
+  const activities = uid === normId(state.user?.id || "")
+    ? getCurrentPublicPresenceActivities()
+    : selectPublishedActivities(getPresenceEntryForUser(uid), sanitizePresenceActivity);
+  return activities.filter(activity => !(activity.type === "listening" && activity.provider === SPOTIFY_PROVIDER && activity.showOnProfile === false));
 }
 
 function formatGameActivityDurationText(startedAtInput = 0) {
@@ -218698,7 +219535,7 @@ function formatGameActivityDurationText(startedAtInput = 0) {
   return `for ${hours}h ${minutes}m`;
 }
 
-function buildActivityArtworkThumbHtml(source = null, fallbackName = "Game", className = "") {
+function buildActivityArtworkThumbHtml(source = null, fallbackName = "Game", className = "", { textFallback = true } = {}) {
   const src = source && typeof source === "object" ? source : {};
   const meta = src.metadata && typeof src.metadata === "object" ? src.metadata : {};
   const name = String(src.name || meta.name || fallbackName || "Game").trim() || "Game";
@@ -218708,16 +219545,26 @@ function buildActivityArtworkThumbHtml(source = null, fallbackName = "Game", cla
     || meta.icon || meta.cover || meta.artworkUrl || meta.artwork_url || meta.background
     || ""
   );
+  if (!image && !textFallback) return "";
   const classes = Array.from(new Set([
     ...String(className || "").split(/\s+/).filter(Boolean),
     "activityArtworkThumb",
   ])).join(" ");
   return `
     <div class="${escAttr(classes)}" aria-hidden="true"${image ? ` data-image-url="${escAttr(image)}"` : ""}>
-      <span>${esc(initial)}</span>
-      ${image ? `<img src="${escAttr(image)}" alt="" loading="lazy" onerror="this.hidden=true;this.closest('.activityArtworkThumb')?.setAttribute('data-image-failed','true')" />` : ""}
+      ${textFallback ? `<span>${esc(initial)}</span>` : ""}
+      ${image ? `<img src="${escAttr(image)}" alt="" loading="lazy" onerror="${textFallback ? "this.hidden=true;this.closest('.activityArtworkThumb')?.setAttribute('data-image-failed','true')" : "this.parentElement.hidden=true"}" />` : ""}
     </div>
   `;
+}
+
+function buildUserProfileActivityStack(activities, userId, surface) {
+  bindProfileActivityStacks(document);
+  return buildProfileActivityStackHtml(activities, {
+    key: surface + ":" + normId(userId),
+    translate: t,
+    renderCard: activity => buildGameActivityCardHtml(activity, { className: "profileActivityStack__card" }),
+  });
 }
 
 function buildGameActivityCardHtml(activityInput = null, { className = "" } = {}) {
@@ -218727,9 +219574,9 @@ function buildGameActivityCardHtml(activityInput = null, { className = "" } = {}
   if (activity.type === "listening" && activity.provider === SPOTIFY_PROVIDER) {
     const artistLine = activity.artist || activity.details || "Spotify";
     return '<section class="' + baseClass + '" data-spotify-activity-card="1">'
-      + buildActivityArtworkThumbHtml({ name: activity.name, artworkUrl: activity.artworkUrl, icon: activity.artworkUrl }, activity.name, "gameActivityCard__icon")
+      + buildActivityArtworkThumbHtml({ name: activity.name, artworkUrl: activity.artworkUrl, icon: activity.artworkUrl }, activity.name, "gameActivityCard__icon", { textFallback: false })
       + '<div class="gameActivityCard__body">'
-      + '<div class="gameActivityCard__eyebrow">Listening to Spotify</div>'
+      + '<div class="gameActivityCard__eyebrow">' + spotifyActivityIcon + 'Listening to Spotify</div>'
       + '<div class="gameActivityCard__name">' + esc(activity.name) + '</div>'
       + '<div class="gameActivityCard__meta">' + esc(artistLine) + '</div>'
       + buildSpotifyProgressHtml(activity)
@@ -218737,7 +219584,7 @@ function buildGameActivityCardHtml(activityInput = null, { className = "" } = {}
   }
   return `
     <section class="${baseClass}" data-game-activity-card="${escAttr(activity.gameId)}">
-      ${buildActivityArtworkThumbHtml(activity, activity.name, "gameActivityCard__icon")}
+      ${buildCompactActivityArtworkHtml(activity, "gameActivityCard__icon")}
       <div class="gameActivityCard__body">
         <div class="gameActivityCard__eyebrow">${esc(getActivityVerbLabel(activity))}</div>
         <div class="gameActivityCard__name">${esc(activity.name)}</div>
@@ -218782,7 +219629,7 @@ function rerenderOpenProfileMiniPopoutForActivity() {
     avatar: String(seedProfile?.avatar_url || seedProfile?.avatarUrl || ""),
     banner: String(seedProfile?.banner_url || seedProfile?.bannerUrl || seedProfile?.theme_settings?.banner_url || ""),
     status: getPresenceStatusForUser(uid),
-    activity: getPresenceActivityRenderSignature(activity),
+    activity: getPresenceActivitiesForUser(uid).map(getPresenceActivityRenderSignature).join("||"),
   });
   if (popout.dataset.profileActivitySignature === signature) {
     updateGameActivityElapsedLabels();
@@ -218793,7 +219640,6 @@ function rerenderOpenProfileMiniPopoutForActivity() {
   setElementHtmlIfChanged(popout, buildMeProfilePopoutHtml(seedProfile, { loading: false }));
   queueManagedGifPlaybackSync(popout);
   applyMeProfilePopoutBannerStyle(seedProfile);
-  renderMeProfilePopoutWidgetsPreview({ loading: false });
   positionMeProfilePopout();
 }
 
@@ -218840,7 +219686,7 @@ function refreshGameActivityDisplays() {
 }
 
 function updateEffectiveGameActivity({ publishPresence = true, render = true } = {}) {
-  const previousSignature = getPresenceActivitySignature(getCurrentPublicPresenceActivity());
+  const previousSignature = getCurrentPublicPresenceActivities().map(getPresenceActivitySignature).join("||");
   let next = null;
   try {
     next = getPublicGameActivity(detectedGameActivity);
@@ -218849,10 +219695,8 @@ function updateEffectiveGameActivity({ publishPresence = true, render = true } =
     next = null;
   }
   effectiveGameActivity = next;
-  const publicActivity = getCurrentPublicPresenceActivity();
-  const nextSignature = getPresenceActivitySignature(publicActivity);
-  if (state.me) state.me.activity = publicActivity || null;
-  if (state.user?.id) cacheProfileRow({ id: state.user.id, activity: publicActivity || null });
+  const nextSignature = getCurrentPublicPresenceActivities().map(getPresenceActivitySignature).join("||");
+  syncCurrentPresenceActivityFromConnections({ publishPresence: false, render: false });
   if (render || previousSignature !== nextSignature) refreshGameActivityDisplays();
   if (publishPresence && previousSignature !== nextSignature) {
     try { void presence?.refresh?.(); } catch (_) {}
@@ -220301,6 +221145,7 @@ function getMePresencePayload() {
     last_seen_at: new Date().toISOString(),
     device_type: getPresenceDeviceType(),
     activity,
+    activities: getCurrentPublicPresenceActivities(),
     spotify_activity: spotifyActivity,
   };
 }
@@ -220367,7 +221212,7 @@ function syncProfilesFromPresenceList(list = []) {
         status: id === normalizePresenceUserId(state.user?.id)
           ? resolveMyPresenceStatus(state.me)
           : (readPresenceStatusValue(u?.manual_status) || readPresenceStatusValue(u?.manualStatus) || null),
-        activity: sanitizePresenceActivity(u?.activity || u?.spotify_activity || u?.spotifyActivity),
+        activity: selectPublishedActivity(u, sanitizePresenceActivity),
       };
     })
     .filter(Boolean);
@@ -220575,7 +221420,7 @@ function getPresenceFriendDebugRows() {
       || readPresenceStatusValue(friendProfile?.theme_settings?.presence_status)
       || "";
     const currentActivity = resolved?.countsAsOnlineNow === true
-      ? sanitizePresenceActivity(resolved?.activity || entry?.activity || entry?.spotify_activity || entry?.spotifyActivity)
+      ? selectPublishedActivity(resolved || entry, sanitizePresenceActivity)
       : null;
     return {
       displayName,
@@ -221039,6 +221884,7 @@ function updatePresenceRender() {
     applyMeStatusDot(getMePresencePayload().status || "online");
     applyDmTitleNameStyle();
     refreshOpenUserCard();
+  rerenderOpenProfileMiniPopoutForActivity();
     refreshDmProfilePanel();
     ensureServerSidebarForCurrentContext("presence-render-server-context");
     void refreshServerConversationUi({ reason: "sidebar-members", refreshChannels: false, refreshMembers: true }).catch(() => {});
@@ -221302,6 +222148,7 @@ function startPresenceAuthStateListener() {
         hasAccessToken,
       });
       if (String(event || "").toUpperCase() === "SIGNED_OUT") {
+        void rememberDesktopAccount(null).catch(() => {});
         stopGlobalDmNotificationsForAuthChange();
         clearConversationMessageMemoryCache({ userSwitch: true });
         serverVoiceStartupReadyUserId = "";
@@ -221409,6 +222256,14 @@ function bindDesktopCallShutdownOnce() {
     }
   });
 }
+
+setAccountSwitchCleanup(async () => {
+  if (window.altaraDesktop?.isDesktopApp) return; // Native quit already owns this handshake.
+  await performCallShutdownCleanup({ reason: "account_switch", bestEffortImmediate: false, reusableRenderer: false });
+  stopSpotifyActivityPolling({ clearActivity: true, reason: "account_switch" });
+  await presence?.stop?.({ deadlineMs: 900 });
+  await supabase.removeAllChannels();
+});
 
 // The close handshake must exist even if presence startup is delayed or fails;
 // otherwise Electron can hide/destroy the renderer before any call cleanup runs.
@@ -221891,6 +222746,8 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
   try { window.__ALTARA_NORMAL_BOOT_STARTED__ = true; window.__ALTARA_NORMAL_BOOT_DONE__ = false; window.__ALTARA_NORMAL_BOOT_ERROR__ = null; } catch (_) {}
   recordAltaraBootEvent("normal_boot_start", { shellFirst: true });
   try { window.__ALTARA_RENDER_IMMEDIATE_APP_SHELL__?.("normal_boot_start"); } catch (error) { recordAltaraBootEvent("required_task_error", { task: "immediate_shell", message: error?.message || error || "unknown" }); }
+  bindUiZoomWheelShortcutOnce();
+  void initDesktopUiZoomControls();
   markPerfStart("auth_ready");
   if (window.__ALTARA_SAFE_BOOT_ENABLED__ === true) {
     recordAltaraBootEvent("safe_boot_enabled", { shellRendered: window.__ALTARA_SHELL_RENDERED__ === true, source: window.__ALTARA_SAFE_BOOT_SOURCE__ || "unknown" });
@@ -222115,7 +222972,6 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
   consumeDmE2eeLoginSyncNotice();
   void initRtcConfigFromDesktop().catch((error) => recordAltaraBootEvent("optional_task_error", { task: "rtc_config", message: error?.message || error || "unknown" }));
   void refreshRtcTurnCredentials({ force: false });
-  bindUiZoomWheelShortcutOnce();
   const meAvatarEl = $("meAvatar");
   try {
     bindMeProfilePopoutDockOnce();
@@ -222181,6 +223037,7 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
   try {
     recordAltaraBootEvent("required_task_start", { task: "profile_fast_hydration" });
     state.me = await presenceBootProfilePromise;
+    void rememberDesktopAccount({ ...state.me, id: state.user.id }).catch(() => {});
     state.me.name_color = normalizeNameColor(state.me.name_color);
     state.me.call_tile_color = normalizeCallTileColor(state.me.call_tile_color);
     state.me.status = resolveMyPresenceStatus(state.me);

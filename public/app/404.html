@@ -1,9 +1,10 @@
 ﻿<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
+<script src="./lib/browserAccountContext.js"></script>
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>altara</title>
+  <title>ALTARA</title>
   <link rel="icon" href="/app/build/icon.ico" sizes="any" />
   <link rel="icon" href="/app/assets/brand/LOGO%20ALTARA%20BRANCO.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/app/style.css" />
@@ -1081,7 +1082,10 @@
             <button id="dmProfileAvatar" class="dmProfileAvatar" type="button" aria-label="Open full profile"></button>
             <div class="dmProfilePanel__body">
               <div class="dmProfileIdentity">
-                <div id="dmProfileName" class="dmProfileName">User</div>
+                <div class="dmProfileNameRow">
+                  <div id="dmProfileName" class="dmProfileName">User</div>
+                  <div id="dmProfileAltaraPlusBadge" class="profileBadgeRow dmProfileAltaraPlusBadge" hidden></div>
+                </div>
                 <div id="dmProfileHandle" class="dmProfileHandle">@user</div>
                 <div class="dmProfilePresence">
                   <span id="dmProfileStatusDot" class="dmProfileStatusDot" data-status="offline"></span>
@@ -1301,8 +1305,8 @@
         </div>
 
         <div class="settingsMainBody">
-          <div class="settingsPanel is-active" data-settings-panel="account">
-            <div class="settingsIdentityCard">
+          <div class="settingsPanel settingsAccountPanel is-active" data-settings-panel="account">
+            <div class="settingsIdentityCard" role="group" aria-label="Your profile preview">
               <div id="settingsIdentityBanner" class="settingsIdentityBanner" tabindex="0" role="button" aria-label="Change banner"></div>
               <div class="settingsIdentityBody">
                 <div id="avatarPreview" class="avatarBig settingsAvatarPick" tabindex="0" role="button" aria-label="Change avatar"></div>
@@ -1316,36 +1320,68 @@
                   <div id="uidLine" class="settingsIdentityUid">@...</div>
                   <div id="settingsIdentityAltaraPlusBadge" class="profileBadgeRow settingsIdentityBadgeRow" hidden></div>
                 </div>
+                <span class="settingsIdentityEditHint" aria-hidden="true">Edit banner or avatar</span>
               </div>
             </div>
 
-            <div class="settingsCardSection">
-              <div id="settingsSectionProfile" class="settingsSectionTitle">Profile</div>
-              <div id="settingsAccountLoadStatus" class="settingsAccountLoadStatus settingsHint" role="status" aria-live="polite" hidden></div>
-              <div class="grid2 settingsGrid settingsProfileGrid">
-                <div class="settingsColumn settingsProfileColumn">
-                  <label class="label" for="username">Username</label>
-                  <input id="username" class="input" />
-                  <label class="label" for="displayName">Display name</label>
-                  <input id="displayName" class="input" />
-                  <label class="label" for="bio">Bio</label>
-                  <textarea id="bio" class="input" rows="4" maxlength="280"></textarea>
-                  <div id="bioCharCount" class="settingsHint settingsBioCounter">0/280</div>
-                </div>
-                <div class="settingsColumn settingsProfileColumn">
-                  <label class="label" for="pronouns">Pronouns</label>
-                  <input id="pronouns" class="input" maxlength="40" placeholder="e.g. he/him" />
-                  <div id="profilePronounsHint" class="settingsHint">Optional. Appears on your profile.</div>
-                  <label class="label" for="nameColor">Name color</label>
-                  <input id="nameColor" class="themeColorInput" type="text" value="#f1f2f5" />
-                  <label class="label" for="callTileColor">Call background</label>
-                  <input id="callTileColor" class="themeColorInput" type="text" value="#1b2230" />
+            <div class="settingsCardSection settingsAccountSection">
+              <div class="settingsAccountSectionHead">
+                <div>
+                  <div id="settingsSectionProfile" class="settingsSectionTitle">Profile details</div>
+                  <p>Your name and bio appear on your profile.</p>
                 </div>
               </div>
+              <div id="settingsAccountLoadStatus" class="settingsAccountLoadStatus settingsHint" role="status" aria-live="polite" hidden></div>
+              <div class="settingsAccountFields">
+                <div class="settingsAccountField">
+                  <label class="label" for="displayName">Display name</label>
+                  <input id="displayName" class="input" />
+                </div>
+                <div class="settingsAccountField">
+                  <label class="label" for="pronouns">Pronouns <span class="settingsOptional">Optional</span></label>
+                  <input id="pronouns" class="input" maxlength="40" placeholder="e.g. he/him" aria-describedby="profilePronounsHint" />
+                  <div id="profilePronounsHint" class="settingsHint">On your profile.</div>
+                </div>
+                <div class="settingsAccountField">
+                  <label class="label" for="username">Username</label>
+                  <div class="settingsAccountInputWrap"><span aria-hidden="true">@</span><input id="username" class="input" aria-describedby="profileUsernameHint" /></div>
+                  <div id="profileUsernameHint" class="settingsHint">Unique handle.</div>
+                </div>
+                <div class="settingsAccountField settingsAccountField--bio">
+                  <label class="label" for="bio">Bio <span class="settingsOptional">Optional</span></label>
+                  <textarea id="bio" class="input" rows="3" maxlength="280" aria-describedby="bioCharCount"></textarea>
+                  <div id="bioCharCount" class="settingsHint settingsBioCounter">0/280</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settingsCardSection settingsAccountSection">
+              <div class="settingsAccountSectionHead">
+                <div>
+                  <div id="settingsSectionProfileAppearance" class="settingsSectionTitle">Profile appearance</div>
+                  <p>Make your profile feel like yours.</p>
+                </div>
+              </div>
+              <div class="settingsAccountAppearanceFields">
+                <div class="settingsAccountField">
+                  <label class="label" for="nameColor">Name color</label>
+                  <div class="settingsAccountColorWrap"><span class="settingsAccountColorSwatch" aria-hidden="true"></span><input id="nameColor" class="themeColorInput" type="text" value="#f1f2f5" /></div>
+                </div>
+                <div class="settingsAccountField">
+                  <label class="label" for="callTileColor">Call background</label>
+                  <div class="settingsAccountColorWrap"><span class="settingsAccountColorSwatch" aria-hidden="true"></span><input id="callTileColor" class="themeColorInput" type="text" value="#1b2230" /></div>
+                </div>
+              </div>
+              <div class="settingsAccountWidgetsRow">
+                <div><strong>Widgets</strong><span>Choose what appears on your profile.</span></div>
+                <button id="btnOpenProfileWidgets" class="btn ghost" type="button">Manage widgets</button>
+              </div>
+            </div>
+            <div class="settingsAccountSaveBar">
+              <div id="settingsAccountSaveStatus" class="settingsAccountSaveStatus" role="status" aria-live="polite">All changes saved</div>
               <div class="settingsProfileActions">
-                <button id="btnSaveUsername" class="btn ghost" type="button">Save username</button>
-                <button id="btnSaveProfile" class="btn primary" type="button">Save profile</button>
-                <button id="btnOpenProfileWidgets" class="btn ghost" type="button">Widgets</button>
+                <button id="btnSaveUsername" class="btn ghost" type="button" disabled>Save username</button>
+                <button id="btnSaveProfile" class="btn primary" type="button" disabled>Save changes</button>
               </div>
             </div>
           </div>
@@ -1569,57 +1605,47 @@
               </div>
             </div>
 
-            <div id="settingsSecurityContent">
-              <div class="settingsCardSection">
-                <div id="settingsSectionSecurity" class="settingsSectionTitle">Security</div>
-                <div id="settingsSectionSecurityCode" class="settingsSectionTitle">Security code lock</div>
-                <div id="settingsSecurityCodeHint" class="settingsHint">Create a code to lock this Security tab. You will need it to open security options later.</div>
-                <div id="settingsSecurityCodeState" class="settingsHint">No security code configured.</div>
-                <div id="settingsSecurityQuickCreateWrap" class="settingsSecurityQuickCreateWrap" hidden>
-                  <button id="btnSecurityQuickCreate" class="btn ghost" type="button">Create security code</button>
+            <div id="settingsSecurityContent" class="settingsSecurityContent">
+              <section class="settingsCardSection settingsSecuritySection" aria-labelledby="settingsSectionSecurity">
+                <div class="settingsSecuritySectionHead">
+                  <span class="settingsSecuritySectionIcon" aria-hidden="true">◈</span>
+                  <div><div id="settingsSectionSecurity" class="settingsSectionTitle">Account security</div><p>Manage access to your account and this settings page.</p></div>
                 </div>
+                <div class="settingsSecurityRow">
+                  <div class="settingsSecurityRowCopy">
+                    <div class="settingsSecurityRowTitle"><span id="settingsSectionSecurityCode">Security code</span><span id="settingsSecurityCodeBadge" class="settingsSecurityBadge">Disabled</span></div>
+                    <div id="settingsSecurityCodeHint" class="settingsHint">Add a code to lock this Security page.</div>
+                    <div id="settingsSecurityCodeState" class="settingsHint settingsSecurityStateText">No security code configured.</div>
+                  </div>
+                  <div class="settingsSecurityRowActions">
+                    <div id="settingsSecurityQuickCreateWrap" class="settingsSecurityQuickCreateWrap" hidden><button id="btnSecurityQuickCreate" class="btn ghost" type="button" aria-controls="settingsSecurityManageWrap" aria-expanded="false">Create code</button></div>
+                    <button id="btnSecurityEditCode" class="btn ghost" type="button" aria-controls="settingsSecurityManageWrap" aria-expanded="false" hidden>Change</button>
+                  </div>
+                </div>
+                <div id="settingsSecurityManageWrap" class="settingsSecurityEditor" hidden>
+                  <div class="settingsSecurityEditorFields">
+                    <div class="settingsColumn"><label class="label" for="securityCode">Security code</label><input id="securityCode" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" /></div>
+                    <div class="settingsColumn"><label class="label" for="securityCodeConfirm">Confirm code</label><input id="securityCodeConfirm" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" /></div>
+                  </div>
+                  <div id="settingsSecurityManageHint" class="settingsHint">Only numbers, between 4 and 10 digits.</div>
+                  <div class="settingsSecurityEditorActions"><button id="btnSecuritySaveCode" class="btn primary" type="button">Save security code</button><button id="btnSecurityRemoveCode" class="btn ghost" type="button">Remove security code</button></div>
+                  <div id="settingsSecurityRemoveVerifyWrap" class="settingsSecurityRemoveVerifyWrap" hidden><label class="label" for="securityRemoveEmailCode">Email verification code</label><input id="securityRemoveEmailCode" class="input" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="12" placeholder="123456" /><button id="btnSecurityConfirmRemoveCode" class="btn ghost" type="button">Confirm remove security code</button><div id="settingsSecurityRemoveVerifyHint" class="settingsHint">We sent a verification code to your email. Enter it to remove the security code.</div></div>
+                </div>
+                <div id="settingsSecurityProtectedWrap" class="settingsSecurityProtectedWrap">
+                  <div class="settingsSecurityRow"><div class="settingsSecurityRowCopy"><div class="settingsSecurityRowTitle">Email</div><div id="settingsSecurityEmailSummary" class="settingsHint">Your account email</div></div><button id="btnSecurityEditEmail" class="btn ghost" type="button" aria-controls="settingsSecurityEmailEditor" aria-expanded="false">Change</button></div>
+                  <div id="settingsSecurityEmailEditor" class="settingsSecurityEditor" hidden><label class="label" for="currentEmail">Current email</label><input id="currentEmail" class="input" readonly /><label class="label" for="newEmail">New email</label><input id="newEmail" class="input" type="email" autocomplete="email" placeholder="email@..." /><button id="btnEmail" class="btn primary" type="button">Update email</button></div>
+                  <div class="settingsSecurityRow"><div class="settingsSecurityRowCopy"><div class="settingsSecurityRowTitle">Password</div><div class="settingsHint">Keep your account password private.</div></div><button id="btnSecurityEditPassword" class="btn ghost" type="button" aria-controls="settingsSecurityPasswordEditor" aria-expanded="false">Change</button></div>
+                  <div id="settingsSecurityPasswordEditor" class="settingsSecurityEditor" hidden><label class="label" for="currentPass">Current password</label><input id="currentPass" class="input" type="password" autocomplete="current-password" placeholder="••••••••" /><label class="label" for="newPass">New password</label><input id="newPass" class="input" type="password" autocomplete="new-password" placeholder="••••••••" /><button id="btnPass" class="btn primary" type="button">Update password</button></div>
+                </div>
+              </section>
 
-                <div id="settingsSecurityManageWrap" class="grid2 settingsGrid">
-                  <div class="settingsColumn">
-                    <label class="label" for="securityCode">Security code</label>
-                    <input id="securityCode" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" />
-                    <label class="label" for="securityCodeConfirm">Confirm code</label>
-                    <input id="securityCodeConfirm" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" />
-                    <button id="btnSecuritySaveCode" class="btn ghost w100" type="button">Save security code</button>
-                  </div>
-                  <div class="settingsColumn">
-                    <div id="settingsSecurityManageHint" class="settingsHint">Only numbers, between 4 and 10 digits.</div>
-                    <button id="btnSecurityRemoveCode" class="btn ghost w100" type="button">Remove security code</button>
-                    <div id="settingsSecurityRemoveVerifyWrap" class="settingsSecurityRemoveVerifyWrap" hidden>
-                      <label class="label" for="securityRemoveEmailCode">Email verification code</label>
-                      <input id="securityRemoveEmailCode" class="input" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="12" placeholder="123456" />
-                      <button id="btnSecurityConfirmRemoveCode" class="btn ghost w100" type="button">Confirm remove security code</button>
-                      <div id="settingsSecurityRemoveVerifyHint" class="settingsHint">We sent a verification code to your email. Enter it to remove the security code.</div>
-                    </div>
-                  </div>
-                </div>
+            <section id="settingsDirectMessagesCard" class="settingsCardSection settingsDirectMessagesCard settingsSecuritySection" aria-labelledby="settingsDirectMessagesTitle">
+              <div class="settingsDirectMessagesHeader settingsSecuritySectionHead">
+                <span class="settingsSecuritySectionIcon" aria-hidden="true">↗</span>
+                <div><div id="settingsDirectMessagesTitle" class="settingsSectionTitle">Direct messages &amp; safety</div><p>Choose who can reach you and how new chats arrive.</p></div>
+                <div id="settingsDmPrivacyStatus" class="settingsStatusPill" data-status="loading">Loading</div>
               </div>
-
-            <div id="settingsSecurityProtectedWrap" class="settingsCardSection">
-              <div class="grid2 settingsGrid">
-                <div class="settingsColumn">
-                  <label class="label" for="currentEmail">Current email</label>
-                  <input id="currentEmail" class="input" readonly />
-                    <label class="label" for="newEmail">New email</label>
-                    <input id="newEmail" class="input" placeholder="email@..." />
-                    <button id="btnEmail" class="btn ghost w100" type="button">Update email</button>
-                  </div>
-                  <div class="settingsColumn">
-                    <label class="label" for="currentPass">Current password</label>
-                    <input id="currentPass" class="input" type="password" placeholder="******" />
-                    <label class="label" for="newPass">New password</label>
-                    <input id="newPass" class="input" type="password" placeholder="******" />
-                  <button id="btnPass" class="btn ghost w100" type="button">Update password</button>
-                </div>
-              </div>
-            </div>
-
-            <div id="settingsAltaraSyncCard" class="settingsCardSection settingsPrivacyModeCard settingsPrivacyModeCard--sync">
+              <div id="settingsAltaraSyncCard" class="settingsPrivacyModeCard settingsPrivacyModeCard--sync settingsSecuritySyncNote">
               <div class="settingsPrivacyModeHeader">
                 <div class="settingsPrivacyModeMark" aria-hidden="true">S</div>
                 <div class="settingsPrivacyModeCopy">
@@ -1629,19 +1655,10 @@
                 <div id="settingsAltaraSyncStatus" class="settingsStatusPill" data-status="ready">Default</div>
               </div>
               <div id="settingsAltaraSyncNote" class="settingsPrivacyNote">Sync is built for convenience and recovery. It is not the same as Vault end-to-end encryption.</div>
-            </div>
-
-            <div id="settingsDirectMessagesCard" class="settingsCardSection settingsDirectMessagesCard">
-              <div class="settingsDirectMessagesHeader">
-                <div>
-                  <div class="settingsSectionTitle">Direct Messages</div>
-                  <div class="settingsHint">Control who can message you and where non-friend messages land.</div>
-                </div>
-                <div id="settingsDmPrivacyStatus" class="settingsStatusPill" data-status="loading">Loading</div>
               </div>
               <div class="settingsGrid settingsDirectMessagesGrid">
                 <div class="settingsColumn">
-                  <label class="label" for="settingsDmWhoCanMessageMe">Who can message me</label>
+                  <label class="label" for="settingsDmWhoCanMessageMe">Who can send you a message?</label>
                   <select id="settingsDmWhoCanMessageMe" class="input">
                     <option value="everyone">Everyone</option>
                     <option value="mutual_servers">People with mutual servers</option>
@@ -1652,7 +1669,7 @@
                   <small class="settingsHint">Friends can always message you unless blocked.</small>
                 </div>
                 <div class="settingsColumn">
-                  <label class="label" for="settingsDmNonFriendMessages">Non-friend messages</label>
+                  <label class="label" for="settingsDmNonFriendMessages">Messages from people you don't know</label>
                   <select id="settingsDmNonFriendMessages" class="input">
                     <option value="message_requests">Send to Message Requests</option>
                     <option value="direct_inbox">Allow directly</option>
@@ -1663,24 +1680,24 @@
               </div>
               <label class="appearanceSwitchRow settingsDmPrivacyToggle" for="settingsDmAllowServerMemberRequests">
                 <span class="appearanceSwitchText">
-                  <b>Allow message requests from server members</b>
-                  <small>People who share a server with you can send a request when your rules allow it.</small>
+                  <b>Requests from shared server members</b>
+                  <small>Let people in your servers request a chat when your rules allow it.</small>
                 </span>
                 <input id="settingsDmAllowServerMemberRequests" type="checkbox" />
               </label>
               <label class="appearanceSwitchRow settingsDmPrivacyToggle" for="settingsDmSpamFilterEnabled">
                 <span class="appearanceSwitchText">
                   <b>Filter suspected spam</b>
-                  <small>ALTARA will keep rate limits and spam hooks enabled for new message requests.</small>
+                  <small>Reduce unwanted message requests.</small>
                 </span>
                 <input id="settingsDmSpamFilterEnabled" type="checkbox" />
               </label>
-              <button id="btnSettingsDmPrivacySave" class="btn primary" type="button">Save Direct Message settings</button>
-            </div>
+              <button id="btnSettingsDmPrivacySave" class="btn primary" type="button">Save message settings</button>
+            </section>
 
-            <div id="settingsDmE2eeBackupCard" class="settingsCardSection settingsPrivacyModeCard settingsPrivacyModeCard--vault" hidden>
+            <section id="settingsDmE2eeBackupCard" class="settingsCardSection settingsPrivacyModeCard settingsPrivacyModeCard--vault settingsSecuritySection" aria-labelledby="settingsSectionDmE2eeBackup" hidden>
               <div class="settingsPrivacyModeHeader">
-                <div class="settingsPrivacyModeMark" aria-hidden="true">V</div>
+                <div class="settingsPrivacyModeMark" aria-hidden="true">✧</div>
                 <div class="settingsPrivacyModeCopy">
                   <div id="settingsSectionDmE2eeBackup" class="settingsSectionTitle">Mensagens encriptadas</div>
                   <div id="settingsDmE2eeBackupHint" class="settingsHint">Texto de conversas diretas encriptado de ponta a ponta. Anexos não são suportados neste modo; eventos de sistema e chamadas são separados.</div>
@@ -1689,9 +1706,10 @@
               </div>
               <div id="settingsDmE2eeBackupStatus" class="settingsPrivacyStatusText">Loading Vault Recovery status...</div>
               <div id="settingsDmE2eeBackupWarning" class="settingsPrivacyCallout">Clearing app/browser data, uninstalling ALTARA with data removal, or using a new device may require your Vault Recovery Password or Recovery Key.</div>
-              <div id="settingsDmE2eeBackupAutoHint" class="settingsPrivacyNote">Logging out does not remove Vault access on this device.</div>
+              <button id="btnSettingsVaultPrimary" class="btn primary settingsVaultPrimary" type="button" aria-controls="settingsVaultActionArea" aria-expanded="false" hidden>Recovery settings</button>
               <div id="settingsDmE2eeBackupMethodStatus" class="settingsHint sr-only">Recovery methods available: loading...</div>
               <div id="settingsDmE2eeBackupDeviceStatus" class="settingsHint sr-only">This device: loading...</div>
+              <details id="settingsVaultRecoveryDetails" class="settingsVaultRecoveryDetails"><summary>Recovery settings</summary>
               <div class="settingsRecoveryStatusGrid" aria-label="Vault Recovery status">
                 <div class="settingsRecoveryStatusRow">
                   <span>Password</span>
@@ -1706,6 +1724,7 @@
                   <strong id="settingsDmE2eeBackupDeviceStatusValue" data-status="loading">Checking</strong>
                 </div>
               </div>
+              <div id="settingsDmE2eeBackupAutoHint" class="settingsPrivacyNote">Logging out does not remove Vault access on this device.</div>
               <div id="settingsDmE2eeBackupRecoveryKeyMissing" class="settingsPrivacyCallout is-warning" hidden>A recuperação por palavra-passe é suficiente. Não precisa de gerar um código para usar mensagens encriptadas.</div>
               <details id="settingsDmE2eeBackupHowItWorks" class="settingsPrivacyDetails">
                 <summary id="settingsDmE2eeBackupHowItWorksSummary">How Vault recovery works</summary>
@@ -1719,7 +1738,9 @@
                   </ul>
                 </div>
               </details>
-              <div class="settingsGrid">
+              <div class="settingsVaultRecoveryAdvanced"><button id="btnSettingsDmE2eeBackupRefresh" class="btn ghost" type="button">Refresh Vault status</button><div id="settingsDmE2eeBackupLimitations" class="settingsHint">Guarde a palavra-passe e qualquer código de recuperação existente. Sem dispositivos autorizados nem métodos de recuperação, não será possível recuperar as mensagens encriptadas.</div></div>
+              </details>
+              <div id="settingsVaultActionArea" class="settingsVaultActionArea" hidden>
                 <div id="settingsDmE2eeBackupSaveWrap" class="settingsColumn" hidden>
                   <label id="settingsDmE2eeBackupPasswordLabel" class="label" for="settingsDmE2eeBackupPassword">Vault Recovery Password</label>
                   <input id="settingsDmE2eeBackupPassword" class="input" type="password" autocomplete="new-password" />
@@ -1741,12 +1762,8 @@
                 <div id="settingsDmE2eeBackupSetupWrap" class="settingsColumn" hidden>
                   <button id="btnSettingsDmE2eeSetupNewKey" class="btn ghost" type="button">Configurar mensagens encriptadas</button>
                 </div>
-                <div class="settingsColumn">
-                  <button id="btnSettingsDmE2eeBackupRefresh" class="btn ghost" type="button">Refresh Vault status</button>
-                  <div id="settingsDmE2eeBackupLimitations" class="settingsHint">Guarde a palavra-passe e qualquer código de recuperação existente. Sem dispositivos autorizados nem métodos de recuperação, não será possível recuperar as mensagens encriptadas.</div>
-                </div>
               </div>
-            </div>
+            </section>
           </div>
         </div>
 
@@ -2547,11 +2564,6 @@
         </div>
 
         <div class="field">
-          <label for="profileWidgetTitleInput">Title</label>
-          <input id="profileWidgetTitleInput" class="input" maxlength="120" placeholder="My favorite games" />
-        </div>
-
-        <div class="field">
           <label for="profileWidgetVisibility">Visibility</label>
           <select id="profileWidgetVisibility" class="input">
             <option value="public">Public</option>
@@ -2563,7 +2575,6 @@
         <label class="appearanceSwitchRow profileWidgetEnabledRow" for="profileWidgetEnabled">
           <div class="appearanceSwitchText">
             <b>Enabled</b>
-            <small>Disable to hide this widget from public view.</small>
           </div>
           <input id="profileWidgetEnabled" type="checkbox" checked />
         </label>
@@ -2620,44 +2631,37 @@
             <input id="profileWidgetItemExternalUrl" class="input" placeholder="https://..." />
           </div>
 
-          <div class="grid2 settingsGrid">
-            <div class="settingsColumn">
-              <div class="field">
-                <label for="profileWidgetItemStatus">Status</label>
-                <select id="profileWidgetItemStatus" class="input">
-                  <option value="favorite">Favorite</option>
-                  <option value="current">Currently</option>
-                  <option value="wishlist">Want to</option>
-                  <option value="completed">Completed</option>
-                  <option value="dropped">Dropped</option>
-                </select>
-              </div>
+          <div class="profileWidgetItemFieldsGrid">
+            <div class="field">
+              <label for="profileWidgetItemStatus">Status</label>
+              <select id="profileWidgetItemStatus" class="input">
+                <option value="favorite">Favorite</option>
+                <option value="current">Currently</option>
+                <option value="wishlist">Want to</option>
+                <option value="completed">Completed</option>
+                <option value="dropped">Dropped</option>
+              </select>
             </div>
-            <div class="settingsColumn">
-              <div class="field">
-                <label for="profileWidgetItemRating">Rating</label>
-                <select id="profileWidgetItemRating" class="input">
-                  <option value="">No rating</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                </select>
-              </div>
+            <div class="field">
+              <label for="profileWidgetItemRating">Rating</label>
+              <select id="profileWidgetItemRating" class="input">
+                <option value="">No rating</option>
+                <option value="1">★ 1</option>
+                <option value="2">★★ 2</option>
+                <option value="3">★★★ 3</option>
+                <option value="4">★★★★ 4</option>
+                <option value="5">★★★★★ 5</option>
+              </select>
             </div>
           </div>
 
           <div class="field">
             <label for="profileWidgetItemNote">Note (optional)</label>
-            <textarea id="profileWidgetItemNote" class="input" rows="4" maxlength="280" placeholder="Quick note..."></textarea>
+            <textarea id="profileWidgetItemNote" class="input" rows="3" maxlength="280" placeholder="Quick note..."></textarea>
           </div>
 
-          <label class="appearanceSwitchRow profileWidgetEnabledRow" for="profileWidgetItemFeatured">
-            <div class="appearanceSwitchText">
-              <b>Featured</b>
-              <small>Show this as the main highlighted item.</small>
-            </div>
+          <label class="profileWidgetFeatureRow" for="profileWidgetItemFeatured">
+            <span>Feature on profile</span>
             <input id="profileWidgetItemFeatured" type="checkbox" />
           </label>
         </div>
@@ -2999,7 +3003,10 @@
             </div>
 
             <div class="serverSettingsProfileGrid">
-              <div class="serverSettingsSectionCard">
+              <section class="serverSettingsIdentityPanel">
+                <div class="serverSettingsSectionHead">
+                  <h3>Identity</h3>
+                </div>
                 <div class="serverCreateIconRow serverSettingsIconRow">
                   <button id="serverSettingsIconPreview" class="serverCreateIconPreview" type="button" aria-label="Choose server icon" data-altara-i18n-aria-label="surface.choose_server_icon">
                     <span class="groupDmAvatarFallback">S</span>
@@ -3007,53 +3014,54 @@
                   </button>
                   <div class="serverCreateIconActions">
                     <div class="serverSettingsFieldLabel" data-altara-i18n="surface.server_icon">Server Icon</div>
-                    <div class="serverSettingsFieldHint">Use a square image for the cleanest crop.</div>
                     <div class="serverSettingsButtonRow">
-                      <button id="btnServerSettingsIconPick" class="btn ghost" type="button" data-altara-i18n="surface.upload">Upload</button>
+                      <button id="btnServerSettingsIconPick" class="btn ghost" type="button">Change</button>
                       <button id="btnServerSettingsIconClear" class="btn ghost" type="button" data-altara-i18n="surface.remove">Remove</button>
                     </div>
                   </div>
                   <input id="serverSettingsIconFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
                 </div>
 
-                <div class="serverSettingsBannerBlock">
-                  <div class="serverSettingsFieldLabel" data-altara-i18n="surface.server_banner">Server Banner</div>
-                  <div id="serverSettingsBannerPreview" class="serverSettingsBannerPreview" aria-label="Server banner preview" data-altara-i18n-aria-label="surface.server_banner_preview">
-                    <span data-altara-i18n="surface.server_banner">Server Banner</span>
-                  </div>
-                  <div class="serverSettingsFieldHint">Recommended: 16:9, 960x540 or larger.</div>
-                  <div class="serverSettingsButtonRow">
-                    <button id="btnServerSettingsBannerPick" class="btn ghost" type="button" data-altara-i18n="surface.upload_banner">Upload Banner</button>
-                    <button id="btnServerSettingsBannerClear" class="btn ghost" type="button" data-altara-i18n="surface.remove_banner">Remove Banner</button>
-                  </div>
-                  <input id="serverSettingsBannerFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
-                </div>
-
-                <div class="field">
+                <div class="field serverSettingsNameField">
                   <label for="serverSettingsName" data-altara-i18n="surface.server_name_2">Server Name</label>
                   <input id="serverSettingsName" class="input" placeholder="Server name" data-altara-i18n-placeholder="surface.server_name" maxlength="60" />
                 </div>
 
-                <div class="field">
+                <div class="field serverSettingsWelcomeField">
                   <label for="serverSettingsWelcomeChannel" data-altara-i18n="surface.welcome_channel_2">Welcome Channel</label>
                   <select id="serverSettingsWelcomeChannel" class="input">
                     <option value="" data-altara-i18n="surface.loading_channels">Loading channels...</option>
                   </select>
                   <div id="serverSettingsWelcomeHint" class="hint" data-altara-i18n="surface.member_join_leave_messages_are_posted_in_this_channel">Member join/leave messages are posted in this channel.</div>
                 </div>
-              </div>
+              </section>
 
-              <aside class="serverSettingsPreviewCard" aria-label="Server preview" data-altara-i18n-aria-label="surface.server_preview">
-                <div class="serverSettingsPreviewBanner"></div>
-                <div class="serverSettingsPreviewBody">
-                  <div id="serverSettingsPreviewIcon" class="serverSettingsPreviewIcon">
-                    <span class="groupDmAvatarFallback">S</span>
-                  </div>
-                  <div id="serverSettingsPreviewName" class="serverSettingsPreviewName" data-altara-i18n="surface.server">Server</div>
-                  <div class="serverSettingsPreviewMeta" data-altara-i18n="surface.altara_server_preview">ALTARA server preview</div>
-                  <div id="serverSettingsPreviewChannel" class="serverSettingsPreviewChannel" data-altara-i18n="surface.welcome_channel">Welcome channel</div>
+              <section class="serverSettingsMediaSection">
+                <div class="serverSettingsSectionHead">
+                  <h3>Live preview</h3>
+                  <p>See changes before you save.</p>
                 </div>
-              </aside>
+                <div class="serverSettingsBannerBlock">
+                  <div class="serverSettingsBannerActions">
+                      <div class="serverSettingsFieldLabel" data-altara-i18n="surface.server_banner">Server Banner</div>
+                      <div class="serverSettingsButtonRow">
+                        <button id="btnServerSettingsBannerPick" class="btn ghost" type="button">Change</button>
+                        <button id="btnServerSettingsBannerClear" class="btn ghost" type="button" data-altara-i18n="surface.remove_banner">Remove Banner</button>
+                      </div>
+                  </div>
+                  <aside class="serverSettingsPreviewCard" aria-label="Server preview" data-altara-i18n-aria-label="surface.server_preview">
+                    <div id="serverSettingsBannerPreview" class="serverSettingsBannerPreview serverSettingsPreviewBanner" aria-label="Server banner preview" data-altara-i18n-aria-label="surface.server_banner_preview">
+                      <span data-altara-i18n="surface.server_banner">Server Banner</span>
+                    </div>
+                    <div class="serverSettingsPreviewBody">
+                      <div id="serverSettingsPreviewIcon" class="serverSettingsPreviewIcon"><span class="groupDmAvatarFallback">S</span></div>
+                      <div id="serverSettingsPreviewName" class="serverSettingsPreviewName" data-altara-i18n="surface.server">Server</div>
+                      <div id="serverSettingsPreviewChannel" class="serverSettingsPreviewChannel" data-altara-i18n="surface.welcome_channel">Welcome channel</div>
+                    </div>
+                  </aside>
+                  <input id="serverSettingsBannerFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+                </div>
+              </section>
             </div>
           </div>
 
@@ -3066,15 +3074,16 @@
             </div>
 
             <section class="serverSettingsRolesSection" aria-label="Server Roles" data-altara-i18n-aria-label="surface.server_roles">
-              <div class="serverSettingsRolesHead">
+              <details class="serverSettingsRoleCreateDisclosure">
+              <summary class="serverSettingsRolesHead">
                 <div>
                   <div class="label" data-altara-i18n="surface.create_role_2">Create Role</div>
-                  <div class="hint">Choose a name, color, and permission preset.</div>
                 </div>
-              </div>
+                <span aria-hidden="true">+</span>
+              </summary>
 
               <div class="serverSettingsRoleCreateRow">
-                <input id="serverSettingsRoleName" class="input" placeholder="New role name" maxlength="40" />
+                <input id="serverSettingsRoleName" class="input" placeholder="New role name" aria-label="New role name" maxlength="40" />
                 <input
                   id="serverSettingsRoleColor"
                   class="serverSettingsRoleColorInput"
@@ -3088,6 +3097,7 @@
                 </select>
                 <button id="btnServerSettingsRoleCreate" class="btn ghost" type="button" data-altara-i18n="surface.create_role_2">Create Role</button>
               </div>
+              </details>
 
               <div id="serverSettingsRolesMeta" class="hint serverSettingsRolesMeta" data-altara-i18n="surface.loading_roles">Loading roles...</div>
 
@@ -3901,6 +3911,6 @@
     </div>
   </div>
 
-  <script type="module" src="/app/app.js?release=0.1.136&amp;v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"></script>
+  <script type="module" src="/app/app.js?release=0.1.137&amp;v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"></script>
 </body>
 </html>

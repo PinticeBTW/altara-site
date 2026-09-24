@@ -97,7 +97,7 @@ test("successful authentication keeps the existing same-origin redirect behavior
     },
   };
 
-  vm.runInNewContext(`${resolveSource}\n${redirectSource}\nredirectAfterSuccessfulLogin();`, context);
+  vm.runInNewContext(`let loginRedirectStarted = false;\n${resolveSource}\n${redirectSource}\nredirectAfterSuccessfulLogin();`, context);
   assert.equal(redirectedTo, "./index.html");
   assert.match(source, /setAuthFeedback\([^;]+success[^;]+\);\s*redirectAfterSuccessfulLogin\(\);/s);
 });

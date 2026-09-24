@@ -1,3 +1,5 @@
+import { buildCompactActivityArtworkHtml } from "./lib/activityArtwork.js";
+import { selectPublishedActivity, spotifyActivityIcon } from "./lib/presenceActivity.js";
 // presence-ui.js
 // Renderiza Active Now + Offline + dots nas DMs
 
@@ -231,6 +233,7 @@ function normalizeActivity(raw) {
       progressMs: Math.max(0, Math.round(Number(raw.progressMs || raw.progress_ms || 0) || 0)),
       durationMs: Math.max(0, Math.round(Number(raw.durationMs || raw.duration_ms || 0) || 0)),
       startedAt: (() => { const progressMs = Math.max(0, Math.round(Number(raw.progressMs || raw.progress_ms || 0) || 0)); return Math.max(1, Math.round(fetchedAt) - progressMs); })(),
+      activityStartedAt: Number.isFinite(Number(raw.activityStartedAt)) && Number(raw.activityStartedAt) > 0 ? Number(raw.activityStartedAt) : Math.max(1, fetchedAt - Math.max(0, Number(raw.progressMs || 0) || 0)),
       fetchedAt,
       updatedAt: fetchedAt,
       isPlaying: true,
@@ -253,6 +256,9 @@ function normalizeActivity(raw) {
     activityVerb,
     startedAt,
     icon: normalizeActivityAssetUrl(raw.icon),
+    logo: normalizeActivityAssetUrl(raw.logo || raw.metadata?.logo || ""),
+    executableIcon: normalizeActivityAssetUrl(raw.executableIcon || raw.metadata?.executableIcon || ""),
+    squareArtwork: normalizeActivityAssetUrl(raw.squareArtwork || raw.metadata?.squareArtwork || ""),
     cover: normalizeActivityAssetUrl(raw.cover),
     background: normalizeActivityAssetUrl(raw.background),
     provider: String(raw.provider || "").trim(),
@@ -288,11 +294,8 @@ function buildSpotifyActivityHtml(activity, userId = "") {
   });
   return `
     <div class="presenceActivity presenceActivity--spotify" title="${esc(normalized.title || normalized.name || "Spotify")}">
-      <div class="presenceActivityArt">
-        ${artwork ? `<img src="${esc(artwork)}" alt="" loading="lazy" onerror="this.hidden=true;this.closest('.presenceActivityArt')?.classList.add('is-fallback')" />` : `<span>S</span>`}
-      </div>
       <div class="presenceActivityText">
-        <div class="presenceActivityLabel">Listening to Spotify</div>
+        <div class="presenceActivityLabel">${spotifyActivityIcon}Listening to Spotify</div>
         <div class="presenceActivityTitle">${esc(normalized.title || normalized.name || "Spotify")}</div>
         <div class="presenceActivityMeta">${esc(normalized.artist || normalized.details || "Spotify")}</div>
         ${progressHtml}
@@ -355,6 +358,7 @@ function buildPresenceListSignature(kind, rows, query = "") {
       String(u.avatar_url || ""),
       String(u.name_color || ""),
       JSON.stringify(normalizeActivity(u.activity) || null),
+      u.activity?.type === "playing" ? Math.max(0, Math.floor((Date.now() - u.activity.startedAt) / 60000)) : "",
     ].join(":")),
   ].join("|");
 }
@@ -367,6 +371,11 @@ function cardUser(u, right = "") {
   const avatarHtml = buildPresenceAvatarHtml(u) || `<span class="presenceAvatarFallback">${esc(presenceInitial(u))}</span>`;
   const activityText = activityLabel(u.activity);
   const spotifyActivityHtml = buildSpotifyActivityHtml(u.activity, u.id);
+  const activity = normalizeActivity(u.activity);
+  const artworkHtml = activity ? buildCompactActivityArtworkHtml(activity) : "";
+  const elapsed = activity?.type === "playing"
+    ? Math.max(0, Math.floor((Date.now() - activity.startedAt) / 60000)) : 0;
+  const elapsedLabel = elapsed >= 60 ? `${Math.floor(elapsed / 60)}h` : `${elapsed}m`;
   logActiveNowDebug("render card", {
     userId: String(u.id || ""),
     status: st,
@@ -381,13 +390,12 @@ function cardUser(u, right = "") {
         </div>
         <div class="presenceText">
           <div class="presenceName${nameClass}"${nameStyle}>${esc(u.display_name || u.username || "User")}</div>
-          <div class="presenceHandle">@${esc(u.username || "")}${activityText ? ` <span>&middot; ${esc(activityText)}</span>` : ""}</div>
+          <div class="presenceHandle" title="${esc(activityText || ("@" + (u.username || "")))}">${activityText ? `${esc(activityText)} &middot; ${elapsedLabel}` : `@${esc(u.username || "")}`}</div>
           ${spotifyActivityHtml}
         </div>
       </div>
-      <div class="presenceRight">
-        ${right}
-      </div>
+      ${artworkHtml}
+      ${right ? `<div class="presenceRight">${right}</div>` : ""}
     </div>
   `;
 }
@@ -445,8 +453,8 @@ export function renderPresenceUI({
       has_live_session: classification.isPresenceLive,
       live_session_count: classification.liveSessionCount,
       counts_as_online_now: classification.countsAsOnlineNow,
-      activity: normalizeActivity(u.activity || u.spotify_activity || u.spotifyActivity),
-      spotify_activity: normalizeActivity(u.spotify_activity || u.spotifyActivity || u.activity),
+      activity: selectPublishedActivity(u, normalizeActivity),
+      spotify_activity: selectPublishedActivity(u, normalizeActivity),
     });
   }
 
@@ -490,7 +498,7 @@ export function renderPresenceUI({
       status,
       has_live_session: p.has_live_session,
       counts_as_online_now: p.counts_as_online_now,
-      activity: status === "offline" ? null : normalizeActivity(p.activity || p.spotify_activity),
+      activity: status === "offline" ? null : selectPublishedActivity(p, normalizeActivity),
     };
   });
 
@@ -502,7 +510,7 @@ export function renderPresenceUI({
       display_name: me.display_name || me.username || "Me",
       avatar_url: me.avatar_url || null,
       name_color: normalizeNameColor(me.name_color),
-      activity: normalizeActivity(me.activity || me.spotify_activity || me.spotifyActivity),
+      activity: selectPublishedActivity(me, normalizeActivity),
       manual_status: normalizeManualStatus(me.status),
       status: resolveEffectivePresenceStatus({
         liveStatus: presenceMap.get(meId)?.status || me.status || "online",
@@ -526,7 +534,7 @@ export function renderPresenceUI({
   const filtered = friendOnly.filter(u => matchSearch(u, q));
 
   const online = filtered.filter(u => u.counts_as_online_now === true);
-  const active = online.filter(u => !!normalizeActivity(u.activity || u.spotify_activity));
+  const active = online.filter(u => !!selectPublishedActivity(u, normalizeActivity));
   const offline = filtered.filter(u => u.counts_as_online_now !== true);
 
   logPresenceLiveDebug("activeNow render source", {
@@ -548,7 +556,7 @@ export function renderPresenceUI({
       manualStatusFromPresence: p?.manual_status || "",
       effectiveStatus,
       includedInOnlineNow: u.counts_as_online_now === true,
-      includedInActiveNow: u.counts_as_online_now === true && !!normalizeActivity(u.activity || u.spotify_activity),
+      includedInActiveNow: u.counts_as_online_now === true && !!selectPublishedActivity(u, normalizeActivity),
     });
   });
 

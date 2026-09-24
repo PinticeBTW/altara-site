@@ -37,6 +37,7 @@ export const ALTARA_SFX_CUE_REGISTRY = Object.freeze({
   connection_restored: cue("sfx/connection_restored.wav", { volume: 0.26, preload: "priority", usage: "Established local call transport restored" }),
   ui_success: cue("sfx/ui_success.wav", { volume: 0.25, usage: "Explicit high-signal user action success" }),
   ui_warning: cue("sfx/ui_warning.wav", { volume: 0.25, usage: "Explicit recoverable user-facing warning" }),
+  appearance_flashbang: cue("sfx/appearance_flashbang.wav", { volume: 0.32, preload: "priority", usage: "Confirmed White appearance theme" }),
   ui_error: cue("sfx/ui_error.wav", { volume: 0.27, usage: "Explicit important user-facing action failure" }),
 });
 
@@ -56,6 +57,7 @@ export const ALTARA_SFX_PRIORITY_PRELOAD_CUES = Object.freeze([
   "server_voice_move",
   "connection_interrupted",
   "connection_restored",
+  "appearance_flashbang",
 ]);
 
 export const ALTARA_SFX_LOOP_PRELOAD_CUES = Object.freeze([

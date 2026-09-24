@@ -1,4 +1,5 @@
-﻿import { supabase } from "./supabaseClient.js";
+﻿import { mountLoginAccountSwitcher, rememberDesktopAccount } from "./lib/desktopAccounts.js";
+import { supabase } from "./supabaseClient.js";
 import { $, setDebug, enhancePasswordVisibilityToggles } from "./ui.js";
 import { foundingCreatorReferral } from "./lib/foundingCreatorReferral.js";
 foundingCreatorReferral.capture();
@@ -1426,6 +1427,7 @@ window.addEventListener("offline", syncOfflineLoginWarning);
 inviteNotice.render();
 onAuthLanguageChange(() => {
   syncLoginStaticCopy();
+  mountLoginAccountSwitcher();
   enhancePasswordVisibilityToggles(document, { t: tAuth });
 });
 syncLoginStaticCopy();
@@ -1454,6 +1456,11 @@ void (async () => {
 ensureLoginInputsReady();
 enhancePasswordVisibilityToggles(document, { t: tAuth });
 initDesktopWindowControls();
+mountLoginAccountSwitcher();
+// Clear only the current display marker on a conclusive logout, never another session.
+supabase.auth.onAuthStateChange(event => {
+  if (event === "SIGNED_OUT") void rememberDesktopAccount(null).catch(() => {});
+});
 void initAuthInstallWelcome({
   onDone: ({ shown }) => {
     ensureLoginInputsReady();

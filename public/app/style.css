@@ -4646,7 +4646,33 @@ body.is-server-role-pointer-dragging * {
 .widgetCard--size-sm { grid-column: span 1; grid-row: span 1; }
 .widgetCard--size-md { grid-column: span 2; grid-row: span 1; }
 .widgetCard--size-lg { grid-column: span 2; grid-row: span 2; }
+.widgetCard--size-tall { grid-column: span 2; grid-row: span 3; }
 .widgetCard--size-xl { grid-column: span 4; grid-row: span 3; }
+
+.widgetCard[data-widget-id="call"].widgetCard--size-md .widgetCard__row {
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.widgetCard[data-widget-id="call"] .widgetCard__row > div:first-child {
+  min-width: 0;
+}
+
+.widgetCard[data-widget-id="call"] .widgetCard__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widgetCard[data-widget-id="call"].widgetCard--size-md .widgetQuickActions {
+  gap: 6px;
+}
+
+.widgetCard[data-widget-id="call"].widgetCard--size-md .widgetQuickActions .btn {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+}
 
 @media (max-width: 1320px) {
   .widgetCard--size-xl { grid-column: span 3; grid-row: span 3; }
@@ -4671,6 +4697,18 @@ body.is-server-role-pointer-dragging * {
   .widgetCard--size-xl {
     grid-column: span 1;
     grid-row: span 1;
+  }
+  .widgetCard--size-lg,
+  .widgetCard--timer.widgetCard--size-md,
+  .widgetCard[data-widget-id="call"].widgetCard--size-md {
+    grid-row: span 2;
+  }
+  .widgetCard--size-xl {
+    grid-row: span 3;
+  }
+  .widgetCard--size-tall {
+    grid-column: span 1;
+    grid-row: span 3;
   }
 }
 
@@ -5081,6 +5119,23 @@ body.is-server-role-pointer-dragging * {
   overflow: hidden;
 }
 
+body:not(.authPage) .profileNotepadWidget.widgetCard--size-md {
+  padding: 10px 12px;
+  gap: 6px;
+}
+
+.profileNotepadWidget.widgetCard--size-md .widgetNotesInput {
+  padding: 7px 9px;
+}
+
+.profileNotepadWidget.widgetCard--size-md .profileNotepadFooter {
+  min-height: 28px;
+}
+
+.profileNotepadWidget.widgetCard--size-md .profileNotepadFooter .widgetCard__miniBtn {
+  height: 28px;
+}
+
 .widgetQuickActions {
   display: flex;
   align-items: center;
@@ -5097,13 +5152,14 @@ body.is-server-role-pointer-dragging * {
 .widgetNotesInput {
   width: 100%;
   min-width: 0;
-  min-height: 72px;
+  min-height: 0;
+  height: 100%;
   max-height: 100%;
   box-sizing: border-box;
   resize: none;
   overflow-x: hidden;
-  overflow-y: hidden;
-  align-self: start;
+  overflow-y: auto;
+  align-self: stretch;
   border: 1px solid var(--notepad-border, var(--stroke));
   border-radius: 14px;
   background:
@@ -5158,12 +5214,6 @@ body.is-server-role-pointer-dragging * {
   border-color: color-mix(in srgb, var(--notepad-accent, var(--accent)) 32%, var(--notepad-border, var(--stroke)));
   background: color-mix(in srgb, var(--notepad-surface-elevated, var(--surface-2)) 78%, var(--notepad-accent, var(--accent)) 10%);
   color: var(--notepad-text, var(--text-main));
-}
-
-@container profileNotepad (max-width: 360px) {
-  .widgetNotesInput {
-    min-height: 52px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -6260,6 +6310,95 @@ body.is-server-role-pointer-dragging * {
 
 .profileChecklistWidget--large .profileChecklistTaskList {
   padding-right: 2px;
+}
+
+/* Keep the taller Checklist compact without squeezing its content. */
+.widgetCard.profileChecklistWidget.widgetCard--size-tall {
+  padding: 14px;
+}
+
+.widgetCard.profileChecklistWidget.widgetCard--size-tall.is-editing {
+  padding-top: 34px;
+  padding-bottom: 18px;
+}
+
+@container profileChecklist (max-width: 360px) {
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistHeader {
+  gap: 5px;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistTitleBlock {
+  gap: 5px;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistIcon {
+  width: 20px;
+  height: 20px;
+  flex-basis: 20px;
+  border-radius: 7px;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistKicker {
+  font-size: 12px;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistProgress {
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 10px;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistTaskRow {
+  min-height: 66px;
+  max-height: none;
+  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 7px;
+  row-gap: 4px;
+  padding: 7px;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistCheckbox {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.profileChecklistWidget.widgetCard--size-tall :is(.profileChecklistTaskTitle, .profileChecklistRenameInput, .profileChecklistDeletePrompt) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistTaskMeta {
+  display: none;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistTaskActions {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  max-width: 100%;
+  justify-self: end;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistQuickAddRow {
+  grid-template-columns: minmax(0, 1fr) 30px;
+  grid-template-rows: 28px 28px;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistQuickAddInput {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistQuickAddSubmit {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.profileChecklistWidget.widgetCard--size-tall .profileChecklistQuickAddCancel {
+  grid-column: 2;
+  grid-row: 2;
+}
 }
 
 .profileChecklistTaskRow {
@@ -8290,6 +8429,59 @@ body.is-server-voice-member-dragging .server-voice-channel-row.is-voice-member-d
   color: var(--text-soft, #a8a6a2);
   line-height: 1;
   -webkit-app-region: no-drag;
+}
+
+.profileChecklistReorderHandle {
+  width: 18px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.profileChecklistMoveControls {
+  display: grid;
+  gap: 1px;
+}
+
+.profileChecklistMoveControls .profileChecklistMiniAction {
+  width: 18px;
+  height: 13px;
+  border-radius: 4px;
+}
+
+.profileChecklistMoveControls .widgetTodoIcon {
+  width: 11px;
+  height: 11px;
+}
+
+.profileChecklistTaskRow.is-task-dragging {
+  border-color: color-mix(in srgb, var(--checklist-accent) 55%, var(--checklist-border));
+  background: color-mix(in srgb, var(--checklist-surface-elevated) 88%, var(--checklist-accent) 12%);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  transform: translateY(-1px);
+  transition: none;
+}
+
+.is-task-dragging .profileChecklistReorderHandle {
+  cursor: grabbing;
+}
+
+.profileChecklistTaskRow.is-task-drop-before {
+  box-shadow: inset 0 2px 0 var(--checklist-accent-strong);
+}
+
+.profileChecklistTaskRow.is-task-drop-after {
+  box-shadow: inset 0 -2px 0 var(--checklist-accent-strong);
+}
+
+.profileChecklistTaskActions:focus-within {
+  opacity: 1;
+}
+
+.profileChecklistReorderHandle:focus-visible,
+.profileChecklistMoveControls .profileChecklistMiniAction:focus-visible {
+  outline: 1px solid var(--checklist-accent-strong);
+  outline-offset: 1px;
 }
 .dmPrivacyOptInBtn { cursor: pointer; }
 .dmPrivacyBadge .altaraIcon,
@@ -24529,34 +24721,99 @@ body:not(.authPage).desktop-titlebar-overlay .panel.mid.is-dm-conversation-open 
 }
 
 .voiceChannelEmptyState__card {
-  width: min(620px, calc(100% - 12px));
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--altara-border, rgba(255,255,255,0.1)) 76%, var(--altara-accent, #e8cfae) 24%);
-  padding: 22px 18px;
+  width: min(640px, 100%);
+  min-width: 0;
+  padding: 40px 12px;
   text-align: center;
-  background:
-    radial-gradient(460px 190px at 50% -10%, color-mix(in srgb, var(--altara-accent, #e8cfae) 10%, transparent), transparent 70%),
-    linear-gradient(160deg, color-mix(in srgb, var(--altara-surface-elevated, #202020) 72%, transparent), color-mix(in srgb, var(--altara-bg, #101010) 92%, transparent));
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  background: radial-gradient(ellipse at 50% 45%, rgba(232, 207, 174, 0.035), transparent 68%);
 }
 
 .voiceChannelEmptyState__title {
-  font-size: 30px;
-  line-height: 1.08;
-  font-weight: 900;
-  letter-spacing: 0.01em;
-  color: #f2f6ff;
-  margin-bottom: 6px;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  color: #eeeae4;
+  overflow-wrap: anywhere;
+  margin: 10px 0;
 }
 
 .voiceChannelEmptyState__sub {
-  color: var(--text-soft);
+  color: var(--text-soft, #a5a19b);
   font-size: 14px;
   margin-bottom: 14px;
 }
 
-.voiceChannelEmptyState__join.btn {
-  min-width: 190px;
+body:not(.authPage) #dmMain #voiceChannelEmptyState .voiceChannelEmptyState__join.btn.primary {
+  min-width: 156px;
+  min-height: 42px;
+  max-width: 100%;
+  padding: 10px 24px;
+  border: 1px solid rgba(232, 207, 174, 0.4) !important;
+  border-radius: 9px;
+  color: #211d18 !important;
+  background: #dfc7a7 !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18) !important;
+}
+
+body:not(.authPage) #dmMain #voiceChannelEmptyState .voiceChannelEmptyState__join.btn.primary:hover:not(:disabled) { background: #ecd6b9 !important; }
+.voiceChannelEmptyState__join.btn:focus-visible { outline: 2px solid #eed7b8; outline-offset: 5px; }
+.voiceChannelEmptyState__join.btn:disabled { opacity: 0.5; cursor: wait; }
+.voiceChannelPreview__icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 22px;
+  color: #c9b496;
+  border: 1px solid rgba(232, 207, 174, 0.12);
+  border-radius: 18px;
+  background: rgba(232, 207, 174, 0.035);
+}
+.voiceChannelPreview__icon svg { width: 25px; height: 25px; }
+.voiceChannelPreview__eyebrow { color: #9d9181; font-size: 10px; font-weight: 650; letter-spacing: 0.18em; }
+.voiceChannelPreview__hint { color: #918d87; font-size: 13px; line-height: 1.6; margin: 24px 0 20px; }
+.voiceChannelPreview__participants {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 22px 12px;
+  width: calc(var(--voice-preview-columns, 4) * 102px - 12px);
+  max-width: 100%;
+  margin: 32px auto 0;
+}
+.voiceChannelPreview__participants[hidden] { display: none; }
+.voiceChannelPreview__participant { width: 90px; min-width: 0; }
+.voiceChannelPreview__avatar {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 12px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #292724;
+  color: #dfd1bf;
+  font-size: 22px;
+  outline: 1px solid rgba(232, 207, 174, 0.14);
+  outline-offset: 3px;
+}
+.voiceChannelPreview__avatar :is(img, .profileAvatarMediaClip) { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.voiceChannelPreview__participant.is-speaking .voiceChannelPreview__avatar {
+  outline-color: rgba(224, 195, 153, 0.8);
+  animation: voicePreviewSpeaking 1.8s ease-in-out infinite;
+}
+.voiceChannelPreview__name { color: #ccc7bf; font-size: 12px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voiceChannelPreview__badges { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 20px; margin-top: 3px; }
+.voiceChannelPreview__badges .callAudioStateBadges { margin: 0; }
+.voiceChannelPreview__live { font-size: 8px; letter-spacing: 0.05em; color: #cfb996; border: 1px solid #655743; border-radius: 4px; padding: 1px 4px; }
+.voiceChannelPreview__overflow { display: grid; place-items: center; width: 64px; height: 64px; margin: 0 13px; border: 1px solid rgba(232, 207, 174, 0.16); border-radius: 50%; color: #bdae99; font-size: 17px; }
+@keyframes voicePreviewSpeaking {
+  0%, 100% { box-shadow: 0 0 0 5px rgba(224, 195, 153, 0.03); }
+  50% { box-shadow: 0 0 0 7px rgba(224, 195, 153, 0.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voiceChannelPreview__participant.is-speaking .voiceChannelPreview__avatar { animation: none; }
 }
 
 .callStage.is-docked-in-dm {
@@ -30889,7 +31146,7 @@ body:not(.authPage) #pendingBadge {
 
 body:not(.authPage) .widgetsTab {
   gap: 12px;
-  padding-bottom: 78px;
+  padding-bottom: 24px;
 }
 
 body:not(.authPage) .widgetsGrid {
@@ -31067,9 +31324,9 @@ body:not(.authPage) .widgetCalendarDayCell.is-today {
 }
 
 body:not(.authPage) .widgetsEditFabRow {
-  position: absolute;
-  right: 28px;
-  bottom: 24px;
+  position: static;
+  margin-top: 4px;
+  padding-bottom: 4px;
 }
 
 body:not(.authPage) .widgetsEditFab {
@@ -32945,18 +33202,12 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
   background: rgba(255, 255, 255, 0.028);
 }
 
-.meProfilePopout__about,
-.meProfilePopout__connections,
-.meProfilePopout__widgets {
+.meProfilePopout__about {
   margin-top: 0;
   padding: 9px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
-}
-
-.meProfilePopout__connections .profile-connections-compact {
-  margin-top: 0;
 }
 
 .meProfilePopout__sectionTop {
@@ -32993,103 +33244,6 @@ body:not(.authPage) #meProfileCard #meStatusBtn .dotMini {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
-}
-
-.meProfilePopout__widgetList {
-  display: grid;
-  gap: 6px;
-}
-
-.meProfilePopout__widgetCard {
-  width: 100%;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-  padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.065);
-  border-radius: 13px;
-  background: rgba(12, 12, 12, 0.36);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.meProfilePopout__widgetCard:hover,
-.meProfilePopout__widgetCard:focus-visible {
-  outline: none;
-  border-color: rgba(232, 207, 174, 0.18);
-  background: rgba(232, 207, 174, 0.055);
-}
-
-.meProfilePopout__widgetMedia {
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.075);
-  border-radius: 10px;
-  background: #202020;
-  color: rgba(232, 207, 174, 0.92);
-  font-size: 15px;
-  font-weight: 750;
-}
-
-.meProfilePopout__widgetMedia img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-}
-
-.meProfilePopout__widgetBody {
-  min-width: 0;
-  display: grid;
-  gap: 1px;
-}
-
-.meProfilePopout__widgetType,
-.meProfilePopout__widgetMeta {
-  overflow: hidden;
-  color: rgba(242, 240, 236, 0.48);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.meProfilePopout__widgetMeta {
-  color: rgba(242, 240, 236, 0.52);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.meProfilePopout__widgetName {
-  overflow: hidden;
-  color: rgba(242, 240, 236, 0.9);
-  font-size: 12px;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.meProfilePopout__emptyPreview {
-  display: grid;
-  gap: 6px;
-}
-
-.meProfilePopout__emptyTitle {
-  color: rgba(242, 240, 236, 0.58);
-  font-size: 12px;
-  line-height: 1.45;
 }
 
 .meProfilePopout__actions {
@@ -37771,8 +37925,7 @@ body.theme-resolved-light #profileOverlay.settingsOverlay .settingsIdentityBanne
   background: linear-gradient(180deg, rgba(255, 253, 248, 0.02), rgba(32, 28, 22, 0.18)) !important;
 }
 
-body.theme-resolved-light:not(.authPage) .meProfilePopout__avatar,
-body.theme-resolved-light:not(.authPage) .meProfilePopout__widgetMedia {
+body.theme-resolved-light:not(.authPage) .meProfilePopout__avatar {
   border-color: var(--altara-surface) !important;
   background: var(--altara-surface-elevated) !important;
   color: var(--altara-accent-strong) !important;
@@ -37797,25 +37950,19 @@ body.theme-resolved-light:not(.authPage) .meProfilePopout__statusText:focus-visi
   color: var(--altara-text) !important;
 }
 
-body.theme-resolved-light:not(.authPage) .meProfilePopout__name,
-body.theme-resolved-light:not(.authPage) .meProfilePopout__widgetName,
-body.theme-resolved-light:not(.authPage) .meProfilePopout__emptyTitle {
+body.theme-resolved-light:not(.authPage) .meProfilePopout__name {
   color: var(--altara-text) !important;
 }
 
 body.theme-resolved-light:not(.authPage) .meProfilePopout__handle,
 body.theme-resolved-light:not(.authPage) .meProfilePopout__meta,
 body.theme-resolved-light:not(.authPage) .meProfilePopout__bio,
-body.theme-resolved-light:not(.authPage) .meProfilePopout__sectionLabel,
-body.theme-resolved-light:not(.authPage) .meProfilePopout__widgetType,
-body.theme-resolved-light:not(.authPage) .meProfilePopout__widgetMeta {
+body.theme-resolved-light:not(.authPage) .meProfilePopout__sectionLabel {
   color: var(--altara-text-muted) !important;
 }
 
 body.theme-resolved-light:not(.authPage) .meProfilePopout__statusLine,
 body.theme-resolved-light:not(.authPage) .meProfilePopout__about,
-body.theme-resolved-light:not(.authPage) .meProfilePopout__widgets,
-body.theme-resolved-light:not(.authPage) .meProfilePopout__widgetCard,
 body.theme-resolved-light:not(.authPage) .meProfilePopout__action,
 body.theme-resolved-light:not(.authPage) .meProfilePopout__statusAction,
 body.theme-resolved-light:not(.authPage) .meProfilePopout__subAction {
@@ -37829,8 +37976,6 @@ body.theme-resolved-light:not(.authPage) .meProfilePopout__actions {
   background: var(--altara-surface) !important;
 }
 
-body.theme-resolved-light:not(.authPage) .meProfilePopout__widgetCard:hover,
-body.theme-resolved-light:not(.authPage) .meProfilePopout__widgetCard:focus-visible,
 body.theme-resolved-light:not(.authPage) .meProfilePopout__action:hover,
 body.theme-resolved-light:not(.authPage) .meProfilePopout__action:focus-visible,
 body.theme-resolved-light:not(.authPage) .meProfilePopout__statusAction:hover,
@@ -38507,6 +38652,33 @@ body:not(.authPage) #dmMain .dmProfileIdentity {
   padding: 0 2px 2px;
 }
 
+body:not(.authPage) #dmMain .dmProfileNameRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  min-width: 0;
+}
+
+body:not(.authPage) #dmMain .dmProfileNameRow > .dmProfileName {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+body:not(.authPage) #dmMain .dmProfileNameRow > .dmProfileAltaraPlusBadge {
+  flex: 0 0 auto;
+}
+
+body:not(.authPage) #dmMain .dmProfileAltaraPlusBadge[hidden] {
+  display: none;
+}
+
+body:not(.authPage) #dmMain .dmProfileAltaraPlusBadge .altaraPlusProfileBadge__img {
+  width: 20px;
+  height: 20px;
+}
+
 body:not(.authPage) #dmMain .dmProfileName {
   margin-top: 0;
   font-size: 20px;
@@ -38845,6 +39017,9 @@ body:not(.authPage) #dmMain.is-server-voice-call-layout:not(.is-server-voice-in-
   height: 100%;
   padding: 0 24px;
   place-items: center;
+  max-height: calc(100dvh - var(--desktop-titlebar-overlay-height, 40px) - 12px);
+  overflow-y: auto;
+  align-items: safe center;
 }
 
 body:not(.authPage) .app:has(#dmMain.is-server-voice-call-layout.is-server-voice-in-call):not(.left-collapsed),
@@ -45869,8 +46044,7 @@ body:not(.authPage) .meProfilePopout__banner {
     var(--altara-surface, #181818) !important;
 }
 
-body:not(.authPage) .meProfilePopout__avatar,
-body:not(.authPage) .meProfilePopout__widgetMedia {
+body:not(.authPage) .meProfilePopout__avatar {
   border-color: var(--altara-border, rgba(255, 255, 255, 0.08)) !important;
   background: var(--altara-surface-elevated, #202020) !important;
   color: var(--altara-accent, #e8cfae) !important;
@@ -45883,15 +46057,15 @@ body:not(.authPage) .meProfilePopout__avatarFallback {
   color: var(--altara-accent, #e8cfae) !important;
 }
 
-body:not(.authPage) :is(.meProfilePopout__name, .meProfilePopout__widgetName, .meProfilePopout__emptyTitle) {
+body:not(.authPage) .meProfilePopout__name {
   color: var(--altara-text, #f2f0ec) !important;
 }
 
-body:not(.authPage) :is(.meProfilePopout__handle, .meProfilePopout__meta, .meProfilePopout__bio, .meProfilePopout__sectionLabel, .meProfilePopout__widgetType, .meProfilePopout__widgetMeta) {
+body:not(.authPage) :is(.meProfilePopout__handle, .meProfilePopout__meta, .meProfilePopout__bio, .meProfilePopout__sectionLabel) {
   color: var(--altara-text-muted, rgba(242, 240, 236, 0.58)) !important;
 }
 
-body:not(.authPage) :is(.meProfilePopout__statusLine, .meProfilePopout__about, .meProfilePopout__widgets, .meProfilePopout__widgetCard, .meProfilePopout__emptyPreview) {
+body:not(.authPage) :is(.meProfilePopout__statusLine, .meProfilePopout__about) {
   border-color: var(--altara-border, rgba(255, 255, 255, 0.08)) !important;
   background: var(--altara-surface, #181818) !important;
   background-image: none !important;
@@ -45905,7 +46079,7 @@ body:not(.authPage) :is(.meProfilePopout__action, .meProfilePopout__statusAction
   color: var(--altara-text, #f2f0ec) !important;
 }
 
-body:not(.authPage) :is(.meProfilePopout__identity:hover, .meProfilePopout__identity:focus-visible, .meProfilePopout__statusText:hover, .meProfilePopout__statusText:focus-visible, .meProfilePopout__widgetCard:hover, .meProfilePopout__widgetCard:focus-visible, .meProfilePopout__action:hover, .meProfilePopout__action:focus-visible, .meProfilePopout__statusAction:hover, .meProfilePopout__statusAction:focus-visible, .meProfilePopout__subAction:hover, .meProfilePopout__subAction:focus-visible) {
+body:not(.authPage) :is(.meProfilePopout__identity:hover, .meProfilePopout__identity:focus-visible, .meProfilePopout__statusText:hover, .meProfilePopout__statusText:focus-visible, .meProfilePopout__action:hover, .meProfilePopout__action:focus-visible, .meProfilePopout__statusAction:hover, .meProfilePopout__statusAction:focus-visible, .meProfilePopout__subAction:hover, .meProfilePopout__subAction:focus-visible) {
   border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 38%, var(--altara-border, rgba(255, 255, 255, 0.08))) !important;
   background: var(--altara-surface-elevated, #202020) !important;
   color: var(--altara-text, #f2f0ec) !important;
@@ -47820,17 +47994,74 @@ body:not(.authPage) #activeNow .presenceRow .presenceRight:empty {
 }
 
 body:not(.authPage) #activeNow .presenceActivity {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  display: block;
   align-items: center;
   gap: 9px;
   width: 100%;
   min-width: 0;
   margin-top: 7px;
-  padding: 6px;
-  border: 1px solid color-mix(in srgb, var(--ok, #5ae270) 18%, var(--altara-border, rgba(255, 255, 255, 0.08)));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--altara-surface, #181818) 88%, var(--ok, #5ae270) 12%);
+  padding: 0;
+}
+
+.activityServiceIcon {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 5px;
+  vertical-align: -2px;
+  color: #1db954;
+}
+
+body:not(.authPage) #activeNow .presenceRow .presenceLeft {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+body:not(.authPage) #activeNow .presenceRow .presenceText {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+body:not(.authPage) #activeNow .presenceActivityLogo {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  border-radius: 9px;
+  align-self: center;
+}
+
+body:not(.authPage) #activeNow .presenceActivityLogo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+body:not(.authPage) #activeNow .presenceActivityLogo[hidden],
+.activityArtworkThumb[hidden],
+.serverMiniCompact__activityCover[hidden],
+.activityCompactArtwork[hidden] {
+  display: none !important;
+}
+
+body:not(.authPage) #activeNow .activityCompactArtwork img,
+.activityCompactArtwork img {
+  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  margin: auto;
+}
+
+.activityCompactArtwork {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.serverMiniCompact__activity:has(> .activityCompactArtwork[hidden]),
+.serverMiniCompact__activity:not(:has(> .activityCompactArtwork)) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 body:not(.authPage) #activeNow .presenceActivityArt {
@@ -49319,6 +49550,16 @@ body:not(.authPage) .groupsRail {
   scrollbar-width: thin;
   scrollbar-color: rgba(232, 201, 130, 0.32) rgba(255, 255, 255, 0.035);
 }
+
+/* Keep the everyday spatial controls compact; details retain advanced tools. */
+#spatialAudioPopover .spatialAudioPopover__head { position: static; background: none; }
+#spatialAudioPopover .spatialAudioSection--personal { padding: 0; border: 0; background: none; }
+#spatialAudioPopover .spatialAudioRangeEnds { display: flex; justify-content: space-between; }
+#spatialAudioPopover .spatialAudioAdvanced { margin-top: 12px; border-top: 1px solid rgba(232, 207, 174, .16); }
+#spatialAudioPopover .spatialAudioAdvanced > summary { padding: 12px 2px; cursor: pointer; color: #e8cfae; font-weight: 650; }
+#spatialAudioPopover .spatialAudioAdvanced > summary:focus-visible { outline: 2px solid #e8cfae; outline-offset: 2px; border-radius: 6px; }
+#spatialAudioPopover .spatialAudioAdvanced__content { display: grid; gap: 10px; }
+#spatialAudioPopover #btnSpatialAudioPopoverOpenRoom { width: 100%; margin-top: 8px; }
 
 .spatialAudioPopover::-webkit-scrollbar {
   width: 8px;
@@ -50846,6 +51087,52 @@ body:not(.authPage) .panel.left:has(.leftDockDms.is-server-context) #meProfileCa
 .profileTimerWidget--large .profileTimerControls {
   flex-wrap: wrap;
   justify-content: center;
+}
+
+/* Home cards already own their grid dimensions. Avoid stacking the generic
+   card padding with the profile timer padding, including while editing. */
+body:not(.authPage) .widgetCard.widgetCard--timer {
+  display: block;
+  padding: 0;
+}
+
+.widgetCard--timer .profileTimerInner {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+}
+
+.widgetCard--timer.profileTimerWidget--medium .profileTimerInner {
+  grid-template-rows: auto minmax(14px, 1fr) 6px 30px;
+}
+
+.widgetCard--timer.profileTimerWidget--large .profileTimerInner {
+  grid-template-rows: auto minmax(0, 1fr) auto 6px auto auto;
+  gap: 8px;
+}
+
+.widgetCard--timer.profileTimerWidget--large .profileTimerMain {
+  min-height: 0;
+}
+
+.widgetCard--timer.profileTimerWidget--large .profileTimerRing {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: auto;
+  height: min(148px, 100%);
+  max-width: 100%;
+}
+
+.widgetCard--timer .profileTimerTime {
+  inset: 0;
+  max-width: none;
+  display: grid;
+  place-items: center;
+}
+
+.widgetCard--timer.is-editing.profileTimerWidget--large .profileTimerHeader {
+  padding-right: 88px;
 }
 
 @media (max-width: 520px) {
@@ -57299,6 +57586,18 @@ body:not(.authPage) .groupOrbAppLogoImg { object-fit: contain; }
 .vaultPasswordField .input { width: 100%; box-sizing: border-box; }
 
 /* Server participant gestures and avatar size; compact rails and media stay unchanged. */
+.server-voice-member-row:not(.is-voice-member-dragging),
+#callStage [data-call-tile-type="screenshare"],
+#callStage [data-call-tile-type="screenshare"] :is(video, .stageGridAvatar, .stageGridLabel),
+#callStage [data-private-call-share-surface="1"],
+#callStage [data-private-call-share-surface="1"] video {
+  cursor: pointer;
+}
+
+.voice-participant-tile[data-voice-member-user-id][draggable="true"]:not(.is-voice-member-dragging) {
+  cursor: pointer;
+}
+
 .voice-participant-tile[data-voice-member-user-id][draggable="true"] :is(.stageGridAvatar, .participantAvatar, .stageGridVideo),
 .server-voice-member-row[draggable="true"] :is(.serverVoiceMember__avatar, .serverVoiceMember__name) {
   cursor: inherit;
@@ -57533,6 +57832,24 @@ body:not(.authPage) .voiceMiniDockSlot .callBarShareBadge:not([hidden]) {
 /* Server Voice chrome is scoped to its authoritative stage kind. Private calls
    retain their approved C1 layout and transport-owned participant nodes. */
 body:not(.authPage) #callStage.callStage[data-call-stage-kind="server"] :is(.stageGridTile, .participantTile),
+/* Server voice activity belongs to the participant rectangle only. */
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callParticipantFocusPrimary > .stageGridTile[data-call-grid-entry="1"].is-speaking,
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call #callStage.callStage.is-private-call-ui[data-call-stage-kind="server"][data-private-call-layout] :is(.stageGridTile, .participantTile, .callStagePlaceholder).is-speaking {
+  border-color: #43b581 !important;
+  box-shadow: inset 0 0 0 1px #43b581 !important;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call #callStage.callStage.is-private-call-ui[data-call-stage-kind="server"][data-private-call-layout] :is(.stageGridTile, .participantTile, .callStagePlaceholder).is-speaking::after {
+  animation: none !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+
+body:not(.authPage) #dmMain.is-server-voice-call-layout.is-server-voice-in-call #callStage.is-private-call-ui .is-speaking :is(.participantAvatar, .stageGridAvatar, #callStageAvatar) {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
 body:not(.authPage) #callStage.callStage[data-call-stage-kind="server"] :is(.stageGridAvatar, .participantAvatar, .stageGridLabel, .participantLabel, .callStageLabel, .callAudioStateBadges, .callAudioStateBadge, .serverVoiceScreensharePanel__badge, .serverVoiceScreensharePanel__title) {
   cursor: default !important;
 }
@@ -57733,20 +58050,33 @@ body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].
   bottom: auto;
 }
 
-/* Focus uses the same bounded participant card, including an empty solo rail. */
+/* Participant focus reserves a secondary rail only when it has content. */
 body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]),
 body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) {
   grid-template-columns: minmax(0, 1fr) clamp(220px, 22%, 260px);
   grid-template-rows: minmax(0, 1fr);
 }
 
-body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callParticipantFocusPrimary,
 body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callParticipantFocusPrimary {
   place-self: center;
   width: min(100%, 960px, calc((100cqh - 24px) * 16 / 9));
   height: auto;
   max-height: 100%;
   aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+}
+
+/* Focusing a server participant fills the available pane instead of shrinking
+   the card to a capped 16:9 thumbnail. Camera content keeps its own object-fit. */
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not([hidden]) > .callParticipantFocusPrimary {
+  place-self: stretch;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
   border: 0;
   border-radius: 14px;
   background: transparent;
@@ -57786,9 +58116,25 @@ body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].i
   display: none !important;
 }
 
+/* Hidden participant placeholders must not reserve a rail in solo focus. */
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not(:has(> .callShareRail > :not([hidden]))) {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  padding: 8px;
+}
+
+body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareRail:not(:has(> :not([hidden]))) {
+  display: none !important;
+}
+
 /* Sidebars and native window chrome reduce the call's available space. The
    participant rail responds to that canvas, independently of window width. */
 @container server-call-stage (max-width: 820px) {
+  body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"] .callShareStage:not([hidden]) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) min(116px, 26cqh);
+  }
+
   body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not(:has(> .callShareRail:empty)),
   body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not(:has(> .callShareRail:empty)) {
     --server-focus-rail-height: min(116px, 26cqh);
@@ -57796,7 +58142,6 @@ body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].i
     grid-template-rows: minmax(0, 1fr) var(--server-focus-rail-height);
   }
 
-  body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="server"].is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not(:has(> .callShareRail:empty)) > .callParticipantFocusPrimary,
   body:not(.authPage) #dmMain #callStage.callStage[data-call-stage-kind="group"].is-group-private-call-ui.is-private-call-ui[data-private-call-layout="media-focus"][data-private-call-focus-kind="participant"] .callShareStage:not(:has(> .callShareRail:empty)) > .callParticipantFocusPrimary {
     width: min(100%, calc((100cqh - var(--server-focus-rail-height) - 18px) * 16 / 9));
   }
@@ -58926,3 +59271,1574 @@ body.desktop-titlebar-overlay .mediaLightbox { top: var(--desktop-titlebar-overl
 .msg__attachment--video .msg__attachmentCornerBtn svg { display: block; width: 16px; height: 16px; }
 .msg__attachment--video:is(:hover, :focus-within) .msg__attachmentCornerBtn { opacity: 1; }
 @media (hover: none) { .msg__attachment--video .msg__attachmentCornerBtn { opacity: 1; } }
+
+/* Security settings: quiet, three-section layout shared by desktop and web. */
+#profileOverlay.settingsOverlay .settingsSecurityContent {
+  display: grid;
+  gap: 18px;
+  max-width: 1060px;
+  padding-bottom: 20px;
+}
+#profileOverlay.settingsOverlay .settingsSecurityContent[hidden] { display: none; }
+#profileOverlay.settingsOverlay .settingsSecuritySection {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border-color: rgba(235, 219, 192, .12);
+  border-radius: 17px;
+  background: linear-gradient(155deg, rgba(255,255,255,.035), rgba(255,255,255,.008) 54%), #191a19;
+  box-shadow: 0 16px 36px rgba(0,0,0,.12), inset 0 1px rgba(255,255,255,.035);
+}
+#profileOverlay.settingsOverlay .settingsSecuritySectionHead {
+  display: grid;
+  grid-template-columns: 40px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 22px 26px 20px;
+  border-bottom: 1px solid rgba(235,219,192,.09);
+}
+#profileOverlay.settingsOverlay .settingsSecuritySectionHead .settingsSectionTitle {
+  color: #f3eee5;
+  font-size: 17px;
+  font-weight: 740;
+  line-height: 1.2;
+  letter-spacing: -.015em;
+  text-transform: none;
+}
+#profileOverlay.settingsOverlay .settingsSecuritySectionHead p {
+  margin: 5px 0 0;
+  color: #a9a49b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+#profileOverlay.settingsOverlay .settingsSecuritySectionIcon,
+#profileOverlay.settingsOverlay .settingsSecuritySection .settingsPrivacyModeMark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(232,207,174,.17);
+  border-radius: 12px;
+  background: rgba(232,207,174,.075);
+  color: #e7cfab;
+  font-size: 19px;
+  font-weight: 500;
+}
+#profileOverlay.settingsOverlay .settingsSecurityRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  min-height: 76px;
+  padding: 16px 26px;
+  border-bottom: 1px solid rgba(235,219,192,.075);
+}
+#profileOverlay.settingsOverlay .settingsSecurityProtectedWrap .settingsSecurityRow:last-of-type { border-bottom: 0; }
+#profileOverlay.settingsOverlay .settingsSecurityRowCopy { min-width: 0; display: grid; gap: 5px; }
+#profileOverlay.settingsOverlay .settingsSecurityRowTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #ece9e3;
+  font-size: 13px;
+  font-weight: 700;
+}
+#profileOverlay.settingsOverlay .settingsSecurityRow .settingsHint { line-height: 1.35; }
+#profileOverlay.settingsOverlay .settingsSecurityStateText { color: #918d85; font-size: 11px; }
+#profileOverlay.settingsOverlay .settingsSecurityBadge,
+#profileOverlay.settingsOverlay .settingsSecuritySection .settingsStatusPill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  width: fit-content;
+  padding: 2px 8px;
+  border: 1px solid rgba(232,207,174,.16);
+  border-radius: 999px;
+  background: rgba(232,207,174,.06);
+  color: #bcb4a6;
+  font-size: 10px;
+  font-weight: 650;
+}
+#profileOverlay.settingsOverlay .settingsSecurityBadge[data-status="enabled"] { color: #e3cfaf; }
+#profileOverlay.settingsOverlay .settingsSecurityRowActions { display: flex; flex: 0 0 auto; }
+#profileOverlay.settingsOverlay .settingsSecurityRow .btn,
+#profileOverlay.settingsOverlay .settingsSecurityRowActions .btn {
+  min-width: 82px;
+  min-height: 34px;
+  padding: 6px 14px;
+  border-radius: 9px;
+}
+#profileOverlay.settingsOverlay .settingsSecurityQuickCreateWrap .btn { min-width: 108px; }
+#profileOverlay.settingsOverlay .settingsSecurityEditor {
+  display: grid;
+  gap: 10px;
+  max-width: 640px;
+  padding: 18px 26px 24px;
+  border-bottom: 1px solid rgba(235,219,192,.09);
+}
+#profileOverlay.settingsOverlay .settingsSecurityEditor[hidden] { display: none; }
+#profileOverlay.settingsOverlay .settingsSecurityEditorFields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+#profileOverlay.settingsOverlay .settingsSecurityEditor .input { min-height: 38px; }
+#profileOverlay.settingsOverlay .settingsSecurityEditorActions { display: flex; flex-wrap: wrap; gap: 9px; }
+#profileOverlay.settingsOverlay .settingsSecurityEditor .btn { width: fit-content; min-width: 150px; min-height: 36px; border-radius: 9px; }
+#profileOverlay.settingsOverlay .settingsSecurityEditor .settingsSecurityRemoveVerifyWrap { max-width: 400px; }
+#profileOverlay.settingsOverlay .settingsDirectMessagesCard { background: linear-gradient(155deg, rgba(255,255,255,.035), rgba(255,255,255,.008) 54%), #191a19; }
+#profileOverlay.settingsOverlay .settingsSecuritySyncNote {
+  display: grid;
+  gap: 0;
+  margin: 0 26px;
+  border-bottom: 1px solid rgba(235,219,192,.075);
+}
+#profileOverlay.settingsOverlay .settingsSecuritySyncNote .settingsPrivacyModeHeader {
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  padding: 14px 0;
+}
+#profileOverlay.settingsOverlay .settingsSecuritySyncNote .settingsPrivacyModeMark { display: none; }
+#profileOverlay.settingsOverlay .settingsSecuritySyncNote .settingsSectionTitle { color: #d9d3c8; letter-spacing: .04em; }
+#profileOverlay.settingsOverlay .settingsSecuritySyncNote .settingsPrivacyNote { display: none; }
+#profileOverlay.settingsOverlay .settingsDirectMessagesGrid {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 18px;
+  padding: 22px 26px 10px;
+}
+#profileOverlay.settingsOverlay .settingsDirectMessagesGrid .settingsColumn { gap: 8px; }
+#profileOverlay.settingsOverlay .settingsDirectMessagesGrid .input { min-height: 40px; border-radius: 9px; }
+#profileOverlay.settingsOverlay .settingsDmPrivacyToggle {
+  margin: 0 26px;
+  padding: 16px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(235,219,192,.075);
+  border-radius: 0;
+  background: transparent;
+}
+#profileOverlay.settingsOverlay .settingsDirectMessagesCard #btnSettingsDmPrivacySave {
+  justify-self: end;
+  width: auto;
+  min-height: 37px;
+  margin: 18px 26px 22px;
+  padding: 8px 19px;
+  border-radius: 9px;
+}
+#profileOverlay.settingsOverlay .settingsPrivacyModeCard--vault .settingsPrivacyModeHeader { padding: 22px 26px 20px; border-bottom: 1px solid rgba(235,219,192,.09); }
+#profileOverlay.settingsOverlay .settingsPrivacyModeCard--vault .settingsPrivacyModeCopy .settingsSectionTitle { color: #f3eee5; font-size: 17px; letter-spacing: -.015em; text-transform: none; }
+#profileOverlay.settingsOverlay .settingsPrivacyModeCard--vault .settingsPrivacyModeCopy .settingsHint { max-width: 700px; line-height: 1.4; }
+#profileOverlay.settingsOverlay .settingsPrivacyModeCard--vault .settingsPrivacyStatusText { padding: 20px 26px 0; color: #ddd7cc; font-size: 12px; }
+#profileOverlay.settingsOverlay .settingsPrivacyModeCard--vault .settingsPrivacyCallout {
+  margin: 12px 26px 0;
+  padding: 0 0 0 11px;
+  border: 0;
+  border-left: 2px solid rgba(232,207,174,.55);
+  border-radius: 0;
+  background: none;
+  color: #b9ad9b;
+}
+#profileOverlay.settingsOverlay .settingsVaultPrimary { justify-self: start; width: auto; min-height: 39px; margin: 20px 26px 22px; padding: 8px 19px; border-radius: 9px; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryDetails { margin: 0 26px; padding: 15px 0; border-top: 1px solid rgba(235,219,192,.09); color: #b9b4a9; font-size: 12px; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryDetails summary { width: fit-content; cursor: pointer; color: #dbcfba; font-weight: 650; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryDetails .settingsRecoveryStatusGrid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 0; margin-top: 16px; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryDetails .settingsRecoveryStatusRow { gap: 5px; padding: 4px 15px; border: 0; border-right: 1px solid rgba(235,219,192,.09); border-radius: 0; background: none; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryDetails .settingsRecoveryStatusRow:first-child { padding-left: 0; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryDetails .settingsRecoveryStatusRow:last-child { border-right: 0; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryDetails .settingsRecoveryStatusRow strong { padding: 0; border: 0; color: #d9d0bf; font-size: 12px; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryDetails .settingsPrivacyNote { padding: 12px 0 0; border: 0; background: none; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryDetails .settingsPrivacyDetails { margin-top: 14px; padding: 0; border: 0; background: none; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryAdvanced { display: grid; justify-items: start; gap: 10px; margin-top: 14px; }
+#profileOverlay.settingsOverlay .settingsVaultRecoveryAdvanced .btn { width: auto; min-height: 34px; border-radius: 9px; }
+#profileOverlay.settingsOverlay .settingsVaultActionArea { display: grid; gap: 16px; max-width: 640px; padding: 18px 26px 24px; border-top: 1px solid rgba(235,219,192,.09); }
+#profileOverlay.settingsOverlay .settingsVaultActionArea[hidden] { display: none; }
+#profileOverlay.settingsOverlay .settingsVaultActionArea .settingsColumn { gap: 9px; }
+#profileOverlay.settingsOverlay .settingsVaultActionArea .btn { width: fit-content; min-height: 37px; border-radius: 9px; }
+#profileOverlay.settingsOverlay .settingsSecuritySection :is(button,select,input,summary):focus-visible { outline: 2px solid #e8cfae; outline-offset: 3px; }
+#profileOverlay.settingsOverlay .settingsSecuritySection .btn.primary {
+  border-color: #ead0aa !important;
+  background: #ead0aa !important;
+  color: #252018 !important;
+  box-shadow: 0 7px 20px rgba(232,207,174,.1);
+}
+#profileOverlay.settingsOverlay .settingsSecuritySection .btn.primary:hover { background: #f3ddbc !important; }
+@media (max-width: 840px) {
+  #profileOverlay.settingsOverlay .settingsSecuritySectionHead,
+  #profileOverlay.settingsOverlay .settingsPrivacyModeCard--vault .settingsPrivacyModeHeader { padding: 18px; }
+  #profileOverlay.settingsOverlay .settingsSecurityRow { padding: 15px 18px; }
+  #profileOverlay.settingsOverlay .settingsSecurityEditor,
+  #profileOverlay.settingsOverlay .settingsVaultActionArea { padding: 18px; }
+  #profileOverlay.settingsOverlay .settingsDirectMessagesGrid { grid-template-columns: 1fr; padding: 18px 18px 6px; }
+  #profileOverlay.settingsOverlay .settingsSecuritySyncNote,
+  #profileOverlay.settingsOverlay .settingsDmPrivacyToggle,
+  #profileOverlay.settingsOverlay .settingsVaultRecoveryDetails { margin-left: 18px; margin-right: 18px; }
+  #profileOverlay.settingsOverlay .settingsPrivacyModeCard--vault .settingsPrivacyStatusText { padding: 18px 18px 0; }
+  #profileOverlay.settingsOverlay .settingsPrivacyModeCard--vault .settingsPrivacyCallout { margin-left: 18px; margin-right: 18px; }
+  #profileOverlay.settingsOverlay .settingsVaultPrimary { margin: 18px; }
+}
+@media (max-width: 560px) {
+  #profileOverlay.settingsOverlay .settingsSecuritySectionHead,
+  #profileOverlay.settingsOverlay .settingsPrivacyModeCard--vault .settingsPrivacyModeHeader { grid-template-columns: 36px minmax(0,1fr); }
+  #profileOverlay.settingsOverlay .settingsSecuritySectionHead .settingsStatusPill,
+  #profileOverlay.settingsOverlay .settingsPrivacyModeCard--vault .settingsStatusPill { grid-column: 2; justify-self: start; }
+  #profileOverlay.settingsOverlay .settingsSecurityEditorFields { grid-template-columns: 1fr; }
+  #profileOverlay.settingsOverlay .settingsSecurityRow { flex-wrap: wrap; }
+  #profileOverlay.settingsOverlay .settingsVaultRecoveryDetails .settingsRecoveryStatusGrid { grid-template-columns: 1fr; }
+  #profileOverlay.settingsOverlay .settingsVaultRecoveryDetails .settingsRecoveryStatusRow { padding: 8px 0; border-right: 0; border-bottom: 1px solid rgba(235,219,192,.09); }
+}
+
+/* My Account shares Security's quiet surfaces and spacing. */
+#profileOverlay.settingsOverlay .settingsAccountPanel { gap: 18px; max-width: 1060px; padding-bottom: 24px; }
+#profileOverlay.settingsOverlay .settingsAccountPanel > :is(.settingsIdentityCard,.settingsAccountSection,.settingsAccountSaveBar) {
+  border: 1px solid rgba(235,219,192,.12);
+  border-radius: 17px;
+  background: linear-gradient(155deg, rgba(255,255,255,.035), rgba(255,255,255,.008) 54%), #191a19;
+  box-shadow: 0 16px 36px rgba(0,0,0,.12), inset 0 1px rgba(255,255,255,.035);
+}
+#profileOverlay.settingsOverlay .settingsAccountPanel .settingsIdentityCard { overflow: hidden; }
+#profileOverlay.settingsOverlay .settingsAccountPanel .settingsIdentityBanner { height: auto !important; aspect-ratio: var(--altara-profile-banner-ratio) !important; }
+#profileOverlay.settingsOverlay .settingsAccountPanel .settingsIdentityBody { min-height: 86px; padding: 0 24px 18px; align-items: center; gap: 15px; }
+#profileOverlay.settingsOverlay .settingsAccountPanel .settingsAvatarPick { width: 76px; height: 76px; flex: 0 0 76px; margin-top: -26px; border-width: 3px; border-color: #191a19; }
+#profileOverlay.settingsOverlay .settingsAccountPanel .settingsIdentityMeta { min-width: 0; padding: 8px 0 0; }
+#profileOverlay.settingsOverlay .settingsAccountPanel .settingsIdentityName { font-size: clamp(20px, 2vw, 27px); line-height: 1.12; overflow-wrap: anywhere; }
+#profileOverlay.settingsOverlay .settingsAccountPanel .settingsIdentityUid { font-size: 12px; }
+#profileOverlay.settingsOverlay .settingsIdentityEditHint { margin-left: auto; align-self: center; color: #a5a095; font-size: 11px; white-space: nowrap; }
+#profileOverlay.settingsOverlay .settingsAccountSection { padding: 0; overflow: hidden; }
+#profileOverlay.settingsOverlay .settingsAccountSectionHead { padding: 21px 25px 17px; border-bottom: 1px solid rgba(235,219,192,.09); }
+#profileOverlay.settingsOverlay .settingsAccountSectionHead .settingsSectionTitle { color: #f3eee5; font-size: 17px; font-weight: 740; letter-spacing: -.015em; text-transform: none; }
+#profileOverlay.settingsOverlay .settingsAccountSectionHead p { margin: 5px 0 0; color: #9f9b93; font-size: 12px; line-height: 1.45; }
+#profileOverlay.settingsOverlay .settingsAccountFields,
+#profileOverlay.settingsOverlay .settingsAccountAppearanceFields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px 22px; padding: 22px 25px 24px; }
+#profileOverlay.settingsOverlay .settingsAccountField { min-width: 0; display: grid; align-content: start; gap: 7px; }
+#profileOverlay.settingsOverlay .settingsAccountField .label { display: flex; align-items: center; height: 18px; margin: 0; color: #ddd8ce; font-size: 12px; font-weight: 650; line-height: 18px; }
+#profileOverlay.settingsOverlay .settingsAccountField .input,
+#profileOverlay.settingsOverlay .settingsAccountField .themeColorInput { box-sizing: border-box; width: 100%; min-height: 39px; border: 1px solid rgba(235,219,192,.11); border-radius: 10px; background: #121312; color: #f3eee5; }
+#profileOverlay.settingsOverlay .settingsAccountFields .settingsAccountField:not(.settingsAccountField--bio) .input { height: 40px; }
+#profileOverlay.settingsOverlay .settingsAccountField .input:focus-visible,
+#profileOverlay.settingsOverlay .settingsAccountField .themeColorInput:focus-visible,
+#profileOverlay.settingsOverlay .settingsAccountPanel button:focus-visible,
+#profileOverlay.settingsOverlay .settingsAccountPanel [role="button"]:focus-visible { outline: 2px solid #e8cfae; outline-offset: 3px; }
+#profileOverlay.settingsOverlay .settingsAccountInputWrap { position: relative; }
+#profileOverlay.settingsOverlay .settingsAccountInputWrap > span { position: absolute; top: 50%; left: 13px; transform: translateY(-50%); color: #a9a39a; pointer-events: none; }
+#profileOverlay.settingsOverlay .settingsAccountInputWrap .input { padding-left: 29px; }
+#profileOverlay.settingsOverlay .settingsAccountColorWrap { position: relative; }
+#profileOverlay.settingsOverlay .settingsAccountColorSwatch { position: absolute; top: 50%; left: 11px; width: 17px; height: 17px; transform: translateY(-50%); border: 1px solid rgba(255,255,255,.25); border-radius: 5px; background: #ddd; box-shadow: 0 1px 4px rgba(0,0,0,.3); pointer-events: none; }
+#profileOverlay.settingsOverlay .settingsAccountColorWrap .themeColorInput { padding-left: 38px; }
+#profileOverlay.settingsOverlay .settingsAccountField--bio .input { min-height: 73px; resize: vertical; }
+#profileOverlay.settingsOverlay .settingsOptional { margin-left: 5px; color: #8f8b84; font-size: 11px; font-weight: 450; }
+#profileOverlay.settingsOverlay .settingsAccountField .settingsHint { margin: 0; color: #8f8b84; font-size: 11px; line-height: 14px; }
+#profileOverlay.settingsOverlay .settingsAccountField .settingsBioCounter { margin-top: 0; justify-self: end; text-align: right; font-variant-numeric: tabular-nums; }
+#profileOverlay.settingsOverlay .settingsAccountWidgetsRow { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin: 0 25px; padding: 16px 0 20px; border-top: 1px solid rgba(235,219,192,.09); }
+#profileOverlay.settingsOverlay .settingsAccountWidgetsRow > div { display: grid; gap: 4px; }
+#profileOverlay.settingsOverlay .settingsAccountWidgetsRow strong { color: #e5e0d7; font-size: 12px; }
+#profileOverlay.settingsOverlay .settingsAccountWidgetsRow span { color: #97938b; font-size: 11px; }
+#profileOverlay.settingsOverlay .settingsAccountWidgetsRow .btn { min-height: 35px; border-radius: 9px; white-space: nowrap; }
+#profileOverlay.settingsOverlay .settingsAccountSaveBar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 25px; }
+#profileOverlay.settingsOverlay .settingsAccountPanel:is(.has-unsaved-changes,.has-account-feedback) .settingsAccountSaveBar { position: sticky; bottom: 8px; z-index: 3; border-color: rgba(234,208,170,.28); box-shadow: 0 18px 42px rgba(0,0,0,.42); }
+#profileOverlay.settingsOverlay .settingsAccountSaveStatus { color: #aaa59b; font-size: 12px; line-height: 1.4; }
+#profileOverlay.settingsOverlay .settingsAccountSaveStatus[data-tone="dirty"] { color: #e8cfae; }
+#profileOverlay.settingsOverlay .settingsAccountSaveStatus[data-tone="error"] { color: #e7a59b; }
+#profileOverlay.settingsOverlay .settingsAccountSaveBar .settingsProfileActions { margin: 0; }
+#profileOverlay.settingsOverlay .settingsAccountSaveBar .btn { min-width: 130px; min-height: 37px; border-radius: 9px; }
+#profileOverlay.settingsOverlay .settingsAccountSaveBar #btnSaveProfile { border-color: #ead0aa !important; background: #ead0aa !important; color: #252018 !important; box-shadow: 0 7px 20px rgba(232,207,174,.1); }
+#profileOverlay.settingsOverlay .settingsAccountSaveBar #btnSaveProfile:hover:not(:disabled) { background: #f3ddbc !important; }
+#profileOverlay.settingsOverlay .settingsAccountSaveBar .settingsProfileActions { flex-direction: row; align-items: center; }
+#profileOverlay.settingsOverlay .settingsAccountSaveBar .settingsProfileActions .btn { width: auto; }
+#profileOverlay.settingsOverlay .settingsAccountSaveBar .btn:disabled { opacity: .43; cursor: default; }
+#profileOverlay.settingsOverlay .settingsAccountPanel.is-profile-loading .settingsAccountFields,
+#profileOverlay.settingsOverlay .settingsAccountPanel.is-profile-loading .settingsAccountAppearanceFields,
+#profileOverlay.settingsOverlay .settingsAccountPanel.is-profile-loading .settingsAccountWidgetsRow { opacity: .48; pointer-events: none; }
+@media (max-width: 760px) {
+  #profileOverlay.settingsOverlay .settingsAccountFields,
+  #profileOverlay.settingsOverlay .settingsAccountAppearanceFields { grid-template-columns: 1fr; gap: 15px; padding: 19px; }
+  #profileOverlay.settingsOverlay .settingsAccountSectionHead { padding: 19px; }
+  #profileOverlay.settingsOverlay .settingsAccountPanel .settingsIdentityBody { padding: 0 18px 16px; }
+  #profileOverlay.settingsOverlay .settingsIdentityEditHint { display: none; }
+  #profileOverlay.settingsOverlay .settingsAccountSaveBar { flex-direction: column; align-items: stretch; padding: 17px 19px; }
+  #profileOverlay.settingsOverlay .settingsAccountWidgetsRow { margin: 0 19px; }
+  #profileOverlay.settingsOverlay .settingsAccountSaveBar .settingsProfileActions { flex-direction: row; }
+  #profileOverlay.settingsOverlay .settingsAccountSaveBar .settingsProfileActions .btn { flex: 1; width: auto; min-width: 0; }
+}
+@media (max-width: 480px) {
+  #profileOverlay.settingsOverlay .settingsAccountPanel .settingsAvatarPick { width: 64px; height: 64px; flex-basis: 64px; margin-top: -19px; }
+  #profileOverlay.settingsOverlay .settingsAccountWidgetsRow { align-items: flex-start; flex-direction: column; }
+}
+
+/* Profile Widgets: spacious sections and readable media rows. */
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardCard {
+  width: min(1180px, calc(100vw - 36px));
+  max-width: min(1180px, calc(100vw - 36px));
+  height: min(880px, calc(100vh - 36px));
+  max-height: calc(100vh - 36px);
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardSurface {
+  grid-template-columns: minmax(255px, 310px) minmax(0, 1fr);
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview {
+  background: #191919;
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody {
+  gap: 11px;
+  padding: 0 18px 18px;
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardIdentity {
+  gap: 7px;
+  margin-top: -34px;
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardAvatar {
+  width: 76px;
+  height: 76px;
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardIdentityMeta { gap: 5px; }
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardName { font-size: 23px; }
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBio {
+  padding: 12px 13px;
+  border-color: rgba(255,255,255,.075);
+  background: rgba(255,255,255,.018);
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardSection { gap: 8px; }
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardFacts { gap: 7px; }
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardPanelsArea { background: #171717 !important; }
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardTabs {
+  height: 60px;
+  padding: 0 28px;
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardPanels {
+  padding: 23px 28px 30px;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetsPanel { gap: 19px !important; padding: 0; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetSectionHeader { align-items: center; padding: 0 3px 3px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetPanelIntro .userCardPanelEyebrow { display: none; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetPanelIntro .userCardPanelTitle {
+  font-size: clamp(23px, 2vw, 27px);
+  font-weight: 760;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetPanelIntro .userCardPanelText { margin-top: 3px; font-size: 13px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetAddWidgetBtn {
+  min-height: 39px !important;
+  padding: 0 18px !important;
+  border-radius: 13px !important;
+  font-size: 12.5px !important;
+  box-shadow: 0 5px 18px rgba(232,207,174,.1) !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetAddWidgetBtn::before {
+  content: "+";
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #29251e;
+  color: #f5dfbe;
+  font-size: 16px;
+  line-height: 1;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetBoard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard {
+  grid-column: 1 / -1;
+  gap: 12px !important;
+  padding: 13px !important;
+  border: 1px solid rgba(235,219,192,.09) !important;
+  border-radius: 15px !important;
+  background: linear-gradient(145deg, rgba(255,255,255,.027), rgba(255,255,255,.008) 55%), #1c1c1b !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12) !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--paired { grid-column: auto; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:hover,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:focus-within {
+  border-color: rgba(235,219,192,.19) !important;
+  background: #20201f !important;
+  box-shadow: 0 10px 26px rgba(0,0,0,.17) !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:has(.profileWidgetItemMenu[open]),
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:has(.profileWidgetMoreMenu[open]) { z-index: 8; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetTopRow { align-items: center; flex-direction: row; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetTitleBlock { gap: 2px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCategoryLine { gap: 9px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCategoryMark {
+  width: 27px;
+  height: 27px;
+  border: 0;
+  background: none;
+  color: #ecd1a8;
+  font-size: 20px;
+  filter: grayscale(1) sepia(.7) saturate(2);
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemCount {
+  min-width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255,255,255,.07);
+  color: #b9b6b0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetSectionNote,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMeta {
+  margin: 0 0 0 36px;
+  color: #938f87;
+  font-size: 10.5px;
+  line-height: 1.25;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMeta { gap: 8px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetAddItemBtn {
+  min-height: 30px !important;
+  border: 1px solid rgba(232,207,174,.3) !important;
+  background: rgba(232,207,174,.055) !important;
+  color: #e9d3b2 !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetAddItemBtn::before { content: "+"; margin-right: 6px; font-size: 16px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMoreTrigger,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMoreTrigger {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  border-radius: 50% !important;
+  color: #a9a49c !important;
+  font-size: 16px !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemsArea { gap: 10px; overflow: visible; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-1,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid--count-1 { grid-template-columns: minmax(0, 1fr); }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-2,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid--count-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: 74px minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  min-width: 0;
+  min-height: 132px;
+  overflow: visible;
+  border: 1px solid rgba(255,255,255,.075) !important;
+  border-radius: 11px !important;
+  background: #20201f !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured {
+  border-color: rgba(232,207,174,.18) !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMedia,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemMedia {
+  width: 74px !important;
+  height: 100% !important;
+  min-height: 132px !important;
+  aspect-ratio: auto !important;
+  border-right: 1px solid rgba(255,255,255,.06);
+  border-bottom: 0 !important;
+  border-radius: 10px 0 0 10px;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-1 .profileWidgetItem,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--paired .profileWidgetItem { min-height: 88px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-1 .profileWidgetItemMedia { min-height: 88px !important; width: 150px !important; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-1 .profileWidgetItem { grid-template-columns: 150px minmax(0, 1fr) !important; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--paired .profileWidgetItem { grid-template-columns: 86px minmax(0, 1fr) !important; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--paired .profileWidgetItemMedia { width: 86px !important; min-height: 88px !important; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 10px 11px !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemTitle {
+  max-width: 100%;
+  display: block;
+  overflow: visible;
+  font-size: 12.5px !important;
+  line-height: 1.25;
+  -webkit-line-clamp: unset;
+  overflow-wrap: anywhere;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemNote {
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 1.2;
+  -webkit-line-clamp: 1;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMeta { gap: 4px; max-width: 100%; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMeta .profileWidgetMetaPill:nth-child(n+3) { display: inline-flex; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMetaPill,
+body:not(.authPage) #userCardWidgetsPanel .userCardWidgetBadge.profileWidgetMetaPill {
+  min-height: 19px;
+  padding: 2px 7px;
+  border-color: rgba(255,255,255,.075) !important;
+  background: rgba(255,255,255,.025) !important;
+  color: #aaa69f !important;
+  font-size: 10px;
+  font-weight: 550;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMetaPill[data-status="favorite"]::before {
+  content: "★";
+  margin-right: 4px;
+  color: #e8cfae;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetStars { font-size: 10px; line-height: 1; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetActions {
+  align-self: stretch;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 7px;
+  width: 100%;
+  margin-top: auto;
+  padding-top: 2px;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetActionBtn {
+  min-width: 68px;
+  min-height: 28px !important;
+  border: 1px solid rgba(232,207,174,.45) !important;
+  border-radius: 8px !important;
+  background: rgba(232,207,174,.045) !important;
+  color: #e8d1ae !important;
+  font-size: 11px !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMenu { position: relative; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMenuList {
+  top: auto;
+  bottom: calc(100% + 7px);
+  min-width: 145px;
+  border-color: rgba(232,207,174,.17) !important;
+  background: #242321 !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMenuLink {
+  display: block;
+  text-decoration: none;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem:has(.profileWidgetItemMenu[open]) { z-index: 9; }
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardTab.is-active::after {
+  background: #e8cfae !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions .btn.primary {
+  border-color: rgba(232,207,174,.42) !important;
+  background: rgba(232,207,174,.12) !important;
+  color: #f0d9b6 !important;
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetAddWidgetBtn {
+  border-color: #ead0aa !important;
+  background: #ead0aa !important;
+  color: #252018 !important;
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetAddItemBtn {
+  border-color: rgba(232,207,174,.45) !important;
+  background: rgba(232,207,174,.07) !important;
+  color: #ecd7b7 !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetShowMore:focus-visible,
+body:not(.authPage) #userCardWidgetsPanel :is(.profileWidgetAddWidgetBtn,.profileWidgetAddItemBtn,.profileWidgetActionBtn,.profileWidgetMoreTrigger,.profileWidgetItemMoreTrigger,.profileWidgetItemMenuLink):focus-visible {
+  outline: 2px solid #e8cfae !important;
+  outline-offset: 2px;
+}
+@media (max-width: 1100px) {
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-3,
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid--count-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--paired { grid-column: 1 / -1; }
+}
+@media (max-width: 900px) {
+  body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardSurface {
+    grid-template-columns: minmax(210px, 240px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview {
+    max-height: none;
+    border-right: 1px solid rgba(255,255,255,.065);
+    border-bottom: 0;
+  }
+  body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardPanels { padding: 18px; }
+  body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardTabs { padding: 0 18px; }
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid,
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid { grid-template-columns: minmax(0, 1fr) !important; }
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem { min-height: 100px; }
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMedia { min-height: 100px !important; }
+}
+@media (max-width: 700px) {
+  body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardSurface {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview {
+    max-height: min(220px, 28vh);
+    border-right: 0;
+    border-bottom: 1px solid rgba(255,255,255,.065);
+  }
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetSectionHeader { align-items: flex-start; flex-direction: column; }
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetTopRow { align-items: center; flex-direction: row; }
+}
+
+/* Profile Widgets: shelves for browsing; controls appear when editing. */
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetsPanel { gap: 22px !important; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetBoard {
+  display: block;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:hover,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:focus-within {
+  display: block;
+  height: auto !important;
+  overflow: visible !important;
+  padding: 19px 2px 23px !important;
+  margin: 0;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(235,219,192,.1) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:first-child { padding-top: 4px !important; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:last-child { border-bottom: 0 !important; }
+body:not(.authPage) #userCardModal #userCardWidgetsPanel .profileWidgetCard,
+body:not(.authPage) #userCardModal #userCardWidgetsPanel .profileWidgetCard:hover,
+body:not(.authPage) #userCardModal #userCardWidgetsPanel .profileWidgetCard:focus-within {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetTopRow {
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetTitleBlock { min-width: 0; flex: 1; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCategoryLine { gap: 8px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCategoryMark { width: 23px; height: 23px; font-size: 17px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetTitle { font-size: 15px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemCount {
+  min-width: 0;
+  width: auto;
+  height: auto;
+  padding: 0 2px;
+  background: none;
+  color: #8f8b84;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetHeaderActions { margin-left: auto; gap: 2px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetAddItemBtn,
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetAddItemBtn {
+  min-height: 30px !important;
+  padding: 0 8px !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #e1caa8 !important;
+  font-size: 12px !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetAddItemBtn:hover { background: rgba(232,207,174,.07) !important; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetMoreTrigger,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMoreTrigger {
+  border: 0 !important;
+  background: transparent !important;
+  opacity: .58;
+}
+body:not(.authPage) #userCardWidgetsPanel :is(.profileWidgetMoreTrigger,.profileWidgetItemMoreTrigger):is(:hover,:focus-visible) { opacity: 1; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 11px !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-1,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid--count-1 {
+  grid-template-columns: minmax(0, 520px) !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem {
+  display: block !important;
+  min-width: 0;
+  min-height: 110px;
+  border: 1px solid rgba(255,255,255,.07) !important;
+  border-radius: 11px !important;
+  background: #20201f !important;
+  transition: border-color .16s ease, background .16s ease;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem:hover,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem:focus-within {
+  border-color: rgba(232,207,174,.25) !important;
+  background: #242321 !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemOpen {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  width: 100%;
+  min-height: 110px;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+body:not(.authPage) #userCardWidgetsPanel div.profileWidgetItemOpen { cursor: default; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemOpen:focus-visible {
+  outline: 2px solid #e8cfae;
+  outline-offset: 2px;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMedia,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemMedia,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-1 .profileWidgetItemMedia {
+  width: 88px !important;
+  min-height: 110px !important;
+  height: 100% !important;
+  border: 0 !important;
+  border-radius: 10px 0 0 10px;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemBody {
+  min-width: 0;
+  justify-content: center;
+  gap: 7px;
+  padding: 13px 34px 13px 13px !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemTitle,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured .profileWidgetItemTitle {
+  display: -webkit-box;
+  overflow: hidden;
+  max-width: 100%;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 13px !important;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemSecondary {
+  display: block;
+  overflow: hidden;
+  max-width: 100%;
+  color: #a9a49b;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetActions {
+  position: absolute;
+  top: 6px;
+  right: 5px;
+  z-index: 2;
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMenuList { z-index: 5; }
+body:not(.authPage) .profileWidgetItemModalCard { width: min(540px, calc(100vw - 24px)); }
+body:not(.authPage) .profileWidgetItemModalBody { gap: 17px !important; }
+body:not(.authPage) .profileWidgetItemManualFields { gap: 17px; }
+body:not(.authPage) .profileWidgetItemReadonlyPreview {
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 14px;
+  padding: 0 0 17px;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(235,219,192,.1) !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) .profileWidgetItemReadonlyPreviewMedia { width: 72px; aspect-ratio: 1; border-radius: 9px; }
+body:not(.authPage) .profileWidgetItemReadonlyPreviewTitle { font-size: 16px; }
+body:not(.authPage) .profileWidgetItemReadonlyPreviewMeta { font-size: 12px; }
+body:not(.authPage) .profileWidgetItemFieldsGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; }
+body:not(.authPage) .profileWidgetItemFieldsGrid .field { min-width: 0; }
+body:not(.authPage) #profileWidgetItemNote { min-height: 82px; resize: vertical; }
+body:not(.authPage) .profileWidgetFeatureRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  color: var(--altara-text, #f2f0ec);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+body:not(.authPage) .profileWidgetFeatureRow input {
+  appearance: none;
+  width: 35px;
+  height: 21px !important;
+  min-height: 21px !important;
+  max-height: 21px;
+  flex: 0 0 35px;
+  margin: 0;
+  border: 1px solid rgba(235,219,192,.2);
+  border-radius: 999px;
+  background: #46433e;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+body:not(.authPage) .profileWidgetFeatureRow input::after {
+  content: "";
+  display: block;
+  width: 15px;
+  height: 15px;
+  margin: 2px;
+  border-radius: 50%;
+  background: #efebe3;
+  transition: transform .15s ease;
+}
+body:not(.authPage) .profileWidgetFeatureRow input:checked { background: #ac8c62; }
+body:not(.authPage) .profileWidgetFeatureRow input:checked::after { transform: translateX(14px); }
+body:not(.authPage) .profileWidgetFeatureRow input:focus-visible { outline: 2px solid #e8cfae; outline-offset: 3px; }
+body:not(.authPage) #profileWidgetItemModal .profileWidgetItemModalCard #btnProfileWidgetItemModalSave.btn.primary {
+  border-color: #e8cfae !important;
+  background: #e8cfae !important;
+  background-image: none !important;
+  color: #252018 !important;
+}
+@media (max-width: 1450px) {
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid,
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+}
+@media (max-width: 960px) {
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid,
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid { grid-template-columns: minmax(0,1fr) !important; }
+}
+@media (max-width: 700px) {
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid,
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid { grid-template-columns: minmax(0,1fr) !important; }
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-1,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid--count-1 { grid-template-columns: minmax(0,520px) !important; }
+@media (max-width: 520px) {
+  body:not(.authPage) .profileWidgetItemFieldsGrid { grid-template-columns: minmax(0,1fr); }
+}
+
+/* Profile shelves share one surface; drag markers do not change document flow. */
+body:not(.authPage) #userCardWidgetsPanel {
+  --profile-shelf-surface: var(--altara-surface, #1c1c1b);
+  --profile-shelf-border: color-mix(in srgb, var(--altara-text, #f2f0ec) 9%, transparent);
+}
+body:not(.authPage) #userCardWidgetsPanel :is(.profileWidgetsPanel, .profileWidgetBoard, .profileWidgetCard, .profileWidgetCard:hover, .profileWidgetCard:focus-within) {
+  background: transparent !important;
+  background-image: none !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard {
+  border-bottom-color: var(--profile-shelf-border) !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--tile {
+  position: relative;
+  display: block !important;
+  min-width: 0;
+  min-height: 110px;
+  border: 1px solid var(--profile-shelf-border) !important;
+  background: var(--profile-shelf-surface) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem:is(:hover,:focus-within) {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 28%, var(--profile-shelf-border)) !important;
+  background: var(--profile-shelf-surface) !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured .profileWidgetItemTitle { font-size: 13px !important; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-1 .profileWidgetItem,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  width: auto !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemMedia,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItem--featured .profileWidgetItemMedia {
+  background: var(--profile-shelf-surface) !important;
+  background-image: none !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid--count-1,
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid--count-1 {
+  grid-template-columns: minmax(0, 520px) !important;
+}
+body:not(.authPage) #userCardWidgetsPanel :is(.profileWidgetDragHandle,.profileWidgetItemDragHandle) {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 28px;
+  flex: 0 0 26px;
+  color: var(--altara-text-muted, #a9a49b);
+  font-size: 16px;
+  letter-spacing: -4px;
+  cursor: grab;
+  opacity: .35;
+  user-select: none;
+  touch-action: none;
+}
+body:not(.authPage) #userCardWidgetsPanel :is(.profileWidgetCard,.profileWidgetItem):is(:hover,:focus-within) :is(.profileWidgetDragHandle,.profileWidgetItemDragHandle) { opacity: .82; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemDragHandle {
+  position: absolute;
+  z-index: 2;
+  right: 35px;
+  top: 7px;
+}
+body:not(.authPage) .profileWidgetEnabledRow {
+  min-height: 36px;
+  padding: 2px 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+@media (min-width: 700px) and (max-width: 1050px) {
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemGrid:not(.profileWidgetItemGrid--count-1),
+  body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard--music .profileWidgetItemGrid:not(.profileWidgetItemGrid--count-1) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Profile shelves must not inherit the Home widget card's sheen or lift. */
+body:not(.authPage) #userCardModal #userCardWidgetsPanel .profileWidgetCard,
+body:not(.authPage) #userCardModal #userCardWidgetsPanel .profileWidgetCard:hover,
+body:not(.authPage) #userCardModal #userCardWidgetsPanel .profileWidgetCard:focus-within {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  will-change: auto;
+  transition: none !important;
+}
+body:not(.authPage) #userCardModal #userCardWidgetsPanel .profileWidgetCard::after {
+  content: none !important;
+  display: none !important;
+}
+body:not(.authPage) #userCardWidgetsPanel :is(.profileWidgetCard,.profileWidgetItem).is-profile-dragging {
+  opacity: 1 !important;
+  border: 1px dashed color-mix(in srgb, var(--altara-accent, #e8cfae) 48%, transparent) !important;
+  border-radius: 12px !important;
+  background: color-mix(in srgb, var(--altara-accent, #e8cfae) 5%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--altara-accent, #e8cfae) 8%, transparent) !important;
+}
+body:not(.authPage) #userCardWidgetsPanel :is(.profileWidgetCard,.profileWidgetItem).is-profile-dragging > * { visibility: hidden; }
+body:not(.authPage) #userCardWidgetsPanel :is(.profileWidgetCard,.profileWidgetItem).is-profile-dragging::before {
+  content: "Drop here";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--altara-accent, #e8cfae) 70%, var(--altara-text-muted, #a9a49b));
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+}
+body.is-profile-widget-pointer-dragging,
+body.is-profile-widget-pointer-dragging * { cursor: grabbing !important; }
+.profileWidgetPointerPreview {
+  position: fixed;
+  z-index: 2147483647;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 250px;
+  min-height: 62px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--altara-accent, #e8cfae) 38%, #3a3732);
+  border-radius: 13px;
+  background: #242321;
+  color: #f2f0ec;
+  box-shadow: 0 18px 48px rgba(0,0,0,.44);
+  pointer-events: none;
+  opacity: .96;
+  will-change: transform;
+}
+.profileWidgetPointerPreview--widget { width: 210px; min-height: 48px; padding: 12px 16px; }
+.profileWidgetPointerPreview__media {
+  display: grid;
+  place-items: center;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: #181818;
+  color: #e8cfae;
+  font-size: 18px;
+}
+.profileWidgetPointerPreview__media img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.profileWidgetPointerPreview strong { overflow: hidden; font-size: 12px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetItem,
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetItem:hover,
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetItem:focus-within {
+  background: var(--profile-shelf-surface) !important;
+  background-image: none !important;
+  border-color: var(--profile-shelf-border) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+body:not(.authPage) #userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetItem:is(:hover,:focus-within) {
+  border-color: color-mix(in srgb, var(--altara-accent, #e8cfae) 28%, var(--profile-shelf-border)) !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetCard:has(.profileWidgetInlinePopover) {
+  position: relative;
+  z-index: 40 !important;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetInlinePopover {
+  z-index: 50;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemDragHandle { top: 6px; right: 6px; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetItemBody { padding-right: 32px !important; padding-bottom: 13px !important; }
+body:not(.authPage) #userCardWidgetsPanel :is(.profileWidgetDragHandle,.profileWidgetItemDragHandle):focus-visible {
+  outline: 2px solid var(--altara-accent, #e8cfae);
+  outline-offset: 2px;
+  opacity: 1;
+}
+.profileWidgetContextMenu {
+  position: fixed;
+  z-index: 2147483647;
+  width: 160px;
+  padding: 5px;
+  border: 1px solid #41403c;
+  border-radius: 12px;
+  background: #222220;
+  box-shadow: 0 16px 40px #0009;
+}
+.profileWidgetContextMenu [role="menuitem"] {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #eee9e0;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.profileWidgetContextMenu [role="menuitem"]:is(:hover,:focus-visible) {
+  background: #34322e;
+  color: #f4dec0;
+  outline: none;
+}
+.profileWidgetContextMenu [role="menuitem"].is-danger { color: #e58c92; }
+.profileWidgetContextMenu [role="menuitem"].is-danger:is(:hover,:focus-visible) { background: #3b2a2c; color: #ffadb3; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetShowMore {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  margin-top: 2px;
+  padding: 3px 1px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #aaa49b;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetShowMore span { color: #d9c2a0; }
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetShowMore:is(:hover,:focus-visible) {
+  color: #f0d4ac;
+  outline: none;
+}
+body:not(.authPage) #userCardWidgetsPanel .profileWidgetShowMore:focus-visible {
+  outline: 2px solid #d9c2a0;
+  outline-offset: 3px;
+}
+
+/* Server Profile: one editor and one live preview. */
+/* Roles: lightweight list and an editor with separate permission/member views. */
+body:not(.authPage) #serverSettingsModal [data-server-settings-panel="roles"] .serverSettingsRolesSection {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  gap: 12px;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleCreateDisclosure {
+  border-bottom: 1px solid var(--server-settings-border);
+  padding-bottom: 12px;
+}
+body:not(.authPage) #serverSettingsModal summary.serverSettingsRolesHead {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  width: max-content;
+  max-width: 100%;
+  min-height: 36px;
+  gap: 20px;
+  padding: 8px 12px;
+  border: 1px solid var(--server-settings-accent-border);
+  border-radius: 8px;
+  background: var(--server-settings-accent-soft);
+  cursor: pointer;
+  list-style: none;
+}
+body:not(.authPage) #serverSettingsModal summary.serverSettingsRolesHead::-webkit-details-marker { display: none; }
+body:not(.authPage) #serverSettingsModal summary.serverSettingsRolesHead .label { color: var(--server-settings-accent); }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleCreateDisclosure[open] summary > span { transform: rotate(45deg); }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleCreateRow { margin-top: 14px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolesMeta { font-size: 11px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolesGrid {
+  grid-template-columns: minmax(220px, 250px) minmax(0, 1fr);
+  gap: 26px;
+  align-items: start;
+  min-height: 0;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRolesList {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+  max-height: min(60vh, 560px);
+  padding: 0 8px 0 0;
+  gap: 5px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--server-settings-accent-border) transparent;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleRow { gap: 3px; min-width: 0; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleDragHandle { flex: 0 0 12px; width: 12px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePick {
+  min-height: 57px;
+  padding: 9px 10px;
+  gap: 10px;
+  opacity: 1;
+  border-color: transparent;
+  background: transparent;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePick.active {
+  border-color: rgba(232, 207, 174, 0.18);
+  background: rgba(232, 207, 174, 0.08);
+  box-shadow: inset 2px 0 0 var(--server-settings-accent);
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleSummary { display: grid; min-width: 0; gap: 5px; flex: 1; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleName { display: block; font-size: 13px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleStats { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleStats .serverSettingsRolePermsBadge {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--server-settings-muted);
+  font-size: 9px;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleCount { color: var(--server-settings-soft); font-size: 10px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleDelete.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  min-width: 27px;
+  height: 30px;
+  padding: 0;
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+  color: var(--server-settings-muted);
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleDelete.btn:hover:not(:disabled) { color: var(--server-settings-danger); background: rgba(229,139,139,.08); }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleMembers {
+  min-width: 0;
+  max-height: none;
+  overflow: visible;
+  padding: 0 0 8px 24px;
+  border: 0;
+  border-left: 1px solid var(--server-settings-border);
+  border-radius: 0;
+  background: none;
+  gap: 17px;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleEditorHeading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleEditorHeading h3 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleEditorTabs { display: flex; gap: 20px; border-bottom: 1px solid var(--server-settings-border); }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleEditorTabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--server-settings-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleEditorTabs button[aria-pressed="true"] { color: var(--server-settings-accent); border-bottom-color: var(--server-settings-accent); }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleEditorTabs button span { color: var(--server-settings-muted); font-size: 11px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleEditorView[hidden] { display: none; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermsPanel { gap: 14px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermsHead { flex-wrap: wrap; gap: 9px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermsHead .serverSettingsRoleMembersHead { display: none; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermsActions { flex-wrap: wrap; gap: 8px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermsActions .btn { min-height: 29px; padding: 5px 9px; font-size: 11px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermSearchWrap { position: static; padding: 0; background: none; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermGroups { gap: 22px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermCategory { gap: 0; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermCategoryHead { padding: 0 0 8px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermCategoryHead span { font-size: 10px; letter-spacing: .055em; color: var(--server-settings-soft); }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermRow {
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--server-settings-border);
+  border-radius: 0;
+  background: none;
+  cursor: pointer;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermRow:hover:not(.is-coming-soon) { background: rgba(232,207,174,.025); border-color: var(--server-settings-border); }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermText { grid-column: 1; grid-row: 1; gap: 4px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermName { font-size: 13px; color: var(--server-settings-text); }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermHint { font-size: 11px; line-height: 1.45; color: var(--server-settings-soft); }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermTop { flex-wrap: wrap; gap: 6px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermRow.risk-normal:not(.is-coming-soon) .serverSettingsRolePermBadge { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; padding: 0; border: 0; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermBadge { font-size: 8px; padding: 3px 5px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermRow input[type="checkbox"] {
+  appearance: none;
+  grid-column: 2;
+  grid-row: 1;
+  width: 34px;
+  height: 20px;
+  min-height: 20px;
+  margin: 0;
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 999px;
+  background: #3b3935;
+  cursor: pointer;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermRow input[type="checkbox"]::after { content: ""; display: block; width: 14px; height: 14px; margin: 2px; border-radius: 50%; background: #bdb9b2; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermRow input[type="checkbox"]:checked { background: #b99b70; border-color: #b99b70; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermRow input[type="checkbox"]:checked::after { transform: translateX(14px); background: #fff5e5; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRolePermRow input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleAssignments { display: grid; gap: 8px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleMemberRow { padding: 10px 0; border: 0; border-bottom: 1px solid var(--server-settings-border); background: none; border-radius: 0; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleMemberText { flex: 1; }
+body:not(.authPage) #serverSettingsModal .serverSettingsRoleMemberRow input { order: 3; }
+body:not(.authPage) #serverSettingsModal :is(summary.serverSettingsRolesHead, .serverSettingsRoleEditorTabs button, .serverSettingsRolePermRow input):focus-visible { outline: 2px solid var(--server-settings-accent); outline-offset: 3px; }
+@media (max-width: 1100px) {
+  body:not(.authPage) #serverSettingsModal .serverSettingsRolesGrid { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  body:not(.authPage) #serverSettingsModal .serverSettingsRolesList { position: static; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 220px; padding: 0; }
+  body:not(.authPage) #serverSettingsModal .serverSettingsRoleMembers { padding: 18px 0 0; border-left: 0; border-top: 1px solid var(--server-settings-border); }
+  body:not(.authPage) #serverSettingsModal .serverSettingsRoleCreateRow { grid-template-columns: minmax(0, 1fr) 44px; }
+  body:not(.authPage) #serverSettingsModal .serverSettingsRolePresetSelect { grid-column: 1; min-width: 0; }
+  body:not(.authPage) #serverSettingsModal #btnServerSettingsRoleCreate { grid-column: 1 / -1; justify-self: start; }
+}
+@media (max-width: 800px) {
+  body:not(.authPage) #serverSettingsModal .serverSettingsRolesList { grid-template-columns: minmax(0, 1fr); }
+}
+body:not(.authPage) #serverSettingsModal {
+  --altara-accent: #e8cfae;
+  --altara-accent-strong: #f5debb;
+  --altara-accent-text: #241e17;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsMainTop {
+  min-height: 78px;
+  padding: 22px 30px 12px;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsTitle { font-size: 25px; }
+body:not(.authPage) #serverSettingsModal:has([data-server-settings-panel="profile"].is-active) .serverSettingsCard {
+  height: min(680px, calc(100vh - 24px));
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsBody { padding: 8px 30px 24px; }
+body:not(.authPage) #serverSettingsModal [data-server-settings-panel="profile"].serverSettingsPanel.is-active { gap: 0; }
+body:not(.authPage) #serverSettingsModal [data-server-settings-panel="profile"] .serverSettingsPanelIntro { display: none; }
+body:not(.authPage) #serverSettingsModal .serverSettingsProfileGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 34px;
+  max-width: 920px;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsIdentityPanel,
+body:not(.authPage) #serverSettingsModal .serverSettingsMediaSection {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsIdentityPanel { display: grid; gap: 21px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsSectionHead h3 {
+  margin: 0;
+  color: var(--server-settings-text);
+  font-size: 16px;
+  font-weight: 800;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsSectionHead p {
+  margin: 4px 0 0;
+  color: var(--server-settings-soft);
+  font-size: 12px;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsIconRow {
+  min-width: 0;
+  margin: 0;
+  gap: 14px;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsIconRow .serverCreateIconActions {
+  min-width: 0;
+  display: grid;
+  gap: 0;
+}
+body:not(.authPage) #serverSettingsModal .serverCreateIconPreview {
+  width: 76px;
+  height: 76px;
+  flex: 0 0 76px;
+  border: 1px solid var(--server-settings-accent-border);
+  border-radius: 50%;
+}
+body:not(.authPage) #serverSettingsModal .serverCreateIconPlus {
+  top: auto;
+  right: 0;
+  bottom: 0;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsNameField,
+body:not(.authPage) #serverSettingsModal .serverSettingsWelcomeField {
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsWelcomeField .hint {
+  max-width: 380px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsButtonRow { margin-top: 7px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsButtonRow .btn {
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsBannerBlock {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 18px 0 0;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsBannerActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsBannerActions .serverSettingsButtonRow { margin: 0; }
+body:not(.authPage) #serverSettingsModal .serverSettingsBannerActions #btnServerSettingsBannerClear {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--server-settings-soft);
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewCard {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-color: var(--server-settings-border-strong);
+  border-radius: 15px;
+  background: #1c1b19;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsBannerBlock #serverSettingsBannerPreview.serverSettingsPreviewBanner {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-width: none;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: radial-gradient(circle at 18% 20%, rgba(232, 207, 174, 0.18), transparent 40%), linear-gradient(130deg, #322b24, #171615 75%);
+  color: rgba(246, 243, 238, 0.58);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+body:not(.authPage) #serverSettingsModal #serverSettingsBannerPreview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewBody {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  padding: 41px 20px 20px;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewIcon {
+  left: 20px;
+  top: -31px;
+  width: 62px;
+  height: 62px;
+  border-color: #1c1b19;
+}
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewName { font-size: 18px; }
+body:not(.authPage) #serverSettingsModal .serverSettingsPreviewChannel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--server-settings-soft);
+}
+@media (max-width: 1100px) {
+  body:not(.authPage) #serverSettingsModal:has([data-server-settings-panel="profile"].is-active) .serverSettingsCard {
+    height: calc(100vh - 24px);
+  }
+  body:not(.authPage) #serverSettingsModal .serverSettingsProfileGrid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 27px;
+  }
+  body:not(.authPage) #serverSettingsModal .serverSettingsMediaSection {
+    padding-top: 22px;
+    border-top: 1px solid var(--server-settings-border);
+  }
+  body:not(.authPage) #serverSettingsModal .serverSettingsPreviewCard { max-width: 450px; }
+}
+@media (max-width: 980px) {
+  body:not(.authPage) #serverSettingsModal .serverSettingsMainTop { padding: 18px 22px 10px; }
+  body:not(.authPage) #serverSettingsModal .serverSettingsBody { padding: 8px 22px 22px; }
+}
+@media (min-width: 700px) and (max-width: 980px) {
+  body:not(.authPage) #serverSettingsModal .serverSettingsCard {
+    grid-template-columns: 210px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  body:not(.authPage) #serverSettingsModal .serverSettingsSidebar {
+    max-height: none;
+    border-right: 1px solid var(--server-settings-border);
+    border-bottom: 0;
+    padding: 18px 12px;
+  }
+  body:not(.authPage) #serverSettingsModal .serverSettingsSidebarServer {
+    padding: 10px;
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+  body:not(.authPage) #serverSettingsModal .serverSettingsSidebarIcon { width: 38px; height: 38px; }
+}
+
+/* Shared live activity deck in the full profile and mini profile. */
+.profileActivityStack {
+  min-width: 0;
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.profileActivityStack__summary {
+  display: block;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 13px;
+  -webkit-tap-highlight-color: transparent;
+}
+.profileActivityStack__summary::-webkit-details-marker { display: none; }
+.profileActivityStack__summary:focus-visible {
+  outline: 2px solid #d8bf9a;
+  outline-offset: 3px;
+}
+.profileActivityStack__front {
+  position: relative;
+  isolation: isolate;
+  padding-bottom: 12px;
+}
+.profileActivityStack__front::before,
+.profileActivityStack__front::after {
+  content: "";
+  position: absolute;
+  border: 1px solid rgba(232, 207, 174, .13);
+  background: #24221f;
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: -1;
+  inset: 10px 7px 6px;
+}
+.profileActivityStack__front::before { inset: 16px 14px 0; background: #1e1d1b; }
+.profileActivityStack .gameActivityCard {
+  position: relative;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+  background-color: #1b1b1a;
+}
+.profileActivityStack .gameActivityCard--spotify { background-color: #172019; }
+.profileActivityStack .gameActivityCard__name { font-size: 12px; line-height: 1.35; }
+.profileActivityStack .gameActivityCard__meta { font-size: 11px; line-height: 1.4; }
+.profileActivityStack .gameActivityCard__eyebrow { font-size: 9px; letter-spacing: .04em; }
+.profileActivityStack__hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 3px 3px;
+  color: #bcb4a8;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.profileActivityStack__count { margin-left: 3px; color: #e8cfae; font-variant-numeric: tabular-nums; }
+.profileActivityStack__summary:hover .profileActivityStack__hint { color: #e8cfae; }
+.profileActivityStack__less { display: none; }
+.profileActivityStack[open] .profileActivityStack__more { display: none; }
+.profileActivityStack[open] .profileActivityStack__less { display: inline; }
+.profileActivityStack[open] .profileActivityStack__front { padding-bottom: 0; }
+.profileActivityStack[open] .profileActivityStack__front::before,
+.profileActivityStack[open] .profileActivityStack__front::after { display: none; }
+.profileActivityStack__rest { display: grid; gap: 8px; padding-top: 7px; }
+/* Keep expanded activities reachable above the mini profile's fixed actions. */
+.meProfilePopout .meProfilePopout__profile { grid-template-rows: auto minmax(0, 1fr); }
+.meProfilePopout .meProfilePopout__body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  align-content: start;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(232, 207, 174, .24) transparent;
+  padding: 3px;
+  margin: -3px;
+}
+.profileActivityStack[open] .gameActivityCard__name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Personal listening space: clear controls and a generous positioning canvas. */
+#spatialAudioRoomOverlay { width: min(920px, calc(100% - 24px)); border-radius: 18px; background: #141413; }
+#spatialAudioRoomOverlay .spatialAudioRoom__head { padding: 18px 20px; align-items: flex-start; }
+#spatialAudioRoomOverlay .spatialAudioRoom__title { font-size: 18px; font-weight: 750; }
+#spatialAudioRoomOverlay .spatialAudioRoom__badge { display: none; }
+#spatialAudioRoomOverlay .spatialAudioRoom__body { grid-template-columns: 250px minmax(0, 1fr); gap: 16px; padding: 16px; }
+#spatialAudioRoomOverlay .spatialAudioRoom__settings { min-width: 0; }
+#spatialAudioRoomOverlay .spatialAudioSection { border: 0; padding: 0; background: transparent; }
+#spatialAudioRoomOverlay .spatialAudioSection__head { display: none; }
+#spatialAudioRoomOverlay .spatialAudioRoom__canvas { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: 12px; }
+#spatialAudioRoomOverlay .spatialAudioRoom__guide { margin: 0; color: #c7c0b5; font-size: 12px; line-height: 1.5; }
+#spatialAudioRoomOverlay .spatialAudioRoom__map { flex: 1; min-height: 330px; border-radius: 14px; background: radial-gradient(ellipse at 50% 72%, #e8cfae12, transparent 65%), #101110; }
+#spatialAudioRoomOverlay .spatialAudioRoom__map::before { border-radius: 50%; inset: 12%; border-color: #e8cfae18; box-shadow: none; }
+#spatialAudioRoomOverlay .spatialAudioAdvanced { border-top: 1px solid #e8cfae22; margin-top: 12px; }
+#spatialAudioRoomOverlay .spatialAudioAdvanced > summary { padding: 12px 0; color: #e8cfae; cursor: pointer; }
+#spatialAudioRoomOverlay .spatialAudioAdvanced > summary:focus-visible { outline: 2px solid #e8cfae; outline-offset: 2px; }
+#spatialAudioRoomOverlay .spatialAudioAdvanced__content { display: grid; gap: 10px; }
+#spatialAudioRoomOverlay #btnSpatialAudioRoomAutoArrange { background: #e8cfae; color: #201c17; }
+@media (max-width: 820px) {
+  #spatialAudioRoomOverlay .spatialAudioRoom__head { flex-wrap: wrap; }
+  #spatialAudioRoomOverlay .spatialAudioRoom__body { grid-template-columns: minmax(0, 1fr); }
+  #spatialAudioRoomOverlay .spatialAudioRoom__settings { max-height: none; }
+  #spatialAudioRoomOverlay .spatialAudioRoom__map { min-height: 280px; }
+}

@@ -44,10 +44,10 @@ test("macOS resolver refuses missing, duplicate, cross-repository, draft and pre
 test("published browser manifest identifies the exact release and runtime bytes", () => {
   const read = p => readFileSync(new URL(`../public/app/${p}`, import.meta.url));
   const manifest = JSON.parse(read("release.json"));
-  assert.equal(manifest.version, "0.1.136");
+  assert.equal(manifest.version, "0.1.137");
   assert.equal(manifest.appJsSha256, createHash("sha256").update(read("app.js")).digest("hex"));
   assert.equal(manifest.sfxJsSha256, createHash("sha256").update(read("lib/altaraSfx.js")).digest("hex"));
-  assert.match(read("index.html").toString(), /release=0\.1\.136/);
+  assert.match(read("index.html").toString(), /release=0\.1\.137/);
 });
 
 
