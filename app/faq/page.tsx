@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { HomeNav } from "../components/home-nav";
 import { Reveal } from "../components/reveal";
@@ -123,6 +124,9 @@ export default function FAQPage() {
               <p className="hp-hero-sub">
                 Plain answers about pricing, platforms, and what ALTARA actually is — search or
                 browse by category below.
+              </p>
+              <p className="hp-hero-sub">
+                Considering a switch? <Link href="/discord-alternative">Read the Discord alternative guide</Link>.
               </p>
             </Reveal>
           </div>

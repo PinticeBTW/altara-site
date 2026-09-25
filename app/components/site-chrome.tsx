@@ -174,6 +174,7 @@ const footerColumns = [
     title: "Product",
     links: [
       { label: "Features", href: "/features" },
+      { label: "Discord alternative", href: "/discord-alternative" },
       { label: "FAQ", href: "/faq" },
       { label: "Download options", href: DOWNLOADS_URL },
       { label: "Download for Windows", href: WINDOWS_DOWNLOAD_URL },

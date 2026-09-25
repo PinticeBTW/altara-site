@@ -13,7 +13,7 @@ const NAV_LINKS = [
   { href: "/developers", label: "Developers", key: "developers" },
 ] as const;
 
-type NavKey = (typeof NAV_LINKS)[number]["key"];
+type NavKey = (typeof NAV_LINKS)[number]["key"] | "discord-alternative";
 
 export function HomeNav({ active = "home" }: { active?: NavKey }) {
   const [condensed, setCondensed] = useState(false);

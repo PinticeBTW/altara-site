@@ -19,7 +19,7 @@ const description =
   "What ALTARA can actually do: servers with channels, roles, and permissions, private and group DMs, voice channels with Spatial Audio, a personal dashboard, and real presence.";
 
 export const metadata: Metadata = {
-  title: "Features",
+  title: "Community Chat and Voice Features",
   description,
   alternates: {
     canonical: "/features",
@@ -79,6 +79,9 @@ export default function FeaturesPage() {
               <p className="hp-hero-sub">
                 Servers and DMs, voice and Spatial Audio, a personal dashboard, and the small
                 details that make it feel like yours.
+              </p>
+              <p className="hp-hero-sub">
+                Looking for a new home for your group? <Link href="/discord-alternative">Explore ALTARA as a Discord alternative</Link>.
               </p>
               <div className="hp-hero-cta">
                 <a

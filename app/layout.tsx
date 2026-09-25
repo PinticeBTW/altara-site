@@ -8,7 +8,7 @@ import {
 } from "./lib/altara-linux-release";
 import "./globals.css";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://altara.app";
+const siteUrl = "https://www.altaraapp.com";
 const siteDescription =
   "ALTARA is a fast, clean Discord alternative for friends, gaming groups, and small communities, with voice calls, private messages, widgets, and simple group spaces.";
 
@@ -35,23 +35,9 @@ export const metadata: Metadata = {
     template: "%s | ALTARA",
   },
   description: siteDescription,
-  keywords: [
-    "ALTARA",
-    "Discord alternative",
-    "chat app",
-    "voice calls",
-    "private messages",
-    "group chat",
-    "gaming groups",
-    "small communities",
-    "widgets dashboard",
-  ],
   authors: [{ name: "Tomás Nunes" }],
   creator: "Tomás Nunes",
   publisher: "ALTARA",
-  alternates: {
-    canonical: "/",
-  },
   openGraph: {
     type: "website",
     url: "/",
@@ -72,10 +58,6 @@ export const metadata: Metadata = {
     title: "ALTARA | Where friends stay close",
     description: siteDescription,
     images: ["/altara-home-page-clean.png"],
-  },
-  robots: {
-    index: true,
-    follow: true,
   },
   other: {
     "altara-site-build-marker": ALTARA_SITE_LINUX_DOWNLOAD_MARKER,

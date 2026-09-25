@@ -17,7 +17,7 @@ import {
 } from "./components/site-chrome";
 
 const description =
-  "ALTARA is a refined home for friends, gaming groups, and small communities — servers, voice, private messages, and a personal widgets dashboard, built with the care of a product you'll actually enjoy using.";
+  "ALTARA is a Discord alternative for friends, gaming groups, and small communities. Bring your people together with servers, voice channels, private messages, and a personal dashboard.";
 
 const heroImage = {
   src: "/altara-dashboard-hero.png",
@@ -26,9 +26,38 @@ const heroImage = {
   alt: "ALTARA dashboard showing the friends sidebar, Online Now, Unread DMs, Calendar, Call widget, Notepad, Checklist, Study Mode focus timer, and Active Now",
 };
 
+const homeJsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://www.altaraapp.com/#organization",
+      name: "ALTARA",
+      url: "https://www.altaraapp.com/",
+      logo: "https://www.altaraapp.com/logo.png",
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://www.altaraapp.com/#website",
+      name: "ALTARA",
+      url: "https://www.altaraapp.com/",
+      publisher: { "@id": "https://www.altaraapp.com/#organization" },
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: "ALTARA",
+      url: "https://www.altaraapp.com/",
+      applicationCategory: "CommunicationApplication",
+      operatingSystem: "Windows, Linux, macOS, Web",
+      description,
+      publisher: { "@id": "https://www.altaraapp.com/#organization" },
+    },
+  ],
+};
+
 export const metadata: Metadata = {
   title: {
-    absolute: "ALTARA | Where friends stay close",
+    absolute: "ALTARA | Discord Alternative for Friends and Communities",
   },
   description,
   alternates: {
@@ -36,7 +65,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     url: "/",
-    title: "ALTARA | Where friends stay close",
+    title: "ALTARA | Discord Alternative for Friends and Communities",
     description,
     images: [
       {
@@ -48,7 +77,7 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    title: "ALTARA | Where friends stay close",
+    title: "ALTARA | Discord Alternative for Friends and Communities",
     description,
     images: [heroImage.src],
   },
@@ -123,6 +152,10 @@ export default function Home() {
       <HomeNav />
 
       <main id="home">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(homeJsonLd).replace(/</g, "\\u003c") }}
+        />
         <section className="hp-hero">
           <div className="hp-container">
             <Reveal className="hp-hero-copy">
@@ -132,9 +165,12 @@ export default function Home() {
                 stay close.
               </h1>
               <p className="hp-hero-sub">
-                A refined home for friends, gaming groups, and small communities. Servers,
+                ALTARA is a Discord alternative for friends, gaming groups, and small communities. Servers,
                 voice, messages, and a personal dashboard — the toolkit you know, built with
                 more care.
+              </p>
+              <p className="hp-hero-sub">
+                <a href="/discord-alternative">See how ALTARA works as a Discord alternative</a>
               </p>
               <div className="hp-hero-cta">
                 <a
