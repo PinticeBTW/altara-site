@@ -16,12 +16,20 @@ import { ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER } from "../lib/altara-downlo
 import { ALTARA_SITE_LINUX_INSTALLERS_MARKER, fetchLatestLinuxRelease, fetchLatestWindowsRelease } from "../lib/altara-linux-release";
 
 export const metadata: Metadata = {
-  title: "Desktop downloads",
+  title: "Download ALTARA for Windows, Linux or macOS",
   description:
     "Download ALTARA for Windows, Linux x64 and macOS on Apple Silicon or Intel, or open ALTARA in your browser.",
   alternates: {
     canonical: "/downloads",
   },
+  openGraph: {
+    type: "website",
+    url: "/downloads",
+    title: "Download ALTARA for Windows, Linux or macOS",
+    description: "Choose a Windows installer, Linux x64 package, macOS DMG or the browser app.",
+    images: [{ url: "/altara-dashboard-hero.png", width: 1917, height: 1020, alt: "ALTARA dashboard" }],
+  },
+  twitter: { card: "summary_large_image", title: "Download ALTARA", description: "Windows, Linux x64, macOS and browser options.", images: ["/altara-dashboard-hero.png"] },
 };
 
 type DownloadsPageProps = {
@@ -76,14 +84,10 @@ export default async function DownloadsPage({ searchParams }: DownloadsPageProps
             <span className="eyebrow">
               <span className="dot" /> Desktop downloads
             </span>
-            <h1>
-              Choose where you
-              <br />
-              <span className="gradient-text">want to hang out.</span>
-            </h1>
+            <h1>Download ALTARA for <span className="gradient-text">your computer.</span></h1>
             <p>
-              Download the latest stable ALTARA release for Windows, Linux x64,
-              or macOS. You can also open ALTARA directly in your browser.
+              Choose the Windows installer, a Linux x64 package or a macOS DMG
+              for Apple Silicon or Intel. You can also use ALTARA in your browser.
             </p>
           </div>
         </section>

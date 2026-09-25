@@ -10,7 +10,7 @@ const description =
   "Why ALTARA exists: a calmer, more personal home for friend groups, gaming groups, and small communities, started in February 2026 and independently built by Tomás Nunes.";
 
 export const metadata: Metadata = {
-  title: "About",
+  title: "Our Story and Mission",
   description,
   alternates: {
     canonical: "/about",

@@ -21,7 +21,7 @@ type FooterLink = {
   href: string;
 };
 
-function Brand() {
+function Brand({ eager = false }: { eager?: boolean } = {}) {
   return (
     <>
       <Image
@@ -29,7 +29,7 @@ function Brand() {
         alt=""
         width={34}
         height={34}
-        priority
+        loading={eager ? "eager" : "lazy"}
         className="brand-icon"
       />
       <span>ALTARA</span>
@@ -42,7 +42,6 @@ export function LinuxDownloadOption({ version }: { version?: string } = {}) {
     <a
       href={LINUX_DOWNLOAD_URL}
       className="platform-btn platform-btn-linux"
-      aria-label="Download the recommended ALTARA package for Linux x64"
     >
       <span className="platform-icon" aria-hidden="true">
         <svg
@@ -71,7 +70,6 @@ export function WindowsDownloadOption({ version }: { version?: string } = {}) {
     <a
       href={WINDOWS_DOWNLOAD_URL}
       className="platform-btn"
-      aria-label={`Download ALTARA${version ? ` ${version}` : ""} for Windows`}
     >
       <span className="platform-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="currentColor">
@@ -144,7 +142,7 @@ export function SiteNav({ active }: { active?: NavPage }) {
     <nav className="nav">
       <div className="nav-inner">
         <Link href="/" className="logo">
-          <Brand />
+          <Brand eager />
         </Link>
 
         <div className="nav-links">
@@ -190,6 +188,7 @@ const footerColumns = [
       { label: "About", href: "/about" },
       { label: "Terms", href: "/terms" },
       { label: "Privacy", href: "/privacy" },
+      { label: "Contact", href: "mailto:support@altaraapp.com" },
       { label: "GitHub releases", href: RELEASES_URL },
     ],
   },
@@ -216,6 +215,10 @@ function FooterLinkItem({ link }: { link: FooterLink }) {
     );
   }
 
+  if (link.href.startsWith("mailto:")) {
+    return <a href={link.href}>{link.label}</a>;
+  }
+
   return (
     <Link href={link.href}>
       {link.label}
@@ -239,7 +242,7 @@ export function SiteFooter() {
 
           {footerColumns.map((column) => (
             <div key={column.title}>
-              <h4>{column.title}</h4>
+              <h2>{column.title}</h2>
               <ul>
                 {column.links.map((link) => (
                   <li key={link.label}>
@@ -251,7 +254,7 @@ export function SiteFooter() {
           ))}
         </div>
 
-        <div className="footer-wordmark">ALTARA</div>
+        <div className="footer-wordmark" aria-hidden="true">ALTARA</div>
         <div className="footer-bottom">
           <span>&copy; 2026 ALTARA. Made by friends, for friends.</span>
           <span>ALTARA &middot; pintice</span>

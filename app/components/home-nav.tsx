@@ -68,7 +68,7 @@ export function HomeNav({ active = "home" }: { active?: NavKey }) {
     >
       <div className={`hp-nav hp-glass${menuOpen ? " is-open" : ""}`}>
         <Link href="/" className="hp-nav-brand" onClick={() => setMenuOpen(false)}>
-          <Image src="/logo.png" alt="" width={26} height={26} priority className="hp-nav-mark" />
+          <Image src="/logo.png" alt="" width={26} height={26} loading="eager" className="hp-nav-mark" />
           <span>ALTARA</span>
         </Link>
 

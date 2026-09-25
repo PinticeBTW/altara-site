@@ -13,7 +13,7 @@
 
   --fg: #f3f0ea;
   --fg-muted: rgba(243, 240, 234, 0.64);
-  --fg-dim: rgba(243, 240, 234, 0.42);
+  --fg-dim: rgba(243, 240, 234, 0.58);
 
   --grad-soft: linear-gradient(135deg, rgba(232, 205, 176, 0.16), rgba(201, 170, 140, 0.1));
 
@@ -2652,7 +2652,7 @@ p {
   gap: 48px;
 }
 
-.footer h4 {
+.footer h2 {
   font-family: var(--font-inter), "Inter", sans-serif;
   font-size: 13px;
   font-weight: 600;
@@ -2711,7 +2711,7 @@ p {
   text-align: center;
   line-height: 0.9;
   margin-top: 80px;
-  opacity: 0.06;
+  opacity: 0.38;
   user-select: none;
 }
 

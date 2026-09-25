@@ -3,6 +3,19 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   devIndicators: false,
   skipTrailingSlashRedirect: true,
+  async headers() {
+    return [{
+      // The YouTube callback sets its own nonce-based CSP per response.
+      source: "/:path((?!oauth/youtube/callback).*)",
+      headers: [
+        { key: "Content-Security-Policy", value: "frame-ancestors 'none'; object-src 'none'; base-uri 'self'" },
+        { key: "X-Frame-Options", value: "DENY" },
+      ],
+    }, ...["/app/:path*", "/login.html", "/register.html", "/profile.html", "/oauth2/authorize"].map((source) => ({
+      source,
+      headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }],
+    }))];
+  },
   async rewrites() {
     return [
       {

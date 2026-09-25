@@ -19,7 +19,7 @@ const description =
   "What ALTARA can actually do: servers with channels, roles, and permissions, private and group DMs, voice channels with Spatial Audio, a personal dashboard, and real presence.";
 
 export const metadata: Metadata = {
-  title: "Community Chat and Voice Features",
+  title: "Voice, Chat and Community Features",
   description,
   alternates: {
     canonical: "/features",
@@ -103,7 +103,7 @@ export default function FeaturesPage() {
               <Reveal className="hp-story-media">
                 <div className="hp-shot hp-shot-servermain hp-shot-servermain--lg">
                   <Image
-                    src="/altara-server-channel.png"
+                    src="/altara-server-channel.webp"
                     alt="An ALTARA server with the channel sidebar, the active #general text channel with messages, and the member list showing owner, member, and bot roles"
                     width={1719}
                     height={765}

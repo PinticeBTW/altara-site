@@ -15,7 +15,7 @@ const description =
   "Answers about ALTARA: pricing and ALTARA+, browser access, Windows, Linux x64 and macOS downloads, open beta status, and who it's built for.";
 
 export const metadata: Metadata = {
-  title: "FAQ",
+  title: "FAQ: Pricing, Downloads and Platforms",
   description,
   alternates: {
     canonical: "/faq",
@@ -52,7 +52,7 @@ const faqs: Faq[] = [
     category: "plus",
     question: "Is ALTARA free?",
     answer:
-      "Yes — the core app is free to use, with no feature paywalled. ALTARA+ is a live, optional upgrade: Core is €4.99/mo and Nova is €7.99/mo, both cheaper billed yearly. It funds development without gating the free experience.",
+      "Yes — the core app is free to use. ALTARA+ is an optional upgrade with higher limits and extras: Core is €4.99/mo and Nova is €7.99/mo, both cheaper billed yearly.",
   },
   {
     id: "discord-alternative",
@@ -74,6 +74,13 @@ const faqs: Faq[] = [
     question: "What platforms are supported?",
     answer:
       "Windows is available now. Linux x64 is available as AppImage or DEB, with a manually updated portable tar.gz fallback; macOS is available for Apple Silicon and Intel, and browser access remains open.",
+  },
+  {
+    id: "mac-version",
+    category: "downloads",
+    question: "Why does the macOS download have a different version number?",
+    answer:
+      "Desktop releases can arrive on different schedules. The macOS DMG available on the downloads page may have an earlier version number than the latest Windows or Linux release. Choose Apple Silicon or Intel to get the matching Mac installer.",
   },
   {
     id: "beta",

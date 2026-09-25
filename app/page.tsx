@@ -17,10 +17,11 @@ import {
 } from "./components/site-chrome";
 
 const description =
-  "ALTARA is a Discord alternative for friends, gaming groups, and small communities. Bring your people together with servers, voice channels, private messages, and a personal dashboard.";
+  "ALTARA is a place for friends, gaming groups, and small communities to stay close with voice chat, private messages, shared servers, and a personal dashboard.";
 
 const heroImage = {
-  src: "/altara-dashboard-hero.png",
+  src: "/altara-dashboard-hero.webp",
+  socialSrc: "/altara-dashboard-hero.png",
   width: 1917,
   height: 1020,
   alt: "ALTARA dashboard showing the friends sidebar, Online Now, Unread DMs, Calendar, Call widget, Notepad, Checklist, Study Mode focus timer, and Active Now",
@@ -35,6 +36,11 @@ const homeJsonLd = {
       name: "ALTARA",
       url: "https://www.altaraapp.com/",
       logo: "https://www.altaraapp.com/logo.png",
+      contactPoint: {
+        "@type": "ContactPoint",
+        contactType: "customer support",
+        email: "support@altaraapp.com",
+      },
     },
     {
       "@type": "WebSite",
@@ -57,7 +63,7 @@ const homeJsonLd = {
 
 export const metadata: Metadata = {
   title: {
-    absolute: "ALTARA | Discord Alternative for Friends and Communities",
+    absolute: "ALTARA | Voice Chat and Community Spaces for Friends",
   },
   description,
   alternates: {
@@ -65,11 +71,11 @@ export const metadata: Metadata = {
   },
   openGraph: {
     url: "/",
-    title: "ALTARA | Discord Alternative for Friends and Communities",
+    title: "ALTARA | Voice Chat and Community Spaces for Friends",
     description,
     images: [
       {
-        url: heroImage.src,
+        url: heroImage.socialSrc,
         width: heroImage.width,
         height: heroImage.height,
         alt: heroImage.alt,
@@ -77,9 +83,9 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    title: "ALTARA | Discord Alternative for Friends and Communities",
+    title: "ALTARA | Voice Chat and Community Spaces for Friends",
     description,
-    images: [heroImage.src],
+    images: [heroImage.socialSrc],
   },
 };
 
@@ -185,10 +191,10 @@ export default function Home() {
                   Try in browser
                 </a>
               </div>
-              <p className="hp-hero-meta">Free forever &middot; Windows and Linux x64 available now</p>
+              <p className="hp-hero-meta">Free core app &middot; Windows, Linux x64, macOS and browser access</p>
             </Reveal>
 
-            <Reveal className="hp-hero-frame">
+            <div className="hp-hero-frame">
               <div className="hp-glass hp-hero-glass">
                 <Image
                   src={heroImage.src}
@@ -196,12 +202,13 @@ export default function Home() {
                   width={heroImage.width}
                   height={heroImage.height}
                   sizes="(max-width: 1100px) 100vw, 1080px"
-                  priority
+                  fetchPriority="high"
+                  loading="eager"
                   unoptimized
                   className="hp-hero-img"
                 />
               </div>
-            </Reveal>
+            </div>
           </div>
         </section>
 

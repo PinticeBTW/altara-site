@@ -17,12 +17,20 @@ import {
 } from "../../components/site-chrome";
 
 export const metadata: Metadata = {
-  title: "Linux x64 Downloads",
+  title: "Linux x64 Download and Setup",
   description:
     "Download ALTARA for Linux x64 as a DEB, AppImage, or portable tar.gz, with setup instructions and matching release verification files.",
   alternates: {
     canonical: "/download/linux",
   },
+  openGraph: {
+    type: "website",
+    url: "/download/linux",
+    title: "ALTARA Linux x64 Downloads and Setup",
+    description: "Get the ALTARA AppImage, DEB or portable Linux x64 package and read setup and verification guidance.",
+    images: [{ url: "/altara-dashboard-hero.png", width: 1917, height: 1020, alt: "ALTARA dashboard" }],
+  },
+  twitter: { card: "summary_large_image", title: "ALTARA Linux x64 Downloads", description: "AppImage, DEB, portable package and setup guidance.", images: ["/altara-dashboard-hero.png"] },
 };
 
 type LinuxHelpPageProps = {

@@ -10,7 +10,7 @@ const description =
   "Explore ALTARA as a Discord alternative: servers, channels, roles, voice with Spatial Audio, DMs, screen sharing, and a personal dashboard. See the full feature list.";
 
 export const metadata: Metadata = {
-  title: "Discord Alternative with Voice, Chat and Community Features",
+  title: "Discord Alternative for Gaming Groups and Communities",
   description,
   alternates: { canonical: "/discord-alternative" },
   openGraph: {
@@ -19,27 +19,18 @@ export const metadata: Metadata = {
     title: "ALTARA: A Discord Alternative for Your Community",
     description,
     images: [{
-      url: "/altara-appearance-real-2026.webp",
-      width: 1100,
-      height: 800,
-      alt: "Real ALTARA appearance screen showing available themes",
+      url: "/altara-server-channel.png",
+      width: 1719,
+      height: 765,
+      alt: "ALTARA server with text channels, roles, and a conversation",
     }],
   },
   twitter: {
     card: "summary_large_image",
     title: "ALTARA: A Discord Alternative for Your Community",
     description,
-    images: ["/altara-appearance-real-2026.webp"],
+    images: ["/altara-server-channel.png"],
   },
-};
-
-const breadcrumbJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  itemListElement: [
-    { "@type": "ListItem", position: 1, name: "Home", item: "https://www.altaraapp.com/" },
-    { "@type": "ListItem", position: 2, name: "Discord alternative", item: "https://www.altaraapp.com/discord-alternative" },
-  ],
 };
 
 const featureGroups = [
@@ -97,11 +88,6 @@ export default function DiscordAlternativePage() {
     <div className="hp da">
       <HomeNav active="discord-alternative" />
       <main>
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd).replace(/</g, "\\u003c") }}
-        />
-
         <section className="da-hero">
           <div className="hp-container da-hero-grid">
             <Reveal className="da-hero-copy">
@@ -236,6 +222,20 @@ export default function DiscordAlternativePage() {
             <Reveal className="da-fit-copy">
               <p>ALTARA is in open beta. The core app is free to use; ALTARA+ adds higher limits and optional extras. Start in your browser, or choose a desktop download for a supported computer.</p>
               <p>Want the details first? Check the <Link href="/faq">FAQ and platform answers</Link>, or read the <Link href="/privacy">privacy policy</Link> before bringing your group over.</p>
+            </Reveal>
+          </div>
+        </section>
+
+        <section className="da-fit" aria-labelledby="da-moving-heading">
+          <div className="hp-container da-fit-grid">
+            <Reveal>
+              <p className="da-eyebrow">MOVING YOUR GROUP</p>
+              <h2 id="da-moving-heading">Try a smaller move first.</h2>
+            </Reveal>
+            <Reveal className="da-fit-copy">
+              <p>Start with the friends who regularly talk together. Create a server, add a few text and voice channels, then invite everyone to test a real conversation or game night. That tells you more than a feature checklist.</p>
+              <p>If your community relies on a particular bot, workflow or moderation setup, check those needs before moving everyone. ALTARA is still in open beta, and the <Link href="/features">current features</Link> and <Link href="/faq">platform answers</Link> are the best place to confirm what is ready.</p>
+              <p>For a gaming group, test voice and screen sharing together. For a community, set up roles and permissions before inviting members. You can start in a browser and choose a desktop app later.</p>
             </Reveal>
           </div>
         </section>

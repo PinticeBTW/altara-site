@@ -10,7 +10,7 @@ const publicPath = "/terms";
 const productionUrl = "https://www.altaraapp.com/terms";
 
 export const metadata: Metadata = {
-  title: "Terms",
+  title: "Terms of Service",
   description,
   alternates: {
     canonical: publicPath,

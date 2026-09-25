@@ -10,7 +10,7 @@ const publicPath = "/privacy";
 const productionUrl = "https://www.altaraapp.com/privacy";
 
 export const metadata: Metadata = {
-  title: "Privacy",
+  title: "Privacy Policy",
   description,
   alternates: {
     canonical: publicPath,

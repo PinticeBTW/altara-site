@@ -10,7 +10,7 @@ import "./globals.css";
 
 const siteUrl = "https://www.altaraapp.com";
 const siteDescription =
-  "ALTARA is a fast, clean Discord alternative for friends, gaming groups, and small communities, with voice calls, private messages, widgets, and simple group spaces.";
+  "ALTARA brings voice chat, private messages, and shared spaces together for friends, gaming groups, and small communities.";
 
 const bricolage = Bricolage_Grotesque({
   variable: "--font-bricolage",

@@ -273,6 +273,7 @@ function callbackHeaders(nonce: string, contentType = "text/html; charset=utf-8"
   headers.set("X-Frame-Options", "DENY");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "no-referrer");
+  headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
   return headers;
 }
 
