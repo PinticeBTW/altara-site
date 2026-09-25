@@ -1,3 +1,4 @@
+import { selectPublishedActivity, selectPublishedActivities } from "./lib/presenceActivity.js";
 // presence.js
 // Supabase Realtime Presence (Discord-like)
 import { createRawPresenceMirror, selectSynchronousPresenceFullState } from "./lib/rawPresenceMirror.js";
@@ -26,6 +27,7 @@ export function createPresenceSystem({
   let shouldRun = false;
   let currentStatus = "online";
   let lastEmittedSignature = "";
+  let lastEmittedSnapshotState = "pending";
   let fallbackSessionId = "";
   const fallbackOnlineAt = new Date().toISOString();
   let channelStatus = "IDLE";
@@ -198,13 +200,9 @@ export function createPresenceSystem({
       return sessionMs >= bestMs ? session : best;
     }, null);
     const manualStatus = normalizeManualStatus(bestPublicSession?.manual_status || "online");
-    const activitySession = publicSessions
-      .filter((session) => !!normalizeActivity(session?.activity || session?.spotify_activity || session?.spotifyActivity))
-      .reduce((best, session) => {
-        if (!best) return session;
-        return Number(session?.last_seen_ms || 0) >= Number(best?.last_seen_ms || 0) ? session : best;
-      }, null);
-    const activity = normalizeActivity(activitySession?.activity || activitySession?.spotify_activity || activitySession?.spotifyActivity);
+    const activities = selectPublishedActivities({ activities: publicSessions
+      .flatMap(session => selectPublishedActivities(session, normalizeActivity)) }, normalizeActivity);
+    const activity = activities[0] || null;
     return {
       userId,
       hasLiveSession: true,
@@ -212,6 +210,7 @@ export function createPresenceSystem({
       effectiveStatus: resolveEffectiveStatus(manualStatus, true),
       session: bestPublicSession,
       activity,
+      activities,
       publicSessions,
       liveSessions,
     };
@@ -669,6 +668,7 @@ export function createPresenceSystem({
         startedAt: Number.isFinite(fetchedAt) && fetchedAt > 0 ? Math.max(1, Math.round(fetchedAt) - Math.max(0, Math.round(Number.isFinite(progressMs) ? progressMs : 0))) : (Number.isFinite(startedAt) && startedAt > 0 ? startedAt : Date.now()),
         fetchedAt: Number.isFinite(fetchedAt) && fetchedAt > 0 ? Math.round(fetchedAt) : Date.now(),
         updatedAt: Number.isFinite(fetchedAt) && fetchedAt > 0 ? Math.round(fetchedAt) : Date.now(),
+        activityStartedAt: Number.isFinite(Number(raw.activityStartedAt)) && Number(raw.activityStartedAt) > 0 ? Number(raw.activityStartedAt) : Math.max(1, fetchedAt - Math.max(0, Number.isFinite(progressMs) ? progressMs : 0)),
         isPlaying: true,
         externalUrl: normalizePublicAssetUrl(raw.externalUrl || raw.external_url) || undefined,
         showOnProfile: raw.showOnProfile !== false && raw.show_on_profile !== false,
@@ -689,6 +689,9 @@ export function createPresenceSystem({
       activityVerb,
       startedAt,
       icon: normalizePublicAssetUrl(raw.icon) || undefined,
+      logo: normalizePublicAssetUrl(raw.logo || raw.metadata?.logo || ""),
+      executableIcon: normalizePublicAssetUrl(raw.executableIcon || raw.metadata?.executableIcon || ""),
+      squareArtwork: normalizePublicAssetUrl(raw.squareArtwork || raw.metadata?.squareArtwork || ""),
       cover: normalizePublicAssetUrl(raw.cover) || undefined,
       background: normalizePublicAssetUrl(raw.background) || undefined,
       provider: String(raw.provider || "").trim().slice(0, 32) || undefined,
@@ -726,7 +729,8 @@ export function createPresenceSystem({
   function buildTrackPayload(statusOverride = "") {
     const payload = getMe?.() || {};
     const nextManualStatus = normalizeManualStatus(statusOverride || payload.manual_status || payload.manualStatus || payload.status || currentStatus || "online");
-    const activity = normalizeActivity(payload.activity || payload.spotify_activity || payload.spotifyActivity);
+    const activities = nextManualStatus === "invisible" || nextManualStatus === "offline" ? [] : selectPublishedActivities(payload, normalizeActivity);
+    const activity = activities[0] || null;
     const nowIso = new Date().toISOString();
     const sessionId = getSessionId(payload);
     const authenticatedUserId = normalizePresenceUserId(getAuthenticatedUserId?.() || "");
@@ -756,7 +760,8 @@ export function createPresenceSystem({
     };
     if (activity) trackedPayload.activity = activity;
     else trackedPayload.activity = null;
-    trackedPayload.spotify_activity = activity?.type === "listening" && activity?.provider === "spotify" ? activity : null;
+    trackedPayload.activities = activities;
+    trackedPayload.spotify_activity = activities.find(item => item.type === "listening" && item.provider === "spotify") || null;
     return { userId, sessionId, manualStatus: nextManualStatus, trackedPayload };
   }
 
@@ -930,7 +935,7 @@ export function createPresenceSystem({
           continue;
         }
         const lastSeen = p.last_seen_at || p.lastSeenAt || p.last_seen || p.lastSeen || null;
-        const activity = normalizeActivity(p.activity || p.spotify_activity || p.spotifyActivity);
+        const activity = selectPublishedActivity(p, normalizeActivity);
         const session = {
           id: userId,
           user_id: userId,
@@ -945,6 +950,7 @@ export function createPresenceSystem({
           status: normalizeEffectiveStatus(p.status || "online"),
           has_live_session: true,
           activity,
+          activities: selectPublishedActivities(p, normalizeActivity),
           spotify_activity: activity?.type === "listening" && activity?.provider === "spotify" ? activity : null,
           online_at: p.online_at || p.onlineAt || null,
           last_seen_at: lastSeen,
@@ -998,7 +1004,7 @@ export function createPresenceSystem({
             String(session?.presence_ref || ""),
             normalizeManualStatus(session?.manual_status || session?.status || "online"),
             normalizeEffectiveStatus(session?.status || "online"),
-            JSON.stringify(normalizeActivity(session?.activity || session?.spotify_activity) || null),
+            JSON.stringify(selectPublishedActivities(session, normalizeActivity)),
           ].join("|"))
           .sort(),
       ])
@@ -1149,9 +1155,8 @@ export function createPresenceSystem({
         live_session_count: resolved.liveSessions.length,
         public_live_session_count: resolved.publicSessions.length,
         activity: resolved.activity,
-        spotify_activity: resolved.activity?.type === "listening" && resolved.activity?.provider === "spotify"
-          ? resolved.activity
-          : null,
+        activities: resolved.activities || [],
+        spotify_activity: (resolved.activities || []).find(item => item.type === "listening" && item.provider === "spotify") || null,
         live_sessions: resolved.liveSessions.map((session) => ({
           session_id: session.session_id || "",
           manual_status: session.manual_status,
@@ -1208,8 +1213,9 @@ export function createPresenceSystem({
           has_live_session: hasLiveSession,
           is_live: hasLiveSession,
           status: nextStatus,
-          activity: nextStatus === "offline" ? null : normalizeActivity(u.activity || u.spotify_activity),
-          spotify_activity: nextStatus === "offline" ? null : normalizeActivity(u.spotify_activity || u.activity),
+          activities: nextStatus === "offline" ? [] : selectPublishedActivities(u, normalizeActivity),
+          activity: nextStatus === "offline" ? null : selectPublishedActivity(u, normalizeActivity),
+          spotify_activity: nextStatus === "offline" ? null : selectPublishedActivities(u, normalizeActivity).find(item => item.type === "listening" && item.provider === "spotify") || null,
         };
       });
 
@@ -1257,13 +1263,22 @@ export function createPresenceSystem({
           String(u.avatar_url || "").trim(),
           String(u.name_color || "").trim(),
           String(u.call_tile_color || "").trim(),
-          JSON.stringify(normalizeActivity(u.activity) || null),
+          JSON.stringify(selectPublishedActivities(u, normalizeActivity)),
         ].join("|"))
         .sort()
         .join("||");
 
-      if (signature === lastEmittedSignature) return;
+      // Completion is independent of row count/content. An empty full snapshot,
+      // or a full snapshot matching an earlier diff/cache read, must still reach
+      // consumers once. Cache/health/grace reads cannot establish completion.
+      const snapshotState = ["presence-sync", "raw-presence-state"].includes(source)
+        ? "complete"
+        : ["subscribe-error", "channel-unstable"].includes(source)
+          ? "failed"
+          : lastEmittedSnapshotState;
+      if (signature === lastEmittedSignature && snapshotState === lastEmittedSnapshotState) return;
       lastEmittedSignature = signature;
+      lastEmittedSnapshotState = snapshotState;
       if (changedByGraceExpiry) {
         logPresenceLiveDebug("liveSessions replaced", {
           beforeUserIds,
@@ -1606,6 +1621,7 @@ export function createPresenceSystem({
       topic: getChannelTopic(channel),
     });
     lastEmittedSignature = "";
+    lastEmittedSnapshotState = "pending";
 
     logPresenceTrackLifecycle("presence handlers registering", {
       topic: getChannelTopic(channel),
@@ -1849,6 +1865,7 @@ export function createPresenceSystem({
     channelStatus = "STOPPED";
     lastSubscribeStatus = channelStatus;
     lastEmittedSignature = "";
+    lastEmittedSnapshotState = "pending";
     if (!oldStarted) lastTrackResult = "";
     lastTrackPayload = null;
     rawPresenceMirror.clear();

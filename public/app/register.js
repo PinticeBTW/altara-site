@@ -1,14 +1,49 @@
 ﻿import { supabase } from "./supabaseClient.js";
 import { $, setDebug, enhancePasswordVisibilityToggles } from "./ui.js";
+import { foundingCreatorReferral } from "./lib/foundingCreatorReferral.js";
+foundingCreatorReferral.capture();
 import { initAuthInstallWelcome } from "./authOnboarding.js";
 import { initAuthLanguage, onAuthLanguageChange, tAuth } from "./authI18n.js";
 import { pickRandomDefaultAvatarUrl } from "./defaultAvatarPool.js";
+import { createAccountPrivacyClient } from "./lib/accountPrivacyClient.js";
+import { mountSignupPrivacy } from "./lib/accountPrivacyUi.js";
+import { createAltaraBrowserTelemetry, installBrowserCrashTelemetry, telemetryFailure } from "./lib/telemetryRuntime.js";
+import {
+  capturePendingServerInviteFromCurrentLocation,
+  capturePendingServerInviteFromDesktopPayload,
+  clearPendingServerInvite,
+  readPendingServerInvite,
+  configurePendingServerInviteValidation,
+  validateAndRememberPendingServerInvite,
+  getPendingServerInviteValidationState,
+} from "./lib/pendingServerInvite.js";
+
+import { createServerInvitePreflightValidator } from "./lib/serverInvitePreflight.js";
+import { mountPendingServerInviteNotice } from "./lib/pendingServerInviteNotice.js";
+configurePendingServerInviteValidation(createServerInvitePreflightValidator(supabase));
+initAuthLanguage({ defaultLanguage: "en" });
+const inviteNotice = mountPendingServerInviteNotice({ t: tAuth, page: "register" });
+onAuthLanguageChange(() => inviteNotice.render());
+const initialPendingInvite = await capturePendingServerInviteFromCurrentLocation();
+if (!initialPendingInvite && getPendingServerInviteValidationState().status === "idle") {
+  const savedInvite = readPendingServerInvite();
+  if (savedInvite) await validateAndRememberPendingServerInvite(savedInvite.code);
+}
+inviteNotice.render();
+const analytics = createAltaraBrowserTelemetry({ supabase, entrypoint: initialPendingInvite ? "invite" : "register" });
+installBrowserCrashTelemetry(analytics, { component: "register" });
+if (initialPendingInvite) analytics.trackFunnel("invite_opened", { path: getDesktopBridge() ? "desktop" : "web" });
+analytics.trackFunnel("signup_started", { path: initialPendingInvite ? "invite" : "organic" });
+
+const signupPrivacyReady = mountSignupPrivacy(createAccountPrivacyClient(supabase), document.getElementById("registerPolicy"), { t: tAuth });
 
 const $username = $("username");
 const $email = $("email");
 const $password = $("password");
 const $btn = $("btnRegister");
 const $feedback = $("authFeedback");
+const $pendingInvite = $("authPendingInvite");
+const $cancelPendingInvite = $("btnCancelPendingInvite");
 let registerInFlight = false;
 let registerButtonDefaultText = "Create account";
 const PENDING_CONFIRM_EMAIL_STORAGE_KEY = "altara_pending_confirm_email";
@@ -44,12 +79,39 @@ function getDesktopBridge() {
   return bridge;
 }
 
+function bindDesktopInviteContinuity() {
+  const bridge = getDesktopBridge();
+  if (!bridge || typeof bridge.onDeepLink !== "function") return;
+  const receive = (payload) => {
+    void capturePendingServerInviteFromDesktopPayload(payload, { bridge }).then((record) => {
+      if (record) analytics.trackFunnel("invite_opened", { path: "desktop" });
+      syncAuthPendingInviteNotice();
+    });
+  };
+  bridge.onDeepLink(receive);
+  if (typeof bridge.getPendingDeepLink === "function") {
+    void bridge.getPendingDeepLink().then(receive).catch(() => {});
+  }
+}
+
+function syncAuthPendingInviteNotice() {
+  inviteNotice.render();
+}
+
+syncAuthPendingInviteNotice();
+
 function resolveSignupEmailRedirectUrl() {
   if (getDesktopBridge()?.isDesktopApp) return DESKTOP_SIGNUP_REDIRECT_URL;
   const origin = String(window.location?.origin || "").trim();
   if (!/^https?:\/\//i.test(origin)) return "";
-  const path = String(window.location?.pathname || "").trim() || "/login.html";
-  return `${origin}${path}`;
+  try {
+    const loginUrl = new URL("./login.html", window.location.href);
+    const pendingInvite = readPendingServerInvite();
+    if (pendingInvite?.code) loginUrl.searchParams.set("server_invite", pendingInvite.code);
+    return `${loginUrl.origin}${loginUrl.pathname}${loginUrl.search}`;
+  } catch (_) {
+    return `${origin}/login.html`;
+  }
 }
 
 function setPendingConfirmationEmail(emailInput = "") {
@@ -206,11 +268,13 @@ async function doRegister() {
   const password = String($password?.value || "");
 
   if (!username || !email || !password) {
+    telemetryFailure(analytics, "auth_validation", "signup_validation");
     setAuthFeedback(tAuth("register.fillFields", "Fill all fields."));
     focusBestRegisterInput();
     return;
   }
   if (!validUsername(username)) {
+    telemetryFailure(analytics, "auth_validation", "signup_validation");
     setAuthFeedback(tAuth("register.invalidUsername", "Invalid username. Use 3-20, letters/numbers/_/. and spaces."));
     focusBestRegisterInput();
     return;
@@ -223,11 +287,16 @@ async function doRegister() {
   }
 
   try {
+    analytics.trackFunnel("signup_submitted", { path: readPendingServerInvite() ? "invite" : "organic" });
+    const signupPrivacy = await signupPrivacyReady;
+    const policyMetadata = await signupPrivacy.prepare(email);
     const defaultAvatarUrl = await pickRandomDefaultAvatarUrl();
     const redirectTo = resolveSignupEmailRedirectUrl();
     const signUpOptions = {
       data: {
         username,
+        ...foundingCreatorReferral.metadata(),
+        ...policyMetadata,
         ...(defaultAvatarUrl ? { avatar_url: defaultAvatarUrl } : {}),
       },
     };
@@ -253,8 +322,11 @@ async function doRegister() {
       return;
     }
 
+    signupPrivacy.clear();
+    foundingCreatorReferral.clear();
     const hasSession = !!data?.session;
     if (hasSession) {
+      analytics.trackFunnel("auth_completed", { method: "signup_session" });
       if (data?.user?.id && defaultAvatarUrl) {
         await ensureSignupAvatarOnProfile(data.user.id, defaultAvatarUrl);
       }
@@ -275,6 +347,7 @@ async function doRegister() {
     }
 
     setPendingConfirmationEmail(email);
+    analytics.trackFunnel("email_confirmation_required", {});
     setAuthFeedback(
       tAuth(
         "register.successPendingConfirm",
@@ -287,6 +360,7 @@ async function doRegister() {
       window.location.replace(`./login.html?awaiting_confirm=1&email=${emailParam}`);
     }, 900);
   } catch (e) {
+    telemetryFailure(analytics, e, "signup_submit");
     setPendingConfirmationEmail("");
     setAuthFeedback(readRegisterErrorMessage(e), "error");
   } finally {
@@ -383,14 +457,16 @@ window.addEventListener("pageshow", () => {
   focusBestRegisterInput();
 });
 
-initAuthLanguage({ defaultLanguage: "en" });
 onAuthLanguageChange(() => {
   syncRegisterStaticCopy();
+  enhancePasswordVisibilityToggles(document, { t: tAuth });
+  void signupPrivacyReady.then((privacy) => privacy?.refresh?.()).catch(() => {});
 });
 syncRegisterStaticCopy();
+bindDesktopInviteContinuity();
 
 ensureRegisterInputsReady();
-enhancePasswordVisibilityToggles(document);
+enhancePasswordVisibilityToggles(document, { t: tAuth });
 void initAuthInstallWelcome({
   onDone: ({ shown }) => {
     ensureRegisterInputsReady();

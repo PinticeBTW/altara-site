@@ -24,19 +24,20 @@ export const ALTARA_SFX_CUE_REGISTRY = Object.freeze({
   private_call_accept: cue("sfx/private_call_accept.wav", { volume: 0.42, preload: "priority", usage: "Accepted Private Call transition" }),
   private_call_decline: cue("sfx/private_call_decline.wav", { volume: 0.4, preload: "priority", usage: "Declined Private Call terminal result" }),
   private_call_end: cue("sfx/private_call_end.mp3", { volume: 0.4, preload: "priority", usage: "End of an established Private Call" }),
-  mute: cue("sfx/mute.wav", { volume: 0.27, preload: "priority", usage: "Explicit successful local microphone mute" }),
-  unmute: cue("sfx/unmute.wav", { volume: 0.27, preload: "priority", usage: "Explicit successful local microphone unmute" }),
+  mute: cue("sfx/mute.wav", { volume: 0.16, preload: "priority", usage: "Authoritative microphone mute transition" }),
+  unmute: cue("sfx/unmute.wav", { volume: 0.16, preload: "priority", usage: "Authoritative microphone unmute transition" }),
   deafen: cue("sfx/deafen.wav", { volume: 0.29, preload: "priority", usage: "Explicit successful local deafen" }),
   undeafen: cue("sfx/undeafen.wav", { volume: 0.29, preload: "priority", usage: "Explicit successful local undeafen" }),
   camera_on: cue("sfx/camera_on.wav", { volume: 0.28, preload: "priority", usage: "Successful explicit local camera publication" }),
   camera_off: cue("sfx/camera_off.wav", { volume: 0.28, preload: "priority", usage: "Explicit or device-ended local camera stop" }),
-  screen_share_start: cue("sfx/screen_share_start.wav", { volume: 0.32, usage: "Successful local screen-share publication" }),
-  screen_share_stop: cue("sfx/screen_share_stop.wav", { volume: 0.32, usage: "Normal local screen-share stop" }),
+  screen_share_start: cue("sfx/screen_share_start.wav", { volume: 0.32, usage: "Authoritative screen-share publication" }),
+  screen_share_stop: cue("sfx/screen_share_stop.wav", { volume: 0.32, usage: "Authoritative screen-share stop" }),
   server_voice_move: cue("sfx/server_voice_move.wav", { volume: 0.34, preload: "priority", usage: "Authoritative move of the local participant between Server Voice channels" }),
   connection_interrupted: cue("sfx/connection_interrupted.wav", { volume: 0.26, preload: "priority", usage: "Established local call transport reconnecting" }),
   connection_restored: cue("sfx/connection_restored.wav", { volume: 0.26, preload: "priority", usage: "Established local call transport restored" }),
   ui_success: cue("sfx/ui_success.wav", { volume: 0.25, usage: "Explicit high-signal user action success" }),
   ui_warning: cue("sfx/ui_warning.wav", { volume: 0.25, usage: "Explicit recoverable user-facing warning" }),
+  appearance_flashbang: cue("sfx/appearance_flashbang.wav", { volume: 0.32, preload: "priority", usage: "Confirmed White appearance theme" }),
   ui_error: cue("sfx/ui_error.wav", { volume: 0.27, usage: "Explicit important user-facing action failure" }),
 });
 
@@ -56,6 +57,7 @@ export const ALTARA_SFX_PRIORITY_PRELOAD_CUES = Object.freeze([
   "server_voice_move",
   "connection_interrupted",
   "connection_restored",
+  "appearance_flashbang",
 ]);
 
 export const ALTARA_SFX_LOOP_PRELOAD_CUES = Object.freeze([
@@ -297,6 +299,12 @@ export function createAltaraSfxPlayer({
         activePlays.delete(record);
         try { record.unregister?.(); } catch (_) {}
       }, { once: true });
+      if (Number.isFinite(options.volumeScale)) audio.volume = Math.max(0, Math.min(1, entry.volume * options.volumeScale));
+      if (typeof options.prepareAudio === "function") await Promise.race([Promise.resolve(options.prepareAudio(audio)), cancelled]);
+      if (record.cancelled || !isCurrent()) {
+        cancelPlay(record, "stale_owner");
+        return { played: false, cancelled: true, method: "none", failureCategory: "stale_owner" };
+      }
       const pending = audio.play?.();
       // A pending play() must not keep its caller waiting after cancellation.
       if (pending?.then) await Promise.race([pending, cancelled]);
@@ -793,12 +801,13 @@ export function createServerVoiceMoveSoundLifecycle({ player } = {}) {
     };
     if (!owner || owner.ownerKey !== nextOwner.ownerKey) {
       if (owner) player?.cancelOwner?.(owner.ownerKey, "server_voice_move_owner_replaced");
+      if (owner?.generation !== generation) playedOperations.clear();
       owner = nextOwner;
-      playedOperations.clear();
     }
-    const operationKey = `${owner.ownerKey}:${operation.toLowerCase()}`;
+    const operationKey = `${generation}:${operation.toLowerCase()}`;
     if (playedOperations.has(operationKey)) return { action: "suppressed", reason: "duplicate_move" };
     playedOperations.add(operationKey);
+    if (playedOperations.size > 120) playedOperations.delete(playedOperations.values().next().value);
     void player?.play?.("server_voice_move", {
       ownerKey: owner.ownerKey,
       ownerType: "server_voice",

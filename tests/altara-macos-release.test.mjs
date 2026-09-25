@@ -25,6 +25,17 @@ test("macOS downloads resolve an explicit architecture from the stable official 
   }
 });
 
+test("latest release retains the older verified Mac build without claiming a new Mac version", () => {
+  const payload = release();
+  payload.tag_name = "v0.1.140";
+  for (const asset of payload.assets) asset.browser_download_url = asset.browser_download_url.replace("/v0.1.130/", "/v0.1.140/");
+  for (const arch of ["arm64", "x64"]) {
+    const application = resolveMacRelease(payload, arch).application;
+    assert.equal(application.filename, `Altara.0.1.130.mac-${arch}.dmg`);
+    assert.match(application.url, /\/releases\/download\/v0\.1\.140\//);
+  }
+});
+
 test("macOS resolver refuses missing, duplicate, cross-repository, draft and prerelease assets", async () => {
   const changes = [
     p => { p.assets = p.assets.filter(a => !a.name.includes("arm64")); },
@@ -44,8 +55,8 @@ test("macOS resolver refuses missing, duplicate, cross-repository, draft and pre
 test("published browser manifest identifies the exact release and runtime bytes", () => {
   const read = p => readFileSync(new URL(`../public/app/${p}`, import.meta.url));
   const manifest = JSON.parse(read("release.json"));
-  assert.equal(manifest.version, version);
+  assert.equal(manifest.version, "0.1.140");
   assert.equal(manifest.appJsSha256, createHash("sha256").update(read("app.js")).digest("hex"));
   assert.equal(manifest.sfxJsSha256, createHash("sha256").update(read("lib/altaraSfx.js")).digest("hex"));
-  assert.match(read("index.html").toString(), /release=0\.1\.130/);
+  assert.match(read("index.html").toString(), /release=0\.1\.140/);
 });

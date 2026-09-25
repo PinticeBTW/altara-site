@@ -257,8 +257,15 @@ export function installPrivateCallStageInteractionDelegation(root, options = {})
   };
 
   const onContextMenu = (event) => {
-    const primary = closestWithin(root, event?.target, "[data-server-voice-screenshare-panel='1'], .callSharePrimary, .callMultiShareCell, .callShareSecondary");
+    if (event.defaultPrevented) return;
+    const primary = closestWithin(root, event?.target, "[data-server-voice-screenshare-panel='1'], [data-share-viewer-key], [data-call-tile-type='screenshare'], .callSharePrimary, .callMultiShareCell, .callShareSecondary");
     if (!primary) return;
+    // Specific controls keep their own context behavior. The options trigger
+    // and visual-only status are part of the stream's shared menu surface.
+    const target = event?.target;
+    const control = target?.closest?.("button, input, select, textarea, a[href], [contenteditable='true'], [role='menu'], [data-context-menu-owner]");
+    if (control && control !== primary && primary.contains(control)
+      && !control.matches("[data-private-share-audio-trigger]")) return;
     const handled = binding.options?.onShareContextMenu?.({
       root,
       primary,
@@ -271,7 +278,9 @@ export function installPrivateCallStageInteractionDelegation(root, options = {})
   // bubble fallback for transient nodes that do not yet have a direct owner.
   root.addEventListener("click", onClick);
   root.addEventListener("keydown", onKeydown);
-  root.addEventListener("contextmenu", onContextMenu);
+  // Route stream context events before older tile handlers can consume them.
+  // Click/focus delegation retains its existing bubble ordering.
+  root.addEventListener("contextmenu", onContextMenu, true);
   binding.clickInstalled = true;
   binding.keydownInstalled = true;
   binding.contextMenuInstalled = true;

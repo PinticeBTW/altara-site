@@ -1,3 +1,4 @@
+import { serverVoiceMoveDiagnostics } from "./serverVoiceMoveDiagnostics.js";
 import { DisconnectReason, Room, RoomEvent, Track } from "../node_modules/livekit-client/dist/livekit-client.esm.mjs";
 import {
   parseNativeScreenshareCompanionIdentity,
@@ -175,6 +176,7 @@ function buildInitialSnapshot({
     disconnectedAt: null,
     joinPhase: "idle",
     connected: false,
+    mediaStateBaselineReady: false,
     reconnecting: false,
     disconnectRequested: false,
     lastError: null,
@@ -230,6 +232,7 @@ export function createServerVoiceLiveKitRoom() {
 export function createServerVoiceLiveKitController({
   conversationId = "",
   localUserId = "",
+  participantUserId = (identity) => identity,
   roomName = "",
   url = "",
   token = "",
@@ -253,6 +256,7 @@ export function createServerVoiceLiveKitController({
   onParticipantAttributesChanged = () => {},
   onReconnected = () => {},
   onLocalTrackPublished = () => {},
+  onLocalTrackUnpublished = () => {},
   onPublicationTiming = () => {},
   onHandlerTiming = () => {},
   onConnectionQualityChanged = () => {},
@@ -453,7 +457,7 @@ export function createServerVoiceLiveKitController({
   function updateParticipantPresenceRuntime(userId, participant = null, {
     connected = null,
   } = {}) {
-    const uid = normalizeId(userId || participant?.identity || "");
+    const uid = normalizeId(participantUserId(userId || participant?.identity || ""));
     if (!uid) return null;
     const runtime = getParticipantPresenceRuntime(uid, { create: connected !== false });
     if (!runtime) return null;
@@ -652,7 +656,7 @@ export function createServerVoiceLiveKitController({
 
   function syncParticipantPresenceState(userId, participant = null, { local = false } = {}) {
     if (!local && isNativeScreenshareCompanionIdentity(participant)) return null;
-    const uid = normalizeId(userId || participant?.identity || "");
+    const uid = normalizeId(participantUserId(userId || participant?.identity || ""));
     if (!uid) return null;
     const participantState = snapshot.participantsByUser[uid] || baseParticipantState(uid, participant, { local });
     const isLocalParticipant = !!(participantState.isLocal || local || uid === meId);
@@ -674,7 +678,7 @@ export function createServerVoiceLiveKitController({
 
   function getParticipantState(userId, participant = null, { local = false } = {}) {
     if (!local && isNativeScreenshareCompanionIdentity(participant)) return null;
-    const uid = normalizeId(userId || participant?.identity || "");
+    const uid = normalizeId(participantUserId(userId || participant?.identity || ""));
     if (!uid) return null;
     const existing = snapshot.participantsByUser[uid] || baseParticipantState(uid, participant, { local });
     existing.participantIdentity = uid;
@@ -697,6 +701,7 @@ export function createServerVoiceLiveKitController({
     snapshot.connectionState = normalized;
     snapshot.connectionStateChangedAt = nowIso();
     snapshot.connected = normalized === "connected";
+    if (!snapshot.connected) snapshot.mediaStateBaselineReady = false;
     if (snapshot.connected && !snapshot.connectedAt) snapshot.connectedAt = nowIso();
     snapshot.reconnecting = normalized === "reconnecting" || normalized === "signalreconnecting";
     snapshot.local.roomConnected = snapshot.connected;
@@ -769,7 +774,7 @@ export function createServerVoiceLiveKitController({
     });
 
     bindRoomEvent(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       const normalizedQuality = normalizeConnectionQuality(quality);
       if (!uid) return;
       const participantState = getParticipantState(uid, participant);
@@ -806,6 +811,9 @@ export function createServerVoiceLiveKitController({
       snapshot.lastError = null;
       syncConnectionState("connected");
       syncLocalParticipantPermission("room_reconnected");
+      getParticipantState(meId, room.localParticipant, { local: true });
+      for (const participant of room.remoteParticipants.values()) getParticipantState(participant.identity, participant);
+      snapshot.mediaStateBaselineReady = true;
       reconcileRemoteSubscriptions(undefined, { reason: "room_reconnected" });
       log("room.reconnected", {});
       safeInvoke(onReconnected, {
@@ -816,14 +824,14 @@ export function createServerVoiceLiveKitController({
     });
 
     bindRoomEvent(RoomEvent.ParticipantPermissionsChanged, (_previousPermissions, participant) => {
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       if (participant !== room.localParticipant && uid !== meId) return;
       syncLocalParticipantPermission("permissions_changed");
       emitSnapshot();
     });
 
     bindRoomEvent(RoomEvent.ParticipantConnected, (participant) => {
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       const participantSid = normalizeId(participant?.sid || "");
       const previousState = uid ? (snapshot.participantsByUser[uid] || null) : null;
       const previousSids = dedupeStringList(previousState?.participantSids || []);
@@ -874,7 +882,7 @@ export function createServerVoiceLiveKitController({
     bindRoomEvent(RoomEvent.ParticipantMetadataChanged, (_previousMetadata, participant) => {
       if (participantSignalClosed) return;
       if (isNativeScreenshareCompanionIdentity(participant)) return;
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       const participantState = getParticipantState(uid, participant, { local: uid === meId });
       if (participantState) {
         participantState.metadata = String(participant?.metadata || "").trim();
@@ -894,7 +902,7 @@ export function createServerVoiceLiveKitController({
     bindRoomEvent(RoomEvent.ParticipantAttributesChanged, (changedAttributes, participant) => {
       if (participantSignalClosed) return;
       if (isNativeScreenshareCompanionIdentity(participant)) return;
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       const participantState = getParticipantState(uid, participant, { local: uid === meId });
       const attributes = participant?.attributes && typeof participant.attributes === "object" ? { ...participant.attributes } : {};
       if (participantState) {
@@ -916,7 +924,7 @@ export function createServerVoiceLiveKitController({
     });
 
     bindRoomEvent(RoomEvent.ParticipantDisconnected, (participant) => {
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       const participantSid = normalizeId(participant?.sid || "");
       const presenceRuntime = updateParticipantPresenceRuntime(uid, participant, { connected: false });
       const participantState = getParticipantState(uid, participant);
@@ -949,7 +957,7 @@ export function createServerVoiceLiveKitController({
     bindRoomEvent(RoomEvent.TrackPublished, (publication, participant) => {
       applyOrdinaryRemoteSubscription(publication, participant, { reason: "track_published" });
       if (isNativeScreenshareCompanionIdentity(participant)) return;
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       getParticipantState(uid, participant);
       log("track.remote.published", {
         peerUserId: uid || null,
@@ -962,7 +970,7 @@ export function createServerVoiceLiveKitController({
     bindRoomEvent(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
       if (track?.kind !== "audio") return;
       if (isNativeScreenshareCompanionIdentity(participant)) return;
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       const mediaTrack = track?.mediaStreamTrack || null;
       const trackId = normalizeId(mediaTrack?.id || track?.sid || "");
       const trackSid = normalizeId(publication?.trackSid || track?.sid || "");
@@ -1008,7 +1016,7 @@ export function createServerVoiceLiveKitController({
         participantState.lastUpdatedAt = nowIso();
       }
       log("track.remote.subscription_failed", {
-        peerUserId: normalizeId(participant?.identity || "") || null,
+        peerUserId: normalizeId(participantUserId(participant?.identity || "")) || null,
         trackSid: String(trackSid || "").trim() || null,
         reason: String(reason?.message || reason || "").trim() || null,
       });
@@ -1017,8 +1025,11 @@ export function createServerVoiceLiveKitController({
 
     bindRoomEvent(RoomEvent.TrackMuted, (publication, participant) => {
       if (publication?.kind !== "audio") return;
+      // ScreenShareAudio has its own publication and controls. Voice state and
+      // microphone ownership must never adopt its mute/publication events.
+      if (normalizeLiveKitTrackSourceName(publication?.source ?? publication?.track?.source) === Track.Source.ScreenShareAudio) return;
       if (isNativeScreenshareCompanionIdentity(participant)) return;
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       if (uid && uid !== meId) {
         upsertRemoteAudioRuntime(uid, {
           trackSid: publication?.trackSid || "",
@@ -1049,8 +1060,11 @@ export function createServerVoiceLiveKitController({
 
     bindRoomEvent(RoomEvent.TrackUnmuted, (publication, participant) => {
       if (publication?.kind !== "audio") return;
+      // ScreenShareAudio has its own publication and controls. Voice state and
+      // microphone ownership must never adopt its mute/publication events.
+      if (normalizeLiveKitTrackSourceName(publication?.source ?? publication?.track?.source) === Track.Source.ScreenShareAudio) return;
       if (isNativeScreenshareCompanionIdentity(participant)) return;
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       // LiveKit emits this synchronously when it enables the media track.
       // Reassert the canonical restriction before an old SDK completion escapes.
       if (uid === meId && (disconnectRequested || currentMicrophoneMutePolicy?.())) {
@@ -1089,6 +1103,9 @@ export function createServerVoiceLiveKitController({
 
     bindRoomEvent(RoomEvent.LocalTrackPublished, (publication, participant) => {
       if (publication?.kind !== "audio") return;
+      // ScreenShareAudio has its own publication and controls. Voice state and
+      // microphone ownership must never adopt its mute/publication events.
+      if (normalizeLiveKitTrackSourceName(publication?.source ?? publication?.track?.source) === Track.Source.ScreenShareAudio) return;
       if (activeMicrophonePublicationTiming && !activeMicrophonePublicationTiming.localTrackPublishedEventAt) {
         activeMicrophonePublicationTiming.localTrackPublishedEventAt = monotonicNow();
       }
@@ -1123,10 +1140,28 @@ export function createServerVoiceLiveKitController({
       scheduleSnapshotEmit();
     });
 
+    bindRoomEvent(RoomEvent.LocalTrackUnpublished, (publication, participant) => {
+      if (normalizeLiveKitTrackSourceName(publication?.source ?? publication?.track?.source) !== Track.Source.Microphone) return;
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
+      if (participant !== room.localParticipant && uid !== meId) return;
+      const trackSid = String(publication?.trackSid || "").trim();
+      const currentSid = String(snapshot.local.audioTrackSid || publishedAudioPublication?.trackSid || "").trim();
+      // A delayed unpublish for an older microphone must not erase its replacement.
+      if (currentSid && trackSid && currentSid !== trackSid) return;
+      if (publishedAudioPublication !== publication && (!trackSid || trackSid !== currentSid)) return;
+      if (!publishedAudioPublication && !snapshot.local.audioTrackPublished) return;
+      clearLocalMicrophonePublication();
+      // Permission restoration does not republish in the SDK. The app owns any
+      // authorized reacquisition; this controller only invalidates stale media.
+      log("track.local.unpublished", { reason: "sdk_local_track_unpublished", trackSid: trackSid || null });
+      safeInvoke(onLocalTrackUnpublished, { conversationId: convId, participant, publication, trackSid: trackSid || null });
+      emitSnapshot();
+    });
+
     bindRoomEvent(RoomEvent.ActiveSpeakersChanged, (participants) => {
       const activeSpeakerIds = new Set(
         (Array.isArray(participants) ? participants : [])
-          .map((participant) => normalizeId(participant?.identity || ""))
+          .map((participant) => normalizeId(participantUserId(participant?.identity || "")))
           .filter(Boolean),
       );
       Object.values(snapshot.participantsByUser).forEach((participantState) => {
@@ -1247,6 +1282,7 @@ export function createServerVoiceLiveKitController({
     log("room.connect_started", {});
     emitSnapshot();
     try {
+      serverVoiceMoveDiagnostics.count("connect");
       await room.connect(url, token, {
         autoSubscribe: false,
         maxRetries: 3,
@@ -1270,12 +1306,56 @@ export function createServerVoiceLiveKitController({
       updateParticipantPresenceRuntime(participant?.identity || "", participant, { connected: true });
       getParticipantState(participant?.identity || "", participant);
     });
+    snapshot.mediaStateBaselineReady = true;
     reconcileRemoteSubscriptions(undefined, { reason: "room_connected" });
     log("room.connected", {
       remoteParticipantCount: room.remoteParticipants.size,
     });
     emitSnapshot();
     return room;
+  }
+
+  function clearLocalMicrophonePublication() {
+    publishedAudioTrack = null;
+    publishedAudioPublication = null;
+    snapshot.local.audioTrackPublished = false;
+    snapshot.local.audioTrackSid = null;
+    snapshot.local.audioTrackId = null;
+    snapshot.local.mediaReady = false;
+    snapshot.joinPhase = snapshot.connected ? "listen_only" : snapshot.joinPhase;
+    const participantState = getParticipantState(meId, room.localParticipant, { local: true });
+    if (participantState) {
+      participantState.audioTrackId = null;
+      participantState.audioTrackSid = null;
+      participantState.audioSubscribed = false;
+      participantState.audioLive = false;
+      participantState.audioAttached = false;
+      participantState.lastUpdatedAt = nowIso();
+    }
+  }
+
+  function getLiveMicrophonePublication() {
+    if (disconnectRequested) return null;
+    const publication = room.localParticipant?.getTrackPublication?.(Track.Source.Microphone) || null;
+    const mediaTrack = publication?.track?.mediaStreamTrack;
+    return mediaTrack?.kind === "audio" && mediaTrack.readyState === "live" ? publication : null;
+  }
+
+  function hasLiveMicrophonePublication() {
+    const publication = getLiveMicrophonePublication();
+    // A permission update cannot recreate a publication removed by the SFU.
+    // Inspect the SDK track instead of trusting a flag left by an older event.
+    if (!publication) {
+      if (snapshot.local.audioTrackPublished || publishedAudioPublication) clearLocalMicrophonePublication();
+      return false;
+    }
+    publishedAudioPublication = publication;
+    publishedAudioTrack = publication.track.mediaStreamTrack;
+    snapshot.local.audioTrackPublished = true;
+    snapshot.local.audioTrackSid = String(publication.trackSid || "").trim() || null;
+    snapshot.local.audioTrackId = String(publishedAudioTrack.id || "").trim() || null;
+    snapshot.local.mediaReady = true;
+    return true;
   }
 
   async function publishMicrophone(track, {
@@ -1285,6 +1365,7 @@ export function createServerVoiceLiveKitController({
     outputDeviceId = "default",
   } = {}) {
     if (!track) throw new Error("Missing microphone track.");
+    if (disconnectRequested || track.readyState === "ended") throw new Error("Microphone track is no longer available.");
     const publicationTiming = {
       wrapperStartedAt: monotonicNow(),
       sdkInvocationAt: 0,
@@ -1323,7 +1404,9 @@ export function createServerVoiceLiveKitController({
         result: publicationTiming.result,
       });
     };
-    const previousTrack = publishedAudioTrack;
+    const previousPublication = room.localParticipant?.getTrackPublication?.(Track.Source.Microphone) || null;
+    const previousTrack = previousPublication?.track?.mediaStreamTrack || publishedAudioTrack;
+    const existingPublicationLive = hasLiveMicrophonePublication();
     snapshot.local.audioTrackCreated = true;
     snapshot.local.audioTrackCreatedAt = snapshot.local.audioTrackCreatedAt || nowIso();
     snapshot.local.audioTrackId = String(track.id || "").trim() || null;
@@ -1341,8 +1424,7 @@ export function createServerVoiceLiveKitController({
     if (
       previousTrack
       && previousTrack === track
-      && snapshot.local.audioTrackPublished
-      && snapshot.local.audioTrackSid
+      && existingPublicationLive
     ) {
       publicationTiming.existingPublicationReused = true;
       publicationTiming.result = "reused";
@@ -1367,6 +1449,7 @@ export function createServerVoiceLiveKitController({
     publicationTiming.sdkInvocationAt = monotonicNow();
     activeMicrophonePublicationTiming = publicationTiming;
     try {
+      serverVoiceMoveDiagnostics.count("micPublish");
       publication = await room.localParticipant.publishTrack(track, {
         source: Track.Source.Microphone,
         stopOnMute: false,
@@ -1388,6 +1471,23 @@ export function createServerVoiceLiveKitController({
       throw error;
     }
     activeMicrophonePublicationTiming = null;
+    if (disconnectRequested) {
+      // A completion from a retired controller must never revive its media.
+      track.enabled = false;
+      try { await room.localParticipant.unpublishTrack(track, true); }
+      finally { try { track.stop?.(); } catch (_) {} }
+      clearLocalMicrophonePublication();
+      publicationTiming.result = "superseded";
+      reportPublicationTiming();
+      return null;
+    }
+    if (getLiveMicrophonePublication() !== publication) {
+      track.enabled = false;
+      hasLiveMicrophonePublication();
+      publicationTiming.result = "unpublished";
+      reportPublicationTiming();
+      throw Object.assign(new Error("Microphone publication is no longer available."), { code: "server_voice_microphone_publication_lost" });
+    }
     publishedAudioPublication = publication || null;
 
     snapshot.local.audioTrackPublished = true;
@@ -1406,9 +1506,10 @@ export function createServerVoiceLiveKitController({
     }
     publicationTiming.muteStateSyncStartedAt = monotonicNow();
     try {
-      await setMicrophoneMuted(!!micMuted, {
+      await setMicrophoneMuted(typeof currentMicrophoneMutePolicy === "function" ? !!currentMicrophoneMutePolicy() : !!micMuted, {
         reason: "publish_microphone",
         snapshotMode: "deferred",
+        getEffectiveMuted: currentMicrophoneMutePolicy,
       });
       publicationTiming.muteStateSyncDoneAt = monotonicNow();
     } catch (error) {
@@ -1416,6 +1517,12 @@ export function createServerVoiceLiveKitController({
       publicationTiming.result = "mute_state_failed";
       reportPublicationTiming();
       throw error;
+    }
+    if (!hasLiveMicrophonePublication() || publishedAudioPublication !== publication) {
+      track.enabled = false;
+      publicationTiming.result = "unpublished";
+      reportPublicationTiming();
+      throw Object.assign(new Error("Microphone publication is no longer available."), { code: "server_voice_microphone_publication_lost" });
     }
     publicationTiming.result = "published";
     reportPublicationTiming();
@@ -1608,9 +1715,7 @@ export function createServerVoiceLiveKitController({
     if (typeof getEffectiveMuted === "function") currentMicrophoneMutePolicy = getEffectiveMuted;
     if (disconnectRequested || !isCurrent()) return false;
     const nextMuted = !!muted;
-    const publication = publishedAudioPublication
-      || room.localParticipant?.getTrackPublication?.(Track.Source.Microphone)
-      || null;
+    const publication = hasLiveMicrophonePublication() ? publishedAudioPublication : null;
     const publicationTrack = publication?.track || null;
     const enforceCurrentMute = () => {
       const restricted = disconnectRequested || (typeof getEffectiveMuted === "function" && getEffectiveMuted());
@@ -1670,7 +1775,7 @@ export function createServerVoiceLiveKitController({
     const source = normalizeLiveKitTrackSourceName(publication?.source ?? track?.source);
     if (source === Track.Source.ScreenShare) return;
     const ordinaryAllowed = !isNativeScreenshareCompanionIdentity(participant)
-      && !!safeInvoke(remoteSubscriptionPolicy, { participant, userId: normalizeId(participant?.identity || "") });
+      && !!safeInvoke(remoteSubscriptionPolicy, { participant, userId: normalizeId(participantUserId(participant?.identity || "")) });
     const allowed = !disconnectRequested && (source === Track.Source.ScreenShareAudio
       ? ordinaryAllowed && safeInvoke(shouldReceiveScreenShareAudio, { publication, participant }) === true
       : ordinaryAllowed);
@@ -1679,7 +1784,7 @@ export function createServerVoiceLiveKitController({
       return;
     }
     if (track?.kind !== "audio") return;
-    const uid = normalizeId(participant?.identity || "");
+    const uid = normalizeId(participantUserId(participant?.identity || ""));
     updateParticipantPresenceRuntime(uid, participant, { connected: true });
     const mediaTrack = track?.mediaStreamTrack || null;
     const trackId = normalizeId(mediaTrack?.id || track?.sid || "");
@@ -1773,7 +1878,7 @@ export function createServerVoiceLiveKitController({
     // Never override the screenshare layer's current per-publication decision.
     if (isScreenPublication(publication)) return { skipped: true };
     if (!publication || typeof publication.setSubscribed !== "function") return { unsupported: true };
-    const uid = normalizeId(participant?.identity || "");
+    const uid = normalizeId(participantUserId(participant?.identity || ""));
     const subscribe = !disconnectRequested && !isNativeScreenshareCompanionIdentity(participant)
       && !!safeInvoke(remoteSubscriptionPolicy, { participant, userId: uid });
     try {
@@ -1795,7 +1900,7 @@ export function createServerVoiceLiveKitController({
     if (typeof shouldSubscribe === "function") remoteSubscriptionPolicy = shouldSubscribe;
     const result = { subscribedUserIds: [], unsubscribedUserIds: [], changed: 0, unsupported: 0 };
     room.remoteParticipants.forEach((participant) => {
-      const uid = normalizeId(participant?.identity || "");
+      const uid = normalizeId(participantUserId(participant?.identity || ""));
       const subscribe = !disconnectRequested && !isNativeScreenshareCompanionIdentity(participant)
         && !!safeInvoke(remoteSubscriptionPolicy, { participant, userId: uid });
       const publications = participant?.trackPublications instanceof Map
@@ -2050,6 +2155,7 @@ export function createServerVoiceLiveKitController({
     updateLocalParticipantMetadata,
     updateLocalParticipantAttributes,
     getLocalParticipantPermission,
+    hasLiveMicrophonePublication,
     waitForLocalParticipantPermission,
     reconcileRemoteSubscriptions,
     reconcileRemoteScreenShareAudio,

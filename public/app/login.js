@@ -1,8 +1,38 @@
-﻿import { supabase } from "./supabaseClient.js";
+﻿import { mountLoginAccountSwitcher, rememberDesktopAccount } from "./lib/desktopAccounts.js";
+import { supabase } from "./supabaseClient.js";
 import { $, setDebug, enhancePasswordVisibilityToggles } from "./ui.js";
+import { foundingCreatorReferral } from "./lib/foundingCreatorReferral.js";
+foundingCreatorReferral.capture();
 import { initAuthInstallWelcome } from "./authOnboarding.js";
 import { initAuthLanguage, onAuthLanguageChange, tAuth } from "./authI18n.js";
 import { initDesktopWindowControls } from "./desktopWindowControls.js";
+import {
+  capturePendingServerInviteFromCurrentLocation,
+  capturePendingServerInviteFromDesktopPayload,
+  clearPendingServerInvite,
+  readPendingServerInvite,
+  configurePendingServerInviteValidation,
+  validateAndRememberPendingServerInvite,
+  getPendingServerInviteValidationState,
+} from "./lib/pendingServerInvite.js";
+import { createAltaraBrowserTelemetry, installBrowserCrashTelemetry, telemetryFailure } from "./lib/telemetryRuntime.js";
+
+import { createServerInvitePreflightValidator } from "./lib/serverInvitePreflight.js";
+import { mountPendingServerInviteNotice } from "./lib/pendingServerInviteNotice.js";
+configurePendingServerInviteValidation(createServerInvitePreflightValidator(supabase));
+initAuthLanguage({ defaultLanguage: "en" });
+const inviteNotice = mountPendingServerInviteNotice({ t: tAuth, page: "login" });
+onAuthLanguageChange(() => inviteNotice.render());
+// Invite preflight can yield while Supabase consumes the callback URL.
+const initialAuthUrl = window.location.href;
+const initialPendingInvite = await capturePendingServerInviteFromCurrentLocation();
+if (!initialPendingInvite && getPendingServerInviteValidationState().status === "idle") {
+  const savedInvite = readPendingServerInvite();
+  if (savedInvite) await validateAndRememberPendingServerInvite(savedInvite.code);
+}
+const analytics = createAltaraBrowserTelemetry({ supabase, entrypoint: initialPendingInvite ? "invite" : "login" });
+installBrowserCrashTelemetry(analytics, { component: "login" });
+if (initialPendingInvite) analytics.trackFunnel("invite_opened", { path: getDesktopBridge() ? "desktop" : "web" });
 
 const $email = $("email");
 const $password = $("password");
@@ -21,6 +51,8 @@ const $recoverySecret = $("authRecoverySecret");
 const $recoverySendBtn = $("btnAuthRecoverySend");
 const $recoveryCloseBtn = $("btnAuthRecoveryClose");
 const $recoveryResult = $("authRecoveryResult");
+const $pendingInvite = $("authPendingInvite");
+const $cancelPendingInvite = $("btnCancelPendingInvite");
 
 const RECOVERY_MODE_PASSWORD = "password";
 const RECOVERY_MODE_EMAIL = "email";
@@ -53,6 +85,16 @@ let recoveryButtonDefaultText = "Send recovery email";
 let recoveryMode = RECOVERY_MODE_PASSWORD;
 let recoverySessionReady = false;
 let lastRecoveryPayloadKey = "";
+let loginRedirectStarted = false;
+let webAuthBootstrapFinished = false;
+let webAuthHandoffScheduled = false;
+let webAuthHandoffBlocked = !!extractRecoveryPayloadFromUrlLike(initialAuthUrl);
+
+function syncAuthPendingInviteNotice() {
+  inviteNotice.render();
+}
+
+syncAuthPendingInviteNotice();
 
 function writeDmE2eeLoginSyncNotice(message = "", level = "info", meta = null) {
   const text = String(message || "").trim();
@@ -237,8 +279,40 @@ function resolvePostLoginReturnUrl() {
   }
 }
 
-function redirectAfterSuccessfulLogin() {
+function redirectAfterSuccessfulLogin({ preserveReferral = false } = {}) {
+  if (loginRedirectStarted) return;
+  loginRedirectStarted = true;
   window.location.replace(resolvePostLoginReturnUrl());
+}
+
+function canHandoffWebSession() {
+  return !getDesktopBridge() && webAuthBootstrapFinished && !loginRedirectStarted
+    && !webAuthHandoffBlocked && !loginInFlight && !recoveryInFlight
+    && !recoverySessionReady && !isRecoveryCardOpen();
+}
+
+function scheduleWebSessionHandoff() {
+  if (!canHandoffWebSession() || webAuthHandoffScheduled) return;
+  webAuthHandoffScheduled = true;
+  // Auth callbacks run under the SDK lock; read the session outside that callback.
+  setTimeout(async () => {
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      const session = data?.session;
+      if (error || !session?.access_token || !session?.user?.id || !canHandoffWebSession()) return;
+      if (session.expires_at && session.expires_at * 1000 <= Date.now()) return;
+      await syncProfileAvatarFromSessionMetadata(session);
+      if (!canHandoffWebSession()) return;
+      const email = String(session.user.email || "").trim().toLowerCase();
+      if (email) writeLastLoginEmail(email);
+      clearPendingConfirmationEmail();
+      redirectAfterSuccessfulLogin({ preserveReferral: true });
+    } catch (_) {
+      // An unavailable session leaves the existing login/recovery UI in control.
+    } finally {
+      webAuthHandoffScheduled = false;
+    }
+  }, 0);
 }
 
 function readLoginErrorMessage(err) {
@@ -960,6 +1034,8 @@ async function consumeConfirmationUrlIfPresent(rawUrl, { clearCurrentLocation = 
     if (email && $email) $email.value = email;
     if (email) writeLastLoginEmail(email);
     clearPendingConfirmationEmail();
+    analytics.trackFunnel("email_confirmation_completed", {});
+    analytics.trackFunnel("auth_completed", { method: "email_confirmation" });
     setAuthFeedback(tAuth("login.confirmAutoLogin", "Email confirmed. Signing you in..."), "success");
     setDebug({
       auth_confirm_link: {
@@ -972,10 +1048,11 @@ async function consumeConfirmationUrlIfPresent(rawUrl, { clearCurrentLocation = 
       },
     });
     setTimeout(() => {
-      redirectAfterSuccessfulLogin();
+      redirectAfterSuccessfulLogin({ preserveReferral: !getDesktopBridge() });
     }, 220);
     return true;
   } catch (error) {
+    telemetryFailure(analytics, error, "email_confirmation");
     setAuthFeedback(readConfirmationErrorMessage(error), "error");
     setDebug({
       auth_confirm_link: {
@@ -1002,7 +1079,12 @@ function bindDesktopAuthDeepLinks() {
     bridge.onDeepLink((payload) => {
       const rawUrl = String(payload?.url || payload || "").trim();
       if (!rawUrl) return;
-      void consumeAuthUrlIfPresent(rawUrl);
+      void capturePendingServerInviteFromDesktopPayload(payload, { bridge }).then((pending) => {
+        syncAuthPendingInviteNotice();
+        if (!pending) return consumeAuthUrlIfPresent(rawUrl);
+        analytics.trackFunnel("invite_opened", { path: "desktop" });
+        return true;
+      });
     });
   }
 
@@ -1011,7 +1093,12 @@ function bindDesktopAuthDeepLinks() {
       .then((payload) => {
         const rawUrl = String(payload?.url || payload || "").trim();
         if (!rawUrl) return;
-        void consumeAuthUrlIfPresent(rawUrl);
+        return capturePendingServerInviteFromDesktopPayload(payload, { bridge }).then((pending) => {
+          syncAuthPendingInviteNotice();
+          if (!pending) return consumeAuthUrlIfPresent(rawUrl);
+          analytics.trackFunnel("invite_opened", { path: "desktop" });
+          return true;
+        });
       })
       .catch(() => {});
   }
@@ -1202,9 +1289,11 @@ async function doLogin() {
     });
     writeLastLoginEmail(email);
     clearPendingConfirmationEmail();
+    analytics.trackFunnel("auth_completed", { method: "password" });
     setAuthFeedback(tAuth("login.successProgress", "Signing in..."), "success");
     redirectAfterSuccessfulLogin();
   } catch (e) {
+    telemetryFailure(analytics, e, "login");
     setAuthFeedback(readLoginErrorMessage(e), "error");
   } finally {
     loginInFlight = false;
@@ -1335,24 +1424,43 @@ window.addEventListener("pageshow", () => {
 window.addEventListener("online", syncOfflineLoginWarning);
 window.addEventListener("offline", syncOfflineLoginWarning);
 
-initAuthLanguage({ defaultLanguage: "en" });
+inviteNotice.render();
 onAuthLanguageChange(() => {
   syncLoginStaticCopy();
+  mountLoginAccountSwitcher();
+  enhancePasswordVisibilityToggles(document, { t: tAuth });
 });
 syncLoginStaticCopy();
 syncOfflineLoginWarning();
 
 bindDesktopAuthDeepLinks();
+if (!getDesktopBridge()) {
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === "PASSWORD_RECOVERY") webAuthHandoffBlocked = true;
+    if (session && ["INITIAL_SESSION", "SIGNED_IN", "TOKEN_REFRESHED"].includes(event)) {
+      scheduleWebSessionHandoff();
+    }
+  });
+}
 void (async () => {
-  const handledAuthUrl = await consumeAuthUrlIfPresent(window.location.href, { clearCurrentLocation: true });
+  // Recovery must retain its payload even if the SDK already removed the hash.
+  const authUrl = webAuthHandoffBlocked ? initialAuthUrl : window.location.href;
+  const handledAuthUrl = await consumeAuthUrlIfPresent(authUrl, { clearCurrentLocation: true });
   if (!handledAuthUrl) {
     showPendingConfirmationHintFromUrlOrStorage();
   }
+  webAuthBootstrapFinished = true;
+  scheduleWebSessionHandoff();
 })();
 
 ensureLoginInputsReady();
-enhancePasswordVisibilityToggles(document);
+enhancePasswordVisibilityToggles(document, { t: tAuth });
 initDesktopWindowControls();
+mountLoginAccountSwitcher();
+// Clear only the current display marker on a conclusive logout, never another session.
+supabase.auth.onAuthStateChange(event => {
+  if (event === "SIGNED_OUT") void rememberDesktopAccount(null).catch(() => {});
+});
 void initAuthInstallWelcome({
   onDone: ({ shown }) => {
     ensureLoginInputsReady();

@@ -1,3 +1,5 @@
+import { readPendingServerInvite } from "./lib/pendingServerInvite.js";
+
 const DESKTOP_INSTALL_WELCOME_STORAGE_KEY = "altara_desktop_install_welcome_seen_v2_global";
 const AUTH_INSTALL_WELCOME_SESSION_KEY = "altara_auth_install_welcome_seen_session_v1";
 
@@ -34,6 +36,8 @@ function markInstallWelcomeSeen() {
 async function shouldShowAuthInstallWelcome() {
   const bridge = getDesktopBridge();
   if (!bridge || typeof bridge.getMeta !== "function") return false;
+  // An invite already states the user's intent. Honor it before generic product orientation.
+  if (readPendingServerInvite()) return false;
   if (hasSeenInstallWelcome()) return false;
   try {
     const meta = await bridge.getMeta();

@@ -1,3 +1,5 @@
+import { createCameraMirrorState } from "./cameraMirror.js";
+import { buildCameraCaptureAttempts, isCameraConstraintFailure } from "./cameraCapture.js";
 import { RoomEvent, Track } from "../node_modules/livekit-client/dist/livekit-client.esm.mjs";
 
 function normalizeId(value) {
@@ -62,29 +64,6 @@ function normalizeCameraQualityPreset(value = "auto") {
   if (preset === "720p") return "720p";
   if (preset === "1080p") return "1080p";
   return "auto";
-}
-
-function buildVideoConstraintsForQualityPreset(value = "auto") {
-  const preset = normalizeCameraQualityPreset(value);
-  if (preset === "720p") {
-    return {
-      width: { ideal: 1280, max: 1280 },
-      height: { ideal: 720, max: 720 },
-      frameRate: { ideal: 30, max: 60 },
-    };
-  }
-  if (preset === "1080p") {
-    return {
-      width: { ideal: 1920, max: 1920 },
-      height: { ideal: 1080, max: 1080 },
-      frameRate: { ideal: 30, max: 60 },
-    };
-  }
-  return {
-    width: { ideal: 3840, max: 3840 },
-    height: { ideal: 2160, max: 2160 },
-    frameRate: { ideal: 30, max: 60 },
-  };
 }
 
 function isDesktopRuntime() {
@@ -156,10 +135,12 @@ async function enumerateDesktopVideoInputs() {
 export function createServerVoiceCameraLayer({
   conversationId = "",
   localUserId = "",
+  participantUserId = (identity) => identity,
   logger = () => {},
   onStateChanged = () => {},
   onConversationChanged = () => {},
   shouldSubscribeToParticipant = () => true,
+  getLocalCameraMirror = () => true,
 } = {}) {
   let convId = normalizeId(conversationId || "");
   const meId = normalizeId(localUserId || "");
@@ -177,6 +158,12 @@ export function createServerVoiceCameraLayer({
   let lastToggleBlockedReason = "";
   let focusStateObserver = null;
   let lastFocusedTileId = "";
+  const mirrorState = createCameraMirrorState({
+    getLocalMirror: getLocalCameraMirror,
+    resolveParticipantId: resolveParticipantUserId,
+    onChanged: () => emitStateChanged("camera_mirror_changed", "mirrorState"),
+    onError: (error) => emit("camera.mirror_sync_failed", { message: String(error?.message || error) }),
+  });
 
   function emit(event, details = {}) {
     safeInvoke(logger, {
@@ -234,7 +221,7 @@ export function createServerVoiceCameraLayer({
   }
 
   function resolveParticipantUserId(participant = null) {
-    const identity = normalizeId(participant?.identity || "");
+    const identity = normalizeId(participantUserId(participant?.identity || ""));
     if (looksLikeUuid(identity)) return identity;
     const metadataRaw = String(participant?.metadata || "").trim();
     if (metadataRaw) {
@@ -353,6 +340,7 @@ export function createServerVoiceCameraLayer({
       hasTrack: !!isLiveVideoTrack(record.track, { allowMuted: true }),
       isSubscribed: !!record.isSubscribed,
       muted: !!record.muted,
+      mirror: mirrorState.getParticipantMirror(record.userId),
       receivedAt: record.receivedAt || null,
       updatedAt: record.updatedAt || null,
     }));
@@ -378,6 +366,7 @@ export function createServerVoiceCameraLayer({
           hasTrack: !!preferred.hasTrack,
           isSubscribed: !!preferred.isSubscribed,
           muted: !!preferred.muted,
+          mirror: preferred.mirror === true,
           receivedAt: preferred.receivedAt || null,
           updatedAt: preferred.updatedAt || null,
         };
@@ -387,6 +376,7 @@ export function createServerVoiceCameraLayer({
       conversationId: convId || "",
       localUserId: meId || "",
       localCameraActive: !!isLocalCameraActive(),
+      localCameraMirror: getLocalCameraMirror() === true,
       localTrackId: normalizeId((localCaptureTrack?.id || getLocalCameraPublication()?.track?.id || "")) || null,
       localTrackSid: normalizeId(localCaptureTrackSid || getLocalCameraPublication()?.trackSid || "") || null,
       qualityPreset: normalizeCameraQualityPreset(qualityPreset || "auto"),
@@ -407,10 +397,11 @@ export function createServerVoiceCameraLayer({
     safeInvoke(onStateChanged, state);
     const signature = [
       state.localCameraActive ? "1" : "0",
+      state.localCameraMirror ? "1" : "0",
       String(state.localTrackId || ""),
       String(state.localTrackSid || ""),
       state.remoteParticipantIds.join(","),
-      state.participants.map((participant) => `${participant.userId}:${participant.trackId || ""}:${participant.trackSid || ""}`).join(","),
+      state.participants.map((participant) => `${participant.userId}:${participant.trackId || ""}:${participant.trackSid || ""}:${participant.mirror ? "1" : "0"}`).join(","),
     ].join("|");
     if (signature !== lastRenderSignature) {
       lastRenderSignature = signature;
@@ -1197,45 +1188,12 @@ export function createServerVoiceCameraLayer({
     const resolvedPreferredDeviceId = normalizeId(
       preferredDeviceIdOverride || preferredDeviceId || "",
     );
-    const preferredVideoConstraints = (videoConstraints && typeof videoConstraints === "object")
-      ? videoConstraints
-      : buildVideoConstraintsForQualityPreset(resolvedQualityPreset);
-    const firstVideoDeviceId = normalizeId(desktopVideoInputs?.deviceIds?.[0] || "");
-    const captureAttempts = [
-      ...(resolvedPreferredDeviceId ? [{
-        label: "preferred_device_exact",
-        constraints: {
-          video: {
-            ...(preferredVideoConstraints || {}),
-            deviceId: { exact: resolvedPreferredDeviceId },
-          },
-          audio: false,
-        },
-      }] : []),
-      {
-        label: "preferred_constraints",
-        constraints: {
-          video: preferredVideoConstraints,
-          audio: false,
-        },
-      },
-      {
-        label: "generic_video_true",
-        constraints: {
-          video: true,
-          audio: false,
-        },
-      },
-    ];
-    if (firstVideoDeviceId && firstVideoDeviceId !== resolvedPreferredDeviceId) {
-      captureAttempts.push({
-        label: "first_device_exact",
-        constraints: {
-          video: { deviceId: { exact: firstVideoDeviceId } },
-          audio: false,
-        },
-      });
-    }
+    const captureAttempts = buildCameraCaptureAttempts({
+      qualityPreset: resolvedQualityPreset,
+      deviceId: resolvedPreferredDeviceId,
+      videoConstraints,
+      supportedConstraints: navigator.mediaDevices.getSupportedConstraints?.() || {},
+    });
     let stream = null;
     let captureError = null;
     let captureAttemptLabel = "";
@@ -1246,6 +1204,9 @@ export function createServerVoiceCameraLayer({
         break;
       } catch (error) {
         captureError = error;
+        // Permission/hardware failures are not resolution failures. In particular,
+        // never silently switch cameras when an explicitly selected device fails.
+        if (!isCameraConstraintFailure(error)) break;
         if (desktopRuntime) {
           emit("camera.desktop_capture_failed", {
             triggerReason: normalizedTriggerReason,
@@ -1353,6 +1314,7 @@ export function createServerVoiceCameraLayer({
     try {
       publication = await room.localParticipant.publishTrack(localCaptureTrack, {
         source: Track.Source.Camera,
+        simulcast: true,
         stopOnMute: true,
       });
     } catch (error) {
@@ -1715,11 +1677,12 @@ export function createServerVoiceCameraLayer({
     });
   }
 
-  function bindRoom(nextRoom = null) {
+  function bindRoom(nextRoom = null, { updateLocalParticipantAttributes = null } = {}) {
     if (!nextRoom) return;
     ensureCameraDebugSnapshotHook();
     ensureFocusStateObserver();
     if (room === nextRoom) {
+      mirrorState.bindRoom(room, updateLocalParticipantAttributes);
       emitStateChanged("room_rebind_noop", "bindRoom");
       return;
     }
@@ -1741,6 +1704,7 @@ export function createServerVoiceCameraLayer({
       roomBound = false;
     }
     room = nextRoom;
+    mirrorState.bindRoom(room, updateLocalParticipantAttributes);
     room.on(RoomEvent.LocalTrackPublished, handleLocalTrackPublished);
     room.on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
     room.on(RoomEvent.TrackMuted, handleLocalTrackMuted);
@@ -1861,6 +1825,7 @@ export function createServerVoiceCameraLayer({
     stopLocalCamera = true,
     triggerReason = "detach",
   } = {}) {
+    mirrorState.detach();
     if (stopLocalCamera) {
       try {
         await stopCamera({
@@ -1947,6 +1912,8 @@ export function createServerVoiceCameraLayer({
     isLocalCameraActive,
     getLocalVideoTrack,
     getRemoteVideoTracksByUser,
+    getParticipantMirror: mirrorState.getParticipantMirror,
+    syncMirrorPreference: mirrorState.syncLocalPreference,
     listVideoInputDevices,
     getPreferences,
     setQualityPreset,

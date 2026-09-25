@@ -1,9 +1,10 @@
 ﻿<!doctype html>
-<html lang="pt-PT">
+<html lang="en">
 <head>
-<meta charset="utf-8" />
+<script src="./lib/browserAccountContext.js"></script>
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>altara</title>
+  <title>ALTARA</title>
   <link rel="icon" href="/app/build/icon.ico" sizes="any" />
   <link rel="icon" href="/app/assets/brand/LOGO%20ALTARA%20BRANCO.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/app/style.css" />
@@ -737,22 +738,13 @@
             <div class="meControls" role="group" aria-label="Quick controls">
               <button id="btnHeaderMicToggle" class="btn ghost meCtrlBtn" type="button" title="Mute microphone" aria-label="Mute microphone">
                 <span class="meCtrlBtn__icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24">
-                    <path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"></path>
-                    <path d="M5 10a7 7 0 0 0 14 0"></path>
-                    <path d="M12 17v3"></path>
-                    <path d="M9 20h6"></path>
-                  </svg>
+                  <svg class="altaraIcon callIcon" data-call-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"/><path d="M5 10a7 7 0 0 0 14 0M12 17v3M9 20h6"/></svg>
                 </span>
                 <span class="sr-only" id="btnHeaderMicSrOnly">Mute microphone</span>
               </button>
               <button id="btnHeaderDeafenToggle" class="btn ghost meCtrlBtn" type="button" title="Mute incoming audio" aria-label="Mute incoming audio">
                 <span class="meCtrlBtn__icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24">
-                    <path d="M4 12a8 8 0 0 1 16 0"></path>
-                    <rect x="3" y="12" width="4" height="8" rx="2"></rect>
-                    <rect x="17" y="12" width="4" height="8" rx="2"></rect>
-                  </svg>
+                  <svg class="altaraIcon callIcon" data-call-icon="headphones" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 0 1 16 0"/><rect x="3" y="12" width="4" height="8" rx="2"/><rect x="17" y="12" width="4" height="8" rx="2"/></svg>
                 </span>
                 <span class="sr-only" id="btnHeaderDeafenSrOnly">Mute incoming audio</span>
               </button>
@@ -789,11 +781,11 @@
         <section class="leftDockDms">
           <aside id="serverChannelsPanel" class="serverChannelsPanel hidden" aria-hidden="true"></aside>
           <div id="dmList" class="list" data-static-fallback-shell="1">
-            <div class="dmListSectionTitle" data-static-fallback-shell="1">BEST FRIENDS</div>
+            <div class="dmListSectionTitle" data-static-fallback-shell="1" data-altara-i18n="surface.best_friends">BEST FRIENDS</div>
             <div class="dmListSection" data-static-fallback-shell="1"><div class="hint">Waiting for connection&#8230;</div></div>
-            <div class="dmListSectionTitle" data-static-fallback-shell="1">FRIENDS / MESSAGES</div>
+            <div class="dmListSectionTitle" data-static-fallback-shell="1" data-altara-i18n="surface.friends_messages">FRIENDS / MESSAGES</div>
             <div class="dmListSection" data-static-fallback-shell="1"><div class="hint">Waiting for connection&#8230;</div></div>
-            <div class="dmListSectionTitle" data-static-fallback-shell="1">GROUP DMS</div>
+            <div class="dmListSectionTitle" data-static-fallback-shell="1" data-altara-i18n="surface.group_dms">GROUP DMS</div>
             <div class="dmListSection" data-static-fallback-shell="1"><div class="hint">Waiting for connection&#8230;</div></div>
           </div>
         </section>
@@ -847,40 +839,63 @@
       </section>
 
       <!-- Friends tab -->
-      <section id="tabFriends" class="midBody" style="display:none;">
-        <div class="search friendsSearch">
-          <input id="friendSearchMain" class="input" placeholder="Search friends..." />
-        </div>
-        <div id="friendsList" class="list" data-static-fallback-shell="1">
+      <section id="tabFriends" class="midBody socialPage" style="display:none;" aria-labelledby="friendsPageTitle">
+        <div class="socialPageContent">
+          <header class="socialPageHeader">
+            <span class="socialPageIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M20 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+            <div><h1 id="friendsPageTitle" data-altara-i18n="tab.friends">Friends</h1><p data-altara-i18n="social.friends.subtitle">Your people, one conversation away.</p></div>
+          </header>
+          <div class="search friendsSearch">
+            <span class="searchIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg></span>
+            <input id="friendSearchMain" class="input" placeholder="Search friends..." aria-label="Search friends" data-altara-i18n-aria-label="placeholder.search_friends" autocomplete="off" />
+          </div>
+          <div id="friendsList" class="list" data-static-fallback-shell="1">
             <div class="hint" role="status">Waiting for connection&#8230;</div>
+          </div>
         </div>
       </section>
 
       <!-- Pending tab -->
-      <section id="tabPending" class="midBody" style="display:none;">
-        <div class="split2">
-          <div>
-            <div id="pendingIncomingTitle" class="sectionTitle">Incoming</div>
-            <div id="incomingList" class="list"></div>
-          </div>
-          <div>
-            <div id="pendingOutgoingTitle" class="sectionTitle">Outgoing</div>
-            <div id="outgoingList" class="list"></div>
+      <section id="tabPending" class="midBody socialPage" style="display:none;" aria-labelledby="pendingPageTitle">
+        <div class="socialPageContent">
+          <header class="socialPageHeader">
+            <span class="socialPageIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg></span>
+            <div><h1 id="pendingPageTitle" data-altara-i18n="tab.pending">Pending</h1><p data-altara-i18n="social.pending.subtitle">New connections, all in one place.</p></div>
+          </header>
+          <div class="pendingGrid">
+            <section class="pendingCard" aria-labelledby="pendingIncomingTitle">
+              <header class="pendingCardHeader"><span class="pendingDirection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg></span><div><h2 id="pendingIncomingTitle" class="sectionTitle">Incoming</h2><p data-altara-i18n="social.pending.incoming_hint">Ready for your reply</p></div><span id="pendingIncomingCount" class="socialCount">0</span></header>
+              <div id="incomingList" class="list"></div>
+            </section>
+            <section class="pendingCard pendingCard--outgoing" aria-labelledby="pendingOutgoingTitle">
+              <header class="pendingCardHeader"><span class="pendingDirection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg></span><div><h2 id="pendingOutgoingTitle" class="sectionTitle">Outgoing</h2><p data-altara-i18n="social.pending.outgoing_hint">Waiting for a reply</p></div><span id="pendingOutgoingCount" class="socialCount">0</span></header>
+              <div id="outgoingList" class="list"></div>
+            </section>
           </div>
         </div>
       </section>
 
       <!-- Add tab -->
-      <section id="tabAdd" class="midBody" style="display:none;">
-        <div class="addToolsStack">
-          <div class="card addToolCard">
-            <div id="addFriendSectionTitle" class="sectionTitle">Add friend</div>
-            <div class="rowInline">
-              <input id="addUsername" class="input" placeholder="username" />
-              <button id="btnSendRequest" class="btn primary">Send</button>
+      <section id="tabAdd" class="midBody socialPage" style="display:none;" aria-labelledby="addFriendSectionTitle">
+        <div class="socialPageContent">
+          <header class="socialPageHeader">
+            <span class="socialPageIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M19 7v6m-3-3h6"/></svg></span>
+            <div><h1 id="addFriendSectionTitle">Add friend</h1><p data-altara-i18n="social.add.subtitle">Good conversations start with a connection.</p></div>
+          </header>
+          <div class="addFriendLayout">
+            <div class="card addToolCard">
+              <div class="addFriendForm">
+                <label class="socialFieldLabel" for="addUsername" data-altara-i18n="social.add.username">Username</label>
+                <div class="rowInline addFriendSearch">
+                  <span class="addFriendAt" aria-hidden="true">@</span>
+                  <input id="addUsername" class="input" placeholder="username" aria-describedby="addFriendHint" autocomplete="off" autocapitalize="none" spellcheck="false" />
+                  <button id="btnSendRequest" class="btn primary" type="button" data-altara-i18n="social.action.send">Send request</button>
+                </div>
+                <div id="addFriendHint" class="hint">Example: <b>silver</b></div>
+                <div id="addFriendFeedback" class="hint addFriendFeedback" role="status" aria-live="polite" hidden></div>
+              </div>
             </div>
-            <div id="addFriendHint" class="hint">Example: <b>silver</b></div>
-            <div id="addFriendPreview" class="addFriendPreviewHost"></div>
+            <div id="addFriendPreview" class="addFriendPreviewHost" aria-live="polite" aria-atomic="true"></div>
           </div>
         </div>
       </section>
@@ -888,14 +903,6 @@
       <!-- DM VIEW -->
       <section id="dmMain" class="dmMain" style="display:none;">
         <div class="dmHeader">
-          <button id="btnBackToFriends" class="btn ghost arrowNavBtn" type="button" aria-label="Back" title="Back">
-            <span class="arrowNavBtn__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="M15.5 5 8.5 12l7 7"></path>
-              </svg>
-            </span>
-          </button>
-
           <div id="dmHeaderAvatar" class="dmHeaderAvatar" role="img" aria-label="Conversation avatar">
             <span class="dmHeaderAvatarFallback">D</span>
           </div>
@@ -904,8 +911,10 @@
             <div class="dmTitleRow">
               <div id="dmTitle" class="dmTitle">DM</div>
               <span id="dmPrivacyBadge" class="dmPrivacyBadge hidden" hidden></span>
-              <button id="btnDmPrivacy" class="dmPrivacyOptInBtn hidden" type="button" style="display:none;">
-                <span id="btnDmPrivacyLabel">Segurança</span>
+              <button id="btnDmPrivacy" class="dmPrivacyOptInBtn hidden" aria-describedby="btnDmPrivacyTooltip" type="button" style="display:none;">
+                <span id="btnDmPrivacyIcon" aria-hidden="true"></span>
+                <span id="btnDmPrivacyTooltip" class="dmHeaderStatusTooltip" role="tooltip"></span>
+                <span id="btnDmPrivacyLabel" class="sr-only">Segurança</span>
                 <span id="btnDmPrivacySrOnly" class="sr-only">Segurança da conversa</span>
               </button>
             </div>
@@ -915,27 +924,19 @@
           <div class="dmHeaderActions">
             <button id="btnCall" class="btn ghost dmHeaderIconBtn" type="button" title="Call" aria-label="Call">
               <span class="dmHeaderIcon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M20 15.5v3a2 2 0 0 1-2.2 2 15 15 0 0 1-6.5-2.3 14.7 14.7 0 0 1-4.5-4.5A15 15 0 0 1 4.5 7.2 2 2 0 0 1 6.5 5h3a2 2 0 0 1 2 1.7l.4 2.3a2 2 0 0 1-.6 1.9l-1 1a12 12 0 0 0 4 4l1-1a2 2 0 0 1 1.9-.6l2.3.4a2 2 0 0 1 1.5 1.8z"></path>
-                </svg>
+                <svg class="altaraIcon callIcon" data-call-icon="phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 4h4l2 5-3 2a14 14 0 0 0 4 4l2-3 5 2v4c0 1.1-.9 2-2 2C10.3 20 4 13.7 4 6c0-1.1.9-2 2-2z"/></svg>
               </span>
               <span class="sr-only" id="btnCallSrOnly">Call</span>
             </button>
             <button id="btnAnswer" class="btn ghost dmHeaderIconBtn" type="button" style="display:none;" title="Answer" aria-label="Answer">
               <span class="dmHeaderIcon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M20 15.5v3a2 2 0 0 1-2.2 2 15 15 0 0 1-6.5-2.3 14.7 14.7 0 0 1-4.5-4.5A15 15 0 0 1 4.5 7.2 2 2 0 0 1 6.5 5h3a2 2 0 0 1 2 1.7l.4 2.3a2 2 0 0 1-.6 1.9l-1 1a12 12 0 0 0 4 4l1-1a2 2 0 0 1 1.9-.6l2.3.4a2 2 0 0 1 1.5 1.8z"></path>
-                  <path d="M14 5h6"></path>
-                  <path d="M17 2v6"></path>
-                </svg>
+                <svg class="altaraIcon callIcon" data-call-icon="phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 4h4l2 5-3 2a14 14 0 0 0 4 4l2-3 5 2v4c0 1.1-.9 2-2 2C10.3 20 4 13.7 4 6c0-1.1.9-2 2-2z"/></svg>
               </span>
               <span class="sr-only" id="btnAnswerSrOnly">Answer</span>
             </button>
             <button id="btnHangup" class="btn danger dmHeaderIconBtn" type="button" style="display:none;" title="Hang up" aria-label="Hang up">
               <span class="dmHeaderIcon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M4 14c4.5-4 11.5-4 16 0"></path>
-                </svg>
+                <svg class="altaraIcon callIcon" data-call-icon="hangup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 13c5-4 13-4 18 0v4h-5v-4a14 14 0 0 0-8 0v4H3z"/></svg>
               </span>
               <span class="sr-only" id="btnHangupSrOnly">Hang up</span>
             </button>
@@ -1006,30 +1007,43 @@
             </button>
             <button id="btnShareScreen" class="btn ghost dmHeaderIconBtn" type="button" style="display:none;" title="Share" aria-label="Share">
               <span class="dmHeaderIcon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <rect x="3" y="4" width="18" height="12" rx="2"></rect>
-                  <path d="M8 20h8"></path>
-                  <path d="M12 16v4"></path>
-                  <path d="M12 7v6"></path>
-                  <path d="m9.5 9.5 2.5-2.5 2.5 2.5"></path>
-                </svg>
+                <svg class="altaraIcon callIcon" data-call-icon="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4M12 7v6m-2.5-3.5L12 7l2.5 2.5"/></svg>
               </span>
               <span class="sr-only">Share</span>
             </button>
             <button id="btnCamera" class="btn ghost dmHeaderIconBtn" type="button" style="display:none;" title="Camera" aria-label="Camera">
               <span class="dmHeaderIcon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <rect x="3" y="7" width="12" height="10" rx="2"></rect>
-                  <path d="m15 11 6-3v8l-6-3z"></path>
-                </svg>
+                <svg class="altaraIcon callIcon" data-call-icon="camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3z"/></svg>
               </span>
               <span class="sr-only">Camera</span>
             </button>
           </div>
         </div>
+        <div id="serverVoiceTextCallStrip" class="serverVoiceTextCallStrip" role="region" aria-label="Current voice call" aria-hidden="true" hidden>
+          <div class="serverVoiceTextCallStrip__status">
+            <strong id="serverVoiceTextCallLocation"></strong>
+            <span id="serverVoiceTextCallDetail"></span>
+          </div>
+          <div class="serverVoiceTextCallStrip__controls" role="group" aria-label="Call controls">
+            <button class="btn ghost" type="button" data-call-control-proxy="btnMicToggle" aria-pressed="false"><svg class="altaraIcon callIcon" data-call-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"/><path d="M5 10a7 7 0 0 0 14 0M12 17v3M9 20h6"/></svg><span>Mic</span></button>
+            <button class="btn ghost" type="button" data-call-control-proxy="btnDeafenToggle" aria-pressed="false"><svg class="altaraIcon callIcon" data-call-icon="headphones" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 0 1 16 0"/><rect x="3" y="12" width="4" height="8" rx="2"/><rect x="17" y="12" width="4" height="8" rx="2"/></svg><span>Deafen</span></button>
+          </div>
+        </div>
         <div class="dmMainBody">
           <div class="dmThread">
             <div id="dmCallDock" class="dmCallDock"></div>
+            <section id="groupDmJoinCard" class="groupDmJoinCard" aria-label="Chamada ativa" aria-hidden="true" hidden>
+              <div class="groupDmJoinCard__avatars" aria-hidden="true"></div>
+              <div class="groupDmJoinCard__info">
+                <strong>Chamada ativa</strong>
+                <span class="groupDmJoinCard__count"></span>
+                <span class="groupDmJoinCard__names"></span>
+              </div>
+              <button class="btn callStagePreviewJoin" type="button" aria-label="Entrar na chamada">
+                <span class="callStagePreviewJoin__icon" aria-hidden="true"><svg class="altaraIcon callIcon" data-call-icon="phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h4l2 5-3 2a14 14 0 0 0 4 4l2-3 5 2v4c0 1.1-.9 2-2 2C10.3 20 4 13.7 4 6c0-1.1.9-2 2-2z"/></svg></span>
+                <span class="groupDmJoinCard__joinLabel">Entrar na chamada</span>
+              </button>
+            </section>
             <div id="dmPrivacyBanner" class="dmPrivacyBanner hidden" hidden></div>
             <div id="dmRequestBanner" class="dmRequestBanner hidden" hidden></div>
 
@@ -1068,7 +1082,10 @@
             <button id="dmProfileAvatar" class="dmProfileAvatar" type="button" aria-label="Open full profile"></button>
             <div class="dmProfilePanel__body">
               <div class="dmProfileIdentity">
-                <div id="dmProfileName" class="dmProfileName">User</div>
+                <div class="dmProfileNameRow">
+                  <div id="dmProfileName" class="dmProfileName">User</div>
+                  <div id="dmProfileAltaraPlusBadge" class="profileBadgeRow dmProfileAltaraPlusBadge" hidden></div>
+                </div>
                 <div id="dmProfileHandle" class="dmProfileHandle">@user</div>
                 <div class="dmProfilePresence">
                   <span id="dmProfileStatusDot" class="dmProfileStatusDot" data-status="offline"></span>
@@ -1145,8 +1162,8 @@
           <div id="serverMembersList" class="serverMembersList"></div>
         </div>
 
-        <div class="rightSectionLabel">ACTIVE NOW</div>
-        <div id="activeNow" class="list" data-static-fallback-shell="1"><div class="hint">No one online right now.</div></div>
+        <div class="rightSectionLabel" data-altara-i18n="surface.active_now">ACTIVE NOW</div>
+        <div id="activeNow" class="list" data-static-fallback-shell="1"><div class="hint" role="status" aria-busy="true">…</div></div>
 
         <div class="rightSectionLabel">OFFLINE</div>
         <div id="offlineList" class="list"></div>
@@ -1201,6 +1218,9 @@
             <button class="settingsNavItem is-active" type="button" data-settings-tab="account" aria-current="page">
               <span id="settingsNavAccount">My Account</span>
             </button>
+            <button id="settingsNavPrivacyEntry" class="settingsNavItem" type="button" data-settings-tab="privacy" hidden style="display:none">
+              <span>Privacy and data</span>
+            </button>
             <button class="settingsNavItem" type="button" data-settings-tab="security">
               <span class="settingsNavLabelRow">
                 <span id="settingsNavSecurity">Security</span>
@@ -1254,6 +1274,9 @@
             <button class="settingsNavItem" type="button" data-settings-tab="keybinds">
               <span id="settingsNavKeybinds">Binds</span>
             </button>
+            <button class="settingsNavItem" type="button" data-settings-tab="language" data-settings-keywords="language idioma English Português Brasil Portugal">
+              <span id="settingsNavLanguage">Language</span>
+            </button>
             <button class="settingsNavItem" type="button" data-settings-tab="appearance">
               <span id="settingsNavAppearance">Appearance</span>
             </button>
@@ -1282,8 +1305,8 @@
         </div>
 
         <div class="settingsMainBody">
-          <div class="settingsPanel is-active" data-settings-panel="account">
-            <div class="settingsIdentityCard">
+          <div class="settingsPanel settingsAccountPanel is-active" data-settings-panel="account">
+            <div class="settingsIdentityCard" role="group" aria-label="Your profile preview">
               <div id="settingsIdentityBanner" class="settingsIdentityBanner" tabindex="0" role="button" aria-label="Change banner"></div>
               <div class="settingsIdentityBody">
                 <div id="avatarPreview" class="avatarBig settingsAvatarPick" tabindex="0" role="button" aria-label="Change avatar"></div>
@@ -1297,38 +1320,74 @@
                   <div id="uidLine" class="settingsIdentityUid">@...</div>
                   <div id="settingsIdentityAltaraPlusBadge" class="profileBadgeRow settingsIdentityBadgeRow" hidden></div>
                 </div>
+                <span class="settingsIdentityEditHint" aria-hidden="true">Edit banner or avatar</span>
               </div>
             </div>
 
-            <div class="settingsCardSection">
-              <div id="settingsSectionProfile" class="settingsSectionTitle">Profile</div>
+            <div class="settingsCardSection settingsAccountSection">
+              <div class="settingsAccountSectionHead">
+                <div>
+                  <div id="settingsSectionProfile" class="settingsSectionTitle">Profile details</div>
+                  <p>Your name and bio appear on your profile.</p>
+                </div>
+              </div>
               <div id="settingsAccountLoadStatus" class="settingsAccountLoadStatus settingsHint" role="status" aria-live="polite" hidden></div>
-              <div class="grid2 settingsGrid settingsProfileGrid">
-                <div class="settingsColumn settingsProfileColumn">
-                  <label class="label" for="username">Username</label>
-                  <input id="username" class="input" />
+              <div class="settingsAccountFields">
+                <div class="settingsAccountField">
                   <label class="label" for="displayName">Display name</label>
                   <input id="displayName" class="input" />
-                  <label class="label" for="bio">Bio</label>
-                  <textarea id="bio" class="input" rows="4" maxlength="280"></textarea>
+                </div>
+                <div class="settingsAccountField">
+                  <label class="label" for="pronouns">Pronouns <span class="settingsOptional">Optional</span></label>
+                  <input id="pronouns" class="input" maxlength="40" placeholder="e.g. he/him" aria-describedby="profilePronounsHint" />
+                  <div id="profilePronounsHint" class="settingsHint">On your profile.</div>
+                </div>
+                <div class="settingsAccountField">
+                  <label class="label" for="username">Username</label>
+                  <div class="settingsAccountInputWrap"><span aria-hidden="true">@</span><input id="username" class="input" aria-describedby="profileUsernameHint" /></div>
+                  <div id="profileUsernameHint" class="settingsHint">Unique handle.</div>
+                </div>
+                <div class="settingsAccountField settingsAccountField--bio">
+                  <label class="label" for="bio">Bio <span class="settingsOptional">Optional</span></label>
+                  <textarea id="bio" class="input" rows="3" maxlength="280" aria-describedby="bioCharCount"></textarea>
                   <div id="bioCharCount" class="settingsHint settingsBioCounter">0/280</div>
                 </div>
-                <div class="settingsColumn settingsProfileColumn">
-                  <label class="label" for="pronouns">Pronouns</label>
-                  <input id="pronouns" class="input" maxlength="40" placeholder="e.g. he/him" />
-                  <div id="profilePronounsHint" class="settingsHint">Optional. Appears on your profile.</div>
-                  <label class="label" for="nameColor">Name color</label>
-                  <input id="nameColor" class="themeColorInput" type="text" value="#f1f2f5" />
-                  <label class="label" for="callTileColor">Call background</label>
-                  <input id="callTileColor" class="themeColorInput" type="text" value="#1b2230" />
-                </div>
-              </div>
-              <div class="settingsProfileActions">
-                <button id="btnSaveUsername" class="btn ghost" type="button">Save username</button>
-                <button id="btnSaveProfile" class="btn primary" type="button">Save profile</button>
-                <button id="btnOpenProfileWidgets" class="btn ghost" type="button">Widgets</button>
               </div>
             </div>
+
+            <div class="settingsCardSection settingsAccountSection">
+              <div class="settingsAccountSectionHead">
+                <div>
+                  <div id="settingsSectionProfileAppearance" class="settingsSectionTitle">Profile appearance</div>
+                  <p>Make your profile feel like yours.</p>
+                </div>
+              </div>
+              <div class="settingsAccountAppearanceFields">
+                <div class="settingsAccountField">
+                  <label class="label" for="nameColor">Name color</label>
+                  <div class="settingsAccountColorWrap"><span class="settingsAccountColorSwatch" aria-hidden="true"></span><input id="nameColor" class="themeColorInput" type="text" value="#f1f2f5" /></div>
+                </div>
+                <div class="settingsAccountField">
+                  <label class="label" for="callTileColor">Call background</label>
+                  <div class="settingsAccountColorWrap"><span class="settingsAccountColorSwatch" aria-hidden="true"></span><input id="callTileColor" class="themeColorInput" type="text" value="#1b2230" /></div>
+                </div>
+              </div>
+              <div class="settingsAccountWidgetsRow">
+                <div><strong>Widgets</strong><span>Choose what appears on your profile.</span></div>
+                <button id="btnOpenProfileWidgets" class="btn ghost" type="button">Manage widgets</button>
+              </div>
+            </div>
+            <div class="settingsAccountSaveBar">
+              <div id="settingsAccountSaveStatus" class="settingsAccountSaveStatus" role="status" aria-live="polite">All changes saved</div>
+              <div class="settingsProfileActions">
+                <button id="btnSaveUsername" class="btn ghost" type="button" disabled>Save username</button>
+                <button id="btnSaveProfile" class="btn primary" type="button" disabled>Save changes</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="privacy">
+            <div id="accountPrivacyCenter" class="settingsCardSection"></div>
           </div>
 
           <div class="settingsPanel" data-settings-panel="connections">
@@ -1363,18 +1422,18 @@
               <section class="settingsAltaraPlusStatusCard">
                 <div class="settingsAltaraPlusStatusTop">
                   <div>
-                    <div class="settingsAltaraPlusStatusLabel">Current plan</div>
+                    <div class="settingsAltaraPlusStatusLabel" data-altara-i18n="settings.altara_plus.current_plan">Current plan</div>
                     <div id="settingsAltaraPlusCurrentPlan" class="settingsAltaraPlusStatusPlan">Free</div>
                   </div>
                   <span id="settingsAltaraPlusEnvironmentPill" class="settingsAltaraPlusEnvironmentPill" hidden>Test environment</span>
                 </div>
                 <div class="settingsAltaraPlusStatusGrid">
                   <div class="settingsAltaraPlusStatusItem">
-                    <span class="settingsAltaraPlusStatusItemLabel">Status</span>
+                    <span class="settingsAltaraPlusStatusItemLabel" data-altara-i18n="settings.altara_plus.status.label">Status</span>
                     <span id="settingsAltaraPlusStatus" class="settingsAltaraPlusStatusItemValue">Inactive</span>
                   </div>
                   <div class="settingsAltaraPlusStatusItem">
-                    <span class="settingsAltaraPlusStatusItemLabel">Billing interval</span>
+                    <span class="settingsAltaraPlusStatusItemLabel" data-altara-i18n="settings.altara_plus.billing_interval">Billing interval</span>
                     <span id="settingsAltaraPlusInterval" class="settingsAltaraPlusStatusItemValue">-</span>
                   </div>
                   <div class="settingsAltaraPlusStatusItem">
@@ -1395,37 +1454,38 @@
                 </div>
               </section>
 
+              <button id="btnSettingsAltaraPlusRetryCatalog" class="btn ghost" type="button" hidden></button>
               <div id="settingsAltaraPlusPlanOptions" class="settingsAltaraPlusPlanOptions">
                 <article class="settingsAltaraPlusPlanCard" data-plan-root="core">
                   <div class="settingsAltaraPlusPlanCardTop">
                     <div>
                       <div class="settingsAltaraPlusPlanName">ALTARA+ Core</div>
-                      <div class="settingsAltaraPlusPlanSubtitle">The main paid tier for powerful personal features and supporter perks.</div>
+                      <div class="settingsAltaraPlusPlanSubtitle" data-altara-i18n="settings.altara_plus.core.subtitle">The main paid tier for powerful personal features and supporter perks.</div>
                     </div>
                     <span class="settingsAltaraPlusPlanBadge">Core</span>
                   </div>
                   <div class="settingsAltaraPlusPriceRows">
                     <div class="settingsAltaraPlusPriceRow">
-                      <span>�4.99 / month</span>
-                      <span class="settingsAltaraPlusPriceMeta">Monthly</span>
+                      <span data-billing-price="core:monthly">—</span>
+                      <span class="settingsAltaraPlusPriceMeta" data-billing-period="monthly">—</span>
                     </div>
                     <div class="settingsAltaraPlusPriceRow">
-                      <span>�44.99 / year</span>
-                      <span class="settingsAltaraPlusPriceMeta">Save about 25%</span>
+                      <span data-billing-price="core:yearly">—</span>
+                      <span class="settingsAltaraPlusPriceMeta"><span data-billing-period="yearly">—</span><br><span data-billing-saving="core" hidden></span></span>
                     </div>
                   </div>
                   <ul class="settingsAltaraPlusFeatureList">
-                    <li>Core profile badge</li>
-                    <li>Focus Profiles</li>
-                    <li>Schedule Focus</li>
-                    <li>Saved Spatial Audio layouts</li>
-                    <li>More Spatial Audio speakers</li>
-                    <li>Higher limits for servers, Best Friends, and saved presets</li>
-                    <li>Larger uploads up to 50 MB</li>
-                    <li>Advanced screen share quality</li>
-                    <li>Helps fund future updates</li>
+                    <li data-altara-i18n="settings.altara_plus.core.badge">Core profile badge</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.focus_profiles">Focus Profiles</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.schedule_focus">Schedule Focus</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.saved_spatial">Saved Spatial Audio layouts</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.more_spatial">More Spatial Audio speakers</li>
+                    <li data-altara-i18n="settings.altara_plus.core.higher_limits">Higher limits for servers, Best Friends, and saved presets</li>
+                    <li data-altara-i18n="settings.altara_plus.core.uploads">Larger uploads up to 50 MB</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.advanced_share">Advanced screen share quality</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.fund_updates">Helps fund future updates</li>
                   </ul>
-                  <div class="settingsHint settingsAltaraPlusPlanNote">Core unlocks advanced personal tools without changing the basics everyone can use.</div>
+                  <div class="settingsHint settingsAltaraPlusPlanNote" data-altara-i18n="settings.altara_plus.core.note">Core unlocks advanced personal tools without changing the basics everyone can use.</div>
                   <div class="settingsAltaraPlusIntervalActions">
                     <button class="btn primary settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="core" data-interval="monthly">Support with Core monthly</button>
                     <button class="btn ghost settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="core" data-interval="yearly">Support with Core yearly</button>
@@ -1436,33 +1496,33 @@
                   <div class="settingsAltaraPlusPlanCardTop">
                     <div>
                       <div class="settingsAltaraPlusPlanName">ALTARA+ Nova</div>
-                      <div class="settingsAltaraPlusPlanSubtitle">The premium tier for automation, high-end audio, and extra supporter recognition.</div>
+                      <div class="settingsAltaraPlusPlanSubtitle" data-altara-i18n="settings.altara_plus.nova.subtitle">The premium tier for automation, high-end audio, and extra supporter recognition.</div>
                     </div>
                     <span class="settingsAltaraPlusPlanBadge settingsAltaraPlusPlanBadge--nova">Nova</span>
                   </div>
                   <div class="settingsAltaraPlusPriceRows">
                     <div class="settingsAltaraPlusPriceRow">
-                      <span>�7.99 / month</span>
-                      <span class="settingsAltaraPlusPriceMeta">Monthly</span>
+                      <span data-billing-price="nova:monthly">—</span>
+                      <span class="settingsAltaraPlusPriceMeta" data-billing-period="monthly">—</span>
                     </div>
                     <div class="settingsAltaraPlusPriceRow">
-                      <span>�74.99 / year</span>
-                      <span class="settingsAltaraPlusPriceMeta">Save about 22%</span>
+                      <span data-billing-price="nova:yearly">—</span>
+                      <span class="settingsAltaraPlusPriceMeta"><span data-billing-period="yearly">—</span><br><span data-billing-saving="nova" hidden></span></span>
                     </div>
                   </div>
                   <ul class="settingsAltaraPlusFeatureList">
-                    <li>Nova profile badge</li>
-                    <li>Everything in Core</li>
-                    <li>Auto Focus</li>
-                    <li>App-based Focus</li>
-                    <li>Spatial Audio HD</li>
-                    <li>Auto Arrange Spatial Audio</li>
-                    <li>Advanced Spatial presets</li>
-                    <li>Highest limits for servers, Best Friends, and saved presets</li>
-                    <li>Highest uploads up to 1 GB</li>
-                    <li>Extra supporter recognition</li>
+                    <li data-altara-i18n="settings.altara_plus.nova.badge">Nova profile badge</li>
+                    <li data-altara-i18n="settings.altara_plus.nova.everything_core">Everything in Core</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.auto_focus">Auto Focus</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.app_focus">App-based Focus</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.spatial_hd">Spatial Audio HD</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.auto_spatial">Auto Arrange Spatial Audio</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.advanced_spatial">Advanced Spatial presets</li>
+                    <li data-altara-i18n="settings.altara_plus.nova.highest_limits">Highest limits for servers, Best Friends, and saved presets</li>
+                    <li data-altara-i18n="settings.altara_plus.nova.uploads">Highest uploads up to 1 GB</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.extra_recognition">Extra supporter recognition</li>
                   </ul>
-                  <div class="settingsHint settingsAltaraPlusPlanNote">Nova includes Core and unlocks the most advanced ALTARA features.</div>
+                  <div class="settingsHint settingsAltaraPlusPlanNote" data-altara-i18n="settings.altara_plus.nova.note">Nova includes Core and unlocks the most advanced ALTARA features.</div>
                   <div class="settingsAltaraPlusIntervalActions">
                     <button class="btn primary settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="nova" data-interval="monthly">Support with Nova monthly</button>
                     <button class="btn ghost settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="nova" data-interval="yearly">Support with Nova yearly</button>
@@ -1471,32 +1531,32 @@
               </div>
 
               <div class="settingsAltaraPlusCompareCard">
-                <div class="settingsAltaraPlusCompareTitle">Compare plans</div>
-                <div class="settingsAltaraPlusCompareGrid" role="table" aria-label="ALTARA+ comparison">
-                  <div class="settingsAltaraPlusCompareHead">Feature</div>
-                  <div class="settingsAltaraPlusCompareHead">Free</div>
+                <div class="settingsAltaraPlusCompareTitle" data-altara-i18n="settings.altara_plus.compare.title">Compare plans</div>
+                <div class="settingsAltaraPlusCompareGrid" role="table" aria-label="ALTARA+ comparison" data-altara-i18n-aria-label="settings.altara_plus.compare.aria">
+                  <div class="settingsAltaraPlusCompareHead" data-altara-i18n="settings.altara_plus.compare.feature">Feature</div>
+                  <div class="settingsAltaraPlusCompareHead" data-altara-i18n="settings.altara_plus.plan.free">Free</div>
                   <div class="settingsAltaraPlusCompareHead">Core</div>
                   <div class="settingsAltaraPlusCompareHead">Nova</div>
 
-                  <div>Supports ALTARA</div><div>-</div><div>Yes</div><div>More</div>
-                  <div>Profile badge</div><div>-</div><div>Core badge</div><div>Nova badge</div>
-                  <div>Servers joined</div><div>100</div><div>150</div><div>200</div>
-                  <div>Best Friends</div><div>10</div><div>15</div><div>25</div>
-                  <div>Basic Focus</div><div>Yes</div><div>Yes</div><div>Yes</div>
-                  <div>Focus Profiles</div><div>Basic</div><div>Yes</div><div>Yes</div>
-                  <div>Saved Focus profiles</div><div>3</div><div>10</div><div>25</div>
-                  <div>Schedule Focus</div><div>-</div><div>Yes</div><div>Yes</div>
-                  <div>Auto Focus</div><div>-</div><div>-</div><div>Yes</div>
-                  <div>App-based Focus</div><div>-</div><div>-</div><div>Yes</div>
-                  <div>Basic Spatial Audio</div><div>Yes</div><div>Yes</div><div>Yes</div>
-                  <div>Spatial Audio speakers</div><div>Basic limit</div><div>More</div><div>Highest / All</div>
-                  <div>Saved Spatial layouts</div><div>-</div><div>5</div><div>15</div>
-                  <div>Spatial Audio HD</div><div>-</div><div>-</div><div>Yes</div>
-                  <div>Auto Arrange Spatial</div><div>-</div><div>-</div><div>Yes</div>
-                  <div>Upload/file size</div><div>25 MB</div><div>50 MB</div><div>1 GB</div>
-                  <div>Server folders</div><div>Basic</div><div>Advanced</div><div>Advanced + custom icons</div>
-                  <div>Advanced screen share quality</div><div>-</div><div>Yes</div><div>Yes</div>
-                  <div>Supporter recognition</div><div>-</div><div>Core supporter</div><div>Nova supporter</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.supports">Supports ALTARA</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.more">More</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.profile_badge">Profile badge</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.core_badge">Core badge</div><div data-altara-i18n="settings.altara_plus.compare.nova_badge">Nova badge</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.servers">Servers joined</div><div>100</div><div>150</div><div>200</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.best_friends">Best Friends</div><div>10</div><div>15</div><div>25</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.basic_focus">Basic Focus</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.focus_profiles">Focus Profiles</div><div data-altara-i18n="settings.altara_plus.compare.basic">Basic</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.saved_focus">Saved Focus profiles</div><div>3</div><div>10</div><div>25</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.schedule_focus">Schedule Focus</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.auto_focus">Auto Focus</div><div>-</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.app_focus">App-based Focus</div><div>-</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.basic_spatial">Basic Spatial Audio</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.spatial_speakers">Spatial Audio speakers</div><div data-altara-i18n="settings.altara_plus.compare.basic_limit">Basic limit</div><div data-altara-i18n="settings.altara_plus.compare.more">More</div><div data-altara-i18n="settings.altara_plus.compare.highest_all">Highest / All</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.saved_spatial">Saved Spatial layouts</div><div>-</div><div>5</div><div>15</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.spatial_hd">Spatial Audio HD</div><div>-</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.auto_spatial">Auto Arrange Spatial</div><div>-</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.upload_size">Upload/file size</div><div>25 MB</div><div>50 MB</div><div>1 GB</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.server_folders">Server folders</div><div data-altara-i18n="settings.altara_plus.compare.basic">Basic</div><div data-altara-i18n="settings.altara_plus.compare.advanced">Advanced</div><div data-altara-i18n="settings.altara_plus.compare.advanced_icons">Advanced + custom icons</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.advanced_share">Advanced screen share quality</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.recognition">Supporter recognition</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.core_supporter">Core supporter</div><div data-altara-i18n="settings.altara_plus.compare.nova_supporter">Nova supporter</div>
                 </div>
               </div>
 
@@ -1545,57 +1605,47 @@
               </div>
             </div>
 
-            <div id="settingsSecurityContent">
-              <div class="settingsCardSection">
-                <div id="settingsSectionSecurity" class="settingsSectionTitle">Security</div>
-                <div id="settingsSectionSecurityCode" class="settingsSectionTitle">Security code lock</div>
-                <div id="settingsSecurityCodeHint" class="settingsHint">Create a code to lock this Security tab. You will need it to open security options later.</div>
-                <div id="settingsSecurityCodeState" class="settingsHint">No security code configured.</div>
-                <div id="settingsSecurityQuickCreateWrap" class="settingsSecurityQuickCreateWrap" hidden>
-                  <button id="btnSecurityQuickCreate" class="btn ghost" type="button">Create security code</button>
+            <div id="settingsSecurityContent" class="settingsSecurityContent">
+              <section class="settingsCardSection settingsSecuritySection" aria-labelledby="settingsSectionSecurity">
+                <div class="settingsSecuritySectionHead">
+                  <span class="settingsSecuritySectionIcon" aria-hidden="true">◈</span>
+                  <div><div id="settingsSectionSecurity" class="settingsSectionTitle">Account security</div><p>Manage access to your account and this settings page.</p></div>
                 </div>
+                <div class="settingsSecurityRow">
+                  <div class="settingsSecurityRowCopy">
+                    <div class="settingsSecurityRowTitle"><span id="settingsSectionSecurityCode">Security code</span><span id="settingsSecurityCodeBadge" class="settingsSecurityBadge">Disabled</span></div>
+                    <div id="settingsSecurityCodeHint" class="settingsHint">Add a code to lock this Security page.</div>
+                    <div id="settingsSecurityCodeState" class="settingsHint settingsSecurityStateText">No security code configured.</div>
+                  </div>
+                  <div class="settingsSecurityRowActions">
+                    <div id="settingsSecurityQuickCreateWrap" class="settingsSecurityQuickCreateWrap" hidden><button id="btnSecurityQuickCreate" class="btn ghost" type="button" aria-controls="settingsSecurityManageWrap" aria-expanded="false">Create code</button></div>
+                    <button id="btnSecurityEditCode" class="btn ghost" type="button" aria-controls="settingsSecurityManageWrap" aria-expanded="false" hidden>Change</button>
+                  </div>
+                </div>
+                <div id="settingsSecurityManageWrap" class="settingsSecurityEditor" hidden>
+                  <div class="settingsSecurityEditorFields">
+                    <div class="settingsColumn"><label class="label" for="securityCode">Security code</label><input id="securityCode" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" /></div>
+                    <div class="settingsColumn"><label class="label" for="securityCodeConfirm">Confirm code</label><input id="securityCodeConfirm" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" /></div>
+                  </div>
+                  <div id="settingsSecurityManageHint" class="settingsHint">Only numbers, between 4 and 10 digits.</div>
+                  <div class="settingsSecurityEditorActions"><button id="btnSecuritySaveCode" class="btn primary" type="button">Save security code</button><button id="btnSecurityRemoveCode" class="btn ghost" type="button">Remove security code</button></div>
+                  <div id="settingsSecurityRemoveVerifyWrap" class="settingsSecurityRemoveVerifyWrap" hidden><label class="label" for="securityRemoveEmailCode">Email verification code</label><input id="securityRemoveEmailCode" class="input" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="12" placeholder="123456" /><button id="btnSecurityConfirmRemoveCode" class="btn ghost" type="button">Confirm remove security code</button><div id="settingsSecurityRemoveVerifyHint" class="settingsHint">We sent a verification code to your email. Enter it to remove the security code.</div></div>
+                </div>
+                <div id="settingsSecurityProtectedWrap" class="settingsSecurityProtectedWrap">
+                  <div class="settingsSecurityRow"><div class="settingsSecurityRowCopy"><div class="settingsSecurityRowTitle">Email</div><div id="settingsSecurityEmailSummary" class="settingsHint">Your account email</div></div><button id="btnSecurityEditEmail" class="btn ghost" type="button" aria-controls="settingsSecurityEmailEditor" aria-expanded="false">Change</button></div>
+                  <div id="settingsSecurityEmailEditor" class="settingsSecurityEditor" hidden><label class="label" for="currentEmail">Current email</label><input id="currentEmail" class="input" readonly /><label class="label" for="newEmail">New email</label><input id="newEmail" class="input" type="email" autocomplete="email" placeholder="email@..." /><button id="btnEmail" class="btn primary" type="button">Update email</button></div>
+                  <div class="settingsSecurityRow"><div class="settingsSecurityRowCopy"><div class="settingsSecurityRowTitle">Password</div><div class="settingsHint">Keep your account password private.</div></div><button id="btnSecurityEditPassword" class="btn ghost" type="button" aria-controls="settingsSecurityPasswordEditor" aria-expanded="false">Change</button></div>
+                  <div id="settingsSecurityPasswordEditor" class="settingsSecurityEditor" hidden><label class="label" for="currentPass">Current password</label><input id="currentPass" class="input" type="password" autocomplete="current-password" placeholder="••••••••" /><label class="label" for="newPass">New password</label><input id="newPass" class="input" type="password" autocomplete="new-password" placeholder="••••••••" /><button id="btnPass" class="btn primary" type="button">Update password</button></div>
+                </div>
+              </section>
 
-                <div id="settingsSecurityManageWrap" class="grid2 settingsGrid">
-                  <div class="settingsColumn">
-                    <label class="label" for="securityCode">Security code</label>
-                    <input id="securityCode" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" />
-                    <label class="label" for="securityCodeConfirm">Confirm code</label>
-                    <input id="securityCodeConfirm" class="input" type="password" inputmode="numeric" maxlength="10" placeholder="1234" />
-                    <button id="btnSecuritySaveCode" class="btn ghost w100" type="button">Save security code</button>
-                  </div>
-                  <div class="settingsColumn">
-                    <div id="settingsSecurityManageHint" class="settingsHint">Only numbers, between 4 and 10 digits.</div>
-                    <button id="btnSecurityRemoveCode" class="btn ghost w100" type="button">Remove security code</button>
-                    <div id="settingsSecurityRemoveVerifyWrap" class="settingsSecurityRemoveVerifyWrap" hidden>
-                      <label class="label" for="securityRemoveEmailCode">Email verification code</label>
-                      <input id="securityRemoveEmailCode" class="input" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="12" placeholder="123456" />
-                      <button id="btnSecurityConfirmRemoveCode" class="btn ghost w100" type="button">Confirm remove security code</button>
-                      <div id="settingsSecurityRemoveVerifyHint" class="settingsHint">We sent a verification code to your email. Enter it to remove the security code.</div>
-                    </div>
-                  </div>
-                </div>
+            <section id="settingsDirectMessagesCard" class="settingsCardSection settingsDirectMessagesCard settingsSecuritySection" aria-labelledby="settingsDirectMessagesTitle">
+              <div class="settingsDirectMessagesHeader settingsSecuritySectionHead">
+                <span class="settingsSecuritySectionIcon" aria-hidden="true">↗</span>
+                <div><div id="settingsDirectMessagesTitle" class="settingsSectionTitle">Direct messages &amp; safety</div><p>Choose who can reach you and how new chats arrive.</p></div>
+                <div id="settingsDmPrivacyStatus" class="settingsStatusPill" data-status="loading">Loading</div>
               </div>
-
-            <div id="settingsSecurityProtectedWrap" class="settingsCardSection">
-              <div class="grid2 settingsGrid">
-                <div class="settingsColumn">
-                  <label class="label" for="currentEmail">Current email</label>
-                  <input id="currentEmail" class="input" readonly />
-                    <label class="label" for="newEmail">New email</label>
-                    <input id="newEmail" class="input" placeholder="email@..." />
-                    <button id="btnEmail" class="btn ghost w100" type="button">Update email</button>
-                  </div>
-                  <div class="settingsColumn">
-                    <label class="label" for="currentPass">Current password</label>
-                    <input id="currentPass" class="input" type="password" placeholder="******" />
-                    <label class="label" for="newPass">New password</label>
-                    <input id="newPass" class="input" type="password" placeholder="******" />
-                  <button id="btnPass" class="btn ghost w100" type="button">Update password</button>
-                </div>
-              </div>
-            </div>
-
-            <div id="settingsAltaraSyncCard" class="settingsCardSection settingsPrivacyModeCard settingsPrivacyModeCard--sync">
+              <div id="settingsAltaraSyncCard" class="settingsPrivacyModeCard settingsPrivacyModeCard--sync settingsSecuritySyncNote">
               <div class="settingsPrivacyModeHeader">
                 <div class="settingsPrivacyModeMark" aria-hidden="true">S</div>
                 <div class="settingsPrivacyModeCopy">
@@ -1605,19 +1655,10 @@
                 <div id="settingsAltaraSyncStatus" class="settingsStatusPill" data-status="ready">Default</div>
               </div>
               <div id="settingsAltaraSyncNote" class="settingsPrivacyNote">Sync is built for convenience and recovery. It is not the same as Vault end-to-end encryption.</div>
-            </div>
-
-            <div id="settingsDirectMessagesCard" class="settingsCardSection settingsDirectMessagesCard">
-              <div class="settingsDirectMessagesHeader">
-                <div>
-                  <div class="settingsSectionTitle">Direct Messages</div>
-                  <div class="settingsHint">Control who can message you and where non-friend messages land.</div>
-                </div>
-                <div id="settingsDmPrivacyStatus" class="settingsStatusPill" data-status="loading">Loading</div>
               </div>
               <div class="settingsGrid settingsDirectMessagesGrid">
                 <div class="settingsColumn">
-                  <label class="label" for="settingsDmWhoCanMessageMe">Who can message me</label>
+                  <label class="label" for="settingsDmWhoCanMessageMe">Who can send you a message?</label>
                   <select id="settingsDmWhoCanMessageMe" class="input">
                     <option value="everyone">Everyone</option>
                     <option value="mutual_servers">People with mutual servers</option>
@@ -1628,7 +1669,7 @@
                   <small class="settingsHint">Friends can always message you unless blocked.</small>
                 </div>
                 <div class="settingsColumn">
-                  <label class="label" for="settingsDmNonFriendMessages">Non-friend messages</label>
+                  <label class="label" for="settingsDmNonFriendMessages">Messages from people you don't know</label>
                   <select id="settingsDmNonFriendMessages" class="input">
                     <option value="message_requests">Send to Message Requests</option>
                     <option value="direct_inbox">Allow directly</option>
@@ -1639,24 +1680,24 @@
               </div>
               <label class="appearanceSwitchRow settingsDmPrivacyToggle" for="settingsDmAllowServerMemberRequests">
                 <span class="appearanceSwitchText">
-                  <b>Allow message requests from server members</b>
-                  <small>People who share a server with you can send a request when your rules allow it.</small>
+                  <b>Requests from shared server members</b>
+                  <small>Let people in your servers request a chat when your rules allow it.</small>
                 </span>
                 <input id="settingsDmAllowServerMemberRequests" type="checkbox" />
               </label>
               <label class="appearanceSwitchRow settingsDmPrivacyToggle" for="settingsDmSpamFilterEnabled">
                 <span class="appearanceSwitchText">
                   <b>Filter suspected spam</b>
-                  <small>ALTARA will keep rate limits and spam hooks enabled for new message requests.</small>
+                  <small>Reduce unwanted message requests.</small>
                 </span>
                 <input id="settingsDmSpamFilterEnabled" type="checkbox" />
               </label>
-              <button id="btnSettingsDmPrivacySave" class="btn primary" type="button">Save Direct Message settings</button>
-            </div>
+              <button id="btnSettingsDmPrivacySave" class="btn primary" type="button">Save message settings</button>
+            </section>
 
-            <div id="settingsDmE2eeBackupCard" class="settingsCardSection settingsPrivacyModeCard settingsPrivacyModeCard--vault" hidden>
+            <section id="settingsDmE2eeBackupCard" class="settingsCardSection settingsPrivacyModeCard settingsPrivacyModeCard--vault settingsSecuritySection" aria-labelledby="settingsSectionDmE2eeBackup" hidden>
               <div class="settingsPrivacyModeHeader">
-                <div class="settingsPrivacyModeMark" aria-hidden="true">V</div>
+                <div class="settingsPrivacyModeMark" aria-hidden="true">✧</div>
                 <div class="settingsPrivacyModeCopy">
                   <div id="settingsSectionDmE2eeBackup" class="settingsSectionTitle">Mensagens encriptadas</div>
                   <div id="settingsDmE2eeBackupHint" class="settingsHint">Texto de conversas diretas encriptado de ponta a ponta. Anexos não são suportados neste modo; eventos de sistema e chamadas são separados.</div>
@@ -1665,9 +1706,10 @@
               </div>
               <div id="settingsDmE2eeBackupStatus" class="settingsPrivacyStatusText">Loading Vault Recovery status...</div>
               <div id="settingsDmE2eeBackupWarning" class="settingsPrivacyCallout">Clearing app/browser data, uninstalling ALTARA with data removal, or using a new device may require your Vault Recovery Password or Recovery Key.</div>
-              <div id="settingsDmE2eeBackupAutoHint" class="settingsPrivacyNote">Logging out does not remove Vault access on this device.</div>
+              <button id="btnSettingsVaultPrimary" class="btn primary settingsVaultPrimary" type="button" aria-controls="settingsVaultActionArea" aria-expanded="false" hidden>Recovery settings</button>
               <div id="settingsDmE2eeBackupMethodStatus" class="settingsHint sr-only">Recovery methods available: loading...</div>
               <div id="settingsDmE2eeBackupDeviceStatus" class="settingsHint sr-only">This device: loading...</div>
+              <details id="settingsVaultRecoveryDetails" class="settingsVaultRecoveryDetails"><summary>Recovery settings</summary>
               <div class="settingsRecoveryStatusGrid" aria-label="Vault Recovery status">
                 <div class="settingsRecoveryStatusRow">
                   <span>Password</span>
@@ -1682,6 +1724,7 @@
                   <strong id="settingsDmE2eeBackupDeviceStatusValue" data-status="loading">Checking</strong>
                 </div>
               </div>
+              <div id="settingsDmE2eeBackupAutoHint" class="settingsPrivacyNote">Logging out does not remove Vault access on this device.</div>
               <div id="settingsDmE2eeBackupRecoveryKeyMissing" class="settingsPrivacyCallout is-warning" hidden>A recuperação por palavra-passe é suficiente. Não precisa de gerar um código para usar mensagens encriptadas.</div>
               <details id="settingsDmE2eeBackupHowItWorks" class="settingsPrivacyDetails">
                 <summary id="settingsDmE2eeBackupHowItWorksSummary">How Vault recovery works</summary>
@@ -1695,7 +1738,9 @@
                   </ul>
                 </div>
               </details>
-              <div class="settingsGrid">
+              <div class="settingsVaultRecoveryAdvanced"><button id="btnSettingsDmE2eeBackupRefresh" class="btn ghost" type="button">Refresh Vault status</button><div id="settingsDmE2eeBackupLimitations" class="settingsHint">Guarde a palavra-passe e qualquer código de recuperação existente. Sem dispositivos autorizados nem métodos de recuperação, não será possível recuperar as mensagens encriptadas.</div></div>
+              </details>
+              <div id="settingsVaultActionArea" class="settingsVaultActionArea" hidden>
                 <div id="settingsDmE2eeBackupSaveWrap" class="settingsColumn" hidden>
                   <label id="settingsDmE2eeBackupPasswordLabel" class="label" for="settingsDmE2eeBackupPassword">Vault Recovery Password</label>
                   <input id="settingsDmE2eeBackupPassword" class="input" type="password" autocomplete="new-password" />
@@ -1717,12 +1762,8 @@
                 <div id="settingsDmE2eeBackupSetupWrap" class="settingsColumn" hidden>
                   <button id="btnSettingsDmE2eeSetupNewKey" class="btn ghost" type="button">Configurar mensagens encriptadas</button>
                 </div>
-                <div class="settingsColumn">
-                  <button id="btnSettingsDmE2eeBackupRefresh" class="btn ghost" type="button">Refresh Vault status</button>
-                  <div id="settingsDmE2eeBackupLimitations" class="settingsHint">Guarde a palavra-passe e qualquer código de recuperação existente. Sem dispositivos autorizados nem métodos de recuperação, não será possível recuperar as mensagens encriptadas.</div>
-                </div>
               </div>
-            </div>
+            </section>
           </div>
         </div>
 
@@ -1768,7 +1809,8 @@
                     <span id="settingsVoiceMicVolumeLabel" class="appearanceLabel">Microphone Volume</span>
                     <span id="settingsVoiceMicVolumeValue" class="appearanceValue">100%</span>
                   </div>
-                  <input id="settingsVoiceMicVolume" type="range" min="0" max="100" step="1" value="100" />
+                  <input id="settingsVoiceMicVolume" type="range" min="0" max="200" step="1" value="100" aria-labelledby="settingsVoiceMicVolumeLabel" aria-describedby="settingsVoiceMicBoostHint" />
+                  <div id="settingsVoiceMicBoostHint" class="settingsHint">100% is normal. Increase above 100% if your microphone is quiet.</div>
                 </div>
                 <div class="settingsColumn">
                   <div class="appearanceRangeRow">
@@ -1779,6 +1821,12 @@
                 </div>
               </div>
               <div id="settingsVoiceDeviceHint" class="settingsHint">Choose your call input and output devices.</div>
+              <div id="settingsVoiceQuickPresets" class="settingsVoiceQuickPresets" role="group" aria-label="Quick microphone setup">
+                <button id="settingsVoiceBalanced" class="btn ghost" type="button" data-voice-quick-preset="balanced">Balanced</button>
+                <button id="settingsVoiceQuietMic" class="btn ghost" type="button" data-voice-quick-preset="quiet">Quiet microphone</button>
+              </div>
+              <div id="settingsVoiceQuickPresetHint" class="settingsHint">Balanced restores recommended settings. Quiet microphone adds 150% volume and more sensitive voice detection.</div>
+              <div id="settingsVoicePresetStatus" class="settingsHint" role="status" hidden></div>
               <div class="settingsVoiceMicTestRow">
                 <button id="settingsVoiceMicTestBtn" class="btn ghost settingsVoiceMicTestBtn" type="button">Mic Test</button>
                 <div id="settingsVoiceMicTestMeter" class="settingsVoiceMicTestMeter" aria-hidden="true">
@@ -1786,6 +1834,7 @@
                 </div>
               </div>
               <div id="settingsVoiceMicTestHint" class="settingsHint">Click Mic Test and speak to check your voice.</div>
+              <div id="settingsVoiceMicLevelFeedback" class="settingsHint settingsVoiceMicLevelFeedback" role="status" hidden></div>
             </div>
             <div class="settingsCardSection">
               <div id="settingsSectionInputProfile" class="settingsSectionTitle">Input Sensitivity</div>
@@ -1816,6 +1865,13 @@
                 </select>
               </div>
 
+              <label class="appearanceSwitchRow" for="settingsCameraMirror">
+                <span>
+                  <b id="settingsCameraMirrorLabel">Mirror my camera</b>
+                  <small id="settingsCameraMirrorHint">Your camera is mirrored for you and everyone in the call.</small>
+                </span>
+                <input id="settingsCameraMirror" type="checkbox" checked />
+              </label>
               <label class="appearanceSwitchRow" for="settingsVoiceEchoCancellation">
                 <span class="appearanceSwitchText">
                   <b id="settingsVoiceEchoCancellationLabel">Echo Cancellation</b>
@@ -1952,6 +2008,22 @@
               <div id="settingsBlockedUsersHint" class="settingsHint">Users you blocked will appear here.</div>
               <div id="settingsBlockedUsersList" class="settingsBlockedList"></div>
             </div>
+          </div>
+
+          <div class="settingsPanel" data-settings-panel="language">
+              <div class="settingsCardSection appearanceSection appearanceSection--locale">
+                <div class="appearanceSectionHeader">
+                  <div>
+                    <div id="themeLanguageLabel" class="settingsSectionTitle">Language</div>
+                    <div id="themeLanguageHint" class="settingsHint">Choose the language used across ALTARA.</div>
+                  </div>
+                  <select id="themeLanguage" class="input settingsLocaleSelect" aria-labelledby="themeLanguageLabel" aria-describedby="themeLanguageHint">
+                    <option value="en">English</option>
+                    <option value="pt-PT">Português (Portugal)</option>
+                    <option value="pt-BR">Português (Brasil)</option>
+                  </select>
+                </div>
+              </div>
           </div>
 
           <div class="settingsPanel" data-settings-panel="appearance">
@@ -2375,7 +2447,7 @@
         <div id="gifSearchRow" class="gifSearchRow">
           <div class="gifSearchField">
             <span class="gifSearchIcon" aria-hidden="true"></span>
-            <input id="gifSearch" class="input" placeholder="Search Tenor" />
+            <input id="gifSearch" class="input" placeholder="Search GIFs" aria-label="Search GIFs" />
           </div>
         </div>
         <button id="btnGifTrending" class="sr-only" type="button">Trending</button>
@@ -2383,7 +2455,7 @@
         <div id="gifQuickTags" class="gifQuickTags"></div>
         <div id="gifGrid" class="gifGrid"></div>
         <div id="gifHint" class="hint" style="margin-top:10px; display:none;"></div>
-        <div class="gifFooterHint">Dica: Use Tab para navegar e Enter para enviar</div>
+        <div class="gifFooterHint">Powered by KLIPY · Use Tab to navigate and Enter to send</div>
       </div>
     </div>
   </div>
@@ -2492,11 +2564,6 @@
         </div>
 
         <div class="field">
-          <label for="profileWidgetTitleInput">Title</label>
-          <input id="profileWidgetTitleInput" class="input" maxlength="120" placeholder="My favorite games" />
-        </div>
-
-        <div class="field">
           <label for="profileWidgetVisibility">Visibility</label>
           <select id="profileWidgetVisibility" class="input">
             <option value="public">Public</option>
@@ -2508,7 +2575,6 @@
         <label class="appearanceSwitchRow profileWidgetEnabledRow" for="profileWidgetEnabled">
           <div class="appearanceSwitchText">
             <b>Enabled</b>
-            <small>Disable to hide this widget from public view.</small>
           </div>
           <input id="profileWidgetEnabled" type="checkbox" checked />
         </label>
@@ -2565,44 +2631,37 @@
             <input id="profileWidgetItemExternalUrl" class="input" placeholder="https://..." />
           </div>
 
-          <div class="grid2 settingsGrid">
-            <div class="settingsColumn">
-              <div class="field">
-                <label for="profileWidgetItemStatus">Status</label>
-                <select id="profileWidgetItemStatus" class="input">
-                  <option value="favorite">Favorite</option>
-                  <option value="current">Currently</option>
-                  <option value="wishlist">Want to</option>
-                  <option value="completed">Completed</option>
-                  <option value="dropped">Dropped</option>
-                </select>
-              </div>
+          <div class="profileWidgetItemFieldsGrid">
+            <div class="field">
+              <label for="profileWidgetItemStatus">Status</label>
+              <select id="profileWidgetItemStatus" class="input">
+                <option value="favorite">Favorite</option>
+                <option value="current">Currently</option>
+                <option value="wishlist">Want to</option>
+                <option value="completed">Completed</option>
+                <option value="dropped">Dropped</option>
+              </select>
             </div>
-            <div class="settingsColumn">
-              <div class="field">
-                <label for="profileWidgetItemRating">Rating</label>
-                <select id="profileWidgetItemRating" class="input">
-                  <option value="">No rating</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                </select>
-              </div>
+            <div class="field">
+              <label for="profileWidgetItemRating">Rating</label>
+              <select id="profileWidgetItemRating" class="input">
+                <option value="">No rating</option>
+                <option value="1">★ 1</option>
+                <option value="2">★★ 2</option>
+                <option value="3">★★★ 3</option>
+                <option value="4">★★★★ 4</option>
+                <option value="5">★★★★★ 5</option>
+              </select>
             </div>
           </div>
 
           <div class="field">
             <label for="profileWidgetItemNote">Note (optional)</label>
-            <textarea id="profileWidgetItemNote" class="input" rows="4" maxlength="280" placeholder="Quick note..."></textarea>
+            <textarea id="profileWidgetItemNote" class="input" rows="3" maxlength="280" placeholder="Quick note..."></textarea>
           </div>
 
-          <label class="appearanceSwitchRow profileWidgetEnabledRow" for="profileWidgetItemFeatured">
-            <div class="appearanceSwitchText">
-              <b>Featured</b>
-              <small>Show this as the main highlighted item.</small>
-            </div>
+          <label class="profileWidgetFeatureRow" for="profileWidgetItemFeatured">
+            <span>Feature on profile</span>
             <input id="profileWidgetItemFeatured" type="checkbox" />
           </label>
         </div>
@@ -2704,7 +2763,7 @@
               <span class="serverChannelTypeOption__radio" aria-hidden="true"></span>
               <span class="serverChannelTypeOption__content">
                 <span class="serverChannelTypeOption__top">
-                  <span class="serverChannelTypeOption__icon" aria-hidden="true">&#127911;</span>
+                  <span class="serverChannelTypeOption__icon" aria-hidden="true"><svg class="altaraIcon callIcon" data-call-icon="headphones" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 0 1 16 0"/><rect x="3" y="12" width="4" height="8" rx="2"/><rect x="17" y="12" width="4" height="8" rx="2"/></svg></span>
                   <span class="serverChannelTypeOption__title">Voice</span>
                 </span>
                 <span class="serverChannelTypeOption__desc">Hang out together with voice, video, and screen share.</span>
@@ -2876,41 +2935,41 @@
             <span class="groupDmAvatarFallback">S</span>
           </div>
           <div class="serverSettingsSidebarMeta">
-            <div id="serverSettingsSidebarName" class="serverSettingsSidebarName">Server</div>
+            <div id="serverSettingsSidebarName" class="serverSettingsSidebarName" data-altara-i18n="surface.server">Server</div>
             <div class="serverSettingsSidebarTag">Server management</div>
           </div>
         </div>
 
         <div class="serverSettingsSidebarSection">
           <div class="serverSettingsGroupLabel">Overview</div>
-          <nav class="serverSettingsNav" aria-label="Server settings navigation">
+          <nav class="serverSettingsNav" aria-label="Server settings navigation" data-altara-i18n-aria-label="surface.server_settings_navigation">
             <button class="serverSettingsNavItem is-active" type="button" data-server-settings-nav="profile" aria-current="page">
               <span>Server Profile</span>
             </button>
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="roles">
-              <span>Roles</span>
+              <span data-altara-i18n="surface.roles">Roles</span>
             </button>
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="members">
-              <span>Members</span>
+              <span data-altara-i18n="surface.members">Members</span>
             </button>
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="channels">
-              <span>Channels</span>
+              <span data-altara-i18n="surface.channels">Channels</span>
             </button>
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="access">
-              <span>Permissions / Access</span>
+              <span data-altara-i18n="surface.permissions_access">Permissions / Access</span>
             </button>
           </nav>
         </div>
 
         <div class="serverSettingsSidebarSection">
           <div class="serverSettingsGroupLabel">Community</div>
-          <nav class="serverSettingsNav" aria-label="Server community settings navigation">
+          <nav class="serverSettingsNav" aria-label="Server community settings navigation" data-altara-i18n-aria-label="surface.server_community_settings_navigation">
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="invites">
               <span>Invites</span>
             </button>
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="moderation">
-              <span>Moderation / Safety</span>
-              <small>soon</small>
+              <span data-altara-i18n="surface.moderation_safety">Moderation / Safety</span>
+              <small data-altara-i18n="surface.soon_2">soon</small>
             </button>
             <button class="serverSettingsNavItem" type="button" data-server-settings-nav="bots">
               <span>Bots &amp; Integrations</span>
@@ -2931,7 +2990,7 @@
             <div id="serverSettingsTitle" class="serverSettingsTitle">Server Settings</div>
             <div id="serverSettingsSub" class="serverSettingsSubtitle">Change server name, icon and roles.</div>
           </div>
-          <button id="btnServerSettingsClose" class="btn ghost serverSettingsCloseBtn" type="button" aria-label="Close server settings">&times;</button>
+          <button id="btnServerSettingsClose" class="btn ghost serverSettingsCloseBtn" type="button" aria-label="Close server settings" data-altara-i18n-aria-label="surface.close_server_settings">&times;</button>
         </div>
 
         <div class="serverCreateBody serverSettingsBody">
@@ -2944,82 +3003,87 @@
             </div>
 
             <div class="serverSettingsProfileGrid">
-              <div class="serverSettingsSectionCard">
+              <section class="serverSettingsIdentityPanel">
+                <div class="serverSettingsSectionHead">
+                  <h3>Identity</h3>
+                </div>
                 <div class="serverCreateIconRow serverSettingsIconRow">
-                  <button id="serverSettingsIconPreview" class="serverCreateIconPreview" type="button" aria-label="Choose server icon">
+                  <button id="serverSettingsIconPreview" class="serverCreateIconPreview" type="button" aria-label="Choose server icon" data-altara-i18n-aria-label="surface.choose_server_icon">
                     <span class="groupDmAvatarFallback">S</span>
                     <span class="serverCreateIconPlus" aria-hidden="true">+</span>
                   </button>
                   <div class="serverCreateIconActions">
-                    <div class="serverSettingsFieldLabel">Server Icon</div>
-                    <div class="serverSettingsFieldHint">Use a square image for the cleanest crop.</div>
+                    <div class="serverSettingsFieldLabel" data-altara-i18n="surface.server_icon">Server Icon</div>
                     <div class="serverSettingsButtonRow">
-                      <button id="btnServerSettingsIconPick" class="btn ghost" type="button">Upload</button>
-                      <button id="btnServerSettingsIconClear" class="btn ghost" type="button">Remove</button>
+                      <button id="btnServerSettingsIconPick" class="btn ghost" type="button">Change</button>
+                      <button id="btnServerSettingsIconClear" class="btn ghost" type="button" data-altara-i18n="surface.remove">Remove</button>
                     </div>
                   </div>
                   <input id="serverSettingsIconFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
                 </div>
 
+                <div class="field serverSettingsNameField">
+                  <label for="serverSettingsName" data-altara-i18n="surface.server_name_2">Server Name</label>
+                  <input id="serverSettingsName" class="input" placeholder="Server name" data-altara-i18n-placeholder="surface.server_name" maxlength="60" />
+                </div>
+
+                <div class="field serverSettingsWelcomeField">
+                  <label for="serverSettingsWelcomeChannel" data-altara-i18n="surface.welcome_channel_2">Welcome Channel</label>
+                  <select id="serverSettingsWelcomeChannel" class="input">
+                    <option value="" data-altara-i18n="surface.loading_channels">Loading channels...</option>
+                  </select>
+                  <div id="serverSettingsWelcomeHint" class="hint" data-altara-i18n="surface.member_join_leave_messages_are_posted_in_this_channel">Member join/leave messages are posted in this channel.</div>
+                </div>
+              </section>
+
+              <section class="serverSettingsMediaSection">
+                <div class="serverSettingsSectionHead">
+                  <h3>Live preview</h3>
+                  <p>See changes before you save.</p>
+                </div>
                 <div class="serverSettingsBannerBlock">
-                  <div class="serverSettingsFieldLabel">Server Banner</div>
-                  <div id="serverSettingsBannerPreview" class="serverSettingsBannerPreview" aria-label="Server banner preview">
-                    <span>Server Banner</span>
+                  <div class="serverSettingsBannerActions">
+                      <div class="serverSettingsFieldLabel" data-altara-i18n="surface.server_banner">Server Banner</div>
+                      <div class="serverSettingsButtonRow">
+                        <button id="btnServerSettingsBannerPick" class="btn ghost" type="button">Change</button>
+                        <button id="btnServerSettingsBannerClear" class="btn ghost" type="button" data-altara-i18n="surface.remove_banner">Remove Banner</button>
+                      </div>
                   </div>
-                  <div class="serverSettingsFieldHint">Recommended: 16:9, 960x540 or larger.</div>
-                  <div class="serverSettingsButtonRow">
-                    <button id="btnServerSettingsBannerPick" class="btn ghost" type="button">Upload Banner</button>
-                    <button id="btnServerSettingsBannerClear" class="btn ghost" type="button">Remove Banner</button>
-                  </div>
+                  <aside class="serverSettingsPreviewCard" aria-label="Server preview" data-altara-i18n-aria-label="surface.server_preview">
+                    <div id="serverSettingsBannerPreview" class="serverSettingsBannerPreview serverSettingsPreviewBanner" aria-label="Server banner preview" data-altara-i18n-aria-label="surface.server_banner_preview">
+                      <span data-altara-i18n="surface.server_banner">Server Banner</span>
+                    </div>
+                    <div class="serverSettingsPreviewBody">
+                      <div id="serverSettingsPreviewIcon" class="serverSettingsPreviewIcon"><span class="groupDmAvatarFallback">S</span></div>
+                      <div id="serverSettingsPreviewName" class="serverSettingsPreviewName" data-altara-i18n="surface.server">Server</div>
+                      <div id="serverSettingsPreviewChannel" class="serverSettingsPreviewChannel" data-altara-i18n="surface.welcome_channel">Welcome channel</div>
+                    </div>
+                  </aside>
                   <input id="serverSettingsBannerFile" class="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
                 </div>
-
-                <div class="field">
-                  <label for="serverSettingsName">Server Name</label>
-                  <input id="serverSettingsName" class="input" placeholder="Server name" maxlength="60" />
-                </div>
-
-                <div class="field">
-                  <label for="serverSettingsWelcomeChannel">Welcome Channel</label>
-                  <select id="serverSettingsWelcomeChannel" class="input">
-                    <option value="">Loading channels...</option>
-                  </select>
-                  <div id="serverSettingsWelcomeHint" class="hint">Member join/leave messages are posted in this channel.</div>
-                </div>
-              </div>
-
-              <aside class="serverSettingsPreviewCard" aria-label="Server preview">
-                <div class="serverSettingsPreviewBanner"></div>
-                <div class="serverSettingsPreviewBody">
-                  <div id="serverSettingsPreviewIcon" class="serverSettingsPreviewIcon">
-                    <span class="groupDmAvatarFallback">S</span>
-                  </div>
-                  <div id="serverSettingsPreviewName" class="serverSettingsPreviewName">Server</div>
-                  <div class="serverSettingsPreviewMeta">ALTARA server preview</div>
-                  <div id="serverSettingsPreviewChannel" class="serverSettingsPreviewChannel">Welcome channel</div>
-                </div>
-              </aside>
+              </section>
             </div>
           </div>
 
           <div class="serverSettingsPanel" data-server-settings-panel="roles">
             <div class="serverSettingsPanelIntro">
               <div>
-                <h2>Roles</h2>
+                <h2 data-altara-i18n="surface.roles">Roles</h2>
                 <p>Create roles, tune permissions, and assign members without leaving server settings.</p>
               </div>
             </div>
 
-            <section class="serverSettingsRolesSection" aria-label="Server Roles">
-              <div class="serverSettingsRolesHead">
+            <section class="serverSettingsRolesSection" aria-label="Server Roles" data-altara-i18n-aria-label="surface.server_roles">
+              <details class="serverSettingsRoleCreateDisclosure">
+              <summary class="serverSettingsRolesHead">
                 <div>
-                  <div class="label">Create Role</div>
-                  <div class="hint">Choose a name, color, and permission preset.</div>
+                  <div class="label" data-altara-i18n="surface.create_role_2">Create Role</div>
                 </div>
-              </div>
+                <span aria-hidden="true">+</span>
+              </summary>
 
               <div class="serverSettingsRoleCreateRow">
-                <input id="serverSettingsRoleName" class="input" placeholder="New role name" maxlength="40" />
+                <input id="serverSettingsRoleName" class="input" placeholder="New role name" aria-label="New role name" maxlength="40" />
                 <input
                   id="serverSettingsRoleColor"
                   class="serverSettingsRoleColorInput"
@@ -3031,17 +3095,18 @@
                   <option value="custom">Custom Permissions</option>
                   <option value="safe">Safe Defaults</option>
                 </select>
-                <button id="btnServerSettingsRoleCreate" class="btn ghost" type="button">Create Role</button>
+                <button id="btnServerSettingsRoleCreate" class="btn ghost" type="button" data-altara-i18n="surface.create_role_2">Create Role</button>
               </div>
+              </details>
 
-              <div id="serverSettingsRolesMeta" class="hint serverSettingsRolesMeta">Loading roles...</div>
+              <div id="serverSettingsRolesMeta" class="hint serverSettingsRolesMeta" data-altara-i18n="surface.loading_roles">Loading roles...</div>
 
               <div class="serverSettingsRolesGrid">
                 <div id="serverSettingsRolesList" class="serverSettingsRolesList">
-                  <div class="hint">Loading roles...</div>
+                  <div class="hint" data-altara-i18n="surface.loading_roles">Loading roles...</div>
                 </div>
                 <div id="serverSettingsRoleMembers" class="serverSettingsRoleMembers">
-                  <div class="hint">Select a role to manage members.</div>
+                  <div class="hint" data-altara-i18n="surface.select_a_role_to_manage_members">Select a role to manage members.</div>
                 </div>
               </div>
             </section>
@@ -3050,7 +3115,7 @@
           <div class="serverSettingsPanel" data-server-settings-panel="channels">
             <div class="serverSettingsPanelIntro">
               <div>
-                <h2>Channels</h2>
+                <h2 data-altara-i18n="surface.channels">Channels</h2>
                 <p>Create, organize, and configure the channels people use in this server.</p>
               </div>
               <div class="serverSettingsChannelsHeaderActions">
@@ -3059,27 +3124,27 @@
               </div>
             </div>
             <div id="serverSettingsChannelsRoot" class="serverSettingsChannelsRoot">
-              <div class="serverSettingsPlaceholder">Loading channels...</div>
+              <div class="serverSettingsPlaceholder" data-altara-i18n="surface.loading_channels">Loading channels...</div>
             </div>
           </div>
 
           <div class="serverSettingsPanel" data-server-settings-panel="members">
             <div class="serverSettingsPanelIntro">
               <div>
-                <h2>Members</h2>
+                <h2 data-altara-i18n="surface.members">Members</h2>
                 <p>Search server members, review their roles, and apply membership actions with role hierarchy checks.</p>
               </div>
             </div>
             <div id="serverSettingsMembersRoot" class="serverSettingsBotsRoot">
-              <div class="serverSettingsPlaceholder">Loading members...</div>
+              <div class="serverSettingsPlaceholder" data-altara-i18n="surface.loading_members">Loading members...</div>
             </div>
           </div>
 
           <div class="serverSettingsPanel" data-server-settings-panel="access">
             <div id="serverSettingsAccessRoot">
               <div class="serverSettingsPlaceholder">
-                <h2>Permissions / Access</h2>
-                <p>Open a server to view its access diagnostics.</p>
+                <h2 data-altara-i18n="surface.permissions_access">Permissions / Access</h2>
+                <p data-altara-i18n="surface.open_a_server_to_view_its_access_diagnostics">Open a server to view its access diagnostics.</p>
               </div>
             </div>
           </div>
@@ -3092,13 +3157,13 @@
               </div>
             </div>
             <div id="serverSettingsInvitesRoot" class="serverSettingsInvitesRoot">
-              <div class="serverSettingsPlaceholder">Loading invites...</div>
+              <div class="serverSettingsPlaceholder" data-altara-i18n="surface.loading_invites">Loading invites...</div>
             </div>
           </div>
 
           <div class="serverSettingsPanel" data-server-settings-panel="moderation">
             <div class="serverSettingsPlaceholder">
-              <h2>Moderation / Safety</h2>
+              <h2 data-altara-i18n="surface.moderation_safety">Moderation / Safety</h2>
               <p>Moderation tools are not changed by this redesign. Existing server permissions continue to apply.</p>
             </div>
           </div>
@@ -3111,7 +3176,7 @@
               </div>
             </div>
             <div id="serverSettingsBotsRoot" class="serverSettingsBotsRoot">
-              <div class="serverSettingsPlaceholder">Loading bots...</div>
+              <div class="serverSettingsPlaceholder" data-altara-i18n="surface.loading_bots">Loading bots...</div>
             </div>
           </div>
 
@@ -3145,8 +3210,8 @@
         </div>
 
         <div class="serverCreateFooter serverSettingsFooter">
-          <button id="btnServerSettingsCancel" class="btn ghost" type="button">Back</button>
-          <button id="btnServerSettingsSave" class="btn primary" type="button">Save</button>
+          <button id="btnServerSettingsCancel" class="btn ghost" type="button" data-altara-i18n="surface.back">Back</button>
+          <button id="btnServerSettingsSave" class="btn primary" type="button" data-altara-i18n="surface.save">Save</button>
         </div>
       </section>
     </div>
@@ -3319,7 +3384,8 @@
         </div>
         <div class="callStageTopActions">
           <button id="btnServerVoiceReconnect" class="btn ghost" type="button" hidden style="display:none;">Reconnect audio</button>
-          <button id="btnPopoutStage" class="btn ghost" type="button" hidden style="display:none;">Pop Out</button>
+          <button id="btnGroupDmCallPopout" class="btn ghost" type="button" hidden style="display:none;" aria-label="Pop Out Call"><svg class="altaraIcon callIcon" data-call-icon="popout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3h7v7m0-7-9 9M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg><span data-call-control-label>Pop Out Call</span></button>
+          <button id="btnPopoutStage" class="btn ghost" type="button" hidden style="display:none;"><svg class="altaraIcon callIcon" data-call-icon="popout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3h7v7m0-7-9 9M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg><span data-call-control-label>Pop Out</span></button>
           <button id="btnExitFullscreen" class="btn ghost" type="button" hidden style="display:none;">Sair Fullscreen</button>
         </div>
       </div>
@@ -3329,6 +3395,11 @@
       </div>
 
       <div class="callStageViewport">
+        <div id="groupDmCallerWaiting" class="groupDmCallerWaiting" hidden>
+          <div class="groupDmCallerWaiting__avatars"></div>
+          <strong class="groupDmCallerWaiting__title">A chamar o grupo…</strong>
+          <div class="groupDmCallerWaiting__names"></div>
+        </div>
         <video id="callRemoteVideo" class="callVideo" autoplay playsinline></video>
         <video id="callLocalPreview" class="callLocalPreview" autoplay muted playsinline></video>
         <div id="remoteWatchGate" class="callWatchGate" hidden>
@@ -3383,17 +3454,12 @@
         </div>
         <button id="btnFullscreenStage" class="btn ghost callCtrlBtn callStageViewportFsBtn" type="button" title="Fullscreen" aria-label="Fullscreen">
           <span class="callCtrlBtn__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M8 3H3v5"></path>
-              <path d="M16 3h5v5"></path>
-              <path d="M8 21H3v-5"></path>
-              <path d="M21 16v5h-5"></path>
-            </svg>
+            <svg class="altaraIcon callIcon" data-call-icon="fullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="callIcon__expand"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"/></g><g class="callIcon__collapse"><path d="M3 8h5V3m8 0v5h5M3 16h5v5m8 0v-5h5"/></g></svg>
           </span>
           <span class="sr-only">Fullscreen</span>
         </button>
         <button id="btnExitCallFocus" class="btn ghost callStageFocusExitBtn" type="button" title="Back to call layout" aria-label="Back to call layout" hidden>
-          <span aria-hidden="true">&#8592;</span>
+          <span aria-hidden="true"><svg class="altaraIcon callIcon" data-call-icon="arrowLeft" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m10 5-7 7 7 7M3 12h18"/></svg></span>
           <span>Back</span>
         </button>
       </div>
@@ -3429,31 +3495,20 @@
       <div class="callStageControls">
         <button id="btnCallPreviewJoin" class="btn callStagePreviewJoin" type="button" title="Entrar na chamada" aria-label="Entrar na chamada" hidden>
           <span class="callStagePreviewJoin__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M6 4h4l2 5-3 2a14 14 0 0 0 4 4l2-3 5 2v4c0 1.1-.9 2-2 2C10.3 20 4 13.7 4 6c0-1.1.9-2 2-2z"></path>
-            </svg>
+            <svg class="altaraIcon callIcon" data-call-icon="phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 4h4l2 5-3 2a14 14 0 0 0 4 4l2-3 5 2v4c0 1.1-.9 2-2 2C10.3 20 4 13.7 4 6c0-1.1.9-2 2-2z"/></svg>
           </span>
           <span>Entrar</span>
         </button>
         <div class="callStageControls__group" role="group" aria-label="Audio">
           <button id="btnMicToggle" class="btn ghost callCtrlBtn" type="button" title="Mute" aria-label="Mute">
             <span class="callCtrlBtn__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"></path>
-                <path d="M5 10a7 7 0 0 0 14 0"></path>
-                <path d="M12 17v3"></path>
-                <path d="M9 20h6"></path>
-              </svg>
+              <svg class="altaraIcon callIcon" data-call-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"/><path d="M5 10a7 7 0 0 0 14 0M12 17v3M9 20h6"/></svg>
             </span>
             <span class="sr-only">Mute</span>
           </button>
           <button id="btnDeafenToggle" class="btn ghost callCtrlBtn" type="button" title="Fones" aria-label="Fones">
             <span class="callCtrlBtn__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="M4 12a8 8 0 0 1 16 0"></path>
-                <rect x="3" y="12" width="4" height="8" rx="2"></rect>
-                <rect x="17" y="12" width="4" height="8" rx="2"></rect>
-              </svg>
+              <svg class="altaraIcon callIcon" data-call-icon="headphones" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 0 1 16 0"/><rect x="3" y="12" width="4" height="8" rx="2"/><rect x="17" y="12" width="4" height="8" rx="2"/></svg>
             </span>
             <span class="sr-only">Fones</span>
           </button>
@@ -3463,21 +3518,13 @@
           <div id="callShareSplitStage" class="callShareSplit" data-call-share-split="stage">
             <button id="btnShareScreenStage" class="btn ghost callCtrlBtn callShareSplit__main" type="button" title="Share" aria-label="Share">
               <span class="callCtrlBtn__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <rect x="3" y="4" width="18" height="12" rx="2"></rect>
-                  <path d="M8 20h8"></path>
-                  <path d="M12 16v4"></path>
-                  <path d="M12 7v6"></path>
-                  <path d="M9.5 9.5 12 7l2.5 2.5"></path>
-                </svg>
+                <svg class="altaraIcon callIcon" data-call-icon="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4M12 7v6m-2.5-3.5L12 7l2.5 2.5"/></svg>
               </span>
               <span class="sr-only">Share</span>
             </button>
             <button id="btnShareScreenStageMenu" class="btn ghost callCtrlBtn callShareSplit__arrow" type="button" title="Share options" aria-label="Share options" hidden>
               <span class="callCtrlBtn__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="m7 10 5 5 5-5"></path>
-                </svg>
+                <svg class="altaraIcon callIcon" data-call-icon="chevronDown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
               </span>
               <span class="sr-only">Share options</span>
             </button>
@@ -3485,18 +3532,13 @@
           <div id="callCameraSplitStage" class="callShareSplit callCameraSplit" data-call-camera-split="stage">
             <button id="btnCameraStage" class="btn ghost callCtrlBtn callShareSplit__main" type="button" title="Camera" aria-label="Camera">
               <span class="callCtrlBtn__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <rect x="3" y="7" width="12" height="10" rx="2"></rect>
-                  <path d="m15 11 6-3v8l-6-3z"></path>
-                </svg>
+                <svg class="altaraIcon callIcon" data-call-icon="camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3z"/></svg>
               </span>
               <span class="sr-only">Camera</span>
             </button>
             <button id="btnCameraStageMenu" class="btn ghost callCtrlBtn callShareSplit__arrow" type="button" title="Camera options" aria-label="Camera options" hidden>
               <span class="callCtrlBtn__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="m7 10 5 5 5-5"></path>
-                </svg>
+                <svg class="altaraIcon callIcon" data-call-icon="chevronDown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
               </span>
               <span class="sr-only">Camera options</span>
             </button>
@@ -3505,9 +3547,7 @@
 
         <button id="btnCallEndStage" class="btn danger callCtrlBtn callCtrlBtn--danger" type="button" title="Desligar chamada" aria-label="Desligar chamada">
           <span class="callCtrlBtn__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M4 14c4.5-4 11.5-4 16 0"></path>
-            </svg>
+            <svg class="altaraIcon callIcon" data-call-icon="hangup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 13c5-4 13-4 18 0v4h-5v-4a14 14 0 0 0-8 0v4H3z"/></svg>
           </span>
           <span class="sr-only">Desligar chamada</span>
         </button>
@@ -3540,21 +3580,13 @@
       <div id="callShareSplitSmall" class="callShareSplit callShareSplit--small" data-call-share-split="small">
         <button id="btnShareScreenSmall" class="btn ghost callMiniBtn callShareSplit__main" type="button" title="Partilhar ecra" aria-label="Partilhar ecra">
           <span class="callMiniBtn__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <rect x="3" y="4" width="18" height="12" rx="2"></rect>
-              <path d="M8 20h8"></path>
-              <path d="M12 16v4"></path>
-              <path d="M12 7v6"></path>
-              <path d="M9.5 9.5 12 7l2.5 2.5"></path>
-            </svg>
+            <svg class="altaraIcon callIcon" data-call-icon="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4M12 7v6m-2.5-3.5L12 7l2.5 2.5"/></svg>
           </span>
           <span class="sr-only">Partilhar ecra</span>
         </button>
         <button id="btnShareScreenSmallMenu" class="btn ghost callMiniBtn callShareSplit__arrow" type="button" title="Op��es da partilha" aria-label="Op��es da partilha" hidden>
           <span class="callMiniBtn__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="m7 10 5 5 5-5"></path>
-            </svg>
+            <svg class="altaraIcon callIcon" data-call-icon="chevronDown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
           </span>
           <span class="sr-only">Op��es da partilha</span>
         </button>
@@ -3562,71 +3594,45 @@
       <div id="callCameraSplitSmall" class="callShareSplit callShareSplit--small callCameraSplit" data-call-camera-split="small">
         <button id="btnCameraSmall" class="btn ghost callMiniBtn callShareSplit__main" type="button" title="Camera" aria-label="Camera">
           <span class="callMiniBtn__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <rect x="3" y="7" width="12" height="10" rx="2"></rect>
-              <path d="m15 11 6-3v8l-6-3z"></path>
-            </svg>
+            <svg class="altaraIcon callIcon" data-call-icon="camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3z"/></svg>
           </span>
           <span class="sr-only">Camera</span>
         </button>
         <button id="btnCameraSmallMenu" class="btn ghost callMiniBtn callShareSplit__arrow" type="button" title="Camera options" aria-label="Camera options" hidden>
           <span class="callMiniBtn__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="m7 10 5 5 5-5"></path>
-            </svg>
+            <svg class="altaraIcon callIcon" data-call-icon="chevronDown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
           </span>
           <span class="sr-only">Camera options</span>
         </button>
       </div>
       <button id="btnOpenCallSmall" class="btn ghost callMiniBtn callMiniBtn--view" type="button" title="Abrir chamada" aria-label="Abrir chamada">
         <span class="callMiniBtn__icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
-            <path d="M8 11h8"></path>
-            <path d="M12 7v8"></path>
-          </svg>
+          <svg class="altaraIcon callIcon" data-call-icon="openCall" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 11h8M12 7v8"/></svg>
         </span>
         <span class="callMiniBtn__resumeText" hidden>Entrar</span>
         <span class="sr-only">Abrir chamada</span>
       </button>
       <button id="btnMicToggleSmall" class="btn ghost callMiniBtn" type="button" title="Silenciar microfone" aria-label="Silenciar microfone">
         <span class="callMiniBtn__icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"></path>
-            <path d="M5 10a7 7 0 0 0 14 0"></path>
-            <path d="M12 17v3"></path>
-            <path d="M9 20h6"></path>
-          </svg>
+          <svg class="altaraIcon callIcon" data-call-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4a3 3 0 0 1 3 3v4a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3z"/><path d="M5 10a7 7 0 0 0 14 0M12 17v3M9 20h6"/></svg>
         </span>
         <span class="sr-only">Silenciar microfone</span>
       </button>
       <button id="btnDeafenToggleSmall" class="btn ghost callMiniBtn" type="button" title="Silenciar audio recebido" aria-label="Silenciar audio recebido">
         <span class="callMiniBtn__icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path d="M4 12a8 8 0 0 1 16 0"></path>
-            <rect x="3" y="12" width="4" height="8" rx="2"></rect>
-            <rect x="17" y="12" width="4" height="8" rx="2"></rect>
-          </svg>
+          <svg class="altaraIcon callIcon" data-call-icon="headphones" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 0 1 16 0"/><rect x="3" y="12" width="4" height="8" rx="2"/><rect x="17" y="12" width="4" height="8" rx="2"/></svg>
         </span>
         <span class="sr-only">Silenciar audio recebido</span>
       </button>
       <button id="btnSpatialAudioMenuSmall" class="btn ghost callMiniBtn spatialAudioMiniTrigger" type="button" title="Spatial Audio" aria-label="Spatial Audio" aria-expanded="false" hidden>
         <span class="callMiniBtn__icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path d="M4 9v6"></path>
-            <path d="M8 6v12"></path>
-            <path d="M12 4v16"></path>
-            <path d="M16 7v10"></path>
-            <path d="M20 10v4"></path>
-          </svg>
+          <svg class="altaraIcon callIcon" data-call-icon="spatial" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 9v6M8 6v12M12 4v16M16 7v10M20 10v4"/></svg>
         </span>
         <span class="sr-only">Spatial Audio</span>
       </button>
       <button id="btnCallEndSmall" class="btn danger callMiniBtn callMiniBtn--danger" type="button" title="Desligar chamada" aria-label="Desligar chamada">
         <span class="callMiniBtn__icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path d="M4 14c4.5-4 11.5-4 16 0"></path>
-          </svg>
+          <svg class="altaraIcon callIcon" data-call-icon="hangup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 13c5-4 13-4 18 0v4h-5v-4a14 14 0 0 0-8 0v4H3z"/></svg>
         </span>
         <span class="sr-only">Desligar chamada</span>
       </button>
@@ -3636,18 +3642,22 @@
   <audio id="callRemoteAudio" autoplay playsinline style="display:none;"></audio>
 
   <div id="callAudioMenu" class="callAudioMenu" aria-hidden="true">
+    <div id="callAudioParticipantName" class="msgMenu__meta participantMediaMenu__identity" hidden></div>
     <div class="callAudioMenu__title">Audio</div>
     <section id="callVoiceGroup" class="callAudioMenu__section">
       <label class="callAudioMenu__check">
-        <span>Mute</span>
-        <input id="callVoiceMuteToggle" type="checkbox" />
+        <span id="callVoiceMuteLabel">Mute</span>
+        <input id="callVoiceMuteToggle" type="checkbox" role="switch" aria-label="Mute user locally" />
       </label>
       <label class="callAudioMenu__row" for="callVoiceVolumeSlider">
         <span id="callVoiceVolumeLabel" class="callAudioMenu__label">Voz da pessoa</span>
         <span id="callVoiceVolumeValue" class="callAudioMenu__value">100%</span>
       </label>
       <input id="callVoiceVolumeSlider" class="callAudioMenu__slider" type="range" min="0" max="100" step="1" value="100" />
-      <button id="callVoiceCameraToggleBtn" class="callAudioMenu__action" type="button">Hide Camera for Me</button>
+      <div id="callVoiceVideoHeading" class="callAudioMenu__title" hidden>Video</div>
+      <button id="callVoiceCameraToggleBtn" class="callAudioMenu__action msgMenu__item" type="button"><svg class="altaraIcon callIcon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3z"/></svg><span data-camera-label>Hide Camera for Me</span></button>
+      <div id="callVoiceViewHeading" class="callAudioMenu__title" hidden>View</div>
+      <button id="callVoiceFocusBtn" class="callAudioMenu__action msgMenu__item" type="button" hidden><svg class="altaraIcon callIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"/></svg><span>Focus participant</span></button>
     </section>
 
     <section id="callShareGroup" class="callAudioMenu__section">
@@ -3678,41 +3688,41 @@
   <div id="callShareMenu" class="callShareMenu" aria-hidden="true" role="menu">
     <div id="callShareMenuInfo" class="callShareMenu__info" aria-hidden="true" hidden></div>
     <button class="callShareMenu__item" type="button" data-call-share-act="stop" id="callShareMenuPrimaryBtn">
-      <span class="callShareMenu__itemIcon">&#x25B6;</span>
+      <span class="callShareMenu__itemIcon"><svg class="altaraIcon callIcon" data-call-icon="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4M12 7v6m-2.5-3.5L12 7l2.5 2.5"/></svg></span>
       <span id="callShareMenuStopLabel">Start Sharing</span>
     </button>
     <button class="callShareMenu__item" type="button" data-call-share-act="change" id="callShareMenuSourceBtn">
-      <span class="callShareMenu__itemIcon">&#x21BA;</span>
+      <span class="callShareMenu__itemIcon"><svg class="altaraIcon callIcon" data-call-icon="refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M4 17v-5h5M6.2 6.2a8 8 0 0 1 13 2.8M4.8 15a8 8 0 0 0 13 2.8"/></svg></span>
       <span id="callShareMenuChangeLabel">Source</span>
     </button>
     <button class="callShareMenu__item callShareMenu__item--audio" type="button" data-call-share-act="toggle-audio" id="callShareMenuAudioBtn">
-      <span class="callShareMenu__itemIcon" id="callShareMenuAudioIcon">&#x1F50A;</span>
+      <span class="callShareMenu__itemIcon" id="callShareMenuAudioIcon"><svg class="altaraIcon callIcon" data-call-icon="volume" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 9v6h4l5 4V5L8 9H4Zm13 0a5 5 0 0 1 0 6"/></svg></span>
       <span id="callShareMenuAudioLabel">Share Stream Audio</span>
       <span class="callShareMenu__audioState" id="callShareMenuAudioState">Off</span>
     </button>
     <button class="callShareMenu__item" type="button" data-call-share-act="quality" id="callShareMenuQualityBtn">
-      <span class="callShareMenu__itemIcon">&#9881;</span>
+      <span class="callShareMenu__itemIcon"><svg class="altaraIcon callIcon" data-call-icon="sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></span>
       <span>Stream Quality</span>
     </button>
     <button class="callShareMenu__item" type="button" data-call-share-act="popout" id="callShareMenuPopoutBtn">
-      <span class="callShareMenu__itemIcon">&#9974;</span>
+      <span class="callShareMenu__itemIcon"><svg class="altaraIcon callIcon" data-call-icon="popout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3h7v7m0-7-9 9M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg></span>
       <span>Pop Out Stream</span>
     </button>
     <button class="callShareMenu__item" type="button" data-call-share-act="more-options" id="callShareMenuMoreBtn">
-      <span class="callShareMenu__itemIcon">&#8942;</span>
+      <span class="callShareMenu__itemIcon"><svg class="altaraIcon callIcon" data-call-icon="more" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span>
       <span>More Options</span>
     </button>
   </div>
 
   <div id="callCameraMenu" class="callShareMenu" aria-hidden="true" role="menu">
     <button class="callShareMenu__item" type="button" data-call-camera-act="toggle" id="callCameraMenuToggleBtn">
-      <span class="callShareMenu__itemIcon">&#x1F4F9;</span>
+      <span class="callShareMenu__itemIcon"><svg class="altaraIcon callIcon" data-call-icon="camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3z"/></svg></span>
       <span id="callCameraMenuToggleLabel">Turn Camera On</span>
     </button>
     <button class="callShareMenu__item callShareMenu__item--submenu" type="button" data-call-camera-act="open-device-menu" id="callCameraMenuChangeBtn">
-      <span class="callShareMenu__itemIcon">&#x21BA;</span>
+      <span class="callShareMenu__itemIcon"><svg class="altaraIcon callIcon" data-call-icon="refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M4 17v-5h5M6.2 6.2a8 8 0 0 1 13 2.8M4.8 15a8 8 0 0 0 13 2.8"/></svg></span>
       <span>Change Camera</span>
-      <span class="callShareMenu__submenuArrow">&#8250;</span>
+      <span class="callShareMenu__submenuArrow" aria-hidden="true"><svg class="altaraIcon callIcon" data-call-icon="chevronRight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 6 6 6-6 6"/></svg></span>
     </button>
   </div>
   <div id="callCameraDeviceMenu" class="callShareMenu" aria-hidden="true" role="menu"></div>
@@ -3730,7 +3740,7 @@
           <div id="desktopSharePickerTitle" class="modalTitle">Share your screen</div>
           <div id="desktopSharePickerHint" class="hint">Select a window or screen to share</div>
         </div>
-        <button class="icon-btn" type="button" data-desktop-share-close="1" aria-label="Close">&#x2715;</button>
+        <button class="icon-btn" type="button" data-desktop-share-close="1" aria-label="Close"><svg class="altaraIcon callIcon" data-call-icon="close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </div>
 
       <div class="desktopSharePickerTabs" role="tablist" aria-label="Share category">
@@ -3901,6 +3911,24 @@
     </div>
   </div>
 
-  <script type="module" src="/app/app.js?release=0.1.130&amp;v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"></script>
+  <script>
+    // Tabs are visible before the module finishes authentication and setup.
+    // Keep an early click visible; setupTabs reads the selected class later.
+    document.addEventListener("click", (event) => {
+      if (window.__ALTARA_TABS_BOUND__) return;
+      const button = event.target?.closest?.("[data-tab]");
+      if (!button || !button.closest(".midTabs")) return;
+      const tab = button.getAttribute("data-tab");
+      if (!["widgets", "friends", "pending", "add"].includes(tab)) return;
+      document.querySelectorAll(".midTabs [data-tab]").forEach((item) => {
+        item.classList.toggle("active", item === button);
+      });
+      for (const name of ["widgets", "friends", "pending", "add"]) {
+        const panel = document.getElementById(`tab${name[0].toUpperCase()}${name.slice(1)}`);
+        if (panel) panel.style.display = name === tab ? "block" : "none";
+      }
+    });
+  </script>
+  <script type="module" src="/app/app.js?release=0.1.140&amp;v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"></script>
 </body>
 </html>

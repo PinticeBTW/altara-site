@@ -1,3 +1,5 @@
+import { createMacScreenShareAudioRouter } from "./macScreenShareAudio.js";
+
 const DEFAULT_SAMPLE_RATE = 48_000;
 const DEFAULT_CHANNELS = 2;
 
@@ -10,6 +12,7 @@ export function createElectronScreenShareAudioRouter({
   AudioContextCtor = globalThis.AudioContext || globalThis.webkitAudioContext,
   workletModuleUrl = new URL("./windowsProcessLoopbackWorklet.js", import.meta.url).href,
 } = {}) {
+  if (bridge?.platform === "darwin") return createMacScreenShareAudioRouter({ bridge });
   const activeCaptures = new Map();
   let lastDiagnostics = {
     platform: bridge ? "win32_electron" : "browser",

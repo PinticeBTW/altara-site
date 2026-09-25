@@ -1,0 +1,22 @@
+.desktopAccountDialog { width:min(390px,calc(100vw - 32px)); box-sizing:border-box; padding:20px; color:#f1efeb; background:#1b1a19; border:1px solid #ffffff1c; border-radius:18px; box-shadow:0 28px 100px #0009; font:13px system-ui,sans-serif; }
+.desktopAccountDialog::backdrop {background:#0009;backdrop-filter:blur(5px)}
+.desktopAccountDialog header {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.desktopAccountDialog h2 {margin:0;font-size:18px;font-weight:650}
+.desktopAccountClose {border:0;background:transparent;color:#aba59c;cursor:pointer;font-size:23px;width:30px;height:30px;border-radius:8px}
+.desktopAccountList {display:grid;gap:6px;max-height:45vh;overflow-y:auto}
+.desktopAccountRow {display:flex;align-items:center;gap:12px;width:100%;padding:11px;border:1px solid transparent;border-radius:12px;background:#ffffff04;color:inherit;text-align:left;cursor:pointer;font:inherit}
+.desktopAccountRow:hover {background:#ffffff09;border-color:#e8cfae30}
+.desktopAccountRow.is-current {opacity:1;background:#e8cfae0c;border-color:#e8cfae35;cursor:default}
+.desktopAccountAvatar {width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border-radius:50%;background:#39342e;color:#e8cfae;overflow:hidden;font-weight:700}
+.desktopAccountAvatar img {width:100%;height:100%;object-fit:cover}
+.desktopAccountIdentity {display:grid;gap:3px;flex:1;min-width:0}
+.desktopAccountIdentity strong {font-size:13px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.desktopAccountIdentity>span {font-size:11px;color:#aaa49c}
+.desktopAccountCheck {color:#e8cfae}
+.desktopAccountHint {font-size:11px;line-height:1.6;color:#a49f97;margin:15px 1px}
+.desktopAccountAdd {width:100%;height:38px;background:#e8cfae;color:#252018;border:0;border-radius:10px;font:600 12px system-ui;cursor:pointer}
+.desktopAccountDialog button:focus-visible,.desktopAccountLoginSwitch:focus-visible {outline:2px solid #e8cfae;outline-offset:2px}
+.desktopAccountDialog button:disabled:not(.is-current) {opacity:.5;cursor:default}
+.desktopAccountStatus {font-size:11px;line-height:1.5;color:#c6b9a5;margin:10px 0 0}
+.desktopAccountStatus:empty {display:none}
+.desktopAccountLoginSwitch {display:block;margin:18px auto 0;border:1px solid #e8cfae38;border-radius:10px;background:#ffffff05;color:#e8cfae;padding:9px 16px;font:600 12px system-ui;cursor:pointer}
