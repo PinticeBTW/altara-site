@@ -1,128 +1,67 @@
-const DESKTOP_INSTALL_WELCOME_STORAGE_KEY = "altara_desktop_install_welcome_seen_v2_global";
-const AUTH_INSTALL_WELCOME_SESSION_KEY = "altara_auth_install_welcome_seen_session_v1";
+import { readAltaraLocalePreference } from "./lib/locale.js";
+import { readPendingServerInvite, isPendingServerInviteEntry } from "./lib/pendingServerInvite.js";
+import { FIRST_LIGHT_STORAGE_KEY, FIRST_LIGHT_SESSION_KEY, isFirstLightPreview, shouldShowFirstLight, playFirstLight, mountFirstLightPreview } from "./lib/firstLight.js";
 
-let authInstallWelcomeInitPromise = null;
+let initialization = null;
+let visible = false;
+const dismissListeners = new Set();
 
-function getDesktopBridge() {
-  const bridge = window?.altaraDesktop;
-  if (!bridge || bridge.isDesktopApp !== true) return null;
-  return bridge;
-}
-
-function getOverlayEls() {
-  return {
-    root: document.getElementById("authInstallWelcomeOverlay"),
-    btnStart: document.getElementById("btnAuthInstallWelcomeStart"),
-  };
-}
-
-function hasSeenInstallWelcome() {
-  try {
-    if (localStorage.getItem(DESKTOP_INSTALL_WELCOME_STORAGE_KEY) === "1") return true;
-  } catch (_) {}
-  try {
-    if (sessionStorage.getItem(AUTH_INSTALL_WELCOME_SESSION_KEY) === "1") return true;
-  } catch (_) {}
+function hasSeenWelcome() {
+  try { if (localStorage.getItem(FIRST_LIGHT_STORAGE_KEY) === "1") return true; } catch (_) {}
+  try { if (sessionStorage.getItem(FIRST_LIGHT_SESSION_KEY) === "1") return true; } catch (_) {}
   return false;
 }
 
-function markInstallWelcomeSeen() {
-  try { localStorage.setItem(DESKTOP_INSTALL_WELCOME_STORAGE_KEY, "1"); } catch (_) {}
-  try { sessionStorage.setItem(AUTH_INSTALL_WELCOME_SESSION_KEY, "1"); } catch (_) {}
+function markWelcomeSeen() {
+  try { localStorage.setItem(FIRST_LIGHT_STORAGE_KEY, "1"); } catch (_) {}
+  try { sessionStorage.setItem(FIRST_LIGHT_SESSION_KEY, "1"); } catch (_) {}
 }
 
-async function shouldShowAuthInstallWelcome() {
-  const bridge = getDesktopBridge();
-  if (!bridge || typeof bridge.getMeta !== "function") return false;
-  if (hasSeenInstallWelcome()) return false;
+async function initialize() {
+  const root = document.getElementById("authInstallWelcomeOverlay");
+  const preview = isFirstLightPreview(window.location);
+  const bridge = window.altaraDesktop;
+  let metaTimer;
   try {
-    const meta = await bridge.getMeta();
-    return !!meta?.freshInstallLaunch;
+    if (!preview) {
+      // Preserve direct invite, confirmation and recovery entry points.
+      if (readPendingServerInvite()) return false;
+      if (isPendingServerInviteEntry(window.location.href)) return false;
+      if (/[?&#](?:code|type|token_hash|access_token|auth_recovery|awaiting_confirm)=/.test(window.location.search + window.location.hash)) return false;
+    }
+    if (!root || (!preview && (hasSeenWelcome() || bridge?.isDesktopApp !== true))) return false;
+    document.body.classList.add("first-light-pending");
+    const meta = preview ? null : await Promise.race([
+      Promise.resolve().then(() => bridge.getMeta()),
+      new Promise((resolve) => { metaTimer = setTimeout(() => resolve(null), 800); }),
+    ]);
+    if (!shouldShowFirstLight({ preview, freshInstall: !!meta?.freshInstallLaunch, seen: hasSeenWelcome() })) return false;
+    visible = true;
+    if (!preview) markWelcomeSeen();
+    const options = { root, locale: readAltaraLocalePreference(), onFinish: () => {
+      visible = false;
+      for (const callback of dismissListeners) { try { callback(); } catch (_) {} }
+      dismissListeners.clear();
+      if (!document.activeElement?.matches?.("input,textarea,select")) document.querySelector("#email, #username")?.focus({ preventScroll: true });
+    } };
+    if (preview) mountFirstLightPreview({ ...options, onStart: () => { visible = true; } });
+    else playFirstLight(options);
+    return true;
   } catch (_) {
+    visible = false;
+    root?.classList.add("hidden");
     return false;
+  } finally {
+    clearTimeout(metaTimer);
+    document.body.classList.remove("first-light-pending", "auth-checking");
   }
 }
 
-function setAuthInstallWelcomeVisible(yes) {
-  const { root, btnStart } = getOverlayEls();
-  if (!(root instanceof HTMLElement)) return;
-  const show = !!yes;
-  root.classList.toggle("hidden", !show);
-  root.setAttribute("aria-hidden", show ? "false" : "true");
-  document.body?.classList?.toggle("auth-install-welcome-open", show);
-  if (!show) return;
-  requestAnimationFrame(() => {
-    try {
-      btnStart?.focus?.({ preventScroll: true });
-    } catch (_) {
-      try { btnStart?.focus?.(); } catch (_) {}
-    }
-  });
-}
-
-function bindAuthInstallWelcomeOnce(onDismiss) {
-  const { root, btnStart } = getOverlayEls();
-  if (!(root instanceof HTMLElement)) return;
-  if (root.dataset.bound === "1") return;
-  root.dataset.bound = "1";
-
-  const dismiss = () => {
-    if (root.classList.contains("hidden")) return;
-    markInstallWelcomeSeen();
-    setAuthInstallWelcomeVisible(false);
-    if (typeof onDismiss === "function") onDismiss();
-  };
-
-  btnStart?.addEventListener("click", dismiss);
-  btnStart?.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    e.preventDefault();
-    e.stopPropagation();
-    dismiss();
-  });
-
-  root.addEventListener("click", (e) => {
-    const target = e.target;
-    if (!(target instanceof HTMLElement)) return;
-    if (target.classList.contains("authInstallWelcomeOverlay__backdrop")) dismiss();
-  });
-
-  document.addEventListener("keydown", (e) => {
-    const { root: currentRoot } = getOverlayEls();
-    if (!(currentRoot instanceof HTMLElement)) return;
-    if (currentRoot.classList.contains("hidden")) return;
-    if (e.key !== "Escape") return;
-    e.preventDefault();
-    e.stopPropagation();
-    dismiss();
-  }, true);
-}
-
+// Called early by the auth HTML; login/register attach their existing focus callbacks later.
 export async function initAuthInstallWelcome({ onDone = null, onDismiss = null } = {}) {
-  if (authInstallWelcomeInitPromise) return authInstallWelcomeInitPromise;
-
-  authInstallWelcomeInitPromise = (async () => {
-    const body = document.body;
-    const { root } = getOverlayEls();
-    if (!(body instanceof HTMLElement) || !(root instanceof HTMLElement)) {
-      body?.classList?.remove("auth-checking");
-      if (typeof onDone === "function") onDone({ shown: false });
-      return false;
-    }
-
-    bindAuthInstallWelcomeOnce(() => {
-      if (typeof onDismiss === "function") onDismiss();
-    });
-
-    const show = await shouldShowAuthInstallWelcome();
-    setAuthInstallWelcomeVisible(show);
-
-    body.classList.remove("auth-checking");
-    if (typeof onDone === "function") onDone({ shown: show });
-    return show;
-  })().finally(() => {
-    authInstallWelcomeInitPromise = null;
-  });
-
-  return authInstallWelcomeInitPromise;
+  if (!initialization) initialization = initialize();
+  await initialization;
+  if (visible && typeof onDismiss === "function") dismissListeners.add(onDismiss);
+  if (typeof onDone === "function") onDone({ shown: visible });
+  return visible;
 }

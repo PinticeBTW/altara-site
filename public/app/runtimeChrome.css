@@ -58,3 +58,36 @@ body:not(.authPage).desktop-native-titlebar-overlay :is(
 ) {
   -webkit-app-region: no-drag !important;
 }
+
+/* Larger caption targets, centered in the existing 40px desktop titlebar.
+   Keep inbox sizing and all native window actions unchanged. */
+body:not(.authPage).desktop-native-titlebar-overlay #desktopWindowControls {
+  top: 4px;
+  height: 32px;
+}
+
+body:not(.authPage).desktop-native-titlebar-overlay :is(
+  #btnDesktopWindowMin,
+  #btnDesktopWindowMax,
+  #btnDesktopWindowClose
+) {
+  width: 40px;
+  min-width: 40px;
+  height: 32px;
+}
+
+body:not(.authPage).desktop-native-titlebar-overlay :is(
+  #btnDesktopWindowMin,
+  #btnDesktopWindowMax,
+  #btnDesktopWindowClose
+) svg {
+  width: 20px;
+  height: 20px;
+}
+
+body:not(.authPage).desktop-native-titlebar-overlay #btnDesktopWindowClose.desktopWindowBtn--close:hover,
+body:not(.authPage).desktop-native-titlebar-overlay #btnDesktopWindowClose.desktopWindowBtn--close:focus-visible {
+  border-color: color-mix(in srgb, var(--altara-danger, #e58b8b) 42%, transparent) !important;
+  background: var(--altara-danger-soft, rgba(211, 108, 104, 0.16)) !important;
+  color: var(--altara-danger, #e58b8b) !important;
+}

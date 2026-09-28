@@ -1,0 +1,29 @@
+.accountPrivacy { display: grid; gap: 14px; }
+#registerPolicy { width: 100%; max-width: 390px; margin: 16px auto; }
+.accountPrivacy[hidden], .accountPrivacy [hidden] { display: none !important; }
+.accountPrivacy label { display: grid; gap: 6px; font-size: 13px; }
+.accountPrivacy input:not([type="checkbox"]), .accountPrivacy select {
+ width: 100%; color: inherit; background: var(--panel, #19191c); border: 1px solid var(--border, #37353c);
+ border-radius: 8px; padding: 10px; box-sizing: border-box; color-scheme: dark;
+}
+.accountPrivacy.accountPrivacy label.policyCheck {
+ display: grid !important; grid-template-columns: 18px minmax(0, 1fr) !important;
+ align-items: start; gap: 10px !important; padding: 0 !important; margin: 0 !important; border: 0 !important;
+}
+.accountPrivacy.accountPrivacy .policyCheck input[type="checkbox"] {
+ width: 16px !important; min-width: 16px !important; height: 16px !important; min-height: 16px !important;
+ padding: 0 !important; margin: 2px 0 0 !important; grid-column: 1; grid-row: 1; appearance: auto;
+}
+.accountPrivacy.accountPrivacy .policyCheck > span {
+ grid-column: 2; grid-row: 1; font-size: 13px; font-weight: 400; line-height: 1.5; text-transform: none;
+}
+.accountPrivacy p { margin: 0; }
+.accountPrivacy .policyHint { font-size: 12px; line-height: 1.5; opacity: .8; margin: 0; }
+.accountPrivacy a { color: inherit; text-decoration: underline; }
+.accountPrivacy .policyActions { display: flex; gap: 8px; flex-wrap: wrap; }
+.accountPrivacy .policyFeedback { white-space: normal; font-size: 13px; line-height: 1.5; }
+.accountPrivacy .policyRequest { border-top: 1px solid var(--border, #37353c); padding-top: 10px; }
+.accountPrivacyDialog { color: var(--text, #eeecf2); background: var(--panel, #19191c);
+ border: 1px solid var(--border, #37353c); border-radius: 14px; padding: 24px;
+ width: min(500px, calc(100vw - 48px)); max-height: 85vh; overflow: auto; }
+.accountPrivacyDialog::backdrop { background: rgba(0,0,0,.8); }

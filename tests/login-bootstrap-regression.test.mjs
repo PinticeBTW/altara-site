@@ -86,8 +86,11 @@ test("successful authentication keeps the existing same-origin redirect behavior
   const resolveSource = extractFunction(source, "resolvePostLoginReturnUrl");
   const redirectSource = extractFunction(source, "redirectAfterSuccessfulLogin");
   let redirectedTo = "";
+  let referralCleared = 0;
   const context = {
+    loginRedirectStarted: false,
     URL,
+    foundingCreatorReferral: { clear() { referralCleared += 1; } },
     window: {
       location: {
         href: "https://www.altaraapp.com/app/login.html",
@@ -99,6 +102,7 @@ test("successful authentication keeps the existing same-origin redirect behavior
 
   vm.runInNewContext(`${resolveSource}\n${redirectSource}\nredirectAfterSuccessfulLogin();`, context);
   assert.equal(redirectedTo, "./index.html");
+  assert.equal(referralCleared, 0); // Referral survives redirect until authenticated app bootstrap.
   assert.match(source, /setAuthFeedback\([^;]+success[^;]+\);\s*redirectAfterSuccessfulLogin\(\);/s);
 });
 

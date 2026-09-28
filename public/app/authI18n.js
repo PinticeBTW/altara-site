@@ -1,12 +1,34 @@
-﻿const AUTH_LANG_STORAGE_KEY = "altara_app_language";
-const AUTH_LANG_DEFAULT = "en";
-const SUPPORTED_AUTH_LANGS = new Set(["en", "pt"]);
+import {
+  ALTARA_DEFAULT_LOCALE,
+  detectAltaraLocale,
+  hasAltaraLocalePreference,
+  localeDocumentLanguage,
+  normalizeAltaraLocale,
+  readAltaraLocalePreference,
+  writeAltaraLocalePreference,
+} from "./lib/locale.js";
+import { PT_BR_AUTH_TEXT } from "./lib/ptBrTranslations.js";
+
+const AUTH_LANG_DEFAULT = ALTARA_DEFAULT_LOCALE;
 
 const authLangListeners = new Set();
 let authLanguage = AUTH_LANG_DEFAULT;
 
 const AUTH_TEXT = {
   en: {
+    invite: {
+      "savedLogin": "Server invite saved. Sign in to continue where you left off.",
+      "savedRegister": "Server invite saved. Create your account to continue where you left off.",
+      "cancel": "Cancel invite",
+      "retry": "Retry",
+      "checking": "Checking invite…",
+      "invalid": "This invite is invalid.",
+      "expired": "This invite has expired.",
+      "revoked": "This invite has been revoked.",
+      "exhausted": "This invite reached its usage limit.",
+      "server_unavailable": "This server is no longer available.",
+      "unavailable": "ALTARA could not check this invite. Check your connection and retry."
+},
     language: {
       switchToEnglish: "Switch to English",
       switchToPortuguese: "Switch to Portuguese",
@@ -121,25 +143,38 @@ const AUTH_TEXT = {
       successAutoLogin: "Account created. Signing you in...",
     },
   },
-  pt: {
+  "pt-PT": {
+    invite: {
+      "savedLogin": "Convite para servidor guardado. Entra para continuar de onde paraste.",
+      "savedRegister": "Convite para servidor guardado. Cria a tua conta para continuar.",
+      "cancel": "Cancelar convite",
+      "retry": "Tentar novamente",
+      "checking": "A verificar o convite…",
+      "invalid": "Este convite é inválido.",
+      "expired": "Este convite expirou.",
+      "revoked": "Este convite foi revogado.",
+      "exhausted": "Este convite atingiu o limite de utilizações.",
+      "server_unavailable": "Este servidor já não está disponível.",
+      "unavailable": "Não foi possível verificar este convite. Verifica a tua ligação e tenta novamente."
+},
     language: {
-      switchToEnglish: "Mudar para ingles",
-      switchToPortuguese: "Mudar para portugues",
+      switchToEnglish: "Mudar para inglês",
+      switchToPortuguese: "Mudar para português",
     },
     install: {
       title: "Onde os amigos ficam por perto.",
       lineOne: "Das risadas da madrugada a chamadas de voz que parecem reais.",
-      lineTwo: "Guarda as tuas memorias, uma mensagem de cada vez.",
+      lineTwo: "Guarda as tuas memórias, uma mensagem de cada vez.",
       momentOne: "amigos",
       momentTwo: "risos",
-      momentThree: "memorias",
+      momentThree: "memórias",
       momentFour: "chamadas",
-      start: "Comecar",
+      start: "Começar",
     },
     showcase: {
       title: "Where friends stay close.",
       loginText: "A tua casa para conversar, rir e guardar momentos com quem importa.",
-      registerText: "Cria a tua conta e entra num espaco feito para amizades reais.",
+      registerText: "Cria a tua conta e entra num espaço feito para amizades reais.",
       chipOne: "Voz em tempo real",
       chipTwo: "Servidores e chamadas",
       chipThree: "Amigos primeiro",
@@ -152,7 +187,7 @@ const AUTH_TEXT = {
       emailLabel: "Email",
       emailPlaceholder: "tu@email.com",
       passwordLabel: "Password",
-      passwordPlaceholder: "minimo 6",
+      passwordPlaceholder: "mínimo 6",
       actionPrimary: "Login",
       actionAlt: "Criar conta",
       loading: "A entrar...",
@@ -160,14 +195,14 @@ const AUTH_TEXT = {
       errorGeneric: "Login falhou. Tenta outra vez.",
       errorInvalidCreds: "Email ou password incorretos.",
       errorEmailNotConfirmed: "Confirma o email antes de fazer login.",
-      errorNetwork: "Sem ligacao. Verifica a internet e tenta outra vez.",
+      errorNetwork: "Sem ligação. Verifica a internet e tenta outra vez.",
       errorTimeout: "Login demorou demasiado. Tenta outra vez.",
       successProgress: "A entrar...",
-      dmE2eeRestoreWarning: "Entraste, mas a Altara nao conseguiu restaurar a tua chave encriptada de DM neste dispositivo. As mensagens diretas antigas podem continuar indisponiveis aqui.",
+      dmE2eeRestoreWarning: "Entraste, mas a Altara não conseguiu restaurar a tua chave encriptada de DM neste dispositivo. As mensagens diretas antigas podem continuar indisponíveis aqui.",
       forgotPassword: "Esqueci-me da password",
       forgotEmail: "Esqueci-me do email",
       recoveryClose: "Fechar",
-      recoverySendPassword: "Enviar email de recuperacao",
+      recoverySendPassword: "Enviar email de recuperação",
       recoverySendEmailHint: "Procurar dica de email",
       recoverySending: "A enviar...",
       recoveryModePasswordTitle: "Recuperar password",
@@ -178,93 +213,81 @@ const AUTH_TEXT = {
       recoveryModeEmailHint: "Introduz o teu username e mostramos uma dica do email mascarado.",
       recoveryModeEmailLabel: "Username",
       recoveryModeEmailPlaceholder: "ex: pintice",
-      recoveryInvalidEmail: "Mete um email valido.",
+      recoveryInvalidEmail: "Mete um email válido.",
       recoveryEmailSent: "Se este email existir, enviamos um email de reset.",
       recoveryEnterUsername: "Mete o teu username.",
       recoveryEmailHintPrefix: "Dica de email:",
-      recoveryEmailHintNotFound: "Nao ha dica disponivel para esse username.",
-      recoverySqlMissing: "Falta o SQL de recuperacao. Corre SQL/SUPABASE_PATCH_AUTH_RECOVERY.sql.",
-      recoveryErrorGeneric: "Nao foi possivel processar a recuperacao agora. Tenta outra vez.",
-      recoveryRedirectNotAllowed: "O redirect de recuperacao esta bloqueado. Adiciona este URL em Supabase Redirect URLs:",
+      recoveryEmailHintNotFound: "Não há dica disponível para esse username.",
+      recoverySqlMissing: "Falta o SQL de recuperação. Corre SQL/SUPABASE_PATCH_AUTH_RECOVERY.sql.",
+      recoveryErrorGeneric: "Não foi possível processar a recuperação agora. Tenta outra vez.",
+      recoveryRedirectNotAllowed: "O redirect de recuperação está bloqueado. Adiciona este URL em Supabase Redirect URLs:",
       recoveryResetTitle: "Definir nova password",
-      recoveryResetHint: "Este link de reset e valido. Mete a tua nova password abaixo.",
+      recoveryResetHint: "Este link de reset é válido. Mete a tua nova password abaixo.",
       recoveryResetPasswordLabel: "Nova password",
-      recoveryResetPasswordPlaceholder: "minimo 6",
+      recoveryResetPasswordPlaceholder: "mínimo 6",
       recoveryResetConfirmLabel: "Confirmar nova password",
       recoveryResetConfirmPlaceholder: "repete a nova password",
       recoveryResetSubmit: "Atualizar password",
       recoveryResetPreparing: "A validar link de reset...",
       recoveryResetReady: "Link validado. Define a tua nova password.",
-      recoveryResetInvalidLink: "Link de reset invalido. Pede um novo.",
-      recoveryResetMissingSession: "Sessao de reset expirada. Abre um link novo.",
+      recoveryResetInvalidLink: "Link de reset inválido. Pede um novo.",
+      recoveryResetMissingSession: "Sessão de reset expirada. Abre um link novo.",
       recoveryResetWeakPassword: "Usa pelo menos 6 caracteres.",
-      recoveryResetMismatch: "As passwords nao coincidem.",
-      recoveryResetSuccess: "Password atualizada. Ja podes fazer login.",
-      confirmPending: "Confirma a tua conta pelo email. Depois da confirmacao, a Altara faz login automatico.",
-      confirmPreparing: "A validar confirmacao da conta...",
+      recoveryResetMismatch: "As passwords não coincidem.",
+      recoveryResetSuccess: "Password atualizada. Já podes fazer login.",
+      confirmPending: "Confirma a tua conta pelo email. Depois da confirmação, a Altara faz login automático.",
+      confirmPreparing: "A validar confirmação da conta...",
       confirmAutoLogin: "Email confirmado. A entrar automaticamente...",
-      confirmErrorGeneric: "Nao foi possivel confirmar a conta agora. Tenta outra vez.",
-      confirmErrorExpired: "Link de confirmacao expirado. Pede um novo.",
-      confirmErrorInvalid: "Link de confirmacao invalido. Pede um novo.",
+      confirmErrorGeneric: "Não foi possível confirmar a conta agora. Tenta outra vez.",
+      confirmErrorExpired: "Link de confirmação expirado. Pede um novo.",
+      confirmErrorInvalid: "Link de confirmação inválido. Pede um novo.",
     },
     register: {
       metaTitle: "Criar conta - Altara",
       badge: "CRIAR CONTA",
       title: "Criar conta",
-      sub: "Username e obrigatorio, como no Discord.",
-      usernameLabel: "Username (3-20, letras/numeros/_/. e espacos)",
-      usernameHint: "Permitido: a-z 0-9 _ . e espacos.",
+      sub: "Username é obrigatório, como no Discord.",
+      usernameLabel: "Username (3-20, letras/números/_/. e espaços)",
+      usernameHint: "Permitido: a-z 0-9 _ . e espaços.",
       usernamePlaceholder: "ex: pintice",
       emailLabel: "Email",
       emailPlaceholder: "tu@email.com",
       passwordLabel: "Password",
-      passwordPlaceholder: "minimo 6",
+      passwordPlaceholder: "mínimo 6",
       actionPrimary: "Criar conta",
       actionAlt: "Ir para login",
       loading: "A criar...",
       fillFields: "Preenche tudo.",
-      invalidUsername: "Username invalido. Usa 3-20, letras/numeros/_/. e espacos.",
+      invalidUsername: "Username inválido. Usa 3-20, letras/números/_/. e espaços.",
       errorGeneric: "Registo falhou. Tenta outra vez.",
-      errorUserExists: "Esse email ja tem conta.",
-      errorUsernameTaken: "Esse username ja esta em uso.",
+      errorUserExists: "Esse email já tem conta.",
+      errorUsernameTaken: "Esse username já está em uso.",
       errorPasswordWeak: "Password fraca. Usa pelo menos 6 caracteres.",
-      errorEmailInvalid: "Email invalido.",
-      errorNetwork: "Sem ligacao. Verifica a internet e tenta outra vez.",
+      errorEmailInvalid: "Email inválido.",
+      errorNetwork: "Sem ligação. Verifica a internet e tenta outra vez.",
       errorTimeout: "Registo demorou demasiado. Tenta outra vez.",
       successProgress: "Conta criada. Agora faz login.",
-      successPendingConfirm: "Conta criada. Confirma o email para continuar. Depois da confirmacao, o login acontece automaticamente.",
+      successPendingConfirm: "Conta criada. Confirma o email para continuar. Depois da confirmação, o login acontece automaticamente.",
       successAutoLogin: "Conta criada. A entrar automaticamente...",
     },
   },
+  "pt-BR": PT_BR_AUTH_TEXT,
 };
 
 function normalizeAuthLanguage(value, fallback = AUTH_LANG_DEFAULT) {
-  const lang = String(value || "").trim().toLowerCase();
-  if (SUPPORTED_AUTH_LANGS.has(lang)) return lang;
-  return SUPPORTED_AUTH_LANGS.has(fallback) ? fallback : AUTH_LANG_DEFAULT;
+  return normalizeAltaraLocale(value, fallback);
 }
 
 function readStoredAuthLanguage() {
-  try {
-    return normalizeAuthLanguage(localStorage.getItem(AUTH_LANG_STORAGE_KEY), AUTH_LANG_DEFAULT);
-  } catch (_) {
-    return AUTH_LANG_DEFAULT;
-  }
+  return readAltaraLocalePreference();
 }
 
 function hasStoredAuthLanguage() {
-  try {
-    const value = localStorage.getItem(AUTH_LANG_STORAGE_KEY);
-    return SUPPORTED_AUTH_LANGS.has(String(value || "").trim().toLowerCase());
-  } catch (_) {
-    return false;
-  }
+  return hasAltaraLocalePreference();
 }
 
 function writeStoredAuthLanguage(lang) {
-  try {
-    localStorage.setItem(AUTH_LANG_STORAGE_KEY, normalizeAuthLanguage(lang));
-  } catch (_) {}
+  writeAltaraLocalePreference(lang);
 }
 
 function getByPath(obj, path) {
@@ -305,7 +328,7 @@ function applyAuthTranslations(lang) {
   const pageKey = page === "register" ? "register" : "login";
 
   authLanguage = next;
-  document.documentElement.lang = next === "pt" ? "pt-PT" : "en";
+  document.documentElement.lang = localeDocumentLanguage(next);
   document.title = textFor(next, `${pageKey}.metaTitle`, document.title);
 
   setNodeText("authInstallWelcomeTitle", textFor(next, "install.title"));
@@ -329,6 +352,17 @@ function applyAuthTranslations(lang) {
   setNodeText("authBadge", textFor(next, `${pageKey}.badge`));
   setNodeText("authCardTitle", textFor(next, `${pageKey}.title`));
   setNodeText("authCardSub", textFor(next, `${pageKey}.sub`));
+  setNodeText(
+    "authPendingInviteText",
+    textFor(
+      next,
+      pageKey === "register" ? "invite.savedRegister" : "invite.savedLogin",
+      pageKey === "register"
+        ? "Server invite saved. Create your account to continue where you left off."
+        : "Server invite saved. Sign in to continue where you left off."
+    )
+  );
+  setNodeText("btnCancelPendingInvite", textFor(next, "invite.cancel", "Cancel invite"));
 
   if (pageKey === "register") {
     setNodeText("authUsernameLabel", textFor(next, "register.usernameLabel"));
@@ -359,13 +393,21 @@ function applyAuthTranslations(lang) {
     setNodePlaceholder("authRecoverySecret", textFor(next, "login.recoveryResetConfirmPlaceholder"));
   }
 
+  const selectLang = document.getElementById("authLanguageSelect");
+  if (selectLang instanceof HTMLSelectElement) {
+    selectLang.value = next;
+    selectLang.setAttribute("aria-label", textFor(next, "language.select", "Language"));
+    selectLang.title = textFor(next, "language.select", "Language");
+  }
+
   const btnLang = document.getElementById("btnAuthLang");
   if (btnLang instanceof HTMLButtonElement) {
-    const nextTarget = next === "en" ? "pt" : "en";
+    const order = ["en", "pt-PT", "pt-BR"];
+    const nextTarget = order[(order.indexOf(next) + 1) % order.length];
     btnLang.textContent = nextTarget.toUpperCase();
     const switchTitle = textFor(
       next,
-      nextTarget === "pt" ? "language.switchToPortuguese" : "language.switchToEnglish"
+      nextTarget === "en" ? "language.switchToEnglish" : "language.switchToPortuguese"
     );
     btnLang.setAttribute("aria-label", switchTitle);
     btnLang.title = switchTitle;
@@ -404,7 +446,11 @@ export function onAuthLanguageChange(listener) {
 }
 
 export function initAuthLanguage({ defaultLanguage = AUTH_LANG_DEFAULT } = {}) {
-  const fallback = normalizeAuthLanguage(defaultLanguage, AUTH_LANG_DEFAULT);
+  const fallback = detectAltaraLocale({
+    saved: "",
+    languages: globalThis.navigator?.languages || [globalThis.navigator?.language],
+    fallback: defaultLanguage,
+  });
   const initial = hasStoredAuthLanguage() ? readStoredAuthLanguage() : fallback;
 
   if (!hasStoredAuthLanguage()) {
@@ -418,9 +464,16 @@ export function initAuthLanguage({ defaultLanguage = AUTH_LANG_DEFAULT } = {}) {
     btn.dataset.bound = "1";
     btn.addEventListener("click", (e) => {
       e.preventDefault();
-      const next = authLanguage === "en" ? "pt" : "en";
+      const order = ["en", "pt-PT", "pt-BR"];
+      const next = order[(order.indexOf(authLanguage) + 1) % order.length];
       setAuthLanguage(next, { persist: true });
     });
+  }
+
+  const select = document.getElementById("authLanguageSelect");
+  if (select instanceof HTMLSelectElement && select.dataset.bound !== "1") {
+    select.dataset.bound = "1";
+    select.addEventListener("change", () => setAuthLanguage(select.value, { persist: true }));
   }
 
   return initial;

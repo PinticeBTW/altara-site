@@ -201,6 +201,8 @@ export function createPrivateCallInboxController({
   reconcilePendingInvites,
   onTrustedEvent,
   onStatus,
+  additionalBroadcastHandlers = {},
+  reconcileAdditionalEvents = null,
   schedule = (callback, delayMs) => setTimeout(callback, delayMs),
   cancelSchedule = (timer) => clearTimeout(timer),
   retryDelayMs = 1200,
@@ -347,6 +349,19 @@ export function createPrivateCallInboxController({
           dispatch(message?.payload || message, "live");
         });
       channel = nextChannel;
+      // Group conversations share the authenticated call inbox, not a second
+      // ringtone/subscription stack. The direct-call ledger remains unchanged.
+      for (const [event, handler] of Object.entries(additionalBroadcastHandlers)) {
+        if (typeof handler !== "function" || event === PRIVATE_CALL_INBOX_EVENT) continue;
+        nextChannel.on("broadcast", { event }, (message = {}) => {
+          const isCurrent = () => channel === nextChannel && generation === expectedGeneration && !stopped
+            && normalizeId(getCurrentUserId?.()) === currentUserId;
+          if (!isCurrent()) return;
+          try {
+            void Promise.resolve(handler(message?.payload || message, { isCurrent, userId: currentUserId })).catch(() => {});
+          } catch (_) {}
+        });
+      }
       nextChannel.subscribe((nextStatus, error = null) => {
         if (channel !== nextChannel || generation !== expectedGeneration || stopped) return;
         const normalizedStatus = String(nextStatus || "UNKNOWN").trim().toUpperCase();
@@ -361,6 +376,15 @@ export function createPrivateCallInboxController({
             retryTimer = null;
           }
           void reconcile(expectedGeneration).catch(() => {});
+          if (typeof reconcileAdditionalEvents === "function") {
+            const isCurrent = () => channel === nextChannel && generation === expectedGeneration && !stopped
+              && normalizeId(getCurrentUserId?.()) === currentUserId;
+            if (isCurrent()) {
+              try {
+                void Promise.resolve(reconcileAdditionalEvents({ isCurrent, userId: currentUserId })).catch(() => {});
+              } catch (_) {}
+            }
+          }
           return;
         }
         if (!TERMINAL_CHANNEL_STATUSES.has(normalizedStatus)) return;

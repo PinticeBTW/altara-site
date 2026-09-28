@@ -159,12 +159,19 @@ export function derivePrivateSharePlaybackAudioState({
 }
 
 export function resolvePrivateCallStageParticipantIds({
+  conversationType = "direct",
   localUserId = "",
   peerUserId = "",
   callMemberIds = [],
   transportParticipantIds = [],
 } = {}) {
   const normalizeId = (value) => String(value || "").trim().toLowerCase();
+  if (String(conversationType || "").trim().toLowerCase() === "group") {
+    // The group adapter supplies current session membership. A remembered
+    // peer or a stale Room snapshot must not add a participant to this list.
+    return Array.from(new Set((Array.isArray(callMemberIds) ? callMemberIds : [])
+      .map(normalizeId).filter(Boolean)));
+  }
   const localId = normalizeId(localUserId);
   const explicitPeerId = normalizeId(peerUserId);
   const candidates = [

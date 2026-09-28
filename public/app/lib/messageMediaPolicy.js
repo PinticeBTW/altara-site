@@ -20,6 +20,7 @@ export const TRUSTED_MESSAGE_GIF_HOSTS = Object.freeze([
   "media.tenor.com",
   "c.tenor.com",
   "media.giphy.com",
+  "static.klipy.com",
 ]);
 
 const trustedGifHosts = new Set(TRUSTED_MESSAGE_GIF_HOSTS);

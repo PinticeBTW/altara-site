@@ -112,7 +112,7 @@ export default async function DownloadsPage({ searchParams }: DownloadsPageProps
 
               <div id="macos" className="download-chooser-notes" style={{ scrollMarginTop: 100 }}>
                 <h2>ALTARA for macOS</h2>
-                <p>macOS 12 or later. Open the DMG, then drag Altara into Applications.</p>
+                <p>macOS 12 or later. Open the DMG, then drag ALTARA into Applications. macOS builds may have a different version number from the latest Windows and Linux release.</p>
                 <div className="cta-platforms download-chooser-platforms">
                   <a href="/api/download/macos/arm64" className="platform-btn">
                     <span className="platform-copy"><span className="platform-name">Apple Silicon</span><span className="platform-detail">M-series Macs · arm64 DMG</span></span>

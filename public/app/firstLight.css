@@ -1,0 +1,140 @@
+/* First install: one automatic flourish, revealing the real sign-in screen. */
+body.authPage .firstLightSplash {
+  position: fixed;
+  inset: 0;
+  z-index: 6200;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  isolation: isolate;
+  background: #080808;
+  color: #e8cfae;
+  opacity: 1;
+  transition: opacity 600ms cubic-bezier(.22,.61,.36,1);
+}
+.firstLightSplash__light {
+  position: absolute;
+  width: min(1050px, 120vw);
+  aspect-ratio: 1.45;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(ellipse, #dfb98025 0%, #ad81580a 40%, transparent 68%);
+  animation: firstLightBloom 2400ms ease-out both;
+}
+.firstLightSplash__horizon {
+  position: absolute;
+  top: 50%;
+  width: min(800px, 92vw);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #e8cfae5c, transparent);
+  box-shadow: 0 0 24px 2px #e8cfae18;
+  animation: firstLightHorizon 1800ms cubic-bezier(.16,1,.3,1) both;
+}
+.firstLightSplash__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  width: clamp(180px, 22vw, 280px);
+  transform: translateY(-10px);
+  transition: transform 600ms cubic-bezier(.22,.61,.36,1), filter 600ms ease;
+}
+.firstLightSplash__mark { width: 100%; overflow: visible; filter: drop-shadow(0 0 28px #e8cfae20); }
+.firstLightSplash__mark polygon {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  fill-opacity: 0;
+  animation: firstLightDraw 1400ms cubic-bezier(.22,.61,.36,1) 120ms both;
+}
+.firstLightSplash__mark polygon:nth-child(2) { animation-delay: 260ms; }
+.firstLightSplash__mark polygon:nth-child(3) { animation-delay: 390ms; }
+.firstLightSplash__name {
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .65em;
+  padding-left: .65em;
+  animation: firstLightName 1000ms ease 700ms both;
+}
+.firstLightSplash__skip {
+  position: absolute;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  border: 1px solid transparent;
+  background: transparent;
+  color: #b5a99a;
+  font: 500 12px Manrope, system-ui, sans-serif;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.firstLightSplash__skip:hover { color: #f3e6d4; background: #ffffff08; }
+.firstLightSplash__skip:focus-visible { outline: 1px solid #e8cfae; outline-offset: 3px; }
+body.authPage .firstLightSplash.is-revealing { opacity: 0; pointer-events: none; }
+.firstLightSplash.is-revealing .firstLightSplash__brand { transform: translateY(-18px) scale(1.06); filter: blur(4px); }
+body.authPage.first-light-playing .authShell { opacity: 0; transform: translateY(12px) scale(.99); }
+body.authPage.first-light-playing.first-light-revealing .authShell { opacity: 1; transform: none; transition: opacity 600ms ease, transform 700ms cubic-bezier(.16,1,.3,1); }
+body.first-light-pending::after { content: ""; position: fixed; inset: 0; z-index: 6199; background: #080808; }
+@keyframes firstLightDraw {
+  0% { stroke-dashoffset: 1; fill-opacity: 0; transform: translateY(6px); }
+  50% { fill-opacity: 0; }
+  78% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 0; fill-opacity: 1; transform: none; }
+}
+@keyframes firstLightBloom {
+  0% { opacity: 0; transform: scale(.55); }
+  55% { opacity: 1; }
+  100% { opacity: .7; transform: scale(1.1); }
+}
+@keyframes firstLightHorizon {
+  0% { opacity: 0; transform: scaleX(.05); }
+  35% { opacity: .5; }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes firstLightName {
+  from { opacity: 0; transform: translateY(8px); letter-spacing: .9em; }
+  to { opacity: .75; transform: none; letter-spacing: .65em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.authPage .firstLightSplash:not(.firstLightSplash--preview-motion),
+  .firstLightSplash:not(.firstLightSplash--preview-motion) *,
+  body.authPage.first-light-playing:not(.first-light-preview-motion) .authShell {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    filter: none !important;
+  }
+  .firstLightSplash:not(.firstLightSplash--preview-motion) .firstLightSplash__mark polygon { stroke-dashoffset: 0; fill-opacity: 1; }
+  .firstLightSplash:not(.firstLightSplash--preview-motion) .firstLightSplash__horizon { display: none; }
+  .firstLightSplash:not(.firstLightSplash--preview-motion) .firstLightSplash__name { opacity: .75; }
+}
+
+/* Preview controls exist only on the explicit localhost preview URL. */
+body.authPage .firstLightPreviewGate {
+  background: radial-gradient(ellipse at 50% 43%, #211c15, #090909 60%);
+  color: #f2eadf;
+  text-align: center;
+  padding: 28px;
+}
+.firstLightPreviewGate__card { max-width: 460px; }
+.firstLightPreviewGate__card > span { font-size: 11px; letter-spacing: .45em; color: #e8cfae; }
+.firstLightPreviewGate__card h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.15; letter-spacing: -.035em; margin: 24px 0 16px; }
+.firstLightPreviewGate__card p { font-size: 15px; line-height: 1.6; color: #b9b0a3; margin-bottom: 28px; }
+.firstLightPreviewGate__card button, .firstLightPreviewReplay {
+  min-height: 46px;
+  padding: 12px 22px;
+  font: 600 14px Manrope, system-ui, sans-serif;
+  border: 1px solid #e8cfae;
+  border-radius: 10px;
+  background: #e8cfae;
+  color: #1a1510;
+  cursor: pointer;
+}
+.firstLightPreviewGate__card button span { margin-left: 12px; }
+.firstLightPreviewGate__card button:focus-visible, .firstLightPreviewReplay:focus-visible { outline: 2px solid #f8e7ce; outline-offset: 5px; }
+.firstLightPreviewReplay { position: fixed; z-index: 6300; bottom: 24px; left: 50%; transform: translateX(-50%); box-shadow: 0 8px 28px #0009; }
+.firstLightPreviewReplay[hidden] { display: none; }
+
+.firstLightSplash__sound { position: absolute; left: 24px; bottom: 24px; padding: 10px 12px; border: 1px solid #e8cfae30; border-radius: 8px; background: #ffffff05; color: #c8bba9; font: 500 12px Manrope, system-ui, sans-serif; cursor: pointer; -webkit-app-region: no-drag; }
+.firstLightSplash__sound:focus-visible { outline: 1px solid #e8cfae; outline-offset: 3px; }

@@ -49,8 +49,7 @@
     "id": "minecraft",
     "name": "Minecraft",
     "executables": [
-      "Minecraft.Windows.exe",
-      "MinecraftLauncher.exe"
+      "Minecraft.Windows.exe"
     ],
     "aliases": [
       "Minecraft",
@@ -69,8 +68,7 @@
     "id": "roblox",
     "name": "Roblox",
     "executables": [
-      "RobloxPlayerBeta.exe",
-      "RobloxPlayerLauncher.exe"
+      "RobloxPlayerBeta.exe"
     ],
     "aliases": [
       "Roblox",
@@ -213,8 +211,7 @@
     "id": "overwatch",
     "name": "Overwatch",
     "executables": [
-      "Overwatch.exe",
-      "Overwatch Launcher.exe"
+      "Overwatch.exe"
     ],
     "aliases": [
       "Overwatch",
@@ -374,8 +371,7 @@
     "id": "rainbow-six-siege",
     "name": "Rainbow Six Siege",
     "executables": [
-      "RainbowSix.exe",
-      "RainbowSix_BE.exe"
+      "RainbowSix.exe"
     ],
     "aliases": [
       "Rainbow Six Siege",
@@ -388,5 +384,3330 @@
       "name": "Rainbow Six Siege",
       "confidence": 1
     }
+  },
+  {
+    "id": "world-of-warcraft",
+    "name": "World of Warcraft",
+    "executables": [
+      "wow.exe",
+      "wow-64.exe"
+    ],
+    "processPaths": [
+      "_retail_/wow.exe",
+      "_ptr_/wow.exe",
+      "_beta_/wow-64.exe",
+      "_beta_/wow.exe",
+      "_retail_/wow-64.exe",
+      "_ptr_/wow-64.exe"
+    ],
+    "aliases": [
+      "World of Warcraft"
+    ]
+  },
+  {
+    "id": "garry-s-mod",
+    "name": "Garry's Mod",
+    "executables": [
+      "gmod.exe"
+    ],
+    "processPaths": [
+      "win64/gmod.exe"
+    ],
+    "aliases": [
+      "Garry's Mod"
+    ],
+    "steamAppId": 4000
+  },
+  {
+    "id": "path-of-exile",
+    "name": "Path of Exile",
+    "executables": [
+      "pathofexile_x64.exe",
+      "pathofexile_x64steam.exe",
+      "pathofexile.exe",
+      "pathofexilesteam.exe",
+      "pathofexileegs.exe"
+    ],
+    "processPaths": [
+      "path of exile/pathofexile_x64.exe",
+      "path of exile/pathofexile_x64steam.exe",
+      "poe/pathofexile.exe",
+      "path of exile taiwan/pathofexile.exe",
+      "path of exile/pathofexilesteam.exe",
+      "流亡黯道/pathofexilesteam.exe",
+      "path of exile/pathofexile.exe",
+      "pathofexile/pathofexileegs.exe"
+    ],
+    "aliases": [
+      "Path of Exile"
+    ],
+    "steamAppId": 238960
+  },
+  {
+    "id": "final-fantasy-xiv-online",
+    "name": "FINAL FANTASY XIV ONLINE",
+    "executables": [
+      "ffxiv_dx11.exe",
+      "ffxiv.exe"
+    ],
+    "processPaths": [
+      "ffxiv_dx11.exe",
+      "ffxiv.exe"
+    ],
+    "aliases": [
+      "FINAL FANTASY XIV ONLINE"
+    ],
+    "steamAppId": 262342
+  },
+  {
+    "id": "brawlhalla",
+    "name": "Brawlhalla",
+    "executables": [
+      "brawlhalla.exe",
+      "brawlhallagame.exe"
+    ],
+    "processPaths": [
+      "brawlhalla/brawlhalla.exe",
+      "brawlhalla.exe",
+      "brawlhalla/brawlhallagame.exe"
+    ],
+    "aliases": [
+      "Brawlhalla"
+    ],
+    "steamAppId": 291550
+  },
+  {
+    "id": "cities-skylines",
+    "name": "Cities: Skylines",
+    "executables": [
+      "cities.exe"
+    ],
+    "processPaths": [
+      "cities.exe"
+    ],
+    "aliases": [
+      "Cities: Skylines"
+    ],
+    "steamAppId": 255710
+  },
+  {
+    "id": "war-thunder",
+    "name": "War Thunder",
+    "executables": [
+      "aces.exe"
+    ],
+    "processPaths": [
+      "aces.exe"
+    ],
+    "aliases": [
+      "War Thunder"
+    ],
+    "steamAppId": 236390
+  },
+  {
+    "id": "battlefield-1",
+    "name": "Battlefield 1",
+    "executables": [
+      "bf1.exe"
+    ],
+    "processPaths": [
+      "bf1.exe"
+    ],
+    "aliases": [
+      "Battlefield 1"
+    ]
+  },
+  {
+    "id": "the-binding-of-isaac-rebirth",
+    "name": "The Binding of Isaac: Rebirth",
+    "executables": [
+      "isaac-ng.exe"
+    ],
+    "processPaths": [
+      "isaac-ng.exe"
+    ],
+    "aliases": [
+      "The Binding of Isaac: Rebirth"
+    ],
+    "steamAppId": 250900
+  },
+  {
+    "id": "hearts-of-iron-iv",
+    "name": "Hearts of Iron IV",
+    "executables": [
+      "hoi4.exe"
+    ],
+    "processPaths": [
+      "hoi4.exe",
+      "hearts of iron iv/hoi4.exe"
+    ],
+    "aliases": [
+      "Hearts of Iron IV"
+    ],
+    "steamAppId": 394360
+  },
+  {
+    "id": "sid-meier-s-civilization-v",
+    "name": "Sid Meier's Civilization V",
+    "executables": [
+      "civilizationv_dx11.exe"
+    ],
+    "processPaths": [
+      "civilizationv_dx11.exe"
+    ],
+    "aliases": [
+      "Sid Meier's Civilization V"
+    ],
+    "steamAppId": 8930
+  },
+  {
+    "id": "smite",
+    "name": "SMITE",
+    "executables": [
+      "smiteeac.exe",
+      "smite.exe"
+    ],
+    "processPaths": [
+      "smiteeac.exe",
+      "smite.exe"
+    ],
+    "aliases": [
+      "SMITE"
+    ],
+    "steamAppId": 386360
+  },
+  {
+    "id": "factorio",
+    "name": "Factorio",
+    "executables": [
+      "factorio.exe"
+    ],
+    "processPaths": [
+      "factorio.exe"
+    ],
+    "aliases": [
+      "Factorio"
+    ],
+    "steamAppId": 427520
+  },
+  {
+    "id": "diablo-iii",
+    "name": "Diablo III",
+    "executables": [
+      "diablo iii.exe",
+      "diablo iii64.exe"
+    ],
+    "processPaths": [
+      "diablo iii.exe",
+      "diablo iii64.exe"
+    ],
+    "aliases": [
+      "Diablo III"
+    ]
+  },
+  {
+    "id": "the-elder-scrolls-v-skyrim",
+    "name": "The Elder Scrolls V: Skyrim",
+    "executables": [
+      "tesv_original.exe",
+      "tesv.exe"
+    ],
+    "processPaths": [
+      "tesv_original.exe",
+      "tesv.exe"
+    ],
+    "aliases": [
+      "The Elder Scrolls V: Skyrim"
+    ],
+    "steamAppId": 72850
+  },
+  {
+    "id": "don-t-starve-together",
+    "name": "Don't Starve Together",
+    "executables": [
+      "dontstarve.exe",
+      "dontstarve_steam.exe"
+    ],
+    "processPaths": [
+      "don't starve together/bin/dontstarve.exe",
+      "don't starve together/bin/dontstarve_steam.exe"
+    ],
+    "aliases": [
+      "Don't Starve Together"
+    ],
+    "steamAppId": 322330
+  },
+  {
+    "id": "portal-2",
+    "name": "Portal 2",
+    "executables": [
+      "portal2.exe"
+    ],
+    "processPaths": [
+      "portal2.exe"
+    ],
+    "aliases": [
+      "Portal 2"
+    ],
+    "steamAppId": 620
+  },
+  {
+    "id": "call-of-duty-black-ops-iii",
+    "name": "Call of Duty: Black Ops III",
+    "executables": [
+      "boiii.exe",
+      "blackops3.exe"
+    ],
+    "processPaths": [
+      "call of duty black ops iii/boiii.exe",
+      "blackops3.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Black Ops III"
+    ],
+    "steamAppId": 437350
+  },
+  {
+    "id": "dark-souls-iii",
+    "name": "DARK SOULS III",
+    "executables": [
+      "darksoulsiii.exe"
+    ],
+    "processPaths": [
+      "game/darksoulsiii.exe",
+      "darksoulsiii.exe"
+    ],
+    "aliases": [
+      "DARK SOULS III"
+    ],
+    "steamAppId": 374320
+  },
+  {
+    "id": "fallout-4",
+    "name": "Fallout 4",
+    "executables": [
+      "fallout4.exe"
+    ],
+    "processPaths": [
+      "fallout4.exe"
+    ],
+    "aliases": [
+      "Fallout 4"
+    ],
+    "steamAppId": 377160
+  },
+  {
+    "id": "fallout-new-vegas",
+    "name": "Fallout: New Vegas",
+    "executables": [
+      "falloutnv.exe"
+    ],
+    "processPaths": [
+      "falloutnv.exe"
+    ],
+    "aliases": [
+      "Fallout: New Vegas"
+    ],
+    "steamAppId": 22380
+  },
+  {
+    "id": "the-witcher-3-wild-hunt",
+    "name": "The Witcher 3: Wild Hunt",
+    "executables": [
+      "witcher3.exe"
+    ],
+    "processPaths": [
+      "witcher3.exe"
+    ],
+    "aliases": [
+      "The Witcher 3: Wild Hunt"
+    ],
+    "steamAppId": 292030
+  },
+  {
+    "id": "battlefield-4-premium-edition",
+    "name": "Battlefield 4: Premium Edition",
+    "executables": [
+      "bf4cte.exe",
+      "bf4.exe"
+    ],
+    "processPaths": [
+      "bf4cte.exe",
+      "bf4.exe"
+    ],
+    "aliases": [
+      "Battlefield 4: Premium Edition"
+    ],
+    "steamAppId": 1238860
+  },
+  {
+    "id": "guild-wars-2",
+    "name": "Guild Wars 2",
+    "executables": [
+      "gw2-64.exe",
+      "gw2.exe"
+    ],
+    "processPaths": [
+      "gw2-64.exe",
+      "gw2.exe"
+    ],
+    "aliases": [
+      "Guild Wars 2"
+    ],
+    "steamAppId": 1284210
+  },
+  {
+    "id": "the-elder-scrolls-v-skyrim---special-edition",
+    "name": "The Elder Scrolls V: Skyrim - Special Edition",
+    "executables": [
+      "skyrimse.exe"
+    ],
+    "processPaths": [
+      "skyrim special edition/skyrimse.exe"
+    ],
+    "aliases": [
+      "The Elder Scrolls V: Skyrim - Special Edition"
+    ],
+    "steamAppId": 489830
+  },
+  {
+    "id": "stellaris",
+    "name": "Stellaris",
+    "executables": [
+      "stellaris.exe"
+    ],
+    "processPaths": [
+      "stellaris.exe"
+    ],
+    "aliases": [
+      "Stellaris"
+    ],
+    "steamAppId": 281990
+  },
+  {
+    "id": "the-forest",
+    "name": "The Forest",
+    "executables": [
+      "theforest.exe",
+      "theforestvr.exe"
+    ],
+    "processPaths": [
+      "theforest.exe",
+      "the forest/theforestvr.exe"
+    ],
+    "aliases": [
+      "The Forest"
+    ],
+    "steamAppId": 242760
+  },
+  {
+    "id": "europa-universalis-iv",
+    "name": "Europa Universalis IV",
+    "executables": [
+      "eu4.exe"
+    ],
+    "processPaths": [
+      "eu4.exe"
+    ],
+    "aliases": [
+      "Europa Universalis IV"
+    ],
+    "steamAppId": 236850
+  },
+  {
+    "id": "undertale",
+    "name": "UNDERTALE",
+    "executables": [
+      "undertale.exe"
+    ],
+    "processPaths": [
+      "undertale.exe"
+    ],
+    "aliases": [
+      "UNDERTALE"
+    ],
+    "steamAppId": 391540
+  },
+  {
+    "id": "fallout-shelter",
+    "name": "Fallout Shelter",
+    "executables": [
+      "falloutshelter.exe"
+    ],
+    "processPaths": [
+      "falloutshelter.exe"
+    ],
+    "aliases": [
+      "Fallout Shelter"
+    ],
+    "steamAppId": 588430
+  },
+  {
+    "id": "rimworld",
+    "name": "RimWorld",
+    "executables": [
+      "rimworld914win.exe",
+      "rimworldwin.exe"
+    ],
+    "processPaths": [
+      "rimworld914win.exe",
+      "rimworldwin.exe"
+    ],
+    "aliases": [
+      "RimWorld"
+    ],
+    "steamAppId": 294100
+  },
+  {
+    "id": "beamng-drive",
+    "name": "BeamNG.drive",
+    "executables": [
+      "beamng.drive.exe",
+      "beamng.drive.x64.exe"
+    ],
+    "processPaths": [
+      "beamng.drive.exe",
+      "beamng.drive.x64.exe"
+    ],
+    "aliases": [
+      "BeamNG.drive"
+    ],
+    "steamAppId": 284160
+  },
+  {
+    "id": "sid-meier-s-civilization-vi",
+    "name": "Sid Meier's Civilization VI",
+    "executables": [
+      "civilizationvi.exe"
+    ],
+    "processPaths": [
+      "civilizationvi.exe"
+    ],
+    "aliases": [
+      "Sid Meier's Civilization VI"
+    ],
+    "steamAppId": 289070
+  },
+  {
+    "id": "the-elder-scrolls-online",
+    "name": "The Elder Scrolls Online",
+    "executables": [
+      "eso.exe",
+      "eso64.exe"
+    ],
+    "processPaths": [
+      "game/client/eso.exe",
+      "game/client/eso64.exe"
+    ],
+    "aliases": [
+      "The Elder Scrolls Online"
+    ],
+    "steamAppId": 306130
+  },
+  {
+    "id": "doom",
+    "name": "DOOM",
+    "executables": [
+      "doomx64.exe"
+    ],
+    "processPaths": [
+      "doomx64.exe"
+    ],
+    "aliases": [
+      "DOOM"
+    ],
+    "steamAppId": 379720
+  },
+  {
+    "id": "portal",
+    "name": "Portal",
+    "executables": [
+      "hl2.exe",
+      "hl2p.exe"
+    ],
+    "processPaths": [
+      "portal/hl2.exe",
+      "hl2p.exe"
+    ],
+    "aliases": [
+      "Portal"
+    ],
+    "steamAppId": 400
+  },
+  {
+    "id": "crusader-kings-ii",
+    "name": "Crusader Kings II",
+    "executables": [
+      "ck2game.exe"
+    ],
+    "processPaths": [
+      "ck2game.exe"
+    ],
+    "aliases": [
+      "Crusader Kings II"
+    ],
+    "steamAppId": 203770
+  },
+  {
+    "id": "total-war-warhammer-ii",
+    "name": "Total War: Warhammer II",
+    "executables": [
+      "warhammer2.exe"
+    ],
+    "processPaths": [
+      "warhammer2.exe"
+    ],
+    "aliases": [
+      "Total War: Warhammer II"
+    ],
+    "steamAppId": 594570
+  },
+  {
+    "id": "dying-light",
+    "name": "Dying Light",
+    "executables": [
+      "dyinglightgame.exe"
+    ],
+    "processPaths": [
+      "dyinglightgame.exe"
+    ],
+    "aliases": [
+      "Dying Light"
+    ],
+    "steamAppId": 239140
+  },
+  {
+    "id": "rise-of-the-tomb-raider",
+    "name": "Rise of the Tomb Raider",
+    "executables": [
+      "rottr.exe"
+    ],
+    "processPaths": [
+      "rottr.exe"
+    ],
+    "aliases": [
+      "Rise of the Tomb Raider"
+    ],
+    "steamAppId": 391220
+  },
+  {
+    "id": "cuphead",
+    "name": "Cuphead",
+    "executables": [
+      "cuphead.exe"
+    ],
+    "processPaths": [
+      "cuphead.exe"
+    ],
+    "aliases": [
+      "Cuphead"
+    ],
+    "steamAppId": 268910
+  },
+  {
+    "id": "oxygen-not-included",
+    "name": "Oxygen Not Included",
+    "executables": [
+      "oxygennotincluded.exe"
+    ],
+    "processPaths": [
+      "oxygennotincluded.exe"
+    ],
+    "aliases": [
+      "Oxygen Not Included"
+    ],
+    "steamAppId": 457140
+  },
+  {
+    "id": "hollow-knight",
+    "name": "Hollow Knight",
+    "executables": [
+      "hollow_knight.exe"
+    ],
+    "processPaths": [
+      "hollow_knight.exe"
+    ],
+    "aliases": [
+      "Hollow Knight"
+    ],
+    "steamAppId": 367520
+  },
+  {
+    "id": "battlefield-3",
+    "name": "Battlefield 3",
+    "executables": [
+      "bf3.exe"
+    ],
+    "processPaths": [
+      "bf3.exe"
+    ],
+    "aliases": [
+      "Battlefield 3"
+    ]
+  },
+  {
+    "id": "destiny-2",
+    "name": "Destiny 2",
+    "executables": [
+      "destiny2.exe"
+    ],
+    "processPaths": [
+      "destiny2.exe"
+    ],
+    "aliases": [
+      "Destiny 2"
+    ],
+    "steamAppId": 1085660
+  },
+  {
+    "id": "assassin-s-creed-origins",
+    "name": "Assassin's Creed Origins",
+    "executables": [
+      "acorigins.exe"
+    ],
+    "processPaths": [
+      "acorigins.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed Origins"
+    ],
+    "steamAppId": 582160
+  },
+  {
+    "id": "total-war-rome-ii",
+    "name": "Total War: Rome II",
+    "executables": [
+      "rome2.exe"
+    ],
+    "processPaths": [
+      "rome2.exe"
+    ],
+    "aliases": [
+      "Total War: Rome II"
+    ]
+  },
+  {
+    "id": "assassin-s-creed-iv-black-flag",
+    "name": "Assassin's Creed IV Black Flag",
+    "executables": [
+      "ac4bfsp.exe",
+      "ac4bfmp.exe"
+    ],
+    "processPaths": [
+      "ac4bfsp.exe",
+      "ac4bfmp.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed IV Black Flag"
+    ],
+    "steamAppId": 242050
+  },
+  {
+    "id": "escape-from-tarkov",
+    "name": "Escape from Tarkov",
+    "executables": [
+      "escapefromtarkov.exe"
+    ],
+    "processPaths": [
+      "escapefromtarkov.exe"
+    ],
+    "aliases": [
+      "Escape from Tarkov"
+    ],
+    "steamAppId": 3932890
+  },
+  {
+    "id": "borderlands-the-pre-sequel",
+    "name": "Borderlands: The Pre-Sequel",
+    "executables": [
+      "borderlandspresequel.exe"
+    ],
+    "processPaths": [
+      "borderlandspresequel.exe"
+    ],
+    "aliases": [
+      "Borderlands: The Pre-Sequel"
+    ],
+    "steamAppId": 261640
+  },
+  {
+    "id": "tomb-raider",
+    "name": "Tomb Raider",
+    "executables": [
+      "tombraider.exe"
+    ],
+    "processPaths": [
+      "tombraider.exe"
+    ],
+    "aliases": [
+      "Tomb Raider"
+    ],
+    "steamAppId": 203160
+  },
+  {
+    "id": "the-binding-of-isaac",
+    "name": "The Binding of Isaac",
+    "executables": [
+      "isaac.exe",
+      "binding_of_isaac.exe"
+    ],
+    "processPaths": [
+      "isaac.exe",
+      "binding_of_isaac.exe"
+    ],
+    "aliases": [
+      "The Binding of Isaac"
+    ],
+    "steamAppId": 113200
+  },
+  {
+    "id": "kingdom-come-deliverance",
+    "name": "Kingdom Come: Deliverance",
+    "executables": [
+      "kingdomcome.exe"
+    ],
+    "processPaths": [
+      "kingdomcomedeliverance/bin/win64/kingdomcome.exe"
+    ],
+    "aliases": [
+      "Kingdom Come: Deliverance"
+    ],
+    "steamAppId": 379430
+  },
+  {
+    "id": "borderlands-2",
+    "name": "Borderlands 2",
+    "executables": [
+      "borderlands2.exe"
+    ],
+    "processPaths": [
+      "borderlands2.exe"
+    ],
+    "aliases": [
+      "Borderlands 2"
+    ],
+    "steamAppId": 49520
+  },
+  {
+    "id": "assassin-s-creed-unity",
+    "name": "Assassin's Creed Unity",
+    "executables": [
+      "acu.exe"
+    ],
+    "processPaths": [
+      "assassin's creed unity/acu.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed Unity"
+    ],
+    "steamAppId": 289650
+  },
+  {
+    "id": "assassin-s-creed-brotherhood",
+    "name": "Assassin's Creed Brotherhood",
+    "executables": [
+      "acbmp.exe",
+      "acbsp.exe"
+    ],
+    "processPaths": [
+      "acbmp.exe",
+      "acbsp.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed Brotherhood"
+    ],
+    "steamAppId": 48190
+  },
+  {
+    "id": "assassin-s-creed-revelations",
+    "name": "Assassin's Creed Revelations",
+    "executables": [
+      "acrsp.exe"
+    ],
+    "processPaths": [
+      "acrsp.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed Revelations"
+    ],
+    "steamAppId": 201870
+  },
+  {
+    "id": "far-cry-2",
+    "name": "Far Cry 2",
+    "executables": [
+      "farcry2.exe"
+    ],
+    "processPaths": [
+      "farcry2.exe"
+    ],
+    "aliases": [
+      "Far Cry 2"
+    ],
+    "steamAppId": 19900
+  },
+  {
+    "id": "far-cry-4",
+    "name": "Far Cry 4",
+    "executables": [
+      "farcry4.exe"
+    ],
+    "processPaths": [
+      "farcry4.exe"
+    ],
+    "aliases": [
+      "Far Cry 4"
+    ],
+    "steamAppId": 298110
+  },
+  {
+    "id": "far-cry-primal",
+    "name": "Far Cry: Primal",
+    "executables": [
+      "fcprimal.exe"
+    ],
+    "processPaths": [
+      "fcprimal.exe"
+    ],
+    "aliases": [
+      "Far Cry: Primal"
+    ],
+    "steamAppId": 371660
+  },
+  {
+    "id": "assassin-s-creed-syndicate",
+    "name": "Assassin's Creed Syndicate",
+    "executables": [
+      "acs.exe"
+    ],
+    "processPaths": [
+      "assassin's creed syndicate/acs.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed Syndicate"
+    ],
+    "steamAppId": 368500
+  },
+  {
+    "id": "far-cry-3",
+    "name": "Far Cry 3",
+    "executables": [
+      "farcry3.exe",
+      "farcry3_d3d11.exe"
+    ],
+    "processPaths": [
+      "farcry3.exe",
+      "farcry3_d3d11.exe"
+    ],
+    "aliases": [
+      "Far Cry 3"
+    ],
+    "steamAppId": 220240
+  },
+  {
+    "id": "total-war-attila",
+    "name": "Total War: Attila",
+    "executables": [
+      "attila.exe"
+    ],
+    "processPaths": [
+      "attila.exe"
+    ],
+    "aliases": [
+      "Total War: Attila"
+    ],
+    "steamAppId": 325610
+  },
+  {
+    "id": "total-war-shogun-2",
+    "name": "Total War: Shogun 2",
+    "executables": [
+      "shogun2.exe"
+    ],
+    "processPaths": [
+      "shogun2.exe"
+    ],
+    "aliases": [
+      "Total War: Shogun 2"
+    ],
+    "steamAppId": 34330
+  },
+  {
+    "id": "left-4-dead",
+    "name": "Left 4 Dead",
+    "executables": [
+      "left4dead.exe"
+    ],
+    "processPaths": [
+      "left4dead.exe"
+    ],
+    "aliases": [
+      "Left 4 Dead"
+    ],
+    "steamAppId": 500
+  },
+  {
+    "id": "call-of-duty-modern-warfare-2",
+    "name": "Call of Duty: Modern Warfare 2",
+    "executables": [
+      "iw4mp.exe",
+      "iw4sp.exe"
+    ],
+    "processPaths": [
+      "iw4mp.exe",
+      "iw4sp.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Modern Warfare 2"
+    ],
+    "steamAppId": 10180
+  },
+  {
+    "id": "risk-of-rain",
+    "name": "Risk of Rain",
+    "executables": [
+      "risk of rain.exe"
+    ],
+    "processPaths": [
+      "risk of rain.exe"
+    ],
+    "aliases": [
+      "Risk of Rain"
+    ],
+    "steamAppId": 248820
+  },
+  {
+    "id": "the-witcher-2-assassins-of-kings---enhanced-edition",
+    "name": "The Witcher 2: Assassins of Kings - Enhanced Edition",
+    "executables": [
+      "witcher2.exe"
+    ],
+    "processPaths": [
+      "witcher2.exe"
+    ],
+    "aliases": [
+      "The Witcher 2: Assassins of Kings - Enhanced Edition"
+    ],
+    "steamAppId": 20920
+  },
+  {
+    "id": "project-zomboid",
+    "name": "Project Zomboid",
+    "executables": [
+      "projectzomboid64.exe",
+      "projectzomboid32.exe"
+    ],
+    "processPaths": [
+      "projectzomboid64.exe",
+      "projectzomboid32.exe"
+    ],
+    "aliases": [
+      "Project Zomboid"
+    ],
+    "steamAppId": 108600
+  },
+  {
+    "id": "age-of-mythology-extended-edition",
+    "name": "Age of Mythology: Extended Edition",
+    "executables": [
+      "aomx.exe"
+    ],
+    "processPaths": [
+      "age of mythology/aomx.exe",
+      "aomx.exe"
+    ],
+    "aliases": [
+      "Age of Mythology: Extended Edition"
+    ],
+    "steamAppId": 266840
+  },
+  {
+    "id": "deep-rock-galactic",
+    "name": "Deep Rock Galactic",
+    "executables": [
+      "fsd-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "fsd-win64-shipping.exe"
+    ],
+    "aliases": [
+      "Deep Rock Galactic"
+    ],
+    "steamAppId": 14949
+  },
+  {
+    "id": "microsoft-flight-simulator-x-steam-edition",
+    "name": "Microsoft Flight Simulator X: Steam Edition",
+    "executables": [
+      "fsx.exe"
+    ],
+    "processPaths": [
+      "fsx.exe"
+    ],
+    "aliases": [
+      "Microsoft Flight Simulator X: Steam Edition"
+    ],
+    "steamAppId": 314160
+  },
+  {
+    "id": "far-cry-5",
+    "name": "Far Cry 5",
+    "executables": [
+      "farcry5.exe"
+    ],
+    "processPaths": [
+      "farcry5.exe"
+    ],
+    "aliases": [
+      "Far Cry 5"
+    ],
+    "steamAppId": 552520
+  },
+  {
+    "id": "no-man-s-sky",
+    "name": "No Man's Sky",
+    "executables": [
+      "nms.exe"
+    ],
+    "processPaths": [
+      "nms.exe"
+    ],
+    "aliases": [
+      "No Man's Sky"
+    ],
+    "steamAppId": 275850
+  },
+  {
+    "id": "resident-evil-7-biohazard",
+    "name": "Resident Evil 7: Biohazard",
+    "executables": [
+      "re7.exe"
+    ],
+    "processPaths": [
+      "re7.exe"
+    ],
+    "aliases": [
+      "Resident Evil 7: Biohazard"
+    ],
+    "steamAppId": 418370
+  },
+  {
+    "id": "resident-evil-5",
+    "name": "Resident Evil 5",
+    "executables": [
+      "re5dx9.exe"
+    ],
+    "processPaths": [
+      "re5dx9.exe"
+    ],
+    "aliases": [
+      "Resident Evil 5"
+    ],
+    "steamAppId": 21690
+  },
+  {
+    "id": "final-fantasy-vii",
+    "name": "Final Fantasy VII",
+    "executables": [
+      "ff7_en.exe"
+    ],
+    "processPaths": [
+      "ff7_en.exe"
+    ],
+    "aliases": [
+      "Final Fantasy VII"
+    ],
+    "steamAppId": 39140
+  },
+  {
+    "id": "resident-evil-4-ultimate-hd-edition",
+    "name": "Resident Evil 4: Ultimate HD Edition",
+    "executables": [
+      "bio4.exe"
+    ],
+    "processPaths": [
+      "bio4.exe"
+    ],
+    "aliases": [
+      "Resident Evil 4: Ultimate HD Edition"
+    ],
+    "steamAppId": 254700
+  },
+  {
+    "id": "call-of-duty-modern-warfare-3",
+    "name": "Call of Duty: Modern Warfare 3",
+    "executables": [
+      "iw5sp.exe",
+      "iw5mp.exe"
+    ],
+    "processPaths": [
+      "iw5sp.exe",
+      "iw5mp.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Modern Warfare 3"
+    ],
+    "steamAppId": 115300
+  },
+  {
+    "id": "resident-evil-6",
+    "name": "Resident Evil 6",
+    "executables": [
+      "bh6.exe"
+    ],
+    "processPaths": [
+      "bh6.exe"
+    ],
+    "aliases": [
+      "Resident Evil 6"
+    ],
+    "steamAppId": 221040
+  },
+  {
+    "id": "payday-the-heist",
+    "name": "PAYDAY: The Heist",
+    "executables": [
+      "payday_win32_release.exe"
+    ],
+    "processPaths": [
+      "payday_win32_release.exe"
+    ],
+    "aliases": [
+      "PAYDAY: The Heist"
+    ],
+    "steamAppId": 24240
+  },
+  {
+    "id": "dark-souls-ii",
+    "name": "Dark Souls II",
+    "executables": [
+      "darksoulsii.exe"
+    ],
+    "processPaths": [
+      "darksoulsii.exe"
+    ],
+    "aliases": [
+      "Dark Souls II"
+    ],
+    "steamAppId": 236430
+  },
+  {
+    "id": "call-of-duty-infinite-warfare",
+    "name": "Call of Duty: Infinite Warfare",
+    "executables": [
+      "iw7_ship.exe"
+    ],
+    "processPaths": [
+      "iw7_ship.exe",
+      "call of duty - infinite warfare/iw7_ship.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Infinite Warfare"
+    ],
+    "steamAppId": 292730
+  },
+  {
+    "id": "monster-hunter-world",
+    "name": "Monster Hunter: World",
+    "executables": [
+      "monsterhunterworld.exe"
+    ],
+    "processPaths": [
+      "monsterhunterworld.exe"
+    ],
+    "aliases": [
+      "Monster Hunter: World"
+    ],
+    "steamAppId": 582010
+  },
+  {
+    "id": "shadow-of-the-tomb-raider",
+    "name": "Shadow of the Tomb Raider",
+    "executables": [
+      "sottr.exe"
+    ],
+    "processPaths": [
+      "shadow of the tomb raider/sottr.exe",
+      "sottr.exe"
+    ],
+    "aliases": [
+      "Shadow of the Tomb Raider"
+    ],
+    "steamAppId": 750920
+  },
+  {
+    "id": "call-of-duty-black-ops-4",
+    "name": "Call of Duty: Black Ops 4",
+    "executables": [
+      "blackops4.exe"
+    ],
+    "processPaths": [
+      "blackops4.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Black Ops 4"
+    ]
+  },
+  {
+    "id": "albion-online",
+    "name": "Albion Online",
+    "executables": [
+      "albion-online.exe"
+    ],
+    "processPaths": [
+      "albion-online.exe"
+    ],
+    "aliases": [
+      "Albion Online"
+    ],
+    "steamAppId": 761890
+  },
+  {
+    "id": "assassin-s-creed-odyssey",
+    "name": "Assassin's Creed Odyssey",
+    "executables": [
+      "acodyssey.exe"
+    ],
+    "processPaths": [
+      "acodyssey.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed Odyssey"
+    ],
+    "steamAppId": 812140
+  },
+  {
+    "id": "resident-evil-revelations",
+    "name": "Resident Evil: Revelations",
+    "executables": [
+      "rerev.exe"
+    ],
+    "processPaths": [
+      "rerev.exe"
+    ],
+    "aliases": [
+      "Resident Evil: Revelations"
+    ],
+    "steamAppId": 222480
+  },
+  {
+    "id": "fallout-76",
+    "name": "Fallout 76",
+    "executables": [
+      "fallout76.exe"
+    ],
+    "processPaths": [
+      "fallout76.exe"
+    ],
+    "aliases": [
+      "Fallout 76"
+    ],
+    "steamAppId": 760214
+  },
+  {
+    "id": "battlefield-v",
+    "name": "Battlefield V",
+    "executables": [
+      "bfv.exe"
+    ],
+    "processPaths": [
+      "battlefield v/bfv.exe"
+    ],
+    "aliases": [
+      "Battlefield V"
+    ]
+  },
+  {
+    "id": "forza-horizon-4",
+    "name": "Forza Horizon 4",
+    "executables": [
+      "forzahorizon4.exe"
+    ],
+    "processPaths": [
+      "forzahorizon4.exe"
+    ],
+    "aliases": [
+      "Forza Horizon 4"
+    ],
+    "steamAppId": 1293830
+  },
+  {
+    "id": "doom-eternal",
+    "name": "DOOM Eternal",
+    "executables": [
+      "doometernalx64vk.exe"
+    ],
+    "processPaths": [
+      "doometernal/doometernalx64vk.exe"
+    ],
+    "aliases": [
+      "DOOM Eternal"
+    ],
+    "steamAppId": 782330
+  },
+  {
+    "id": "fall-guys",
+    "name": "Fall Guys",
+    "executables": [
+      "fallguys_client_game.exe",
+      "fallguys_client.exe"
+    ],
+    "processPaths": [
+      "fallguys_client_game.exe",
+      "fallguys_client.exe"
+    ],
+    "aliases": [
+      "Fall Guys"
+    ],
+    "steamAppId": 1097150
+  },
+  {
+    "id": "microsoft-flight-simulator",
+    "name": "Microsoft Flight Simulator",
+    "executables": [
+      "flightsimulator.exe"
+    ],
+    "processPaths": [
+      "flightsimulator.exe"
+    ],
+    "aliases": [
+      "Microsoft Flight Simulator"
+    ]
+  },
+  {
+    "id": "assassin-s-creed-valhalla",
+    "name": "Assassin's Creed Valhalla",
+    "executables": [
+      "acvalhalla.exe"
+    ],
+    "processPaths": [
+      "acvalhalla.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed Valhalla"
+    ],
+    "steamAppId": 2208920
+  },
+  {
+    "id": "forza-horizon-5",
+    "name": "Forza Horizon 5",
+    "executables": [
+      "forzahorizon5.exe"
+    ],
+    "processPaths": [
+      "forzahorizon5/forzahorizon5.exe",
+      "forzahorizon5.exe"
+    ],
+    "aliases": [
+      "Forza Horizon 5"
+    ],
+    "steamAppId": 1551360
+  },
+  {
+    "id": "lost-ark",
+    "name": "Lost Ark",
+    "executables": [
+      "lostark.exe"
+    ],
+    "processPaths": [
+      "win64/lostark.exe"
+    ],
+    "aliases": [
+      "Lost Ark"
+    ],
+    "steamAppId": 1599340
+  },
+  {
+    "id": "monster-hunter-rise",
+    "name": "Monster Hunter Rise",
+    "executables": [
+      "monsterhunterrise.exe"
+    ],
+    "processPaths": [
+      "monsterhunterrise/monsterhunterrise.exe"
+    ],
+    "aliases": [
+      "Monster Hunter Rise"
+    ],
+    "steamAppId": 22570
+  },
+  {
+    "id": "marvel-snap",
+    "name": "MARVEL SNAP",
+    "executables": [
+      "snap.exe"
+    ],
+    "processPaths": [
+      "snap.exe",
+      "marvel snap/snap.exe"
+    ],
+    "aliases": [
+      "MARVEL SNAP"
+    ],
+    "steamAppId": 1997040
+  },
+  {
+    "id": "hogwarts-legacy",
+    "name": "Hogwarts Legacy",
+    "executables": [
+      "hogwartslegacy.exe"
+    ],
+    "processPaths": [
+      "win64/hogwartslegacy.exe"
+    ],
+    "aliases": [
+      "Hogwarts Legacy"
+    ],
+    "steamAppId": 990080
+  },
+  {
+    "id": "sons-of-the-forest",
+    "name": "Sons of the Forest",
+    "executables": [
+      "sonsoftheforest.exe"
+    ],
+    "processPaths": [
+      "sons of the forest/sonsoftheforest.exe"
+    ],
+    "aliases": [
+      "Sons of the Forest"
+    ],
+    "steamAppId": 1326470
+  },
+  {
+    "id": "diablo-iv",
+    "name": "Diablo IV",
+    "executables": [
+      "diablo iv.exe"
+    ],
+    "processPaths": [
+      "diablo iv/diablo iv.exe"
+    ],
+    "aliases": [
+      "Diablo IV"
+    ],
+    "steamAppId": 1390267
+  },
+  {
+    "id": "honkai-star-rail",
+    "name": "Honkai: Star Rail",
+    "executables": [
+      "starrail.exe"
+    ],
+    "processPaths": [
+      "games/starrail.exe"
+    ],
+    "aliases": [
+      "Honkai: Star Rail"
+    ]
+  },
+  {
+    "id": "dying-light-2-stay-human",
+    "name": "Dying Light 2: Stay Human",
+    "executables": [
+      "dyinglightgame_x64_rwdi.exe"
+    ],
+    "processPaths": [
+      "x64/dyinglightgame_x64_rwdi.exe"
+    ],
+    "aliases": [
+      "Dying Light 2: Stay Human"
+    ]
+  },
+  {
+    "id": "crusader-kings-iii",
+    "name": "Crusader Kings III",
+    "executables": [
+      "ck3.exe"
+    ],
+    "processPaths": [
+      "binaries/ck3.exe"
+    ],
+    "aliases": [
+      "Crusader Kings III"
+    ],
+    "steamAppId": 1158310
+  },
+  {
+    "id": "powerwash-simulator",
+    "name": "PowerWash Simulator",
+    "executables": [
+      "powerwashsimulator.exe"
+    ],
+    "processPaths": [
+      "powerwash simulator/powerwashsimulator.exe"
+    ],
+    "aliases": [
+      "PowerWash Simulator"
+    ],
+    "steamAppId": 1290000
+  },
+  {
+    "id": "half-life-alyx",
+    "name": "Half-Life: Alyx",
+    "executables": [
+      "hlvr.exe"
+    ],
+    "processPaths": [
+      "win64/hlvr.exe"
+    ],
+    "aliases": [
+      "Half-Life: Alyx"
+    ],
+    "steamAppId": 546560
+  },
+  {
+    "id": "marvel-s-spider-man-remastered",
+    "name": "Marvel's Spider-Man Remastered",
+    "executables": [
+      "spider-man.exe"
+    ],
+    "processPaths": [
+      "marvel's spider-man remastered/spider-man.exe"
+    ],
+    "aliases": [
+      "Marvel's Spider-Man Remastered"
+    ],
+    "steamAppId": 1817070
+  },
+  {
+    "id": "age-of-empires-iii-definitive-edition",
+    "name": "Age of Empires III: Definitive Edition",
+    "executables": [
+      "aoe3de_s.exe"
+    ],
+    "processPaths": [
+      "aoe3de/aoe3de_s.exe"
+    ],
+    "aliases": [
+      "Age of Empires III: Definitive Edition"
+    ],
+    "steamAppId": 933110
+  },
+  {
+    "id": "assetto-corsa-competizione",
+    "name": "Assetto Corsa Competizione",
+    "executables": [
+      "ac2-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "win64/ac2-win64-shipping.exe"
+    ],
+    "aliases": [
+      "Assetto Corsa Competizione"
+    ],
+    "steamAppId": 805550
+  },
+  {
+    "id": "outer-wilds",
+    "name": "Outer Wilds",
+    "executables": [
+      "outerwilds.exe"
+    ],
+    "processPaths": [
+      "outer wilds/outerwilds.exe"
+    ],
+    "aliases": [
+      "Outer Wilds"
+    ],
+    "steamAppId": 753640
+  },
+  {
+    "id": "honkai-impact-3rd",
+    "name": "Honkai Impact 3rd",
+    "executables": [
+      "bh3.exe"
+    ],
+    "processPaths": [
+      "honkaiimpact3rd/bh3.exe"
+    ],
+    "aliases": [
+      "Honkai Impact 3rd"
+    ],
+    "steamAppId": 1671200
+  },
+  {
+    "id": "marvel-s-spider-man-miles-morales",
+    "name": "Marvel's Spider-Man: Miles Morales",
+    "executables": [
+      "milesmorales.exe"
+    ],
+    "processPaths": [
+      "marvel's spider-man miles morales/milesmorales.exe"
+    ],
+    "aliases": [
+      "Marvel's Spider-Man: Miles Morales"
+    ],
+    "steamAppId": 1817190
+  },
+  {
+    "id": "victoria-3",
+    "name": "Victoria 3",
+    "executables": [
+      "victoria3.exe"
+    ],
+    "processPaths": [
+      "binaries/victoria3.exe"
+    ],
+    "aliases": [
+      "Victoria 3"
+    ],
+    "steamAppId": 529340
+  },
+  {
+    "id": "marvel-s-guardians-of-the-galaxy",
+    "name": "Marvel's Guardians of the Galaxy",
+    "executables": [
+      "gotg.exe"
+    ],
+    "processPaths": [
+      "bin/gotg.exe"
+    ],
+    "aliases": [
+      "Marvel's Guardians of the Galaxy"
+    ],
+    "steamAppId": 1088850
+  },
+  {
+    "id": "final-fantasy-vii-remake-intergrade",
+    "name": "Final Fantasy VII Remake Intergrade",
+    "executables": [
+      "ff7remake_.exe"
+    ],
+    "processPaths": [
+      "win64/ff7remake_.exe"
+    ],
+    "aliases": [
+      "Final Fantasy VII Remake Intergrade"
+    ],
+    "steamAppId": 1462040
+  },
+  {
+    "id": "call-of-duty-black-ops-cold-war",
+    "name": "Call of Duty: Black Ops Cold War",
+    "executables": [
+      "blackopscoldwar.exe"
+    ],
+    "processPaths": [
+      "call of duty black ops cold war/blackopscoldwar.exe",
+      "blackopscoldwar.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Black Ops Cold War"
+    ],
+    "steamAppId": 1985810
+  },
+  {
+    "id": "doom-64",
+    "name": "DOOM 64",
+    "executables": [
+      "doom64_x64.exe"
+    ],
+    "processPaths": [
+      "doom 64/doom64_x64.exe"
+    ],
+    "aliases": [
+      "DOOM 64"
+    ],
+    "steamAppId": 1148590
+  },
+  {
+    "id": "doom-3-bfg-edition",
+    "name": "DOOM 3: BFG Edition",
+    "executables": [
+      "doom3bfg.exe"
+    ],
+    "processPaths": [
+      "doom 3 bfg edition/doom3bfg.exe"
+    ],
+    "aliases": [
+      "DOOM 3: BFG Edition"
+    ],
+    "steamAppId": 208200
+  },
+  {
+    "id": "call-of-duty-vanguard",
+    "name": "Call of Duty: Vanguard",
+    "executables": [
+      "vanguard.exe"
+    ],
+    "processPaths": [
+      "call of duty vanguard/vanguard.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Vanguard"
+    ],
+    "steamAppId": 1985820
+  },
+  {
+    "id": "marvel-s-midnight-suns",
+    "name": "Marvel's Midnight Suns",
+    "executables": [
+      "midnightsuns-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "win64/midnightsuns-win64-shipping.exe"
+    ],
+    "aliases": [
+      "Marvel's Midnight Suns"
+    ],
+    "steamAppId": 368260
+  },
+  {
+    "id": "assassin-s-creed-iii-remastered",
+    "name": "Assassin's Creed III Remastered",
+    "executables": [
+      "aciii.exe"
+    ],
+    "processPaths": [
+      "assassin's creed iii remastered/aciii.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed III Remastered"
+    ],
+    "steamAppId": 911400
+  },
+  {
+    "id": "diablo-immortal",
+    "name": "Diablo Immortal",
+    "executables": [
+      "diabloimmortal.exe"
+    ],
+    "processPaths": [
+      "win64/diabloimmortal.exe"
+    ],
+    "aliases": [
+      "Diablo Immortal"
+    ]
+  },
+  {
+    "id": "total-war-warhammer-iii",
+    "name": "Total War: WARHAMMER III",
+    "executables": [
+      "warhammer3.exe"
+    ],
+    "processPaths": [
+      "total war warhammer iii/warhammer3.exe"
+    ],
+    "aliases": [
+      "Total War: WARHAMMER III"
+    ],
+    "steamAppId": 1142710
+  },
+  {
+    "id": "a-way-out",
+    "name": "A Way Out",
+    "executables": [
+      "awayout.exe"
+    ],
+    "processPaths": [
+      "win64/awayout.exe"
+    ],
+    "aliases": [
+      "A Way Out"
+    ],
+    "steamAppId": 1222700
+  },
+  {
+    "id": "total-war-three-kingdoms",
+    "name": "Total War: Three Kingdoms",
+    "executables": [
+      "three_kingdoms.exe"
+    ],
+    "processPaths": [
+      "total war three kingdoms/three_kingdoms.exe"
+    ],
+    "aliases": [
+      "Total War: Three Kingdoms"
+    ],
+    "steamAppId": 779340
+  },
+  {
+    "id": "valheim",
+    "name": "Valheim",
+    "executables": [
+      "valheim.exe"
+    ],
+    "processPaths": [
+      "valheim/valheim.exe"
+    ],
+    "aliases": [
+      "Valheim"
+    ],
+    "steamAppId": 892970
+  },
+  {
+    "id": "call-of-duty-modern-warfare-2-campaign-remastered",
+    "name": "Call of Duty: Modern Warfare 2 Campaign Remastered",
+    "executables": [
+      "mw2cr.exe"
+    ],
+    "processPaths": [
+      "call of duty modern warfare 2 campaign remastered/mw2cr.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Modern Warfare 2 Campaign Remastered"
+    ]
+  },
+  {
+    "id": "final-fantasy-ix",
+    "name": "Final Fantasy IX",
+    "executables": [
+      "ff9.exe"
+    ],
+    "processPaths": [
+      "x64/ff9.exe"
+    ],
+    "aliases": [
+      "Final Fantasy IX"
+    ],
+    "steamAppId": 377840
+  },
+  {
+    "id": "naraka-bladepoint",
+    "name": "NARAKA: BLADEPOINT",
+    "executables": [
+      "narakabladepoint.exe"
+    ],
+    "processPaths": [
+      "naraka bladepoint/narakabladepoint.exe"
+    ],
+    "aliases": [
+      "NARAKA: BLADEPOINT"
+    ],
+    "steamAppId": 1203220
+  },
+  {
+    "id": "farming-simulator-22",
+    "name": "Farming Simulator 22",
+    "executables": [
+      "farmingsimulator2022game.exe"
+    ],
+    "processPaths": [
+      "x64/farmingsimulator2022game.exe"
+    ],
+    "aliases": [
+      "Farming Simulator 22"
+    ],
+    "steamAppId": 22376
+  },
+  {
+    "id": "age-of-empires-iv",
+    "name": "Age of Empires IV",
+    "executables": [
+      "reliccardinal.exe"
+    ],
+    "processPaths": [
+      "age of empires iv/reliccardinal.exe"
+    ],
+    "aliases": [
+      "Age of Empires IV"
+    ],
+    "steamAppId": 1466860
+  },
+  {
+    "id": "resident-evil-4",
+    "name": "Resident Evil 4",
+    "executables": [
+      "re4.exe"
+    ],
+    "processPaths": [
+      "resident evil 4  biohazard re4/re4.exe"
+    ],
+    "aliases": [
+      "Resident Evil 4"
+    ],
+    "steamAppId": 2050650
+  },
+  {
+    "id": "far-cry-6",
+    "name": "Far Cry 6",
+    "executables": [
+      "farcry6.exe"
+    ],
+    "processPaths": [
+      "bin/farcry6.exe"
+    ],
+    "aliases": [
+      "Far Cry 6"
+    ],
+    "steamAppId": 2369390
+  },
+  {
+    "id": "nba-2k24",
+    "name": "NBA 2K24",
+    "executables": [
+      "nba2k24.exe"
+    ],
+    "processPaths": [
+      "nba 2k24/nba2k24.exe"
+    ],
+    "aliases": [
+      "NBA 2K24"
+    ],
+    "steamAppId": 2338770
+  },
+  {
+    "id": "payday-3",
+    "name": "PAYDAY 3",
+    "executables": [
+      "payday3client-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "win64/payday3client-win64-shipping.exe"
+    ],
+    "aliases": [
+      "PAYDAY 3"
+    ],
+    "steamAppId": 1272080
+  },
+  {
+    "id": "forza-motorsport",
+    "name": "Forza Motorsport",
+    "executables": [
+      "forza_steamworks_release_final.exe"
+    ],
+    "processPaths": [
+      "forza motorsport/forza_steamworks_release_final.exe"
+    ],
+    "aliases": [
+      "Forza Motorsport"
+    ],
+    "steamAppId": 2440510
+  },
+  {
+    "id": "it-takes-two",
+    "name": "It Takes Two",
+    "executables": [
+      "ittakestwo.exe"
+    ],
+    "processPaths": [
+      "win64/ittakestwo.exe"
+    ],
+    "aliases": [
+      "It Takes Two"
+    ],
+    "steamAppId": 1426210
+  },
+  {
+    "id": "battlefield-2042",
+    "name": "Battlefield 2042",
+    "executables": [
+      "bf2042.exe"
+    ],
+    "processPaths": [
+      "battlefield 2042/bf2042.exe"
+    ],
+    "aliases": [
+      "Battlefield 2042"
+    ],
+    "steamAppId": 1517290
+  },
+  {
+    "id": "the-elder-scrolls-v-skyrim-vr",
+    "name": "The Elder Scrolls V: Skyrim VR",
+    "executables": [
+      "skyrimvr.exe"
+    ],
+    "processPaths": [
+      "skyrimvr/skyrimvr.exe"
+    ],
+    "aliases": [
+      "The Elder Scrolls V: Skyrim VR"
+    ],
+    "steamAppId": 611670
+  },
+  {
+    "id": "resident-evil-village",
+    "name": "Resident Evil Village",
+    "executables": [
+      "re8.exe"
+    ],
+    "processPaths": [
+      "resident evil village biohazard village/re8.exe"
+    ],
+    "aliases": [
+      "Resident Evil Village"
+    ],
+    "steamAppId": 1196590
+  },
+  {
+    "id": "assassin-s-creed-mirage",
+    "name": "Assassin's Creed Mirage",
+    "executables": [
+      "acmirage.exe"
+    ],
+    "processPaths": [
+      "assassinscreedmirage/acmirage.exe",
+      "assassin's creed mirage/acmirage.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed Mirage"
+    ],
+    "steamAppId": 3035570
+  },
+  {
+    "id": "football-manager-2024",
+    "name": "Football Manager 2024",
+    "executables": [
+      "fm.exe"
+    ],
+    "processPaths": [
+      "football manager 2024/fm.exe"
+    ],
+    "aliases": [
+      "Football Manager 2024"
+    ],
+    "steamAppId": 2252570
+  },
+  {
+    "id": "cities-skylines-ii",
+    "name": "Cities: Skylines II",
+    "executables": [
+      "cities2.exe"
+    ],
+    "processPaths": [
+      "cities skylines ii/cities2.exe"
+    ],
+    "aliases": [
+      "Cities: Skylines II"
+    ],
+    "steamAppId": 949230
+  },
+  {
+    "id": "lethal-company",
+    "name": "Lethal Company",
+    "executables": [
+      "lethal company.exe"
+    ],
+    "processPaths": [
+      "lethal company/lethal company.exe"
+    ],
+    "aliases": [
+      "Lethal Company"
+    ],
+    "steamAppId": 1966720
+  },
+  {
+    "id": "risk-of-rain-returns",
+    "name": "Risk of Rain Returns",
+    "executables": [
+      "risk of rain returns.exe"
+    ],
+    "processPaths": [
+      "risk of rain returns/risk of rain returns.exe"
+    ],
+    "aliases": [
+      "Risk of Rain Returns"
+    ],
+    "steamAppId": 1337520
+  },
+  {
+    "id": "ready-or-not",
+    "name": "Ready or Not",
+    "executables": [
+      "readyornot-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "win64/readyornot-win64-shipping.exe"
+    ],
+    "aliases": [
+      "Ready or Not"
+    ],
+    "steamAppId": 1144200
+  },
+  {
+    "id": "old-school-runescape",
+    "name": "Old School RuneScape",
+    "executables": [
+      "osclient.exe"
+    ],
+    "processPaths": [
+      "old school runescape/client/osclient.exe",
+      "win64/osclient.exe"
+    ],
+    "aliases": [
+      "Old School RuneScape"
+    ],
+    "steamAppId": 1343370
+  },
+  {
+    "id": "resident-evil-3",
+    "name": "Resident Evil 3",
+    "executables": [
+      "re3.exe"
+    ],
+    "processPaths": [
+      "re3/re3.exe"
+    ],
+    "aliases": [
+      "Resident Evil 3"
+    ],
+    "steamAppId": 952060
+  },
+  {
+    "id": "palworld",
+    "name": "Palworld",
+    "executables": [
+      "palworld-win64-shipping.exe",
+      "palworld-wingdk-shipping.exe"
+    ],
+    "processPaths": [
+      "win64/palworld-win64-shipping.exe",
+      "wingdk/palworld-wingdk-shipping.exe"
+    ],
+    "aliases": [
+      "Palworld"
+    ],
+    "steamAppId": 1623730
+  },
+  {
+    "id": "enshrouded",
+    "name": "Enshrouded",
+    "executables": [
+      "enshrouded.exe"
+    ],
+    "processPaths": [
+      "enshrouded/enshrouded.exe"
+    ],
+    "aliases": [
+      "Enshrouded"
+    ],
+    "steamAppId": 1203620
+  },
+  {
+    "id": "deep-rock-galactic-survivor",
+    "name": "Deep Rock Galactic: Survivor",
+    "executables": [
+      "drg survivor.exe"
+    ],
+    "processPaths": [
+      "deep rock survivor/drg survivor.exe"
+    ],
+    "aliases": [
+      "Deep Rock Galactic: Survivor"
+    ],
+    "steamAppId": 2321470
+  },
+  {
+    "id": "balatro",
+    "name": "Balatro",
+    "executables": [
+      "balatro.exe"
+    ],
+    "processPaths": [
+      "balatro/balatro.exe"
+    ],
+    "aliases": [
+      "Balatro"
+    ],
+    "steamAppId": 2379780
+  },
+  {
+    "id": "escape-from-tarkov-arena",
+    "name": "Escape from Tarkov: Arena",
+    "executables": [
+      "escapefromtarkovarena.exe"
+    ],
+    "processPaths": [
+      "escapefromtarkovarena.exe"
+    ],
+    "aliases": [
+      "Escape from Tarkov: Arena"
+    ]
+  },
+  {
+    "id": "hades-ii",
+    "name": "Hades II",
+    "executables": [
+      "hades2.exe"
+    ],
+    "processPaths": [
+      "ship/hades2.exe"
+    ],
+    "aliases": [
+      "Hades II"
+    ],
+    "steamAppId": 1145350
+  },
+  {
+    "id": "arena-breakout-infinite",
+    "name": "Arena Breakout: Infinite",
+    "executables": [
+      "uagame.exe"
+    ],
+    "processPaths": [
+      "win64/uagame.exe"
+    ],
+    "aliases": [
+      "Arena Breakout: Infinite"
+    ],
+    "steamAppId": 2073620
+  },
+  {
+    "id": "f1-24",
+    "name": "F1 24",
+    "executables": [
+      "f1_24.exe"
+    ],
+    "processPaths": [
+      "f1 24/f1_24.exe"
+    ],
+    "aliases": [
+      "F1 24"
+    ],
+    "steamAppId": 2488620
+  },
+  {
+    "id": "wuthering-waves",
+    "name": "Wuthering Waves",
+    "executables": [
+      "client-win64-shipping.exe",
+      "wuthering waves.exe"
+    ],
+    "processPaths": [
+      "wuthering waves game/client/binaries/win64/client-win64-shipping.exe",
+      "wuthering waves.exe"
+    ],
+    "aliases": [
+      "Wuthering Waves"
+    ],
+    "steamAppId": 3513350
+  },
+  {
+    "id": "zenless-zone-zero",
+    "name": "Zenless Zone Zero",
+    "executables": [
+      "zenlesszonezero.exe"
+    ],
+    "processPaths": [
+      "zenlesszonezero game/zenlesszonezero.exe"
+    ],
+    "aliases": [
+      "Zenless Zone Zero"
+    ],
+    "steamAppId": 4162040
+  },
+  {
+    "id": "once-human",
+    "name": "Once Human",
+    "executables": [
+      "once_human.exe"
+    ],
+    "processPaths": [
+      "once human/once_human.exe"
+    ],
+    "aliases": [
+      "Once Human"
+    ],
+    "steamAppId": 2139460
+  },
+  {
+    "id": "black-myth-wukong",
+    "name": "Black Myth: Wukong",
+    "executables": [
+      "b1-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "win64/b1-win64-shipping.exe"
+    ],
+    "aliases": [
+      "Black Myth: Wukong"
+    ],
+    "steamAppId": 2358720
+  },
+  {
+    "id": "age-of-mythology-retold",
+    "name": "Age of Mythology: Retold",
+    "executables": [
+      "aomrt_s.exe"
+    ],
+    "processPaths": [
+      "age of mythology retold/aomrt_s.exe"
+    ],
+    "aliases": [
+      "Age of Mythology: Retold"
+    ],
+    "steamAppId": 1934680
+  },
+  {
+    "id": "nba-2k25",
+    "name": "NBA 2K25",
+    "executables": [
+      "nba2k25.exe"
+    ],
+    "processPaths": [
+      "nba 2k25/nba2k25.exe"
+    ],
+    "aliases": [
+      "NBA 2K25"
+    ],
+    "steamAppId": 2878980
+  },
+  {
+    "id": "final-fantasy-xvi",
+    "name": "FINAL FANTASY XVI",
+    "executables": [
+      "ffxvi.exe"
+    ],
+    "processPaths": [
+      "final fantasy xvi/ffxvi.exe",
+      "finalfantasyxvi/ffxvi.exe"
+    ],
+    "aliases": [
+      "FINAL FANTASY XVI"
+    ],
+    "steamAppId": 2515020
+  },
+  {
+    "id": "silent-hill-2",
+    "name": "SILENT HILL 2",
+    "executables": [
+      "shproto-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "win64/shproto-win64-shipping.exe"
+    ],
+    "aliases": [
+      "SILENT HILL 2"
+    ],
+    "steamAppId": 2124490
+  },
+  {
+    "id": "red-dead-redemption",
+    "name": "Red Dead Redemption",
+    "executables": [
+      "rdr.exe"
+    ],
+    "processPaths": [
+      "red dead redemption/rdr.exe"
+    ],
+    "aliases": [
+      "Red Dead Redemption"
+    ],
+    "steamAppId": 2668510
+  },
+  {
+    "id": "farming-simulator-25",
+    "name": "Farming Simulator 25",
+    "executables": [
+      "farmingsimulator2025game.exe"
+    ],
+    "processPaths": [
+      "x64/farmingsimulator2025game.exe"
+    ],
+    "aliases": [
+      "Farming Simulator 25"
+    ],
+    "steamAppId": 2300320
+  },
+  {
+    "id": "call-of-duty-black-ops-6",
+    "name": "Call of Duty: Black Ops 6",
+    "executables": [
+      "sp24-cod.exe"
+    ],
+    "processPaths": [
+      "sp24/sp24-cod.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Black Ops 6"
+    ],
+    "steamAppId": 2933620
+  },
+  {
+    "id": "microsoft-flight-simulator-2024",
+    "name": "Microsoft Flight Simulator 2024",
+    "executables": [
+      "flightsimulator2024.exe"
+    ],
+    "processPaths": [
+      "limitless/flightsimulator2024.exe"
+    ],
+    "aliases": [
+      "Microsoft Flight Simulator 2024"
+    ],
+    "steamAppId": 2537590
+  },
+  {
+    "id": "marvel-rivals",
+    "name": "Marvel Rivals",
+    "executables": [
+      "marvel.exe",
+      "marvel-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "win64/marvel.exe",
+      "win64/marvel-win64-shipping.exe"
+    ],
+    "aliases": [
+      "Marvel Rivals"
+    ],
+    "steamAppId": 2767030
+  },
+  {
+    "id": "delta-force",
+    "name": "Delta Force",
+    "executables": [
+      "deltaforceclient.exe",
+      "deltaforceclient-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "df_garena/deltaforceclient.exe",
+      "deltaforceclient.exe",
+      "win64/deltaforceclient-win64-shipping.exe"
+    ],
+    "aliases": [
+      "Delta Force"
+    ],
+    "steamAppId": 2507950
+  },
+  {
+    "id": "path-of-exile-2",
+    "name": "Path of Exile 2",
+    "executables": [
+      "pathofexilesteam.exe",
+      "pathofexile.exe",
+      "pathofexile_x64steam.exe",
+      "pathofexile_x64.exe",
+      "pathofexile_kg.exe",
+      "pathofexileegs.exe"
+    ],
+    "processPaths": [
+      "path of exile 2/pathofexilesteam.exe",
+      "path of exile 2/pathofexile.exe",
+      "path of exile 2/pathofexile_x64steam.exe",
+      "path of exile 2/pathofexile_x64.exe",
+      "path of exile 2 taiwan/pathofexile.exe",
+      "path of exile2/pathofexile_kg.exe",
+      "path of exile 2 - poe2_production/pathofexile.exe",
+      "path of exile 2 taiwan/pathofexilesteam.exe",
+      "pathofexile2/pathofexileegs.exe"
+    ],
+    "aliases": [
+      "Path of Exile 2"
+    ],
+    "steamAppId": 2694490
+  },
+  {
+    "id": "assetto-corsa-evo",
+    "name": "Assetto Corsa EVO",
+    "executables": [
+      "assettocorsaevo.exe"
+    ],
+    "processPaths": [
+      "assetto corsa evo/assettocorsaevo.exe"
+    ],
+    "aliases": [
+      "Assetto Corsa EVO"
+    ],
+    "steamAppId": 3058630
+  },
+  {
+    "id": "final-fantasy-vii-rebirth",
+    "name": "FINAL FANTASY VII REBIRTH",
+    "executables": [
+      "ff7rebirth_.exe"
+    ],
+    "processPaths": [
+      "win64/ff7rebirth_.exe"
+    ],
+    "aliases": [
+      "FINAL FANTASY VII REBIRTH"
+    ],
+    "steamAppId": 2909400
+  },
+  {
+    "id": "marvel-s-spider-man-2",
+    "name": "Marvel's Spider-Man 2",
+    "executables": [
+      "spider-man2.exe"
+    ],
+    "processPaths": [
+      "marvel's spider-man 2/spider-man2.exe"
+    ],
+    "aliases": [
+      "Marvel's Spider-Man 2"
+    ],
+    "steamAppId": 2651280
+  },
+  {
+    "id": "smite-2",
+    "name": "SMITE 2",
+    "executables": [
+      "hemingway.exe",
+      "hemingway-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "windows/hemingway.exe",
+      "win64/hemingway-win64-shipping.exe"
+    ],
+    "aliases": [
+      "SMITE 2"
+    ],
+    "steamAppId": 2437170
+  },
+  {
+    "id": "ea-sports-fc-24",
+    "name": "EA Sports FC 24",
+    "executables": [
+      "fc24.exe"
+    ],
+    "processPaths": [
+      "ea sports fc 24/fc24.exe"
+    ],
+    "aliases": [
+      "EA Sports FC 24"
+    ],
+    "steamAppId": 2195250
+  },
+  {
+    "id": "ea-sports-fc-25",
+    "name": "EA Sports FC 25",
+    "executables": [
+      "fc25.exe"
+    ],
+    "processPaths": [
+      "ea sports fc 25/fc25.exe"
+    ],
+    "aliases": [
+      "EA Sports FC 25"
+    ],
+    "steamAppId": 2669320
+  },
+  {
+    "id": "vampire-survivors",
+    "name": "Vampire Survivors",
+    "executables": [
+      "vampiresurvivors.exe"
+    ],
+    "processPaths": [
+      "content/vampiresurvivors.exe",
+      "vampiresurvivors/vampiresurvivors.exe",
+      "vampire survivors/vampiresurvivors.exe"
+    ],
+    "aliases": [
+      "Vampire Survivors"
+    ],
+    "steamAppId": 1794680
+  },
+  {
+    "id": "kingdom-come-deliverance-ii",
+    "name": "Kingdom Come: Deliverance II",
+    "executables": [
+      "kingdomcome.exe"
+    ],
+    "processPaths": [
+      "win64mastermastersteampgo/kingdomcome.exe"
+    ],
+    "aliases": [
+      "Kingdom Come: Deliverance II"
+    ],
+    "steamAppId": 1771300
+  },
+  {
+    "id": "sid-meier-s-civilization-vii",
+    "name": "Sid Meier's Civilization VII",
+    "executables": [
+      "civ7_win64_dx12_finalrelease.exe"
+    ],
+    "processPaths": [
+      "win64/civ7_win64_dx12_finalrelease.exe"
+    ],
+    "aliases": [
+      "Sid Meier's Civilization VII"
+    ],
+    "steamAppId": 1295660
+  },
+  {
+    "id": "r-e-p-o",
+    "name": "R.E.P.O.",
+    "executables": [
+      "repo.exe"
+    ],
+    "processPaths": [
+      "repo/repo.exe"
+    ],
+    "aliases": [
+      "R.E.P.O."
+    ],
+    "steamAppId": 3241660
+  },
+  {
+    "id": "monster-hunter-wilds",
+    "name": "Monster Hunter Wilds",
+    "executables": [
+      "monsterhunterwilds.exe"
+    ],
+    "processPaths": [
+      "monsterhunterwilds/monsterhunterwilds.exe"
+    ],
+    "aliases": [
+      "Monster Hunter Wilds"
+    ],
+    "steamAppId": 2246340
+  },
+  {
+    "id": "split-fiction",
+    "name": "Split Fiction",
+    "executables": [
+      "splitfiction.exe"
+    ],
+    "processPaths": [
+      "win64/splitfiction.exe"
+    ],
+    "aliases": [
+      "Split Fiction"
+    ],
+    "steamAppId": 2001120
+  },
+  {
+    "id": "assassin-s-creed-shadows",
+    "name": "Assassin's Creed Shadows",
+    "executables": [
+      "acshadows.exe"
+    ],
+    "processPaths": [
+      "assassin's creed shadows/acshadows.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed Shadows"
+    ],
+    "steamAppId": 3159330
+  },
+  {
+    "id": "schedule-i",
+    "name": "Schedule I",
+    "executables": [
+      "schedule i.exe"
+    ],
+    "processPaths": [
+      "schedule i/schedule i.exe"
+    ],
+    "aliases": [
+      "Schedule I"
+    ],
+    "steamAppId": 3164500
+  },
+  {
+    "id": "the-elder-scrolls-iv-oblivion-remastered",
+    "name": "The Elder Scrolls IV: Oblivion Remastered",
+    "executables": [
+      "oblivionremastered-wingdk-shipping.exe",
+      "oblivionremastered-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "wingdk/oblivionremastered-wingdk-shipping.exe",
+      "win64/oblivionremastered-win64-shipping.exe"
+    ],
+    "aliases": [
+      "The Elder Scrolls IV: Oblivion Remastered"
+    ],
+    "steamAppId": 2623190
+  },
+  {
+    "id": "clair-obscur-expedition-33",
+    "name": "Clair Obscur: Expedition 33",
+    "executables": [
+      "sandfall-win64-shipping.exe",
+      "sandfall-wingdk-shipping.exe"
+    ],
+    "processPaths": [
+      "win64/sandfall-win64-shipping.exe",
+      "wingdk/sandfall-wingdk-shipping.exe"
+    ],
+    "aliases": [
+      "Clair Obscur: Expedition 33"
+    ],
+    "steamAppId": 1903340
+  },
+  {
+    "id": "doom-the-dark-ages",
+    "name": "DOOM: The Dark Ages",
+    "executables": [
+      "doomthedarkages.exe"
+    ],
+    "processPaths": [
+      "doomthedarkages/doomthedarkages.exe"
+    ],
+    "aliases": [
+      "DOOM: The Dark Ages"
+    ],
+    "steamAppId": 3017860
+  },
+  {
+    "id": "f1-25",
+    "name": "F1 25",
+    "executables": [
+      "f1_25.exe"
+    ],
+    "processPaths": [
+      "f1 25/f1_25.exe"
+    ],
+    "aliases": [
+      "F1 25"
+    ],
+    "steamAppId": 3059520
+  },
+  {
+    "id": "deltarune",
+    "name": "Deltarune",
+    "executables": [
+      "deltarune.exe"
+    ],
+    "processPaths": [
+      "deltarune/deltarune.exe"
+    ],
+    "aliases": [
+      "Deltarune"
+    ],
+    "steamAppId": 1671210
+  },
+  {
+    "id": "call-of-duty-modern-warfare-iii",
+    "name": "Call of Duty: Modern Warfare III",
+    "executables": [
+      "cod23-cod.exe",
+      "mp23-cod.exe",
+      "sp23-cod.exe"
+    ],
+    "processPaths": [
+      "call of duty modern warfare iii/cod23-cod.exe",
+      "mp23/mp23-cod.exe",
+      "cod23/cod23-cod.exe",
+      "sp23/sp23-cod.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Modern Warfare III"
+    ],
+    "steamAppId": 2519060
+  },
+  {
+    "id": "total-war-pharaoh-dynasties",
+    "name": "Total War: Pharaoh Dynasties",
+    "executables": [
+      "pharaoh.exe"
+    ],
+    "processPaths": [
+      "total war pharaoh dynasties/pharaoh.exe"
+    ],
+    "aliases": [
+      "Total War: Pharaoh Dynasties"
+    ],
+    "steamAppId": 2951630
+  },
+  {
+    "id": "borderlands",
+    "name": "Borderlands",
+    "executables": [
+      "borderlands.exe"
+    ],
+    "processPaths": [
+      "binaries/borderlands.exe",
+      "borderlands/borderlands.exe"
+    ],
+    "aliases": [
+      "Borderlands"
+    ],
+    "steamAppId": 8980
+  },
+  {
+    "id": "assassin-s-creed-iii",
+    "name": "Assassin's Creed III",
+    "executables": [
+      "ac3mp.exe",
+      "ac3sp.exe"
+    ],
+    "processPaths": [
+      "ac3mp.exe",
+      "ac3sp.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed III"
+    ],
+    "steamAppId": 208480
+  },
+  {
+    "id": "assassin-s-creed-ii",
+    "name": "Assassin's Creed II",
+    "executables": [
+      "assassinscreediigame.exe"
+    ],
+    "processPaths": [
+      "assassinscreediigame.exe"
+    ],
+    "aliases": [
+      "Assassin's Creed II"
+    ],
+    "steamAppId": 33230
+  },
+  {
+    "id": "american-truck-simulator",
+    "name": "American Truck Simulator",
+    "executables": [
+      "amtrucks.exe"
+    ],
+    "processPaths": [
+      "amtrucks.exe"
+    ],
+    "aliases": [
+      "American Truck Simulator"
+    ],
+    "steamAppId": 270880
+  },
+  {
+    "id": "forza-motorsport-7",
+    "name": "Forza Motorsport 7",
+    "executables": [
+      "forzamotorsport7.exe"
+    ],
+    "processPaths": [
+      "forzamotorsport7.exe"
+    ],
+    "aliases": [
+      "Forza Motorsport 7"
+    ]
+  },
+  {
+    "id": "sekiro-shadows-die-twice",
+    "name": "Sekiro: Shadows Die Twice",
+    "executables": [
+      "sekiro.exe"
+    ],
+    "processPaths": [
+      "sekiro/sekiro.exe",
+      "sekiro.exe"
+    ],
+    "aliases": [
+      "Sekiro: Shadows Die Twice"
+    ]
+  },
+  {
+    "id": "celeste",
+    "name": "Celeste",
+    "executables": [
+      "celeste.exe"
+    ],
+    "processPaths": [
+      "celeste.exe"
+    ],
+    "aliases": [
+      "Celeste"
+    ],
+    "steamAppId": 504230
+  },
+  {
+    "id": "satisfactory",
+    "name": "Satisfactory",
+    "executables": [
+      "factorygamesteam-win64-shipping.exe",
+      "factorygame-win64-shipping.exe",
+      "factorygameegs-win64-shipping.exe"
+    ],
+    "processPaths": [
+      "factorygamesteam-win64-shipping.exe",
+      "factorygame-win64-shipping.exe",
+      "factorygameegs-win64-shipping.exe",
+      "win64/factorygame-win64-shipping.exe"
+    ],
+    "aliases": [
+      "Satisfactory"
+    ],
+    "steamAppId": 526870
+  },
+  {
+    "id": "subnautica-below-zero",
+    "name": "Subnautica: Below Zero",
+    "executables": [
+      "subnauticazero.exe"
+    ],
+    "processPaths": [
+      "subnauticazero.exe",
+      "subnauticazero/subnauticazero.exe"
+    ],
+    "aliases": [
+      "Subnautica: Below Zero"
+    ],
+    "steamAppId": 848450
+  },
+  {
+    "id": "new-world-aeternum",
+    "name": "New World: Aeternum",
+    "executables": [
+      "newworld.exe"
+    ],
+    "processPaths": [
+      "newworld.exe",
+      "bin64/newworld.exe"
+    ],
+    "aliases": [
+      "New World: Aeternum"
+    ],
+    "steamAppId": 1063730
+  },
+  {
+    "id": "far-cry-new-dawn",
+    "name": "Far Cry New Dawn",
+    "executables": [
+      "farcrynewdawn.exe"
+    ],
+    "processPaths": [
+      "farcrynewdawn.exe"
+    ],
+    "aliases": [
+      "Far Cry New Dawn"
+    ],
+    "steamAppId": 939960
+  },
+  {
+    "id": "age-of-empires-definitive-edition",
+    "name": "Age of Empires: Definitive Edition",
+    "executables": [
+      "aoede_s.exe"
+    ],
+    "processPaths": [
+      "aoede_s.exe",
+      "aoede/aoede_s.exe",
+      "age of empires - definitive edition/aoede_s.exe"
+    ],
+    "aliases": [
+      "Age of Empires: Definitive Edition"
+    ],
+    "steamAppId": 1017900
+  },
+  {
+    "id": "payday-2",
+    "name": "PAYDAY 2",
+    "executables": [
+      "payday2_win32_release_vr.exe",
+      "payday2_win32_release.exe"
+    ],
+    "processPaths": [
+      "payday 2/payday2_win32_release_vr.exe",
+      "payday2_win32_release.exe"
+    ],
+    "aliases": [
+      "PAYDAY 2"
+    ],
+    "steamAppId": 218620
+  },
+  {
+    "id": "call-of-duty-wwii",
+    "name": "Call of Duty: WWII",
+    "executables": [
+      "s2_mp64_ship.exe",
+      "s2_sp64_ship.exe"
+    ],
+    "processPaths": [
+      "call of duty wwii/s2_mp64_ship.exe",
+      "call of duty wwii/s2_sp64_ship.exe"
+    ],
+    "aliases": [
+      "Call of Duty: WWII"
+    ],
+    "steamAppId": 476620
+  },
+  {
+    "id": "call-of-duty-modern-warfare",
+    "name": "Call of Duty: Modern Warfare",
+    "executables": [
+      "modernwarfare.exe"
+    ],
+    "processPaths": [
+      "call of duty modern warfare/modernwarfare.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Modern Warfare"
+    ],
+    "steamAppId": 2000950
+  },
+  {
+    "id": "euro-truck-simulator-2",
+    "name": "Euro Truck Simulator 2",
+    "executables": [
+      "eurotrucks2.exe"
+    ],
+    "processPaths": [
+      "win_x64/eurotrucks2.exe",
+      "eurotrucks2.exe"
+    ],
+    "aliases": [
+      "Euro Truck Simulator 2"
+    ],
+    "steamAppId": 227300
+  },
+  {
+    "id": "sea-of-thieves",
+    "name": "Sea of Thieves",
+    "executables": [
+      "sotgame.exe",
+      "seaofthieves.exe"
+    ],
+    "processPaths": [
+      "wingdk/sotgame.exe",
+      "content/seaofthieves.exe",
+      "win64/sotgame.exe",
+      "sotgame.exe"
+    ],
+    "aliases": [
+      "Sea of Thieves"
+    ]
+  },
+  {
+    "id": "risk-of-rain-2",
+    "name": "Risk of Rain 2",
+    "executables": [
+      "risk of rain 2.exe"
+    ],
+    "processPaths": [
+      "risk of rain 2.exe",
+      "risk of rain 2/risk of rain 2.exe"
+    ],
+    "aliases": [
+      "Risk of Rain 2"
+    ],
+    "steamAppId": 632360
+  },
+  {
+    "id": "phasmophobia",
+    "name": "Phasmophobia",
+    "executables": [
+      "phasmophobia.exe"
+    ],
+    "processPaths": [
+      "phasmophobia/phasmophobia.exe"
+    ],
+    "aliases": [
+      "Phasmophobia"
+    ],
+    "steamAppId": 739630
+  },
+  {
+    "id": "dead-cells",
+    "name": "Dead Cells",
+    "executables": [
+      "deadcells.exe"
+    ],
+    "processPaths": [
+      "deadcells.exe"
+    ],
+    "aliases": [
+      "Dead Cells"
+    ],
+    "steamAppId": 588650
+  },
+  {
+    "id": "age-of-empires-ii-definitive-edition",
+    "name": "Age of Empires II: Definitive Edition",
+    "executables": [
+      "aoe2de_s.exe"
+    ],
+    "processPaths": [
+      "aoe2de/aoe2de_s.exe",
+      "aoe2de_s.exe",
+      "age of empires ii definitive edition/aoe2de_s.exe"
+    ],
+    "aliases": [
+      "Age of Empires II: Definitive Edition"
+    ],
+    "steamAppId": 813780
+  },
+  {
+    "id": "subnautica",
+    "name": "Subnautica",
+    "executables": [
+      "subnautica.exe"
+    ],
+    "processPaths": [
+      "subnautica.exe"
+    ],
+    "aliases": [
+      "Subnautica"
+    ],
+    "steamAppId": 264710
+  },
+  {
+    "id": "hades",
+    "name": "Hades",
+    "executables": [
+      "hades.exe"
+    ],
+    "processPaths": [
+      "hades.exe"
+    ],
+    "aliases": [
+      "Hades"
+    ],
+    "steamAppId": 1145360
+  },
+  {
+    "id": "borderlands-3",
+    "name": "Borderlands 3",
+    "executables": [
+      "borderlands3.exe"
+    ],
+    "processPaths": [
+      "borderlands3.exe"
+    ],
+    "aliases": [
+      "Borderlands 3"
+    ],
+    "steamAppId": 16675
+  },
+  {
+    "id": "black-desert",
+    "name": "Black Desert",
+    "executables": [
+      "blackdesert64.exe",
+      "blackdesert32.exe"
+    ],
+    "processPaths": [
+      "blackdesert64.exe",
+      "blackdesert32.exe"
+    ],
+    "aliases": [
+      "Black Desert"
+    ],
+    "steamAppId": 582660
+  },
+  {
+    "id": "among-us",
+    "name": "Among Us",
+    "executables": [
+      "among us.exe"
+    ],
+    "processPaths": [
+      "among us - copy/among us.exe",
+      "among us - tou/among us.exe",
+      "among us/among us.exe",
+      "among us - kopie/among us.exe"
+    ],
+    "aliases": [
+      "Among Us"
+    ],
+    "steamAppId": 945360
+  },
+  {
+    "id": "call-of-duty-modern-warfare-ii",
+    "name": "Call of Duty: Modern Warfare II",
+    "executables": [
+      "cod22-cod.exe",
+      "sp22-cod.exe"
+    ],
+    "processPaths": [
+      "_retail_/cod22/cod22-cod.exe",
+      "call of duty hq/sp22/sp22-cod.exe",
+      "call of duty hq/cod22/cod22-cod.exe",
+      "_retail_/sp22/sp22-cod.exe"
+    ],
+    "aliases": [
+      "Call of Duty: Modern Warfare II"
+    ],
+    "steamAppId": 3595230
+  },
+  {
+    "id": "warframe",
+    "name": "Warframe",
+    "executables": [
+      "warframe.x64.exe",
+      "warframe.exe"
+    ],
+    "processPaths": [
+      "warframe.x64.exe",
+      "warframe.exe"
+    ],
+    "aliases": [
+      "Warframe"
+    ],
+    "steamAppId": 230410
+  },
+  {
+    "id": "rust",
+    "name": "Rust",
+    "executables": [
+      "rustclient.exe"
+    ],
+    "processPaths": [
+      "rust/rustclient.exe",
+      "rustclient.exe"
+    ],
+    "aliases": [
+      "Rust"
+    ],
+    "steamAppId": 252490
+  },
+  {
+    "id": "slay-the-spire",
+    "name": "Slay the Spire",
+    "executables": [
+      "slaythespire.exe"
+    ],
+    "processPaths": [
+      "slaythespire.exe"
+    ],
+    "aliases": [
+      "Slay the Spire"
+    ],
+    "steamAppId": 646570
+  },
+  {
+    "id": "red-dead-redemption-2",
+    "name": "Red Dead Redemption 2",
+    "executables": [
+      "rdr2.exe"
+    ],
+    "processPaths": [
+      "red dead redemption 2/rdr2.exe"
+    ],
+    "aliases": [
+      "Red Dead Redemption 2"
+    ],
+    "steamAppId": 1174180
+  },
+  {
+    "id": "pubg-battlegrounds",
+    "name": "PUBG: BATTLEGROUNDS",
+    "executables": [
+      "tslgame.exe",
+      "tslgame_uc.exe"
+    ],
+    "processPaths": [
+      "tslgame.exe",
+      "win64/tslgame.exe",
+      "win64/tslgame_uc.exe"
+    ],
+    "aliases": [
+      "PUBG: BATTLEGROUNDS"
+    ],
+    "steamAppId": 578080
+  },
+  {
+    "id": "hollow-knight-silksong",
+    "name": "Hollow Knight: Silksong",
+    "executables": [
+      "hollow knight silksong.exe"
+    ],
+    "processPaths": [
+      "hollow knight silksong/hollow knight silksong.exe"
+    ],
+    "aliases": [
+      "Hollow Knight: Silksong"
+    ],
+    "steamAppId": 1030300
+  },
+  {
+    "id": "borderlands-4",
+    "name": "Borderlands 4",
+    "executables": [
+      "borderlands4.exe"
+    ],
+    "processPaths": [
+      "oakgame/binaries/win64/borderlands4.exe",
+      "win64/borderlands4.exe"
+    ],
+    "aliases": [
+      "Borderlands 4"
+    ],
+    "steamAppId": 1285190
   }
 ]

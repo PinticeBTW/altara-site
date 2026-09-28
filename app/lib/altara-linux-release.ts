@@ -75,8 +75,23 @@ export type MacArchitecture = "arm64" | "x64";
 
 export function resolveMacRelease(payload: unknown, architecture: MacArchitecture): WindowsReleaseArtifacts {
   if (architecture !== "arm64" && architecture !== "x64") fail("unsupported_macos_architecture");
-  const { assets, publishedAt, tagName, version } = parseRelease(payload, false);
-  const application = selectReleaseAsset(assets, `Altara.${version}.mac-${architecture}.dmg`, tagName, `macos_${architecture}`);
+  const { assets, publishedAt, tagName } = parseRelease(payload, false);
+  // macOS builds may lag behind the Windows/Linux release tag. Select the newest
+  // uploaded DMG for this architecture from the same official release, while
+  // retaining the exact-filename and URL validation in selectReleaseAsset.
+  const matcher = new RegExp(`^Altara\\.(\\d+\\.\\d+\\.\\d+)\\.mac-${architecture}\\.dmg$`);
+  const versions = assets.filter((asset) => asset.state === "uploaded")
+    .map((asset) => matcher.exec(asset.name)?.[1])
+    .filter((value): value is string => Boolean(value) && normalizeReleaseVersion(value) !== null)
+    .sort((left, right) => {
+      const a = left.split(".").map(Number);
+      const b = right.split(".").map(Number);
+      return b[0] - a[0] || b[1] - a[1] || b[2] - a[2];
+    });
+  const version = versions[0];
+  const application = version
+    ? selectReleaseAsset(assets, `Altara.${version}.mac-${architecture}.dmg`, tagName, `macos_${architecture}`)
+    : null;
   if (!application) fail("missing_macos_asset");
   return { version, tagName, publishedAt, application };
 }

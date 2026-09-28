@@ -5,6 +5,7 @@ const state = {
   methodsByUserAndMethod: new Map(),
   calls: [],
   sequence: 1,
+  readFault: null,
 };
 
 function clone(value) {
@@ -69,6 +70,15 @@ class Query {
         if (row.user_id === userId) rows.push(row);
       }
     }
+    const fault = state.readFault;
+    if (fault && fault.table === this.table && rows.some(row => row.user_id === fault.userId)) {
+      if (fault.mode === 'error') return { data: null, error: Object.assign(new Error('synthetic read offline'), { code: 'network_error' }) };
+      rows = rows.flatMap(row => {
+        if (row.user_id !== fault.userId || (fault.method && row.method !== fault.method)) return [row];
+        if (fault.mode === 'missing') return [];
+        return [{ ...row, encrypted_private_key: base64Url(new Uint8Array(32)) }];
+      });
+    }
     const data = single ? (clone(rows[0]) || null) : clone(rows);
     return { data, error: null };
   }
@@ -110,6 +120,23 @@ export const supabase = {
   },
   async rpc(name, args = {}) {
     state.calls.push({ rpc: String(name) });
+    if (name === "restart_my_missing_vault_identity_v1") {
+      const userId = String(globalThis.__vaultCurrentUserId || "");
+      const previous = state.keysByUser.get(userId);
+      const refuse = message => ({ data: null, error: { message } });
+      if (!userId) return refuse("unauthenticated");
+      if (!args.p_acknowledge_history_loss) return refuse("explicit_identity_reset_required");
+      if (previous?.id !== args.p_expected_key_id) return refuse("vault_restart_identity_changed");
+      if (state.backupsByUser.has(userId) || [...state.methodsByUserAndMethod.values()].some(row=>row.user_id===userId)) return refuse("vault_restart_recovery_available");
+      for (const envelope of [args.p_password_backup,args.p_recovery_key_backup]) {
+        state.methodsByUserAndMethod.set(`${userId}:${envelope.method}`, { id:id("method"), user_id:userId, backup_version:1, ...clone(envelope) });
+      }
+      state.backupsByUser.set(userId, { id:id("backup"), user_id:userId, backup_version:1, key_algorithm:"ECDH-P256", ...clone(args.p_password_backup) });
+      state.keysById.set(previous.id,{...previous,revoked_at:new Date().toISOString()});
+      const row={...previous,id:id("key"),key_version:previous.key_version+1,public_key_jwk:clone(args.p_public_key_jwk)};
+      state.keysByUser.set(userId,row);state.keysById.set(row.id,row);
+      return {data:clone(row),error:null};
+    }
     if (name !== "upsert_my_dm_e2ee_key") {
       return { data: null, error: new Error(`Unexpected RPC: ${name}`) };
     }
@@ -141,10 +168,12 @@ export function getVaultTestServer() {
       state.methodsByUserAndMethod.clear();
       state.calls.length = 0;
       state.sequence = 1;
+      state.readFault = null;
     },
     setCurrentUser(userId) {
       globalThis.__vaultCurrentUserId = String(userId || "");
     },
+    setReadFault(fault) { state.readFault = fault; },
     getKey(userId) { return clone(state.keysByUser.get(String(userId)) || null); },
     setKey(userId, row) {
       const normalized = { ...clone(row), user_id: String(userId) };

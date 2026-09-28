@@ -1,3 +1,4 @@
+import { uploadSignedFile } from "./signedUploadTransport.js";
 import {
   getPrivateUploadReferenceId,
   normalizePrivateUploadReference,
@@ -10,6 +11,30 @@ const PRIVATE_UPLOAD_REFERENCE_PREFIX = "altara-private-upload:";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRUSTED_ATTACHMENT_DELIVERY_STATE = Symbol("altara.trustedAttachmentDeliveryState");
 const TRUSTED_ATTACHMENT_DELIVERY_TOKEN = Object.freeze({ type: "trusted-attachment-delivery" });
+// The existing download broker issues 60-second Storage capabilities. A cached
+// row can outlive that capability; its trust marker must not extend the URL.
+const TRUSTED_ATTACHMENT_DELIVERY_MAX_AGE_MS = 60_000;
+const TRUSTED_ATTACHMENT_DELIVERY_REFRESH_MARGIN_MS = 5_000;
+
+function getTrustedAttachmentDeliveryExpiry(url, issuedAt = Date.now()) {
+  const fallback = issuedAt + TRUSTED_ATTACHMENT_DELIVERY_MAX_AGE_MS;
+  try {
+    const token = new URL(url).searchParams.get("token") || "";
+    const payload = token.split(".")[1] || "";
+    const encoded = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=")));
+    const expiresAt = Number(decoded?.exp) * 1000;
+    // This is only a cache deadline, never authentication or a trust grant.
+    // The delivery URL has already passed the broker-origin/row checks.
+    return Number.isFinite(expiresAt) && expiresAt > 0 ? Math.min(fallback, expiresAt) : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function isTrustedAttachmentDeliveryEntryFresh(entry, now = Date.now()) {
+  return Number(entry?.expiresAt || 0) > now + TRUSTED_ATTACHMENT_DELIVERY_REFRESH_MARGIN_MS;
+}
 
 function safeString(value, max = 512) {
   return String(value == null ? "" : value).trim().slice(0, max);
@@ -45,7 +70,10 @@ function markTrustedAttachmentDeliveryRow(row, entries = [], supabaseOrigin = ""
     value: Object.freeze({
       token: TRUSTED_ATTACHMENT_DELIVERY_TOKEN,
       supabaseOrigin,
-      entries: Object.freeze(normalizedEntries.map((entry) => Object.freeze({ ...entry }))),
+      entries: Object.freeze(normalizedEntries.map((entry) => Object.freeze({
+        ...entry,
+        expiresAt: getTrustedAttachmentDeliveryExpiry(entry.url),
+      }))),
     }),
   });
   return row;
@@ -123,7 +151,10 @@ export function resolveTrustedAttachmentDeliveryUrl(row, attachment = {}, {
     && entry.url === candidate
     && (!requiredId || entry.uploadId === requiredId)
   ));
-  return match?.url || "";
+  // Navigation paints memory rows before fresh history finishes hydrating.
+  // Reject an expired capability here so that first paint cannot send a stale
+  // Storage GET; normal broker hydration replaces it with a fresh URL.
+  return match && isTrustedAttachmentDeliveryEntryFresh(match) ? match.url : "";
 }
 
 function unwrapFunctionPayload(data) {
@@ -164,6 +195,26 @@ export function parseTrustedPrivateUploadReference(value = "") {
   return UUID_RE.test(id) ? id : "";
 }
 
+async function uploadSmallFileViaTrustedAuthority({ supabase, file, context, conversationId }) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+  const completed = await invokeTrustedUpload(supabase, {
+    action: "transfer", upload_context: context, conversation_id: safeString(conversationId, 64) || null,
+    file_name: safeString(file.name || "file.bin", 180), file_size: bytes.length,
+    mime_type: safeString(file.type || "application/octet-stream", 160).toLowerCase(), file_base64: btoa(binary),
+  });
+  const uploadId = safeString(completed.upload_id, 64).toLowerCase();
+  const bucket = safeString(completed.bucket, 96), path = safeString(completed.path, 700);
+  const downloadUrl = normalizeTrustedUploadDeliveryUrl(completed.download_url, { supabaseOrigin: getSupabaseOrigin(supabase), uploadContext: context });
+  if (!UUID_RE.test(uploadId) || !bucket || !path || !downloadUrl || completed.visibility !== "private"
+    || Number(completed.actual_size) !== bytes.length) throw trustedUploadError("upload_delivery_unavailable", "The uploaded file could not be verified for delivery.");
+  return { uploadId, bucket, path, publicUrl: "", downloadUrl, displayUrl: downloadUrl,
+    referenceUrl: trustedPrivateUploadReference(uploadId), visibility: "private",
+    detectedMime: safeString(completed.detected_mime, 160), contentClass: safeString(completed.content_class, 64),
+    actualSize: bytes.length, downloadExpiresIn: Number(completed.download_expires_in || 0), upload: null };
+}
+
 export async function uploadViaTrustedAuthority({
   supabase,
   file,
@@ -173,6 +224,8 @@ export async function uploadViaTrustedAuthority({
   appId = "",
   targetId = "",
   cacheControl = "60",
+  preferSingleRequest = false,
+  onProgress = null,
 } = {}) {
   if (!file || typeof file !== "object") {
     throw trustedUploadError("upload_invalid", "Select a valid file to upload.");
@@ -183,6 +236,10 @@ export async function uploadViaTrustedAuthority({
   }
   const context = safeString(uploadContext, 64).toLowerCase();
   if (!context) throw trustedUploadError("upload_context_invalid", "Upload context is missing.");
+  if (preferSingleRequest && declaredSize <= 256 * 1024 && ["dm_attachment", "dm_attachment_preview"].includes(context)) {
+    onProgress?.({ phase: "uploading", loaded: 0, total: declaredSize });
+    return uploadSmallFileViaTrustedAuthority({ supabase, file, context, conversationId });
+  }
 
   const authorization = await invokeTrustedUpload(supabase, {
     action: "authorize",
@@ -204,14 +261,21 @@ export async function uploadViaTrustedAuthority({
     throw trustedUploadError("upload_authority_response_invalid", "ALTARA returned an invalid upload authorization.");
   }
 
-  const upload = await supabase.storage.from(bucket).uploadToSignedUrl(path, token, file, {
+  onProgress?.({ phase: "uploading", loaded: 0, total: declaredSize });
+  const upload = onProgress && typeof XMLHttpRequest !== "undefined"
+    ? await uploadSignedFile({ origin: getSupabaseOrigin(supabase), bucket, path, token, file, cacheControl, onProgress })
+    : await supabase.storage.from(bucket).uploadToSignedUrl(path, token, file, {
     contentType: safeString(file.type || authorization.declared_mime || "application/octet-stream", 160),
     cacheControl: safeString(cacheControl, 32) || "60",
   });
   if (upload?.error) {
+    if (/EntityTooLarge|maximum allowed size|payload too large/i.test(String(upload.error.code || '') + String(upload.error.message || ''))) {
+      throw trustedUploadError("upload_storage_size_limit", "O servidor recusou o tamanho deste ficheiro. O limite de armazenamento precisa de ser corrigido.");
+    }
     throw trustedUploadError("signed_upload_failed", "The file could not be uploaded. Try again.");
   }
 
+  onProgress?.({ phase: "finalizing", loaded: declaredSize, total: declaredSize });
   const completed = await invokeTrustedUpload(supabase, {
     action: "complete",
     upload_id: uploadId,
@@ -267,14 +331,14 @@ function applyTrustedDownloadUrls(value, byId) {
     || parseTrustedPrivateUploadReference(next.previewReferenceUrl || next.preview_reference_url || next.previewUrl || next.preview_url || "");
   const delivery = byId.get(uploadId);
   const previewDelivery = byId.get(previewUploadId);
-  if (delivery?.download_url) {
-    next.url = delivery.download_url;
-    next.originalUrl = delivery.download_url;
+  if (UUID_RE.test(uploadId)) {
+    next.url = delivery?.download_url || trustedPrivateUploadReference(uploadId);
+    next.originalUrl = next.url;
     next.referenceUrl = trustedPrivateUploadReference(uploadId);
     next.uploadId = uploadId;
   }
-  if (previewDelivery?.download_url) {
-    next.previewUrl = previewDelivery.download_url;
+  if (UUID_RE.test(previewUploadId)) {
+    next.previewUrl = previewDelivery?.download_url || trustedPrivateUploadReference(previewUploadId);
     next.previewReferenceUrl = trustedPrivateUploadReference(previewUploadId);
     next.previewUploadId = previewUploadId;
   }
@@ -284,8 +348,9 @@ function applyTrustedDownloadUrls(value, byId) {
   return next;
 }
 
-export async function hydrateTrustedAttachmentRows({ supabase, rows } = {}) {
+export async function hydrateTrustedAttachmentRows({ supabase, rows } = {}, onPhase = null) {
   const list = Array.isArray(rows) ? rows : [];
+  const startedAt = performance.now();
   const parsedRows = list.map((row) => {
     if (!row || typeof row !== "object" || typeof row.content !== "string") return { row, parsed: null };
     try {
@@ -299,17 +364,40 @@ export async function hydrateTrustedAttachmentRows({ supabase, rows } = {}) {
   parsedRows.forEach(({ parsed }) => {
     collectTrustedUploadIds(parsed, ids);
   });
+  onPhase?.("metadata", { durationMs: performance.now() - startedAt, uploadCount: ids.size });
   if (!ids.size) return list;
 
-  let payload;
+  const payload = { items: [] };
   try {
-    payload = await invokeTrustedUpload(supabase, {
-      action: "download",
-      upload_ids: Array.from(ids).slice(0, 48),
-    });
+    const uploadIds = Array.from(ids);
+    const batches = [];
+    for (let offset = 0; offset < uploadIds.length; offset += 48) batches.push(uploadIds.slice(offset, offset + 48));
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < batches.length) {
+        const batchIds = batches[cursor++];
+        const authorityStartedAt = performance.now();
+        onPhase?.("authority_start", { uploadCount: batchIds.length });
+        try {
+          const batch = await invokeTrustedUpload(supabase, { action: "download", upload_ids: batchIds });
+          payload.items.push(...(Array.isArray(batch.items) ? batch.items : []));
+          onPhase?.("authority_end", {
+            durationMs: performance.now() - authorityStartedAt,
+            uploadCount: batchIds.length,
+            grantedCount: Array.isArray(batch.items) ? batch.items.length : 0,
+            ok: true,
+          });
+        } catch (error) {
+          onPhase?.("authority_end", { durationMs: performance.now() - authorityStartedAt, uploadCount: batchIds.length, ok: false });
+          throw error;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(2, batches.length) }, worker));
   } catch (_) {
     return list;
   }
+  const applyStartedAt = performance.now();
   const supabaseOrigin = getSupabaseOrigin(supabase);
   const byId = new Map();
   (Array.isArray(payload.items) ? payload.items : []).forEach((entry) => {
@@ -318,12 +406,17 @@ export async function hydrateTrustedAttachmentRows({ supabase, rows } = {}) {
     if (UUID_RE.test(id) && url) byId.set(id, { ...entry, download_url: url });
   });
 
-  return parsedRows.map(({ row, parsed }) => {
+  const hydratedRows = parsedRows.map(({ row, parsed }) => {
     if (!parsed || !row || typeof row !== "object") return row;
     const hydrated = applyTrustedDownloadUrls(parsed, byId);
     const nextRow = { ...row, content: JSON.stringify(hydrated) };
+    // A new response grants only the returned capabilities; omitted/revoked
+    // admissions must not inherit the previous cache row's delivery marker.
+    delete nextRow[TRUSTED_ATTACHMENT_DELIVERY_STATE];
     return markTrustedAttachmentDeliveryFromDescriptors(nextRow, hydrated, { supabaseOrigin });
   });
+  onPhase?.("delivery_apply", { durationMs: performance.now() - applyStartedAt, rowCount: hydratedRows.length });
+  return hydratedRows;
 }
 
 export function persistedTrustedAttachment(raw = {}) {
@@ -418,4 +511,99 @@ export function persistedTrustedMessageContent(rawContent = "") {
     return JSON.stringify(next);
   }
   return content;
+}
+
+export function hasExpiredTrustedAttachmentDelivery(row) {
+  const state = row?.[TRUSTED_ATTACHMENT_DELIVERY_STATE];
+  return !!(state?.token === TRUSTED_ATTACHMENT_DELIVERY_TOKEN
+    && state.entries.some((entry) => !isTrustedAttachmentDeliveryEntryFresh(entry)));
+}
+
+export function mergeTrustedAttachmentDeliveryRows(currentRows, originalRows, hydratedRows) {
+  const originalById = new Map(originalRows.map((row) => [String(row?.id || ""), row]));
+  const hydratedById = new Map(hydratedRows.map((row) => [String(row?.id || ""), row]));
+  return currentRows.map((row) => {
+    const id = String(row?.id || "");
+    const original = originalById.get(id);
+    const hydrated = hydratedById.get(id);
+    const delivery = hydrated?.[TRUSTED_ATTACHMENT_DELIVERY_STATE];
+    if (!original || !hydrated || row.content !== original.content) return row;
+    if (hydrated === original || hasExpiredTrustedAttachmentDelivery(hydrated)) {
+      return hydrated._attachmentDeliveryFailed === true
+        ? { ...row, _attachmentDeliveryResolved: true, _attachmentDeliveryFailed: true } : row;
+    }
+    // Only replace delivery content/provenance; concurrent reactions, profiles,
+    // edits and other message fields retain their current owner.
+    const next = { ...row, content: hydrated.content };
+    if (hydrated._attachmentDeliveryResolved === true) {
+      next._attachmentDeliveryResolved = true;
+      next._attachmentDeliveryFailed = hydrated._attachmentDeliveryFailed === true;
+    }
+    delete next[TRUSTED_ATTACHMENT_DELIVERY_STATE];
+    if (delivery?.token === TRUSTED_ATTACHMENT_DELIVERY_TOKEN) Object.defineProperty(next, TRUSTED_ATTACHMENT_DELIVERY_STATE, {
+      configurable: true, enumerable: true, writable: false, value: delivery,
+    });
+    return next;
+  });
+}
+
+export function createTrustedAttachmentDeliveryRefreshQueue({
+  supabase, getContext, onRefreshed, schedule = setTimeout, now = Date.now, requestTimeoutMs = 20_000,
+} = {}) {
+  const pending = new Map();
+  const inFlight = new Set();
+  const retryAfter = new Map();
+  let scheduled = false;
+  const keyFor = (context, row) => `${context}\u0000${String(row?.id || "")}`;
+  const flush = async () => {
+    scheduled = false;
+    const context = String(getContext?.() || "");
+    const batch = Array.from(pending.values()).filter((entry) => entry.context === context);
+    pending.clear();
+    if (!context || !batch.length) return;
+    const originals = batch.map((entry) => entry.row);
+    batch.forEach((entry) => inFlight.add(keyFor(context, entry.row)));
+    try {
+      let timeout;
+      const result = await Promise.race([
+        hydrateTrustedAttachmentRows({ supabase, rows: originals }),
+        new Promise(resolve => { timeout = setTimeout(() => resolve(originals), requestTimeoutMs); }),
+      ]).finally(() => clearTimeout(timeout));
+      const hydrated = result.map((row, index) => ({ ...row,
+        _attachmentDeliveryResolved: true,
+        _attachmentDeliveryFailed: row === originals[index] || hasExpiredTrustedAttachmentDelivery(row),
+      }));
+      hydrated.forEach((row, index) => {
+        // Install the cooldown before rendering callbacks can queue this row again.
+        retryAfter.set(keyFor(context, originals[index]), now() + 15_000);
+      });
+      if (String(getContext?.() || "") === context) onRefreshed?.(originals, hydrated);
+    } finally {
+      batch.forEach((entry) => inFlight.delete(keyFor(context, entry.row)));
+      // Failed attempts can retry on a later render, or immediately in a new
+      // navigation generation; no timer loop or retained signed URLs in logs.
+      if (retryAfter.size > 250) retryAfter.clear();
+    }
+  };
+  return {
+    queue(row, { force = false } = {}) {
+      const context = String(getContext?.() || "");
+      if (!context || !row?.id) return false;
+      const expired = hasExpiredTrustedAttachmentDelivery(row);
+      if (!force && !expired && row._attachmentDeliveryResolved === true) return false;
+      if (!force && !expired && row?.[TRUSTED_ATTACHMENT_DELIVERY_STATE]) return false;
+      const ids = new Set();
+      try { collectTrustedUploadIds(JSON.parse(row.content), ids); } catch (_) {}
+      if (!ids.size) return false;
+      const key = keyFor(context, row);
+      if (inFlight.has(key) || Number(retryAfter.get(key) || 0) > now()) return false;
+      pending.set(key, { row, context });
+      if (!scheduled) {
+        scheduled = true;
+        schedule(() => { void flush().catch(() => {}); }, 0);
+      }
+      return true;
+    },
+    flush,
+  };
 }

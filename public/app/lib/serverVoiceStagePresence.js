@@ -220,6 +220,20 @@ export function resolveServerVoiceV2TerminalLeaveSessionId({
   ).trim();
 }
 
+export function shouldIgnoreServerVoiceV2MemberDelete({
+  deletedSessionId = "",
+  acceptedSessionId = "",
+  terminalExplicit = false,
+  staleAssignment = false,
+} = {}) {
+  const deleted = String(deletedSessionId || "").trim();
+  const accepted = String(acceptedSessionId || "").trim();
+  if (deleted && accepted && deleted !== accepted) return true;
+  // Terminal DELETE broadcasts are partial rows: they need not carry the
+  // media clock of the membership they revoke.
+  return staleAssignment && !(terminalExplicit && deleted && deleted === accepted);
+}
+
 /**
  * An explicit leave is terminal only for the transport session that issued it.
  * A delayed Session A leave must never remove an already-active Session B.

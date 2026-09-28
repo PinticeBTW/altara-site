@@ -1,3 +1,4 @@
+import "./lib/browserAccountContext.js";
 // supabaseClient.js
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.112.4";
 import { createRealtimeConnectionHealth } from "./lib/realtimeConnectionHealth.js";

@@ -110,6 +110,11 @@ export function messagesShareOptimisticIdentity(optimistic = null, authoritative
   if (normalizeId(optimistic.conversation_id) !== normalizeId(authoritative.conversation_id)) return false;
   if (normalizeId(optimistic.user_id) !== normalizeId(authoritative.user_id)) return false;
   if (normalizeId(optimistic.reply_to_id) !== normalizeId(authoritative.reply_to_id)) return false;
+  // Provider sends use one UUID for local, REST and realtime identities. Content
+  // changes when durable storage is ready, and equal GIFs may be separate sends.
+  if (optimistic._optimisticRetry?.kind === "gif") {
+    return optimistic._optimistic === true && normalizeId(optimistic.id) === normalizeId(authoritative.id);
+  }
   if (String(optimistic.content ?? "") !== String(authoritative.content ?? "")) return false;
   const optimisticAt = Date.parse(String(optimistic.created_at || ""));
   const authoritativeAt = Date.parse(String(authoritative.created_at || ""));

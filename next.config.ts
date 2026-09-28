@@ -16,6 +16,14 @@ const nextConfig: NextConfig = {
       headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }],
     }))];
   },
+  async redirects() {
+    return [{
+      source: "/",
+      has: [{ type: "query", key: "server_invite" }],
+      destination: "/app/index.html",
+      permanent: false,
+    }];
+  },
   async rewrites() {
     return [
       {

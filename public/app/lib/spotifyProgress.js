@@ -113,6 +113,16 @@ export function updateSpotifyProgressElement(element, nowMs = Date.now()) {
     label.textContent = nextLabel;
     updatedCount += 1;
   }
+  // Profile cards place elapsed and total time on opposite sides of the bar.
+  // Keep supporting the combined label used by the Active Now surface.
+  for (const [selector, time] of [['[data-spotify-elapsed]', progress.progressMs], ['[data-spotify-duration]', progress.durationMs]]) {
+    const target = element.querySelector?.(selector);
+    const text = formatSpotifyProgressTime(time);
+    if (target && target.textContent !== text) {
+      target.textContent = text;
+      updatedCount += 1;
+    }
+  }
   const bar = element.querySelector?.(".spotifyActivityProgress__bar span") || null;
   const nextPercent = progress.percent.toFixed(2) + "%";
   if (bar?.style && String(bar.style.getPropertyValue?.("--spotify-progress") || "") !== nextPercent) {

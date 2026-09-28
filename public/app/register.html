@@ -1,12 +1,13 @@
 ﻿<!doctype html>
 <html lang="en">
 <head>
+  <script src="./lib/browserAccountContext.js"></script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Create account - Altara</title>
-  <meta name="robots" content="noindex, follow" />
+  <title>Create account - ALTARA</title>
   <link rel="icon" href="/app/build/icon.png" />
   <link rel="stylesheet" href="/app/style.css" />
+  <link rel="stylesheet" href="firstLight.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600;700;800&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" media="print" onload="this.media='all'" />
@@ -15,31 +16,17 @@
 <body class="authPage auth-checking" data-auth-page="register">
   <div class="authDesktopDragRegion" aria-hidden="true"></div>
   <div class="authLangDock">
-    <button id="btnAuthLang" class="authLangBtn" type="button" aria-label="Switch language" title="Switch language">PT</button>
+    <label class="authLangPicker">
+      <span class="sr-only">Language</span>
+      <select id="authLanguageSelect" class="authLangSelect" aria-label="Language" title="Language">
+        <option value="en">English</option>
+        <option value="pt-PT">Português (Portugal)</option>
+        <option value="pt-BR">Português (Brasil)</option>
+      </select>
+    </label>
   </div>
 
-  <div id="authInstallWelcomeOverlay" class="authInstallWelcomeOverlay hidden" aria-hidden="true">
-    <div class="authInstallWelcomeOverlay__backdrop" aria-hidden="true"></div>
-    <div class="authInstallWelcomeOverlay__glow authInstallWelcomeOverlay__glow--one" aria-hidden="true"></div>
-    <div class="authInstallWelcomeOverlay__glow authInstallWelcomeOverlay__glow--two" aria-hidden="true"></div>
-    <div class="authInstallWelcomeOverlay__grain" aria-hidden="true"></div>
-    <div class="authInstallWelcomeOverlay__card" role="dialog" aria-modal="true" aria-labelledby="authInstallWelcomeTitle">
-      <div class="authInstallWelcomeOverlay__logoWrap" aria-hidden="true">
-        <img class="authInstallWelcomeOverlay__logo" src="/app/assets/brand/LOGO%20ALTARA%20BRANCO.svg" alt="" />
-      </div>
-      <div class="authInstallWelcomeOverlay__brand">ALTARA</div>
-      <h1 id="authInstallWelcomeTitle" class="authInstallWelcomeOverlay__title">Where friends stay close.</h1>
-      <p id="authInstallWelcomeLineOne" class="authInstallWelcomeOverlay__line">From late-night laughs to voice calls that feel real.</p>
-      <p id="authInstallWelcomeLineTwo" class="authInstallWelcomeOverlay__line authInstallWelcomeOverlay__line--sub">Keep your memories alive, one message at a time.</p>
-      <div class="authInstallWelcomeOverlay__moments" aria-hidden="true">
-        <span id="authInstallMomentOne">friends</span>
-        <span id="authInstallMomentTwo">laughs</span>
-        <span id="authInstallMomentThree">memories</span>
-        <span id="authInstallMomentFour">calls</span>
-      </div>
-      <button id="btnAuthInstallWelcomeStart" class="btn primary authInstallWelcomeOverlay__cta" type="button">Start</button>
-    </div>
-  </div>
+  <div id="authInstallWelcomeOverlay" class="authInstallWelcomeOverlay hidden" aria-hidden="true"></div>
 
   <div class="authShell">
     <aside class="card authShowcase" aria-hidden="true">
@@ -76,6 +63,10 @@
       <h2 id="authCardTitle" class="authTitle">Create account</h2>
       <p id="authCardSub" class="authSub">Username is required, just like Discord.</p>
       <div id="authFeedback" class="authFeedback" role="status" aria-live="polite" hidden></div>
+      <div id="authPendingInvite" class="authPendingInvite" role="status" aria-live="polite" hidden>
+        <span id="authPendingInviteText">Server invite saved. Create your account to continue where you left off.</span>
+        <button id="btnCancelPendingInvite" class="authPendingInvite__cancel" type="button">Cancel invite</button>
+      </div>
 
       <div class="field">
         <label id="authUsernameLabel" for="username">Username (3-20, letters/numbers/_/. and spaces)</label>
@@ -93,6 +84,8 @@
         <input id="password" type="password" autocomplete="new-password" placeholder="minimum 6" />
       </div>
 
+      <section id="registerPolicy" class="accountPrivacy" aria-label="Account policy" hidden></section>
+
       <div class="authActions">
         <button class="btn primary" id="btnRegister">Create account</button>
         <a class="btn" id="authAltLink" href="/app/login.html">Go to login</a>
@@ -102,6 +95,10 @@
     </main>
   </div>
 
+  <script type="module">
+    import { initAuthInstallWelcome } from './authOnboarding.js';
+    void initAuthInstallWelcome();
+  </script>
   <script type="module" src="/app/register.js"></script>
 </body>
 </html>

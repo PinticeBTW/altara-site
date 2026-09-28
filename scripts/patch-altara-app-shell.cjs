@@ -5,6 +5,26 @@ const path = require("path");
 
 const siteRoot = path.resolve(__dirname, "..");
 const appRoot = path.join(siteRoot, "public", "app");
+// Deployment clients exclude node_modules, even inside public. Keep the browser
+// SDK at a normal static-asset path while desktop retains its package layout.
+const sdkSource = path.join(appRoot, "node_modules/livekit-client/dist/livekit-client.esm.mjs");
+const sdkTarget = path.join(appRoot, "vendor/livekit-client/livekit-client.esm.mjs");
+if (fs.existsSync(sdkSource)) {
+  fs.mkdirSync(path.dirname(sdkTarget), { recursive: true });
+  fs.copyFileSync(sdkSource, sdkTarget);
+}
+if (!fs.existsSync(sdkTarget)) throw new Error("Missing browser LiveKit SDK");
+for (const relative of ["app.js", "lib/callErrorStatus.js", "lib/serverVoiceCamera.js", "lib/serverVoiceLiveKit.js", "lib/serverVoiceScreenshare.js", "lib/cameraMirror.js"]) {
+  const file = path.join(appRoot, relative);
+  const source = fs.readFileSync(file, "utf8");
+  fs.writeFileSync(file, source.replaceAll("node_modules/livekit-client/dist/livekit-client.esm.mjs", "vendor/livekit-client/livekit-client.esm.mjs"));
+}
+const manifestFile = path.join(appRoot, "release.json");
+if (fs.existsSync(manifestFile)) {
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
+  manifest.appJsSha256 = require("node:crypto").createHash("sha256").update(fs.readFileSync(path.join(appRoot, "app.js"))).digest("hex");
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
+}
 const appJsPath = path.join(appRoot, "app.js");
 const appJsSource = fs.existsSync(appJsPath) ? fs.readFileSync(appJsPath, "utf8") : "";
 const assetVersion = appJsSource.match(/const assetVersion = "([^"]+)"/)?.[1] || "";
@@ -13,8 +33,11 @@ const offlineReconnectMarker =
 const releaseManifestPath = path.join(appRoot, "release.json");
 const releaseVersion = fs.existsSync(releaseManifestPath)
   ? JSON.parse(fs.readFileSync(releaseManifestPath, "utf8")).version : "";
+const releasePatch = fs.existsSync(releaseManifestPath)
+  ? JSON.parse(fs.readFileSync(releaseManifestPath, "utf8")).patch : "";
 const appJsQuery = [
   releaseVersion ? `release=${encodeURIComponent(releaseVersion)}` : "",
+  releasePatch ? `patch=${encodeURIComponent(releasePatch)}` : "",
   assetVersion ? `v=${encodeURIComponent(assetVersion)}` : "",
   offlineReconnectMarker
     ? `hotfix=${encodeURIComponent(offlineReconnectMarker)}`

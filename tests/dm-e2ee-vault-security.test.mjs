@@ -190,7 +190,7 @@ test.after(async () => {
   await new Promise((resolve) => staticServer.server.close(resolve));
 });
 
-test("production-site Vault copy passes 32 real WebCrypto, IndexedDB, migration, recovery, and UI checks", async () => {
+test("production-site Vault copy passes 52 real WebCrypto, IndexedDB, migration, recovery, and UI checks", async () => {
   await stat(chromePath);
   const profile = await mkdtemp(path.join(os.tmpdir(), "altara-site-vault-chrome-"));
   try {
@@ -198,8 +198,8 @@ test("production-site Vault copy passes 32 real WebCrypto, IndexedDB, migration,
     assert.ok(payload, "Chrome did not return a Vault test payload");
     const summary = JSON.parse(payload.text);
     assert.equal(payload.status, "pass", `Chrome failures: ${JSON.stringify(summary.failures || [])}`);
-    assert.equal(summary.total, 32);
-    assert.equal(summary.passed, 32);
+    assert.equal(summary.total, 52);
+    assert.equal(summary.passed, 52);
     assert.equal(summary.failed, 0);
   } finally {
     await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
@@ -210,8 +210,8 @@ test("production app shell owns the exact hardened Vault module and recovery-fir
   const moduleSource = (await readFile(path.join(repositoryRoot, "public", "app", "lib", "dmE2ee.js"), "utf8")).replace(/\r\n/g, "\n");
   assert.equal(
     createHash("sha256").update(moduleSource).digest("hex"),
-    // Canonical Vault source shared by 0.1.129 and this client-only release.
-    "9a443eff4780c782c374bc2b10bc57bc468d3974b796f368867dcc9bbcffa43f",
+    // Canonical Vault source shipping in 0.1.141, exercised by the 52 runtime checks.
+    "ede88f0dcc55e8dab891210139c91b4c651179910455179f66c74414fe853541",
   );
   const indexSource = await readFile(path.join(repositoryRoot, "public", "app", "index.html"), "utf8");
   assert.match(indexSource, /<script\s+type="module"\s+src="\/app\/app\.js[^"]*"><\/script>/);
@@ -223,7 +223,7 @@ test("production app shell owns the exact hardened Vault module and recovery-fir
   assert.match(appSource, /rewrapDmE2eeKeyBackup\(\{/);
   assert.doesNotMatch(appSource, /awaitWithTimeout\(\s*setupDirectDmEncryptionForCurrentDevice[\s\S]{0,250}?15000/);
   assert.match(appSource, /function promptVaultProvisioningPassword\(\)/);
-  assert.match(appSource, /setupDmE2eeIdentityForCurrentDevice\(\{[\s\S]*?backupPassword,[\s\S]*?includeRecoveryKey: false/);
+  assert.match(appSource, /setupDmE2eeIdentityForCurrentDevice\(\{[\s\S]*?backupPassword,[\s\S]*?includeRecoveryKey: true/);
   assert.doesNotMatch(
     appSource,
     /setupDmE2eeIdentityForCurrentDevice\(\{\s*userId:\s*state\.user\.id,\s*forceNew:\s*false\s*\}\)/,

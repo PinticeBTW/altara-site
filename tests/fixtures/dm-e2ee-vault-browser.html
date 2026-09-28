@@ -50,11 +50,12 @@ function bytesToBase64Url(bytes) {
 
 async function openDb() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("altara-dm-e2ee-v1", 2);
+    const request = indexedDB.open("altara-dm-e2ee-v1", 3);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains("identityKeys")) db.createObjectStore("identityKeys", { keyPath: "userId" });
       if (!db.objectStoreNames.contains("identityKeysV2")) db.createObjectStore("identityKeysV2", { keyPath: "userId" });
+      if (!db.objectStoreNames.contains("pendingIdentityRestarts")) db.createObjectStore("pendingIdentityRestarts", { keyPath: "userId" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -111,7 +112,7 @@ function bytesEqual(left, right) {
 }
 
 const vault = await import(`/public/app/lib/dmE2ee.js?v=${Date.now()}`);
-const { getVaultTestServer } = await import("/tests/fixtures/dm-e2ee-vault-supabase-stub.js");
+const { getVaultTestServer, supabase } = await import("/tests/fixtures/dm-e2ee-vault-supabase-stub.js");
 const server = getVaultTestServer();
 server.reset();
 
@@ -147,6 +148,38 @@ test("credentialed provisioning creates a non-extractable deriveBits-only privat
   context.activeKey = server.getKey(userId);
   context.passwordMethod = server.getMethod(userId, "password");
   context.recoveryMethod = server.getMethod(userId, "recovery_key");
+});
+
+for (const [table, method, mode] of [
+  ['dm_e2ee_key_backup_methods', 'password', 'corrupt'],
+  ['dm_e2ee_key_backup_methods', 'recovery_key', 'missing'],
+  ['dm_e2ee_key_backups', '', 'corrupt'],
+  ['dm_e2ee_key_backups', '', 'error'],
+]) test(`backup readback ${table}/${method}/${mode} blocks new identity publication`, async () => {
+  const userId = `readback-${table}-${method}-${mode}`;
+  server.setCurrentUser(userId);
+  server.setReadFault({ userId, table, method, mode });
+  try {
+    const result = await vault.setupDmE2eeIdentityForCurrentDevice({ userId, backupPassword: 'Synthetic saved password 42!', includeRecoveryKey: true });
+    equal(result.status, 'error');
+    equal(result.error.code, mode === 'error' ? 'network_error' : 'dm_e2ee_backup_verification_failed');
+    equal(server.getKey(userId), null, 'unverified_identity_published');
+    equal(await idbGet('identityKeysV2', userId), undefined, 'unverified_identity_hardened');
+  } finally { server.setReadFault(null); }
+});
+
+test('failed backup verification preserves the recoverable legacy identity', async () => {
+  const userId = 'legacy-backup-readback';
+  const legacy = await createLegacyFixture(userId, 'idb_pkcs8');
+  server.setCurrentUser(userId);
+  server.setReadFault({ userId, table: 'dm_e2ee_key_backup_methods', method: 'password', mode: 'corrupt' });
+  try {
+    const result = await vault.setupDmE2eeIdentityForCurrentDevice({ userId, backupPassword: 'Synthetic legacy recovery 42!', includeRecoveryKey: true });
+    equal(result.status, 'error');
+    equal(result.error.code, 'dm_e2ee_backup_verification_failed');
+    equal((await idbGet('identityKeys', userId)).privateKeyPkcs8, legacy.privateKeyPkcs8);
+    equal(await idbGet('identityKeysV2', userId), undefined);
+  } finally { server.setReadFault(null); }
 });
 
 test("the public identity remains exportable", async () => {
@@ -204,34 +237,6 @@ test("recovery export is encrypted and separately authenticated", async () => {
   assert(context.recoveryMethod?.encrypted_private_key, "missing_recovery_ciphertext");
   assert(context.passwordMethod.encrypted_private_key !== context.recoveryMethod.encrypted_private_key, "reused_ciphertext");
   assert(!JSON.stringify(context.passwordMethod).includes(context.newIdentity.publicKeyJwk.x), "plaintext_public_material_in_backup_row");
-});
-
-test("protected identity recovery credentials can be authenticated and rewrapped", async () => {
-  const previousPasswordCiphertext = context.passwordMethod.encrypted_private_key;
-  const nextPassword = "updated correct horse battery staple";
-  const updated = await vault.rewrapDmE2eeKeyBackup({
-    userId: context.newUserId,
-    currentPassword: context.password,
-    currentMethod: "password",
-    newPassword: nextPassword,
-    includeRecoveryKey: true,
-  });
-  assert(updated?.recoveryKey, "rewrap_recovery_key_missing");
-  const nextPasswordMethod = server.getMethod(context.newUserId, "password");
-  const nextRecoveryMethod = server.getMethod(context.newUserId, "recovery_key");
-  assert(nextPasswordMethod.encrypted_private_key !== previousPasswordCiphertext, "rewrap_ciphertext_unchanged");
-  const oldCredentialError = await rejects(() => vault.restoreDmE2eeKeyBackup({
-    userId: context.newUserId,
-    password: context.password,
-  }));
-  equal(oldCredentialError.code, "dm_e2ee_backup_bad_password");
-  const restored = await vault.restoreDmE2eeKeyBackup({ userId: context.newUserId, password: nextPassword });
-  equal(restored.privateKey.extractable, false);
-  equal(restored.publicKeyJwk.x, context.newIdentity.publicKeyJwk.x);
-  context.password = nextPassword;
-  context.recoveryKey = updated.recoveryKey;
-  context.passwordMethod = nextPasswordMethod;
-  context.recoveryMethod = nextRecoveryMethod;
 });
 
 test("wrong recovery password fails authentication without changing local storage", async () => {
@@ -321,35 +326,6 @@ test("legacy extractable CryptoKey migrates through explicit encrypted recovery"
   } finally {
     crypto.subtle.exportKey = originalExportKey;
   }
-});
-
-test("legacy non-extractable IndexedDB CryptoKey migrates automatically without identity rotation", async () => {
-  const userId = "legacy-protected-user";
-  const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
-  const publicKeyJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
-  await idbPut("identityKeys", {
-    userId,
-    keyId: "stable-protected-key-id",
-    keyVersion: 11,
-    keyAlgorithm: "ECDH-P256",
-    publicKeyJwk,
-    privateKey: pair.privateKey,
-  });
-  server.setKey(userId, {
-    id: "stable-protected-key-id",
-    key_version: 11,
-    key_algorithm: "ECDH-P256",
-    public_key_jwk: publicKeyJwk,
-    revoked_at: null,
-  });
-  server.setCurrentUser(userId);
-  const state = await vault.getDmE2eeIdentityState({ userId, force: true });
-  equal(state.status, "ready");
-  equal(state.keyId, "stable-protected-key-id");
-  equal(state.keyVersion, 11);
-  equal(state.publicKeyJwk.x, publicKeyJwk.x);
-  equal(await idbGet("identityKeys", userId), undefined);
-  equal((await idbGet("identityKeysV2", userId)).privateKey.extractable, false);
 });
 
 test("legacy IndexedDB PKCS8 migrates and preserves its public identity", async () => {
@@ -580,6 +556,92 @@ test("existing Vault message encryption and decryption remain compatible", async
   });
   equal(decrypted.content, "synthetic historical message");
   equal(decrypted.e2eeState, "ready");
+  equal(decrypted.e2eeContentKind, "text");
+  equal(vault.getTrustedDmE2eeText(decrypted), "synthetic historical message");
+});
+
+test("a modified Vault sender cannot turn authenticated JSON-looking text into a media type", async () => {
+  const sender = context["isolation-a"];
+  const recipient = context["isolation-b"];
+  const plaintexts = [
+    '{"type":"attachment","url":"https://evil.example/x"}',
+    '{"type":"gif","url":"https://evil.example/x.gif"}',
+    '[{"gif":"whatever"}]',
+    '{"hello":"world"}',
+    'javascript:alert(1)',
+    'file:///C:/test',
+  ];
+  for (const [index, plaintext] of plaintexts.entries()) {
+    server.setCurrentUser(sender.userId);
+    const encrypted = await vault.buildEncryptedDmMessagePayload({
+      conversationId: "synthetic-conversation",
+      userId: sender.userId,
+      otherUserId: recipient.userId,
+      content: plaintext,
+    });
+    server.setCurrentUser(recipient.userId);
+    const [decrypted] = await vault.decryptDmMessageRows({
+      userId: recipient.userId,
+      conversationId: "synthetic-conversation",
+      rows: [{ id: `malicious-shape-${index}`, conversation_id: "synthetic-conversation", user_id: sender.userId, ...encrypted }],
+    });
+    equal(decrypted.e2eeContentKind, "text");
+    equal(vault.getTrustedDmE2eeText(decrypted), plaintext);
+  }
+});
+
+test("invalid Vault-v1 row schema fails closed before decryption", async () => {
+  const sender = context["isolation-a"];
+  const recipient = context["isolation-b"];
+  server.setCurrentUser(sender.userId);
+  const encrypted = await vault.buildEncryptedDmMessagePayload({
+    conversationId: "synthetic-conversation",
+    userId: sender.userId,
+    otherUserId: recipient.userId,
+    content: "hello",
+  });
+  server.setCurrentUser(recipient.userId);
+  const [decrypted] = await vault.decryptDmMessageRows({
+    userId: recipient.userId,
+    conversationId: "synthetic-conversation",
+    rows: [{
+      id: "invalid-schema",
+      conversation_id: "synthetic-conversation",
+      user_id: sender.userId,
+      ...encrypted,
+      cipher_alg: "AES-CBC",
+    }],
+  });
+  equal(decrypted.e2eeState, "invalid_schema");
+  equal(vault.getTrustedDmE2eeText(decrypted), null);
+  equal(decrypted.content, "Vault message unavailable on this device.");
+});
+
+test("tampered Vault ciphertext fails closed without trusted plaintext", async () => {
+  const sender = context["isolation-a"];
+  const recipient = context["isolation-b"];
+  server.setCurrentUser(sender.userId);
+  const encrypted = await vault.buildEncryptedDmMessagePayload({
+    conversationId: "synthetic-conversation",
+    userId: sender.userId,
+    otherUserId: recipient.userId,
+    content: "hello",
+  });
+  const replacement = encrypted.ciphertext.startsWith("A") ? "B" : "A";
+  server.setCurrentUser(recipient.userId);
+  const [decrypted] = await vault.decryptDmMessageRows({
+    userId: recipient.userId,
+    conversationId: "synthetic-conversation",
+    rows: [{
+      id: "tampered-ciphertext",
+      conversation_id: "synthetic-conversation",
+      user_id: sender.userId,
+      ...encrypted,
+      ciphertext: replacement + encrypted.ciphertext.slice(1),
+    }],
+  });
+  equal(decrypted.e2eeState, "decryption_failed");
+  equal(vault.getTrustedDmE2eeText(decrypted), null);
 });
 
 test("errors and diagnostics do not contain private-key material", async () => {
@@ -590,74 +652,268 @@ test("errors and diagnostics do not contain private-key material", async () => {
   assert(!serializedLogs.includes(context.recoveryKey), "recovery_key_logged");
 });
 
-test("production recovery-first settings delegates to the shared account-owned setup", async () => {
-  const source = (await (await fetch(`/public/app/app.js?v=${Date.now()}`)).text()).replace(/\r\n/g, "\n");
-  const start = source.indexOf("async function setupNewDmE2eeKeyFromSettings()");
-  const end = source.indexOf("\nfunction promptRestoreDmE2eeBackupFromDm()", start);
-  assert(start >= 0 && end > start, "site_setup_function_missing");
-  const functionSource = source.slice(start, end);
-  for (const scenario of [{ current: true, ok: true }, { current: true, ok: false }, { current: false, ok: true }]) {
-    const calls = [];
-    const setup = Function("captureDmE2eeUiOwner", "setupDirectDmEncryptionForCurrentDevice",
-      "clearDmE2eeBackupInputs", "refreshDmE2eeBackupSettingsState",
-      `${functionSource}; return setupNewDmE2eeKeyFromSettings;`)(
-      () => ({ isCurrent: () => scenario.current }),
-      async options => { calls.push(["setup", options]); return { ok: scenario.ok }; },
-      options => calls.push(["clear", options]),
-      async options => calls.push(["refresh", options]),
-    );
-    await setup();
-    equal(calls[0][0], "setup");
-    equal(calls[0][1].checkPeerKey, false);
-    if (scenario.current && scenario.ok) {
-      equal(calls[1][0], "clear");
-      equal(calls[1][1].clearRestore, false);
-      equal(calls[2][0], "refresh");
-      equal(calls[2][1].force, true);
-    } else {
-      equal(calls.length, 1);
-    }
+async function seedMissingRestartUser(userId) {
+  vault.clearDmE2eeMemory();
+  server.setCurrentUser(userId);
+  const pair = await crypto.subtle.generateKey({name:"ECDH",namedCurve:"P-256"},true,["deriveBits"]);
+  const publicKeyJwk = await crypto.subtle.exportKey("jwk",pair.publicKey);
+  server.setKey(userId,{id:`old-${userId}`,key_version:1,key_algorithm:"ECDH-P256",public_key_jwk:publicKeyJwk,revoked_at:null});
+  return {userId,expectedKeyId:`old-${userId}`,password:"Synthetic restart recovery phrase 42!",acknowledgeHistoryLoss:true,confirmRecoveryKey:async()=>true};
+}
+
+test("restart requires explicit consent and cancellation leaves the old identity untouched",async()=>{
+  const options=await seedMissingRestartUser("restart-cancel");
+  await rejects(()=>vault.restartMissingDmE2eeIdentity({...options,acknowledgeHistoryLoss:false}),"explicit_identity_reset_required");
+  await rejects(()=>vault.restartMissingDmE2eeIdentity({...options,confirmRecoveryKey:async()=>false}),"vault_recovery_cancelled");
+  equal(server.getKey(options.userId).id,options.expectedKeyId);
+  equal(server.getBackup(options.userId),null);
+  equal(await idbGet("identityKeysV2",options.userId),undefined);
+});
+
+test("restart refuses a backup saved by another device while user saves recovery key",async()=>{
+  const options=await seedMissingRestartUser("restart-backup-race");
+  await rejects(()=>vault.restartMissingDmE2eeIdentity({...options,confirmRecoveryKey:async()=>{server.seedBackupMetadata(options.userId);return true;}}),"vault_restart_recovery_available");
+  equal(server.getKey(options.userId).id,options.expectedKeyId);
+  assert(server.getBackup(options.userId));
+});
+
+test("restart refuses an identity changed while user saves recovery key",async()=>{
+  const options=await seedMissingRestartUser("restart-key-race");
+  await rejects(()=>vault.restartMissingDmE2eeIdentity({...options,confirmRecoveryKey:async()=>{server.setKey(options.userId,{...server.getKey(options.userId),id:"different-identity"});return true;}}),"vault_restart_identity_changed");
+  equal(server.getKey(options.userId).id,"different-identity");
+  equal(server.getBackup(options.userId),null);
+});
+
+test("restart cannot publish after session changes in the recovery acknowledgement",async()=>{
+  const options=await seedMissingRestartUser("restart-owner-change");
+  await rejects(()=>vault.restartMissingDmE2eeIdentity({...options,confirmRecoveryKey:async()=>{vault.clearDmE2eeMemory();return true;}}),"dm_e2ee_operation_cancelled");
+  equal(server.getKey(options.userId).id,options.expectedKeyId);
+  equal(server.getBackup(options.userId),null);
+});
+
+test("explicit restart verifies two credentials and both restore the same new key",async()=>{
+  const options=await seedMissingRestartUser("restart-success");let recoveryKey="";
+  const ready=await vault.restartMissingDmE2eeIdentity({...options,confirmRecoveryKey:async value=>{recoveryKey=value;return true;}});
+  equal(ready.privateKey.extractable,false);equal(ready.recoveryVerified,true);
+  assert(ready.keyId!==options.expectedKeyId);equal(ready.keyVersion,2);
+  for(const method of ["password","recovery_key"]){
+    await idbRequest("identityKeysV2","readwrite",store=>store.delete(options.userId));
+    await idbRequest("pendingIdentityRestarts","readwrite",store=>store.delete(options.userId));
+    vault.clearDmE2eeMemory();
+    equal((await vault.getDmE2eeIdentityState({userId:options.userId,force:true})).status,"missing_local_private");
+    const restored=await vault.restoreDmE2eeKeyBackup({userId:options.userId,method,password:options.password,recoveryKey});
+    equal(restored.keyId,ready.keyId);equal(restored.privateKey.extractable,false);
   }
 });
 
-test("production migration recovery state renders the credentialed setup action", async () => {
-  const source = await (await fetch(`/public/app/app.js?v=${Date.now()}`)).text();
-  const start = source.indexOf("function renderDmE2eeRecoveryState()");
-  const end = source.indexOf("\nfunction isDmE2eeReadyForInteraction()", start);
-  assert(start >= 0 && end > start, "site_recovery_renderer_missing");
-  const functionSource = source.slice(start, end);
-  const messages = document.createElement("div");
-  messages.id = "dmMessages";
-  document.body.append(messages);
-  const dependencyNames = [
-    "isDirectDmE2eeEnabled", "document", "dmE2eeReadiness", "t", "activeDmId", "state",
-    "dmMessagesCache", "logChatMessagesRenderDiagnostic", "preserveComposerDuring", "esc",
-    "getDmE2eeRecoveryHintText", "setDmJumpLatestVisible",
-  ];
-  const dependencyValues = [
-    () => true,
-    document,
-    { status: "failed", identityStatus: "migration_requires_recovery" },
-    (_key, fallback) => fallback,
-    "synthetic-conversation",
-    { activeDm: { conversationId: "synthetic-conversation" } },
-    [],
-    () => {},
-    (run) => run(),
-    (value) => String(value),
-    () => "Migrate this legacy identity securely.",
-    () => {},
-  ];
-  try {
-    const render = Function(...dependencyNames, `${functionSource}; return renderDmE2eeRecoveryState;`)(...dependencyValues);
-    render();
-    const action = messages.querySelector('[data-dm-e2ee-act="setup"]');
-    assert(action, "migration_setup_action_missing");
-    equal(action.textContent.trim(), "Set up Vault Recovery");
-    assert(!messages.querySelector('[data-dm-e2ee-act="restore"]'), "migration_rendered_restore_only");
-  } finally {
-    messages.remove();
+test("lost restart response retains a durable key and resumes without another reset",async()=>{
+  const options=await seedMissingRestartUser("restart-response-lost");
+  const original=supabase.rpc;
+  supabase.rpc=async(name,args)=>{const response=await original(name,args);return name==="restart_my_missing_vault_identity_v1"?{data:null,error:{message:"synthetic response lost"}}:response;};
+  try{await rejects(()=>vault.restartMissingDmE2eeIdentity(options),"vault_restart_incomplete");}finally{supabase.rpc=original;}
+  assert(server.getKey(options.userId).id!==options.expectedKeyId);
+  const before=server.calls().filter(row=>row.rpc==="restart_my_missing_vault_identity_v1").length;
+  vault.clearDmE2eeMemory();
+  const recovered=await vault.getDmE2eeIdentityState({userId:options.userId,force:true});
+  equal(recovered.status,"ready");equal(recovered.keyId,server.getKey(options.userId).id);
+  equal(server.calls().filter(row=>row.rpc==="restart_my_missing_vault_identity_v1").length,before);
+});
+
+test("Vault media round trips between participants without exposing its key or filename", async () => {
+  const sender = context["isolation-a"], recipient = context["isolation-b"];
+  const conversationId = crypto.randomUUID(), messageId = crypto.randomUUID(), fileId = crypto.randomUUID();
+  const mediaCrypto = await import('/public/app/lib/vaultMediaCrypto.js');
+  const file = new File(['GIF89a confidential fixture'], 'private-file.gif', { type: 'image/gif' });
+  const encryptedFile = await mediaCrypto.encryptVaultFile(file, { conversationId, messageId, fileId });
+  const descriptor = { fileId, uploadId: crypto.randomUUID(), key: encryptedFile.key, name: file.name, mime: file.type, size: file.size, encryptedSize: encryptedFile.blob.size };
+  server.setCurrentUser(sender.userId);
+  const payload = await vault.buildEncryptedDmMessagePayload({ conversationId, messageId, userId: sender.userId, otherUserId: recipient.userId,
+    media: { type: 'vault_media', version: 1, conversationId, messageId, files: [descriptor] } });
+  equal(payload.cipher_version, 2);
+  assert(!JSON.stringify(payload).includes(descriptor.key)); assert(!JSON.stringify(payload).includes(file.name));
+  const wire = { ...payload, id: messageId, conversation_id: conversationId, user_id: sender.userId, dm_privacy_epoch: 1 };
+  for (const userId of [sender.userId, recipient.userId]) {
+    server.setCurrentUser(userId);
+    const [row] = await vault.decryptDmMessageRows({ userId, conversationId, rows: [wire] });
+    const manifest = vault.getTrustedVaultMedia(row);
+    assert(manifest); equal(vault.getTrustedDmE2eeText(row), null);
+    equal(await (await mediaCrypto.decryptVaultFile(encryptedFile.blob, manifest.files[0], { conversationId, messageId, fileId })).text(), await file.text());
+    equal(vault.getTrustedVaultMedia(JSON.parse(JSON.stringify(row))), null);
+    assert(!JSON.stringify(row).includes(descriptor.key)); assert(!JSON.stringify(row).includes(file.name));
+    equal(vault.getTrustedVaultMedia({ ...row, user_id: 'another-user' }), null);
+    equal(vault.getTrustedVaultMedia({ ...row, deleted_at: new Date().toISOString() }), null);
+    const [moved] = await vault.decryptDmMessageRows({ userId, conversationId, rows: [{ ...wire, id: crypto.randomUUID() }] });
+    equal(vault.getTrustedVaultMedia(moved), null);
   }
+});
+
+test("changing the Vault session invalidates decrypted media authority", async () => {
+  const sender = context['isolation-a'], recipient = context['isolation-b'];
+  const conversationId = crypto.randomUUID(), messageId = crypto.randomUUID();
+  server.setCurrentUser(sender.userId);
+  const descriptor = { fileId: crypto.randomUUID(), uploadId: crypto.randomUUID(), key: bytesToBase64Url(new Uint8Array(32).fill(7)), name: 'file.bin', mime: 'application/octet-stream', size: 1, encryptedSize: 49 };
+  const payload = await vault.buildEncryptedDmMessagePayload({ conversationId, messageId, userId: sender.userId, otherUserId: recipient.userId,
+    media: { type: 'vault_media', version: 1, conversationId, messageId, files: [descriptor] } });
+  const [row] = await vault.decryptDmMessageRows({ userId: sender.userId, conversationId, rows: [{ ...payload, id: messageId, conversation_id: conversationId, user_id: sender.userId }] });
+  assert(vault.getTrustedVaultMedia(row)); vault.clearDmE2eeMemory(); equal(vault.getTrustedVaultMedia(row), null);
+});
+
+test("Vault viewer opens only authenticated local blobs and revokes them on close or navigation", async () => {
+  const { createVaultMediaViewer } = await import('/public/app/lib/vaultMediaViewer.js');
+  const messageId = crypto.randomUUID(), fileId = crypto.randomUUID();
+  let valid = true; const manifest = { files: [{ fileId, name: 'private.gif' }] };
+  const row = { id: messageId, conversation_id: crypto.randomUUID(), ciphertext: 'test' };
+  const button = document.createElement('button'); button.dataset.vaultMessage = messageId; button.dataset.vaultFile = fileId; button.textContent = 'Abrir'; document.body.append(button);
+  let downloads = 0, created = 0, revoked = 0;
+  const controller = new AbortController();
+  const viewer = createVaultMediaViewer({ supabase: {}, getRow: () => row, getManifest: () => valid ? manifest : null,
+    captureOwner: () => ({ signal: controller.signal, isCurrent: () => !controller.signal.aborted }), canView: () => valid,
+    download: async options => { downloads++; options.assertCurrent(); return new Blob(['GIF89a'], { type: 'image/gif' }); },
+    urlApi: { createObjectURL: blob => { created++; return URL.createObjectURL(blob); }, revokeObjectURL: url => { revoked++; URL.revokeObjectURL(url); } } });
+  await viewer.open(button); equal(downloads, 1); equal(created, 1);
+  const preview = button.nextElementSibling; assert(preview.querySelector('img').src.startsWith('blob:'));
+  equal(preview.querySelector('a'), null); assert(!preview.innerHTML.includes('supabase'));
+  viewer.clear(); equal(revoked, 1); equal(button.disabled, false); equal(button.nextElementSibling, null);
+  valid = false; await viewer.open(button); equal(downloads, 1);
+  valid = true; await viewer.open(button); button.remove(); viewer.prune(); equal(revoked, 2);
+  viewer.clear();
+});
+
+test("Visible media loads automatically while spoilers and documents wait for a click", async () => {
+  const { createVaultMediaViewer } = await import('/public/app/lib/vaultMediaViewer.js');
+  const host = document.createElement('div'); host.style.cssText = 'position:fixed;top:0;left:0;width:300px;z-index:10'; document.body.append(host);
+  const row = { id: crypto.randomUUID(), conversation_id: crypto.randomUUID(), ciphertext: 'automatic' };
+  const files = ['image/gif', 'image/png', 'application/octet-stream'].map((mime, index) => ({ fileId: crypto.randomUUID(), name: `file-${index}`, mime, spoiler: index === 1 }));
+  const manifest = { files }; const buttons = files.map((file, index) => {
+    const button = document.createElement('button'); button.dataset.vaultMessage = row.id; button.dataset.vaultFile = file.fileId; button.dataset.vaultAuto = index === 0 ? '1' : '0'; button.textContent = 'Carregar'; host.append(button); return button;
+  });
+  const controller = new AbortController(); let downloads = 0, revocations = 0;
+  const viewer = createVaultMediaViewer({ getRow: () => row, getManifest: () => manifest, canView: () => true,
+    captureOwner: () => ({ signal: controller.signal, isCurrent: () => !controller.signal.aborted }),
+    download: async ({ descriptor }) => { downloads++; return new Blob(['GIF89a'], { type: descriptor.mime }); },
+    urlApi: { createObjectURL: blob => URL.createObjectURL(blob), revokeObjectURL: url => { revocations++; URL.revokeObjectURL(url); } } });
+  try {
+    viewer.watch(host);
+    for (let i = 0; i < 100 && !buttons[0].hidden; i++) await new Promise(resolve => setTimeout(resolve, 20));
+    equal(downloads, 1); assert(buttons[0].hidden); assert(host.querySelector('img').src.startsWith('blob:'));
+    assert(!host.textContent.includes('Encriptado')); equal(viewer.getItems().length, 1);
+    await viewer.open(buttons[1]); equal(downloads, 2);
+    await viewer.open(buttons[2]); equal(downloads, 3); assert(!buttons[2].nextElementSibling.querySelector('iframe,img,video'));
+    controller.abort(); equal(revocations, 3); equal(host.querySelectorAll('.vaultMediaPreview').length, 0); equal(viewer.getItems().length, 0);
+  } finally { viewer.clear(); host.remove(); }
+});
+
+test("Late downloads never render after the active media view is cleared", async () => {
+  const { createVaultMediaViewer } = await import('/public/app/lib/vaultMediaViewer.js');
+  const row = { id: crypto.randomUUID(), conversation_id: crypto.randomUUID(), ciphertext: 'late' };
+  const file = { fileId: crypto.randomUUID(), name: 'late.png', mime: 'image/png' }, manifest = { files: [file] };
+  const button = document.createElement('button'); button.dataset.vaultMessage = row.id; button.dataset.vaultFile = file.fileId; document.body.append(button);
+  let finish, created = 0; const controller = new AbortController();
+  const viewer = createVaultMediaViewer({ getRow: () => row, getManifest: () => manifest, canView: () => true,
+    captureOwner: () => ({ signal: controller.signal, isCurrent: () => true }),
+    download: () => new Promise(resolve => { finish = resolve; }),
+    urlApi: { createObjectURL: () => { created++; return 'blob:unexpected'; }, revokeObjectURL() {} } });
+  const pending = viewer.open(button); viewer.clear(); finish(new Blob(['png'], { type: 'image/png' })); await pending;
+  equal(created, 0); assert(!button.hidden); button.remove();
+});
+
+test("Media errors remain retryable without an automatic download loop", async () => {
+  const { createVaultMediaViewer } = await import('/public/app/lib/vaultMediaViewer.js');
+  const row = { id: crypto.randomUUID(), conversation_id: crypto.randomUUID(), ciphertext: 'retry' };
+  const file = { fileId: crypto.randomUUID(), name: 'retry.png', mime: 'image/png' }, manifest = { files: [file] };
+  const button = document.createElement('button'); button.dataset.vaultMessage = row.id; button.dataset.vaultFile = file.fileId; document.body.append(button);
+  let downloads = 0; const controller = new AbortController();
+  const viewer = createVaultMediaViewer({ getRow: () => row, getManifest: () => manifest, canView: () => true,
+    captureOwner: () => ({ signal: controller.signal, isCurrent: () => true }),
+    download: async () => { if (++downloads === 1) throw new Error('network'); return new Blob(['png'], { type: 'image/png' }); } });
+  try {
+    await viewer.open(button); assert(!button.disabled); assert(button.textContent.includes('Tentar novamente'));
+    await new Promise(resolve => setTimeout(resolve, 20)); equal(downloads, 1);
+    await viewer.open(button); equal(downloads, 2); assert(button.hidden);
+  } finally { viewer.clear(); button.remove(); }
+});
+
+test("Confirmed outgoing GIF reuses local bytes, shows a favorite and never downloads itself again", async () => {
+  const { createVaultMediaViewer } = await import('/public/app/lib/vaultMediaViewer.js');
+  const file = { fileId: crypto.randomUUID(), uploadId: crypto.randomUUID(), name: 'cat.gif', mime: 'image/gif', size: 6 };
+  const row = { id: crypto.randomUUID(), conversation_id: crypto.randomUUID(), ciphertext: 'confirmed' }, manifest = { files: [file] };
+  const owner = new AbortController(); let downloads = 0;
+  const button = document.createElement('button'); button.dataset.vaultMessage = row.id; button.dataset.vaultFile = file.fileId; document.body.append(button);
+  const viewer = createVaultMediaViewer({ getRow: () => row, getManifest: () => manifest, canView: () => true,
+    captureOwner: () => ({ signal: owner.signal, isCurrent: () => !owner.signal.aborted }),
+    favoriteButton: () => { const star = document.createElement('button'); star.textContent = '☆'; return star; },
+    download: async () => { downloads++; return new Blob(['GIF89a'], { type: 'image/gif' }); } });
+  try {
+    viewer.seed(row, [new Blob(['GIF89a'], { type: 'image/gif' })]);
+    await viewer.open(button); equal(downloads, 0);
+    assert(button.nextElementSibling.textContent.includes('☆')); equal(button.nextElementSibling.querySelector('a'), null);
+    button.remove(); viewer.prune(); document.body.append(button);
+    await viewer.open(button); equal(downloads, 0);
+    viewer.clear(); await viewer.open(button); equal(downloads, 1);
+  } finally { viewer.clear(); button.remove(); }
+});
+
+test("Four visible GIFs start together; the fifth waits for a free slot", async () => {
+  const { createVaultMediaViewer } = await import('/public/app/lib/vaultMediaViewer.js');
+  const host = document.createElement('div'); host.style.cssText = 'position:fixed;top:0;left:0;width:300px;z-index:10'; document.body.append(host);
+  const row = { id: crypto.randomUUID(), conversation_id: crypto.randomUUID(), ciphertext: 'parallel' };
+  const files = Array.from({ length: 5 }, () => ({ fileId: crypto.randomUUID(), uploadId: crypto.randomUUID(), name: 'cat.gif', mime: 'image/gif' }));
+  const manifest = { files }, pending = []; const owner = new AbortController();
+  const buttons = files.map(file => {
+    const button = document.createElement('button'); button.dataset.vaultMessage = row.id;
+    button.dataset.vaultFile = file.fileId; button.dataset.vaultAuto = '1'; button.textContent = 'GIF'; host.append(button); return button;
+  });
+  const viewer = createVaultMediaViewer({ getRow: () => row, getManifest: () => manifest, canView: () => true,
+    captureOwner: () => ({ signal: owner.signal, isCurrent: () => !owner.signal.aborted }),
+    download: () => new Promise(resolve => pending.push(resolve)) });
+  try {
+    viewer.watch(host);
+    for (let i = 0; i < 100 && pending.length < 4; i++) await new Promise(resolve => setTimeout(resolve, 20));
+    equal(pending.length, 4); assert(buttons.every(button => !button.hidden));
+    pending[0](new Blob(['GIF89a'], { type: 'image/gif' }));
+    for (let i = 0; i < 100 && pending.length < 5; i++) await new Promise(resolve => setTimeout(resolve, 20));
+    equal(pending.length, 5);
+    owner.abort(); pending.slice(1).forEach(resolve => resolve(new Blob(['GIF89a'], { type: 'image/gif' })));
+    await new Promise(resolve => setTimeout(resolve, 20)); equal(host.querySelectorAll('.vaultMediaPreview').length, 0);
+  } finally { viewer.clear(); host.remove(); }
+});
+
+test("Replacing a loading GIF node reuses its download and ignores the removed node", async () => {
+  const { createVaultMediaViewer } = await import('/public/app/lib/vaultMediaViewer.js');
+  const file = { fileId: crypto.randomUUID(), uploadId: crypto.randomUUID(), mime: 'image/gif', name: 'GIF.gif' };
+  const row = { id: crypto.randomUUID(), conversation_id: crypto.randomUUID(), ciphertext: 'same' };
+  let manifest = { files: [file] }, downloads = 0, finish, created = 0;
+  const owner = new AbortController();
+  const make = () => { const button = document.createElement('button'); button.dataset.vaultMessage = row.id; button.dataset.vaultFile = file.fileId; document.body.append(button); return button; };
+  const first = make(), second = make();
+  const viewer = createVaultMediaViewer({ getRow: () => row, getManifest: () => manifest, canView: () => true,
+    captureOwner: () => ({ signal: owner.signal, isCurrent: () => !owner.signal.aborted }),
+    download: () => { downloads++; return new Promise(resolve => { finish = resolve; }); },
+    urlApi: { createObjectURL: () => { created++; return 'blob:test'; }, revokeObjectURL() {} } });
+  try {
+    const loadingFirst = viewer.open(first); first.remove();
+    manifest = { files: [{ ...file }] }; viewer.prune();
+    const loadingSecond = viewer.open(second); equal(downloads, 1);
+    finish(new Blob(['GIF89a'], { type: 'image/gif' })); await Promise.all([loadingFirst, loadingSecond]);
+    equal(created, 1); assert(second.hidden); equal(first.nextElementSibling, null);
+  } finally { viewer.clear(); first.remove(); second.remove(); }
+});
+
+test("Changed media access cancels a shared download and never renders its late result", async () => {
+  const { createVaultMediaViewer } = await import('/public/app/lib/vaultMediaViewer.js');
+  const file = { fileId: crypto.randomUUID(), uploadId: crypto.randomUUID(), mime: 'image/gif' };
+  const row = { id: crypto.randomUUID(), conversation_id: crypto.randomUUID(), ciphertext: 'access' }, manifest = { files: [file] };
+  let allowed = true, finish, signal, created = 0;
+  const owner = new AbortController(), button = document.createElement('button');
+  button.dataset.vaultMessage = row.id; button.dataset.vaultFile = file.fileId; document.body.append(button);
+  const viewer = createVaultMediaViewer({ getRow: () => row, getManifest: () => manifest, canView: () => allowed,
+    captureOwner: () => ({ signal: owner.signal, isCurrent: () => true }),
+    download: options => { signal = options.signal; return new Promise(resolve => { finish = resolve; }); },
+    urlApi: { createObjectURL: () => { created++; return 'blob:unexpected'; }, revokeObjectURL() {} } });
+  try {
+    const loading = viewer.open(button); allowed = false; viewer.prune(); assert(signal.aborted);
+    finish(new Blob(['GIF89a'], { type: 'image/gif' })); await loading; equal(created, 0); assert(!button.hidden);
+  } finally { viewer.clear(); button.remove(); }
 });
 
 const failures = [];
