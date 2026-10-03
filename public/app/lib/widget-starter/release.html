@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My daily counter</title>
+  <style>:root { color-scheme: dark; font: 14px system-ui, sans-serif; color: #eee8de; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #1c1b19; }
+main { padding: clamp(14px, 5vw, 28px); }
+.eyebrow { color: #cab99d; font-size: 10px; letter-spacing: .15em; }
+h1 { margin: 10px 0; font-size: clamp(15px, 6vw, 24px); }
+output { display: block; font-size: clamp(30px, 14vw, 64px); font-weight: 700; line-height: 1.2; margin: 10px 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+button { padding: 8px 16px; border: 1px solid #514838; border-radius: 10px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+#increment { background: #ead1ad; color: #201b15; }
+button:focus-visible { outline: 2px solid #ead1ad; outline-offset: 3px; }
+#status { font-size: 11px; color: #aaa296; }
+</style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">A LITTLE EVERY DAY</p>
+    <h1>Your progress</h1>
+    <output id="count" aria-live="polite">0</output>
+    <div class="actions">
+      <button id="increment" type="button">+1</button>
+      <button id="reset" type="button">Reset</button>
+    </div>
+    <p id="status" role="status">Your counter, your pace.</p>
+  </main>
+  <script type="module">// Optional SDK for hosted ALTARA widgets. No account tokens or identifiers are
+// exposed. The parent grants a dedicated port scoped to this widget installation.
+let port, sequence = 0, resolveReady;
+const pending = new Map();
+const ready = new Promise(resolve => { resolveReady = resolve; });
+window.addEventListener('message', event => {
+  if (event.source !== window.parent || event.data?.type !== 'altara:widget:connect' || event.data.version !== 1 || !event.ports[0]) return;
+  port?.close(); port = event.ports[0];
+  port.onmessage = ({ data }) => {
+    const task = pending.get(data?.id); if (!task) return;
+    pending.delete(data.id); clearTimeout(task.timer);
+    if (data.error) task.reject(Error(data.error)); else task.resolve(data.value);
+  };
+  port.start(); resolveReady({ permissions: [...(event.data.permissions || [])] });
+});
+function request(method, key, value) {
+  return new Promise((resolve, reject) => {
+    const id = String(++sequence);
+    const timer = setTimeout(() => { pending.delete(id); reject(Error('ALTARA did not respond. Open this widget inside ALTARA and check its permissions.')); }, 5000);
+    pending.set(id, { resolve, reject, timer });
+    ready.then(() => {
+      if (!pending.has(id)) return;
+      try { port.postMessage({ id, method, key, value }); }
+      catch (error) { pending.delete(id); clearTimeout(timer); reject(error); }
+    });
+  });
+}
+const altara = Object.freeze({ ready, storage: Object.freeze({ get: key => request('storage.get', key), set: (key, value) => request('storage.set', key, value), delete: key => request('storage.delete', key) }) });
+
+
+
+const output = document.querySelector('#count');
+const status = document.querySelector('#status');
+let count = 0, connected = false;
+const draw = () => { output.textContent = String(count); };
+
+// Your UI is an ordinary web page. The SDK is only needed for ALTARA features.
+if (window.parent !== window) {
+  altara.ready.then(async () => {
+    try {
+      count = Number(await altara.storage.get('count')) || 0;
+      connected = true; draw(); status.textContent = 'Saved in this widget on this device.';
+    } catch (error) { status.textContent = error.message; }
+  });
+} else status.textContent = 'Standalone preview. Open in ALTARA to save progress.';
+
+let saveQueue = Promise.resolve();
+function update(next) {
+  count = next; draw();
+  if (connected) saveQueue = saveQueue.then(() => altara.storage.set('count', next)).catch(error => { status.textContent = error.message; });
+}
+document.querySelector('#increment').onclick = () => update(count + 1);
+document.querySelector('#reset').onclick = () => update(0);
+</script>
+</body>
+</html>

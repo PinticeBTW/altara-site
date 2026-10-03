@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My daily counter</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main>
+    <p class="eyebrow">A LITTLE EVERY DAY</p>
+    <h1>Your progress</h1>
+    <output id="count" aria-live="polite">0</output>
+    <div class="actions">
+      <button id="increment" type="button">+1</button>
+      <button id="reset" type="button">Reset</button>
+    </div>
+    <p id="status" role="status">Your counter, your pace.</p>
+  </main>
+  <script type="module" src="./widget.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "name": "my-altara-widget",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "node dev.mjs", "build": "node build.mjs" }
+}

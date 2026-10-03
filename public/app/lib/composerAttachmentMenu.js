@@ -1,9 +1,10 @@
 // One delegated binding survives composer navigation/replacement. Media upload
 // and permission decisions remain in the existing application pipeline.
-export function createComposerAttachmentMenu({ canOpen, onDenied, onFiles, onGif, label }) {
+export function createComposerAttachmentMenu({ canOpen, onDenied, onFiles, onGif, label,
+  buttonSelector = "#btnAttach", menuId = "dmAttachmentActions" }) {
   let menu = null;
   let owner = null;
-  const button = () => document.getElementById("btnAttach");
+  const button = () => owner || document.querySelector(buttonSelector);
   const close = ({ restoreFocus = false } = {}) => {
     menu?.remove();
     menu = null;
@@ -23,7 +24,7 @@ export function createComposerAttachmentMenu({ canOpen, onDenied, onFiles, onGif
     if (!canOpen()) { onDenied(); return; }
     owner = anchor;
     menu = document.createElement("div");
-    menu.id = "dmAttachmentActions";
+    menu.id = menuId;
     menu.className = "dmAttachmentActions";
     menu.setAttribute("role", "menu");
     menu.setAttribute("aria-label", label());
@@ -44,13 +45,13 @@ export function createComposerAttachmentMenu({ canOpen, onDenied, onFiles, onGif
   };
   document.addEventListener("click", (event) => {
     const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-    const anchor = target?.closest("#btnAttach");
+    const anchor = target?.closest(buttonSelector);
     if (anchor) {
       event.preventDefault();
       if (menu) close(); else open(anchor);
       return; // The opening click is not an outside click.
     }
-    const action = target?.closest("#dmAttachmentActions [data-composer-action]");
+    const action = target?.closest("[data-composer-action]");
     if (action && menu?.contains(action)) {
       event.preventDefault();
       const kind = action.dataset.composerAction;
@@ -78,5 +79,5 @@ export function createComposerAttachmentMenu({ canOpen, onDenied, onFiles, onGif
     if (menu && !menu.contains(event.target) && event.target !== owner) close();
   });
   window.addEventListener("resize", position);
-  return { close };
+  return { close, toggle: (anchor) => { if (menu) close(); else open(anchor); } };
 }

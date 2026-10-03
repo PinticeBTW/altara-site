@@ -335,6 +335,6 @@ test("embedded app shell preserves the offline hotfix cache-buster", async () =>
   assert.match(patcher, /appJsQuery/);
   assert.match(
     appShell,
-    /src="\/app\/app\.js\?release=0\.1\.141&amp;v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"/,
+    /src="\/app\/app\.js\?release=0\.1\.143&amp;v=server-read-message-history-ux-v3-bot-platform-v2-20261003-native-inbox-controls-v10&amp;hotfix=offline-auth-reconnect-v1"/,
   );
 });

@@ -4,6 +4,7 @@ const siteUrl = "https://www.altaraapp.com";
 
 const routes = [
   { path: "/", changeFrequency: "weekly", priority: 1 },
+  { path: "/marketplace", changeFrequency: "weekly", priority: 0.8 },
   { path: "/features", changeFrequency: "monthly", priority: 0.8 },
   { path: "/discord-alternative", changeFrequency: "monthly", priority: 0.9 },
   { path: "/faq", changeFrequency: "monthly", priority: 0.7 },

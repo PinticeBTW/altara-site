@@ -1,8 +1,15 @@
+import { createWidgetMarketplace } from "./lib/widgetMarketplace.js";
+import { botMessageEmbeds, renderBotEmbeds, bindBotEmbedMedia, botMentionTokenPositions, renderBotMentionTokenHtml } from "./lib/botEmbeds.js";
+import { createParticipantVolumePreferences } from "./lib/participantVolumePreferences.js";
+import { botMessageComponents, renderBotComponents, bindBotComponents } from "./lib/botComponents.js";
 import { renderCalendarConnectionCard, openCalendarConnections } from "./lib/calendarConnections.js";
 import { createServerCalendar, calendarDateKey } from "./lib/serverCalendar.js";
 import { createServerHome } from "./lib/serverHome.js";
+import { createServerPolls, pollMessageQuestion, pollText } from "./lib/serverPolls.js";
 // Coordinated channel-media cutover; admission stays closed until the server gate opens.
 globalThis.__ALTARA_SERVER_VOICE_MEDIA_V1__ = true;
+bindBotEmbedMedia(document);
+const botComponentUi = bindBotComponents(document, { rpc: (name, args) => supabase.rpc(name, args), getActor: () => state.user?.id || "" });
 import { setAccountSwitchCleanup, openDesktopAccountSwitcher, rememberDesktopAccount, getDesktopAccountsBridge, desktopAccountText } from "./lib/desktopAccounts.js";
 import { bindProfileActivityStacks, buildProfileActivityStackHtml } from "./lib/profileActivityStack.js";
 import { buildCompactActivityArtworkHtml, knownAppArtwork } from "./lib/activityArtwork.js";
@@ -19,6 +26,8 @@ import { createDmGifMetadata } from "./lib/dmGifMetadata.js";
 import { isKlipyMediaUrl, normalizeGifPickerMetadata, mergeGifPickerMetadata, isUnavailableGifImage, isUnavailableGifItem, prepareGifPreview, gifPickerAnimationUrl, publicGifMessageContent } from "./lib/gifPresentation.js";
 import { GifPickerCache, createGifThumbnailViewport } from "./lib/gifPickerCache.js";
 import { createComposerAttachmentMenu } from "./lib/composerAttachmentMenu.js";
+import { renderDirectMessageFrame } from "./lib/directMessagePresentation.js";
+import { createBotDirectMessageMediaView, nativeAttachmentFileContentHtml } from "./lib/botDirectMessageMediaView.js";
 import { normalizeFriendUsername, createFriendRequestTargetResolver, friendRequestErrorKey } from "./lib/friendRequestTarget.js";
 import { serverVoiceMoveDiagnostics, showServerVoiceMoveProof } from "./lib/serverVoiceMoveDiagnostics.js";
 import { createServerVoiceChannelMedia, serverVoiceChannelRoom, serverVoiceMediaUserId } from "./lib/serverVoiceChannelMedia.js";
@@ -50,7 +59,7 @@ import {
 } from "./lib/telemetryRuntime.js";
 ﻿(function installAltaraRuntimeProof() {
   const root = typeof window !== "undefined" ? window : globalThis;
-  const assetVersion = "server-read-message-history-ux-v3";
+const assetVersion = "server-read-message-history-ux-v3-bot-platform-v2-20261003-native-inbox-controls-v10";
   const offlineReconnectMarker = "offline-auth-reconnect-v1";
   const reactionEventsRealtimeMarker = "server-reaction-events-realtime-v1";
   const embedLinksPermissionsMarker = "server-embed-links-permissions-batch6a-v1";
@@ -271,6 +280,13 @@ import {
 } from "./lib/localVoiceState.js";
 import { createSpotifyActivityController, getSpotifyPublicActivitySignature } from "./lib/spotifyActivityController.js";
 import { createAttachmentPreparationQueue } from "./lib/attachmentPreparation.js";
+import { botAttachmentItems } from "./lib/botAttachments.js";
+import { createBotSurfacesUi } from "./lib/botSurfacesUi.js";
+import { createBotDirectMessages } from "./lib/botDirectMessages.js";
+import { createBotDirectMessageView } from "./lib/botDirectMessageView.js";
+import { createBotDirectMessageAttachments, botDirectMessageAttachmentItems } from "./lib/botDirectMessageAttachments.js";
+import { createBotAudioConsentBridge } from "./lib/botAudioConsent.js";
+import { createBotAudioConsentUi } from "./lib/botAudioConsentUi.js";
 import {
   formatSpotifyProgressTime as formatSpotifyTime,
   getSpotifyInterpolatedProgress as getSpotifyActivityProgress,
@@ -282,6 +298,7 @@ import {
 } from "./lib/spotifyProgress.js";
 import {
   createTrustedAttachmentDeliveryRefreshQueue,
+  copyTrustedAttachmentDeliveryState,
   hydrateTrustedAttachmentRows,
   hasExpiredTrustedAttachmentDelivery,
   mergeTrustedAttachmentDeliveryRows,
@@ -1453,6 +1470,7 @@ function restoreAltaraOfflineComposerDraft(
 }
 const serverAppMutationPromiseByKey = new Map();
 const serverAppInstallFetchVersionByServerId = new Map();
+const serverBotMetadataDirtyByServerId = new Map();
 const botSlashCommandFetchVersionByServerId = new Map();
 const serverAppBanSnapshotByServerId = new Map();
 const altaraVoiceModerationBootState = {
@@ -1801,6 +1819,23 @@ function isAltaraBotBetaDisabled() {
   } catch (_) {
     return true;
   }
+}
+
+function enableAltaraBotsOnDevice() {
+  if (ALTARA_BOTS_PHASE2A_FRONTEND_FORCED_DISABLED) return false;
+  try {
+    localStorage.removeItem(ALTARA_BOTS_PHASE2A_DISABLE_KEY);
+    localStorage.removeItem("ALTARA_DISABLE_BOT_PRESENCE_REFRESH");
+  } catch (_) {
+    return false;
+  }
+  if (isAltaraBotBetaDisabled() || isAltaraBotPresenceRefreshDisabled()) return false;
+  const sid = normId(getActiveServerContext?.()?.serverId || "");
+  if (sid) {
+    startActiveServerBotPresencePolling(sid);
+    void refreshServerConversationUi({ force: true, refreshChannels: false, refreshMembers: true, reason: "bots-enabled-on-device" });
+  }
+  return true;
 }
 
 function isAltaraBotVisibilityEnabled() {
@@ -9372,6 +9407,11 @@ const DESKTOP_INSTALL_WELCOME_STORAGE_KEY = "altara_desktop_install_welcome_seen
 const APP_LANG_DEFAULT = ALTARA_DEFAULT_LOCALE;
 const APP_LANG_LABELS = Object.freeze({
   en: Object.freeze({
+    "bots.enable_on_device": "Enable bots on this device",
+    "bots.disabled_on_device": "Bot features are disabled on this device.",
+    "bots.enable_failed": "Could not enable bots on this device.",
+    "bots.enable_prompt": "Bot commands are disabled on this device. Enable bot features and send this command?",
+    "bots.enable": "Enable bots",
     "mute.unmute": "Unmute",
     "mute.active": "Muted",
     "mute.status.forever": "Muted until I turn it back on",
@@ -9397,6 +9437,9 @@ const APP_LANG_LABELS = Object.freeze({
     "server.category.edit": "Edit Category",
     "call.participant_volume": "User volume",
     "call.participant_volume_hint": "Only for you",
+    "call.participant_mute": "Mute for me",
+    "call.participant_unmute": "Unmute for me",
+    "call.volume_sync_failed": "Volumes saved on this device. Account sync is unavailable.",
     "settings.voice.quick_setup": "Quick microphone setup",
     "settings.voice.preset_balanced": "Balanced",
     "settings.voice.preset_quiet": "Quiet microphone",
@@ -9515,6 +9558,7 @@ const APP_LANG_LABELS = Object.freeze({
     "server.app.permission.bot:add_reactions": "Add Reactions",
     "server.app.permission.bot:read_message_history": "Read Message History",
     "server.app.permission.bot:manage_messages": "Manage Bot Messages",
+    "bots.thinking": "Thinking",
     "server.app.permission.bot:pin_messages": "Pin Messages",
     "server.app.permission.bot:connect_voice": "Connect to Voice",
     "server.app.permission.bot:speak_voice": "Play Audio / Speak in Voice",
@@ -10938,6 +10982,11 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.e2ee.setup.start_failed": "Could not start setup. Try again.",
   }),
   "pt-PT": Object.freeze({
+    "bots.enable_on_device": "Ativar bots neste dispositivo",
+    "bots.disabled_on_device": "As funcionalidades dos bots estão desativadas neste dispositivo.",
+    "bots.enable_failed": "Não foi possível ativar os bots neste dispositivo.",
+    "bots.enable_prompt": "Os comandos dos bots estão desativados neste dispositivo. Queres ativá-los e enviar este comando?",
+    "bots.enable": "Ativar bots",
     "mute.unmute": "Desativar mute",
     "mute.active": "Mute ativo",
     "mute.status.forever": "Mute ativo até voltar a ativar",
@@ -10977,6 +11026,9 @@ const APP_LANG_LABELS = Object.freeze({
     "server.category.edit": "Editar categoria",
     "call.participant_volume": "Volume do utilizador",
     "call.participant_volume_hint": "Só para ti",
+    "call.participant_mute": "Silenciar para mim",
+    "call.participant_unmute": "Voltar a ouvir",
+    "call.volume_sync_failed": "Os volumes ficaram guardados neste dispositivo. Não foi possível sincronizar com a conta.",
     "settings.voice.quick_setup": "Ajuste rápido do microfone",
     "settings.voice.preset_balanced": "Equilibrado",
     "settings.voice.preset_quiet": "Microfone baixo",
@@ -11097,6 +11149,7 @@ const APP_LANG_LABELS = Object.freeze({
     "server.app.permission.bot:add_reactions": "Adicionar reações",
     "server.app.permission.bot:read_message_history": "Ler histórico de mensagens",
     "server.app.permission.bot:manage_messages": "Gerir mensagens do bot",
+    "bots.thinking": "A pensar",
     "server.app.permission.bot:pin_messages": "Fixar mensagens",
     "server.app.permission.bot:connect_voice": "Ligar à voz",
     "server.app.permission.bot:speak_voice": "Reproduzir áudio / falar em voz",
@@ -11285,8 +11338,8 @@ const APP_LANG_LABELS = Object.freeze({
     "server.permission.connect.label": "Conectar",
     "server.permission.create_invites.hint": "Permite aos membros criar ligações de convite para o servidor.",
     "server.permission.create_invites.label": "Criar convites",
-    "server.permission.create_polls.hint": "Permite aos membros criar sondagens.",
-    "server.permission.create_polls.label": "Criar sondagens",
+    "server.permission.create_polls.hint": "Permite aos membros criar votações.",
+    "server.permission.create_polls.label": "Criar votações",
     "server.permission.create_posts.hint": "Permite aos membros criar publicações em canais de fórum, quando suportados pelo ALTARA.",
     "server.permission.create_posts.label": "Criar publicações",
     "server.permission.create_private_threads.hint": "Permite que os membros criem tópicos privados.",
@@ -12953,7 +13006,7 @@ const ALTARA_SERVER_PERMISSION_CATALOG = Object.freeze([
   { key: "pin_messages", label: "Pin Messages", hint: "Allows members to pin and unpin messages.", category: "Text Channel Permissions", risk: "normal", implemented: true, defaultEnabled: false },
   { key: "read_message_history", label: "Read Message History", hint: "Allows members to read existing messages in server channels they can access.", category: "Text Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true },
   { key: "send_tts_messages", label: "Send Text-to-Speech Messages", hint: "Allows members to send text-to-speech messages if ALTARA supports this.", category: "Text Channel Permissions", risk: "normal", implemented: false },
-  { key: "create_polls", label: "Create Polls", hint: "Allows members to create polls.", category: "Text Channel Permissions", risk: "normal", implemented: false },
+  { key: "create_polls", label: "Create Polls", hint: "Allows members to create polls.", category: "Text Channel Permissions", risk: "normal", implemented: true, defaultEnabled: false },
   { key: "connect", label: "Connect", hint: "Allows members to join and remain in server voice channels.", category: "Voice Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true, aliases: ["connect_voice"] },
   { key: "speak", label: "Speak", hint: "Allows members to publish microphone audio in server voice channels.", category: "Voice Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true, aliases: ["speak_voice"] },
   { key: "video", label: "Video", hint: "Allows members to publish camera video in server voice channels.", category: "Voice Channel Permissions", risk: "normal", implemented: true, defaultEnabled: true },
@@ -24840,6 +24893,7 @@ function safeParseMessageContent(content) {
   if (s.startsWith("{") && s.endsWith("}")) {
     try {
       const obj = JSON.parse(s);
+      if (obj?.type === "altara_poll_v1" && typeof obj.question === "string") return { type: "poll", text: "📊 " + obj.question.slice(0, 200) };
       if (obj && obj.type === "gif" && typeof obj.url === "string") {
         const attachment = sanitizeAttachmentPayload(obj.attachment || obj.file || obj.media || null);
         const gifMeta = {
@@ -27433,9 +27487,26 @@ const ALTARA_BOT_PERMISSION_REGISTRY = Object.freeze([
   { key: "bot:manage_own_commands", label: "Manage Own Commands", description: "Allows the bot to sync its own command registry.", category: "Core Bot Permissions", risk: "normal", implemented: true, defaultEnabled: true, discordBit: "" },
   { key: "bot:read_own_messages", label: "Read Own Bot Messages", description: "Legacy supported permission for bot-authored message reads.", category: "Core Bot Permissions", risk: "normal", implemented: true, defaultEnabled: false, hidden: true, discordBit: "" },
   { key: "bot:embed_links", label: "Embed Links", description: "Allows the bot to show ALTARA link previews in its messages.", category: "Messaging", risk: "normal", implemented: true },
-  { key: "bot:attach_files", label: "Attach Files", description: "Reserved for a future brokered bot-upload authority.", category: "Messaging", risk: "elevated", implemented: false },
+  { key: "bot:attach_files", label: "Attach Files", description: "Upload private files through the bot attachment authority; downloads require channel access.", category: "Messaging", risk: "elevated", implemented: true },
+  { key: "bot:send_direct_messages", label: "Consenting Direct Messages", description: "Exchange private bot messages only after each member explicitly agrees.", category: "Messaging", risk: "elevated", implemented: true },
+  { key: "bot:create_threads", label: "Create and Reply in Threads", description: "Create and reply to threads within permitted text channels.", category: "Messaging", risk: "elevated", implemented: true },
+  { key: "bot:manage_threads", label: "Manage Threads", description: "Archive threads within permitted text channels.", category: "Moderation", risk: "elevated", implemented: true },
   { key: "bot:add_reactions", label: "Add Reactions", description: "Allows the bot to add reactions to bot-channel messages.", category: "Messaging", risk: "normal", implemented: true },
   { key: "bot:read_message_history", label: "Read Message History", description: "Allows the bot to read a capped, sanitized history from public server text channels.", category: "Messaging", risk: "normal", implemented: true },
+  { key: "bot:receive_message_events", label: "Receive Message Events", description: "Allows new human-message metadata from permitted public server text channels when the Messages intent is enabled.", category: "Events", risk: "elevated", implemented: true },
+  { key: "bot:receive_member_events", label: "Receive Member Events", description: "Allows new member joins with basic public identity when the Server Members intent is enabled.", category: "Events", risk: "elevated", implemented: true },
+  { key: "bot:read_message_content", label: "Read Message Content", description: "Allows message text in events only with the Messages and Message Content intents, Read Message History and channel access.", category: "Events", risk: "elevated", implemented: true },
+  { key: "bot:receive_reaction_events", label: "Receive Reaction Events", description: "Receive approved public-channel reactions with the Reactions intent.", category: "Events", risk: "elevated", implemented: true },
+  { key: "bot:receive_voice_events", label: "Receive Voice Events", description: "Receive basic joins, leaves and audio-state changes, without room credentials.", category: "Events", risk: "elevated", implemented: true },
+  { key: "bot:receive_presence_events", label: "Receive Presence Events", description: "Receive visible basic status, respecting privacy and blocks.", category: "Events", risk: "elevated", implemented: true },
+  { key: "bot:manage_roles", label: "Manage Roles", description: "Manage roles below the bot, within its approved permission ceiling.", category: "Moderation", risk: "dangerous", implemented: true },
+  { key: "bot:kick_members", label: "Kick Members", description: "Remove lower-ranked members; protects owners and administrators.", category: "Moderation", risk: "dangerous", implemented: true },
+  { key: "bot:ban_members", label: "Ban Members", description: "Ban or unban lower-ranked members with audited outcomes.", category: "Moderation", risk: "dangerous", implemented: true },
+  { key: "bot:timeout_members", label: "Timeout Members", description: "Apply or clear a bounded moderation timeout below the bot's rank.", category: "Moderation", risk: "dangerous", implemented: true },
+  { key: "bot:moderate_messages", label: "Moderate Member Messages", description: "Remove permitted lower-ranked member messages without erasing retention history.", category: "Moderation", risk: "dangerous", implemented: true },
+  { key: "bot:manage_channels", label: "Manage Channels", description: "Create, rename and archive channels without discarding message history.", category: "Moderation", risk: "dangerous", implemented: true },
+  { key: "bot:manage_server", label: "Manage Server", description: "Update the server name with an explicit installation grant.", category: "Moderation", risk: "dangerous", implemented: true },
+  { key: "bot:manage_events", label: "Manage Server Events", description: "Create, update and remove scheduled server events.", category: "Moderation", risk: "elevated", implemented: true },
   { key: "bot:manage_messages", label: "Manage Bot Messages", description: "Allows the bot to edit or delete its own bot-channel messages.", category: "Moderation", risk: "elevated", implemented: true },
   { key: "bot:pin_messages", label: "Pin Messages", description: "Allows the bot to pin and unpin bot-channel messages.", category: "Moderation", risk: "elevated", implemented: true },
   { key: "bot:connect_voice", label: "Connect to Voice", description: "Allows the bot to join voice channels.", category: "Voice", risk: "elevated", implemented: true },
@@ -27447,8 +27518,10 @@ const ALTARA_BOT_PERMISSION_REGISTRY = Object.freeze([
   { key: "bot:mute_voice_members", label: "Mute Voice Members", description: "Allows the bot to mute or unmute a member microphone in an active voice channel.", category: "Voice", risk: "dangerous", implemented: true },
   { key: "bot:deafen_voice_members", label: "Deafen Voice Members", description: "Allows the bot to deafen or undeafen a member during an active voice session.", category: "Voice", risk: "dangerous", implemented: true },
   { key: "bot:manage_voice_channels", label: "Manage Voice Channels", description: "Planned until a bot-scoped voice channel management API exists.", category: "Voice", risk: "dangerous", implemented: false },
-  { key: "bot:record_voice", label: "Record Voice", description: "Not supported. Recording requires explicit visible consent systems before any bot API exists.", category: "Voice", risk: "dangerous", implemented: false },
-  { key: "bot:manage_webhooks", label: "Manage Webhooks", description: "Planned. Server webhook management is not implemented yet.", category: "Advanced", risk: "dangerous", implemented: false },
+  { key: "bot:listen_voice", label: "Receive Consenting Microphones", description: "Receive only individually consenting microphones in an isolated audio session.", category: "Voice", risk: "dangerous", implemented: true },
+  { key: "bot:record_voice", label: "Record Consenting Microphones", description: "Require visible, revocable recording consent from each contributor.", category: "Voice", risk: "dangerous", implemented: true },
+  { key: "bot:manage_webhooks", label: "Manage Webhooks", description: "Create and revoke scoped webhooks; secrets are returned once and never placed in URLs.", category: "Advanced", risk: "dangerous", implemented: true },
+  { key: "bot:mention_members", label: "Mention Members", description: "Notify only explicitly selected members who can access the channel; mass mentions are unavailable.", category: "Messaging", risk: "elevated", implemented: true },
 ]);
 const ALTARA_BOT_PHASE1_PERMISSIONS = Object.freeze(ALTARA_BOT_PERMISSION_REGISTRY.filter((item) => item.implemented === true));
 const ALTARA_BOT_SUPPORTED_PERMISSION_KEYS = Object.freeze(ALTARA_BOT_PHASE1_PERMISSIONS.map((item) => item.key));
@@ -27508,7 +27581,7 @@ const ALTARA_DISCORD_PERMISSION_BIT_MAPPINGS = Object.freeze([
   { bit: "2048", key: "bot:send_messages", label: "Send Messages" },
   { bit: "2147483648", key: "bot:use_slash_commands", label: "Use Application Commands" },
 ]);
-const ALTARA_BOT_PERMISSION_CATEGORY_ORDER = Object.freeze(["Core Bot Permissions", "Messaging", "Moderation", "Voice", "Advanced"]);
+const ALTARA_BOT_PERMISSION_CATEGORY_ORDER = Object.freeze(["Core Bot Permissions", "Messaging", "Events", "Moderation", "Voice", "Advanced"]);
 const ALTARA_BOT_PERMISSION_CALCULATOR_GROUPS = Object.freeze(ALTARA_BOT_PERMISSION_CATEGORY_ORDER.map((category) => ({
   title: category,
   description: category === "Core Bot Permissions"
@@ -27813,6 +27886,8 @@ function buildDeveloperPortalCommandsSectionHtml() {
   `;
 }
 function buildSettingsDeveloperPortalHtml() {
+  const locallyDisabled = !ALTARA_BOTS_PHASE2A_FRONTEND_FORCED_DISABLED
+    && (isAltaraBotBetaDisabled() || isAltaraBotPresenceRefreshDisabled());
   return `
     <div class="settingsDeveloperExternalOnly">
       <div class="settingsDeveloperExternalOnly__icon" aria-hidden="true">ALT</div>
@@ -27821,10 +27896,13 @@ function buildSettingsDeveloperPortalHtml() {
         <p>Bot identity, tokens, installs, synced commands, hosting docs, and Advanced Webhook Mode now live at <b>altaraapp.com/developers</b>. The chat app uses bots; it is no longer the canonical place to configure them.</p>
       </div>
       <div class="settingsDeveloperActions">
+        ${locallyDisabled ? `<button class="btn primary" type="button" data-dev-action="enable-bots-on-device">${esc(t("bots.enable_on_device", "Enable bots on this device"))}</button>` : ""}
         <button class="btn primary" type="button" data-dev-action="open-website-developer-portal">Open Developer Portal</button>
+        <button class="btn ghost" type="button" data-dev-action="open-widget-developers">Widget Developers</button>
         <a class="btn ghost" href="https://altaraapp.com/developers" target="_blank" rel="noopener noreferrer">Open in browser</a>
       </div>
       <div class="botInstallWarning">Bot Token Connection, slash picker commands, bot messages, and bot profile cards keep working in ALTARA chat. Programming and configuration now happen on the website.</div>
+      ${locallyDisabled ? `<div class="botInstallWarning">${esc(t("bots.disabled_on_device", "Bot features are disabled on this device."))}</div>` : ""}
     </div>
   `;
 }
@@ -28004,6 +28082,12 @@ async function copyDeveloperDocsCode(button = null) {
 }
 
 async function handleDeveloperPortalAction(action = "") {
+  if (action === "enable-bots-on-device") {
+    if (enableAltaraBotsOnDevice()) renderSettingsDeveloperPortal();
+    else showDmComposerNotice(t("bots.enable_failed", "Could not enable bots on this device."), { title: "Bots" });
+    return;
+  }
+  if (action === "open-widget-developers") { void openWebsiteDeveloperPortal("/developers/widgets"); return; }
   try {
     const normalizedAction = String(action || "").trim();
     if (normalizedAction && normalizedAction !== "open-website-developer-portal") {
@@ -28403,6 +28487,7 @@ function getBotAuthorizeInstallSeed(st = botAuthorizeState) {
 async function refreshBotAuthorizeInstallStateForServer(serverId = "", { render = false, force = false } = {}) {
   const sid = normId(serverId || "");
   const st = botAuthorizeState || {};
+  if (st.reviewServerId && sid !== normId(st.reviewServerId)) return null;
   const adminServers = getDeveloperPortalAdminServers();
   const server = adminServers.find((srv) => srv.id === sid) || null;
   const appId = normId(st.appId || st.app?.app_id || "");
@@ -28477,6 +28562,7 @@ function normalizeBotProfileSeed(seed = {}) {
   const botId = normId(seed?.botId || seed?.bot_id || seed?.userId || seed?.user_id || installedBot?.botId || installedBot?.userId || "");
   const ownedApp = getDeveloperAppById(seed?.appId || seed?.app_id || installedBot?.appId || "") || getDeveloperAppByBotId(botId) || null;
   const activeServerId = normId(getActiveServerContext?.()?.serverId || state.activeDm?.serverId || "");
+  const currentPresence = installedBot ? getServerBotPresence(activeServerId, botId) : null;
   const cachedCommands = activeServerId ? (botSlashCommandListByServerId.get(activeServerId) || []) : [];
   const commandCount = Number.isFinite(Number(seed?.commandCount || seed?.command_count))
     ? Number(seed?.commandCount || seed?.command_count)
@@ -28499,15 +28585,16 @@ function normalizeBotProfileSeed(seed = {}) {
     appIconUrl: String(seed?.appIconUrl || seed?.app_icon_url || ownedApp?.app_icon_url || "").trim(),
     isPublic,
     installed: !!installedBot,
+    joinedAt: installedBot?.joinedAt || seed?.joinedAt || "",
     commandCount,
     installCount,
     defaultInstallPermissions: getBotDefaultInstallPermissions(seed?.defaultInstallPermissions || seed?.default_install_permissions ? seed : (installedBot?.defaultInstallPermissions || installedBot?.default_install_permissions ? installedBot : ownedApp || {})),
     isBanned: seed?.isBanned === true || seed?.is_banned === true || installedBot?.isBanned === true,
     serverId: activeServerId,
-    presenceStatus: normalizeBotPresenceStatus(seed?.presenceStatus || seed?.presence_status || installedBot?.presenceStatus || installedBot?.effectiveStatus || "offline"),
-    presenceLastSeenAt: String(seed?.presenceLastSeenAt || seed?.last_seen_at || installedBot?.presenceLastSeenAt || "").trim(),
-    connectionMode: String(seed?.connectionMode || seed?.connection_mode || installedBot?.connectionMode || "").trim(),
-    voiceStatus: String(seed?.voiceStatus || seed?.voice_status || installedBot?.voiceStatus || "").trim(),
+    presenceStatus: currentPresence ? currentPresence.effectiveStatus : normalizeBotPresenceStatus(seed?.presenceStatus || seed?.presence_status || installedBot?.presenceStatus || installedBot?.effectiveStatus || "offline"),
+    presenceLastSeenAt: String(currentPresence ? currentPresence.lastSeenAt : (seed?.presenceLastSeenAt || seed?.last_seen_at || installedBot?.presenceLastSeenAt || "")).trim(),
+    connectionMode: String(currentPresence ? currentPresence.connectionMode : (seed?.connectionMode || seed?.connection_mode || installedBot?.connectionMode || "")).trim(),
+    voiceStatus: String(currentPresence ? (installedBot?.voiceStatus || "") : (seed?.voiceStatus || seed?.voice_status || installedBot?.voiceStatus || "")).trim(),
     canManage: !!ownedApp,
   };
 }
@@ -28542,7 +28629,7 @@ function isServerVoiceBotMemberRow(el = null) {
 
 async function openServerVoiceBotProfileFromRow(row = null) {
   if (!isServerVoiceBotMemberRow(row)) return false;
-  await openBotProfileCard(getBotProfileSeedFromElement(row));
+  await openBotProfileCard(getBotProfileSeedFromElement(row), { anchorEl: row });
   return true;
 }
 
@@ -28551,6 +28638,14 @@ function openServerVoiceBotContextMenuFromRow(row = null, point = null) {
   closeCallAudioMenu();
   closeServerChannelItemMenu("open_other_menu");
   closeServerVoiceMemberMenu({ force: true, reason: "open_other_menu" });
+  closeBotContextMenu("open_other_menu");
+  // Volume is keyed by the media participant identity, not the bot profile ID.
+  const participantId = normId(row.getAttribute("data-server-voice-member-id") || "");
+  const conversationId = normId(row.getAttribute("data-server-voice-conversation-id") || "");
+  if (participantId && conversationId && tryOpenServerVoiceMemberMenuAt(participantId, conversationId, point, {
+    displayName: row.getAttribute("data-server-voice-member-label") || "Bot",
+    anchorEl: row,
+  })) return true;
   openBotContextMenuAt(getBotProfileSeedFromElement(row), {
     point,
     anchorEl: row,
@@ -28608,8 +28703,17 @@ async function fetchSafeBotProfile(seed = {}) {
   }
 }
 
+let botProfileCardSession = null;
+let botServerRoleMenuState = null;
+
 function closeBotProfileCard() {
+  const session = botProfileCardSession;
+  const restoreFocus = !!document.querySelector("[data-bot-profile-modal]")?.contains(document.activeElement);
+  botProfileCardSession = null;
+  session?.controller?.abort();
   document.querySelectorAll("[data-bot-profile-modal]").forEach((el) => el.remove());
+  clearActivePopover("bot-profile");
+  if (restoreFocus && session?.anchorEl?.isConnected) session.anchorEl.focus?.({ preventScroll: true });
 }
 
 function getBotProfileCommandOptionCount(command = {}) {
@@ -28677,7 +28781,8 @@ function botProfileCardHtml(profile = {}, { loading = false, status = "", comman
   const manageUrl = profile?.canManage && appId ? `/developers/applications/${appId}/bot` : "";
   const description = String(profile?.description || "No description provided.").trim();
   const bannerUrl = String(profile?.bannerUrl || "").trim();
-  const bannerStyle = bannerUrl ? ` style="background-image:url(&quot;${escAttr(bannerUrl)}&quot;)"` : "";
+  const bannerHtml = bannerUrl ? `<img src="${escAttr(bannerUrl)}" alt="" />` : "";
+  const joinedDate = profile?.joinedAt ? formatServerJoinedDate({ joinedAt: profile.joinedAt }, { compact: true }) : "";
   const installCount = Number(profile?.installCount || 0) || 0;
   const installActionHtml = installedHere
     ? `<button class="btn ghost" type="button" disabled>Installed here</button>${inviteUrl ? `<button class="btn ghost" type="button" data-bot-profile-copy-invite="${escAttr(inviteUrl)}">Copy Invite Link</button>` : ""}`
@@ -28693,19 +28798,29 @@ function botProfileCardHtml(profile = {}, { loading = false, status = "", comman
   const lastSeenLabel = presenceStatus === "offline" && !hasVoiceStatus ? getBotPresenceLastSeenLabel(profile?.presenceLastSeenAt || "") : "";
   const voiceStatusLabel = hasVoiceStatus ? voiceStatus : "";
   return `
-    <div class="botProfileOverlay" data-bot-profile-modal>
-      <section class="botProfileCard" role="dialog" aria-modal="true" aria-label="Bot profile" data-bot-profile-modal-bot-id="${escAttr(profile?.botId || "")}">
+    <div data-bot-profile-modal>
+      <section class="botProfileCard meProfilePopout is-open is-floating is-server-context" role="dialog" aria-label="${escAttr(profile?.name || "Bot")}" data-bot-profile-modal-bot-id="${escAttr(profile?.botId || "")}">
         <button class="botProfileCard__close" type="button" data-bot-profile-close aria-label="Close">&times;</button>
-        <div class="botProfileCard__banner" aria-hidden="true"${bannerStyle}></div>
-        <div class="botProfileCard__head">
-          ${buildBotAvatarHtml(profile?.avatarUrl || profile?.appIconUrl || "", profile?.name || "Bot", "botRouteAvatar botProfileCard__avatar")}
-          <div>
-            <h2>${esc(profile?.name || "Bot")} <span class="serverMemberRow__botBadge">BOT</span></h2>
-            <p>${esc(description)}</p>
+        <div class="meProfilePopout__banner${bannerHtml ? " has-media" : ""}" aria-hidden="true">${bannerHtml}</div>
+        <div class="serverMiniCompact__body">
+          <div class="serverMiniCompact__head">
+            <div class="serverMiniCompact__avatar botProfileCard__avatar">
+              <div class="botProfileCard__avatarMedia">${buildAvatarMediaHtml(profile?.avatarUrl || profile?.appIconUrl || "", { userId: profile?.botId || profile?.publicId || "", alt: profile?.name || "Bot", fallbackChar: getGroupOrbFallbackChar(profile?.name || "Bot", "B") })}</div>
+              <span class="statusDot userCardAvatarStatusDot" data-status="${escAttr(presenceStatus)}" aria-label="${escAttr(presenceLabel)}"></span>
+            </div>
+            <div class="serverMiniCompact__identity">
+              <div class="serverMiniCompact__name">${esc(profile?.name || "Bot")}</div>
+              <div class="serverMiniCompact__handle"><span class="botProfilePresence" data-status="${escAttr(presenceStatus)}">${esc(presenceLabel)}</span>${lastSeenLabel ? ` · ${esc(lastSeenLabel)}` : ""}</div>
+            </div>
           </div>
+          <div class="serverMiniCompact__badgeLine"><span class="serverProfileBadge serverProfileBadge--bot">BOT</span></div>
+          ${joinedDate ? `<div class="serverMiniCompact__metaLine">${esc(tf("surface.joined_date", { date: joinedDate }, "Joined {date}"))}</div>` : ""}
+          ${voiceStatusLabel ? `<div class="serverMiniCompact__metaLine">${esc(voiceStatusLabel)}</div>` : ""}
+          <div class="meProfilePopout__bio botProfileCard__bio">${esc(description)}</div>
         </div>
+        <details class="botProfileCard__details">
+          <summary>${esc(t("bots.profile_details", "Bot details"))}</summary>
         <dl class="botProfileCard__meta">
-          <div><dt>Presence</dt><dd><span class="botProfilePresence" data-status="${escAttr(presenceStatus)}">${esc(presenceLabel)}</span>${lastSeenLabel ? ` <small>${esc(lastSeenLabel)}</small>` : ""}${voiceStatusLabel ? ` <small>${esc(voiceStatusLabel)}</small>` : ""}</dd></div>
           <div><dt>Public Bot ID</dt><dd>${esc(profile?.publicId || "Not available")}</dd></div>
           <div><dt>Visibility</dt><dd>${profile?.isPublic ? "Public" : "Private"}</dd></div>
           <div><dt>Installed here</dt><dd>${profile?.installed ? "Yes" : "No"}</dd></div>
@@ -28714,7 +28829,8 @@ function botProfileCardHtml(profile = {}, { loading = false, status = "", comman
           ${appId ? `<div><dt>Application ID / Client ID</dt><dd>${esc(appId)}</dd></div>` : ""}
           ${profile?.appName ? `<div><dt>App</dt><dd>${esc(profile.appName)}</dd></div>` : ""}
         </dl>
-        <div class="botProfileCard__actions">
+        </details>
+        <div class="botProfileCard__actions serverMiniCompact__actions">
           <button class="btn ghost" type="button" data-bot-profile-view-commands>View Commands</button>
           <button class="btn ghost" type="button" data-bot-profile-copy-id="${escAttr(profile?.publicId || profile?.botId || "")}"${(profile?.publicId || profile?.botId) ? "" : " disabled"}>Copy Bot ID</button>
           ${installActionHtml}
@@ -28728,13 +28844,41 @@ function botProfileCardHtml(profile = {}, { loading = false, status = "", comman
 }
 
 function renderBotProfileCard(profile = {}, options = {}) {
-  closeBotProfileCard();
+  const session = botProfileCardSession || (botProfileCardSession = { userId: normId(state.user?.id || ""), anchorEl: document.activeElement, anchorRect: document.activeElement?.getBoundingClientRect?.() });
+  session.controller?.abort();
+  session.controller = new AbortController();
+  const hadCard = !!document.querySelector("[data-bot-profile-modal]");
+  const focusedButtonIndex = Array.from(document.querySelectorAll("[data-bot-profile-modal] button")).indexOf(document.activeElement);
+  document.querySelectorAll("[data-bot-profile-modal]").forEach((el) => el.remove());
+  ensureServerMiniProfileInlineStyles();
   const wrap = document.createElement("div");
   wrap.innerHTML = botProfileCardHtml(profile, options);
   const modal = wrap.firstElementChild;
   if (!modal) return;
   document.body?.appendChild(modal);
+  const card = modal.querySelector(".botProfileCard");
+  const reposition = () => {
+    const liveRect = session.anchorEl?.getBoundingClientRect?.();
+    const anchorRect = liveRect?.width && liveRect?.height ? liveRect : session.anchorRect;
+    const placementKey = [window.innerWidth, window.innerHeight, anchorRect?.left, anchorRect?.top, anchorRect?.width, anchorRect?.height].join(":");
+    const retainedTop = session.placement?.key === placementKey ? session.placement.top : null;
+    session.placement = { key: placementKey, top: positionBotProfileCard(card, anchorRect, retainedTop) };
+  };
+  reposition();
+  const signal = session.controller.signal;
+  window.addEventListener("resize", reposition, { signal });
+  window.addEventListener("scroll", reposition, { signal, capture: true, passive: true });
+  modal.addEventListener("toggle", reposition, { signal, capture: true });
+  document.addEventListener("pointerdown", (event) => {
+    if (!card?.contains(event.target) && !session.anchorEl?.contains?.(event.target)) closeBotProfileCard();
+  }, { signal, capture: true });
+  setActivePopover({ type: "bot-profile", anchorId: profile?.botId || profile?.publicId || "bot", anchorEl: session.anchorEl, close: closeBotProfileCard });
+  if (!hadCard) modal.querySelector("[data-bot-profile-close]")?.focus({ preventScroll: true });
+  else if (focusedButtonIndex >= 0) modal.querySelectorAll("button")[focusedButtonIndex]?.focus({ preventScroll: true });
   const close = () => closeBotProfileCard();
+  const update = options => {
+    if (botProfileCardSession === session && normId(state.user?.id || "") === session.userId) renderBotProfileCard(profile, options);
+  };
   modal.addEventListener("click", async (event) => {
     const target = eventTargetElement(event);
     if (!target) return;
@@ -28746,7 +28890,7 @@ function renderBotProfileCard(profile = {}, options = {}) {
     if (install) {
       event.preventDefault();
       await openBotAuthorizeUrlInAppOrBrowser(install.getAttribute("data-bot-profile-install") || "").catch((error) => {
-        renderBotProfileCard(profile, { status: `Could not open invite: ${error?.message || error}` });
+        update({ status: `Could not open invite: ${error?.message || error}` });
       });
       return;
     }
@@ -28754,9 +28898,9 @@ function renderBotProfileCard(profile = {}, options = {}) {
     if (copyInvite) {
       event.preventDefault();
       await copyTextWithPromptFallback(copyInvite.getAttribute("data-bot-profile-copy-invite") || "", "Bot invite link").then(() => {
-        renderBotProfileCard(profile, { status: "Invite link copied." });
+        update({ status: "Invite link copied." });
       }).catch((error) => {
-        renderBotProfileCard(profile, { status: `Could not copy invite: ${error?.message || error}` });
+        update({ status: `Could not copy invite: ${error?.message || error}` });
       });
       return;
     }
@@ -28764,9 +28908,9 @@ function renderBotProfileCard(profile = {}, options = {}) {
     if (copyBotId && !copyBotId.disabled) {
       event.preventDefault();
       await copyTextWithPromptFallback(copyBotId.getAttribute("data-bot-profile-copy-id") || profile?.publicId || profile?.botId || "", "Bot ID").then(() => {
-        renderBotProfileCard(profile, { status: "Bot ID copied." });
+        update({ status: "Bot ID copied." });
       }).catch((error) => {
-        renderBotProfileCard(profile, { status: `Could not copy bot ID: ${error?.message || error}` });
+        update({ status: `Could not copy bot ID: ${error?.message || error}` });
       });
       return;
     }
@@ -28780,13 +28924,45 @@ function renderBotProfileCard(profile = {}, options = {}) {
     const commands = target.closest("[data-bot-profile-view-commands]");
     if (commands) {
       event.preventDefault();
-      renderBotProfileCard(profile, { commandsLoading: true });
+      const requestVersion = session.commandsRequestVersion = (session.commandsRequestVersion || 0) + 1;
+      const updateCommands = (rows, loading = false) => {
+        if (botProfileCardSession !== session || normId(state.user?.id || "") !== session.userId
+          || requestVersion !== session.commandsRequestVersion || !card.isConnected) return;
+        const commandsWrap = document.createElement("div");
+        commandsWrap.innerHTML = botProfileCommandsHtml(rows, { loading });
+        const section = commandsWrap.firstElementChild;
+        const previous = card.querySelector(".botProfileCard__commands");
+        if (previous) previous.replaceWith(section);
+        else card.appendChild(section);
+        reposition();
+      };
+      updateCommands([], true);
       const rows = await loadBotProfileCommands(profile);
-      renderBotProfileCard(profile, { commands: rows });
+      updateCommands(rows);
     }
   });
 }
+
+function positionBotProfileCard(card, anchorRect = null, retainedTop = null) {
+  if (!card) return;
+  const margin = 12;
+  const width = Math.min(340, Math.max(0, window.innerWidth - margin * 2));
+  card.style.width = `${width}px`;
+  const hasRetainedTop = Number.isFinite(retainedTop);
+  // Content growth stays below the existing top edge; scrolling must not move the anchor.
+  card.style.maxHeight = `${Math.max(0, Math.min(560, window.innerHeight - (hasRetainedTop ? retainedTop : margin) - margin))}px`;
+  const height = card.getBoundingClientRect().height;
+  let left = anchorRect ? anchorRect.right + 10 : (window.innerWidth - width) / 2;
+  if (anchorRect && left + width > window.innerWidth - margin) left = anchorRect.left - width - 10;
+  const top = hasRetainedTop ? retainedTop : (anchorRect ? anchorRect.top + anchorRect.height / 2 - height * 0.22 : (window.innerHeight - height) / 2);
+  const boundedTop = Math.max(margin, Math.min(top, window.innerHeight - height - margin));
+  card.style.left = `${Math.max(margin, Math.min(left, window.innerWidth - width - margin))}px`;
+  card.style.top = `${boundedTop}px`;
+  return boundedTop;
+}
 function closeBotContextMenu(reason = "action") {
+  const anchor = altaraContextMenuDebugState.anchorEl;
+  closeBotServerRoleMenu({ restoreFocus: false });
   const menu = document.getElementById("botContextMenu");
   if (!menu) {
     recordAltaraContextMenuClose("bot", reason);
@@ -28795,8 +28971,626 @@ function closeBotContextMenu(reason = "action") {
   const wasOpen = menu.classList.contains("is-open");
   menu.classList.remove("is-open");
   if (wasOpen) recordAltaraContextMenuClose("bot", reason);
+  if (wasOpen && reason === "escape" && anchor?.isConnected) anchor.focus?.({ preventScroll: true });
 }
 
+function getServerBotRoleActionState(serverId = "", botId = "", roleId = "") {
+  const ctx = getServerMemberManagementContext(serverId, botId);
+  const rid = normId(roleId);
+  let reason = "";
+  if (!ctx.serverId || !ctx.actorUserId || !ctx.targetUserId
+    || !isActiveServerBotTargetForRoleManagement(ctx.serverId, ctx.targetUserId)) reason = "unavailable";
+  else if (!ctx.actorIsOwner && !isCurrentServerPermissionSnapshotResolved(ctx.serverId)) reason = "loading";
+  else if (!ctx.canManageRoles) reason = "permission";
+  else if (!ctx.actorIsOwner && !Number.isFinite(ctx.actorRank)) reason = "highest";
+  if (!reason && rid) {
+    const role = (serverRoleListByServerId.get(ctx.serverId) || []).find((r) => normId(r?.id) === rid);
+    if (!role || isVirtualServerRole(role)) reason = "unavailable";
+    else if (isDefaultServerRole(role) || isManagedServerRole(role)
+      || role.managed_by_bot_id || String(role.managed_kind || role.managedKind || "").trim()) reason = "protected";
+    else if (!ctx.actorIsOwner && role.permissions?.administrator === true) reason = "administrator_owner_only";
+    else if (!ctx.actorIsOwner && !(Number.isFinite(getRoleHierarchyRank(role)) && getRoleHierarchyRank(role) > ctx.actorRank)) reason = "role_hierarchy";
+  }
+  return { allowed: !reason, reason };
+}
+
+function isCurrentBotServerRolesSession(session) {
+  const owned = botServerRoleMenuState === session;
+  const current = normId(state.user?.id) === session.actorId
+    && normId(getActiveServerContext()?.serverId) === session.serverId
+    && document.getElementById("botContextMenu")?.classList.contains("is-open")
+    && session.anchorEl?.isConnected;
+  // Late reads/writes must also remove an old surface after account or server navigation.
+  if (owned && !current) closeBotServerRoleMenu({ restoreFocus: false });
+  return owned && current;
+}
+
+function closeBotServerRoleMenu({ restoreFocus = false } = {}) {
+  const session = botServerRoleMenuState;
+  if (session?.hoverTimer) clearTimeout(session.hoverTimer);
+  botServerRoleMenuState = null;
+  const menu = document.getElementById("botServerRoleMenu");
+  menu?.classList.remove("is-open");
+  if (menu) menu.innerHTML = "";
+  session?.anchorEl?.setAttribute("aria-expanded", "false");
+  if (serverMemberContextMenuActiveSubmenu === "bot_roles") serverMemberContextMenuActiveSubmenu = "";
+  if (restoreFocus && session?.actorId === normId(state.user?.id) && session?.anchorEl?.isConnected) {
+    session.anchorEl.focus?.({ preventScroll: true });
+  }
+}
+
+function getBotServerRolesErrorMessage(error) {
+  const raw = String(error?.message || "");
+  if (isMissingRpcError(error)) return "Bot role management is not available on this server yet.";
+  if (/bot_roles_changed/.test(raw)) return "The bot's roles changed elsewhere. Reload the roles and try again.";
+  if (/bot_not_installed/.test(raw)) return "This bot is no longer installed or available in this server.";
+  const reason = /administrator_owner_only/.test(raw) ? "administrator_owner_only"
+    : /role_hierarchy_blocked/.test(raw) ? "role_hierarchy"
+      : /missing_manage_roles|permission_escalation_denied/.test(raw) ? "permission"
+        : /protected_role/.test(raw) ? "protected" : "unavailable";
+  return getServerRoleActionReasonText(reason);
+}
+
+function scheduleBotServerRoleMenuClose() {
+  const session = botServerRoleMenuState;
+  if (!session || session.hoverTimer) return;
+  session.hoverTimer = setTimeout(() => {
+    if (botServerRoleMenuState === session) closeBotServerRoleMenu();
+  }, 130);
+}
+
+function keepBotServerRoleMenuOpen() {
+  const session = botServerRoleMenuState;
+  if (session?.hoverTimer) clearTimeout(session.hoverTimer);
+  if (session) session.hoverTimer = null;
+}
+
+function renderBotServerRoleMenu() {
+  const session = botServerRoleMenuState;
+  if (!session) return;
+  if (!isCurrentBotServerRolesSession(session)) return;
+  let menu = document.getElementById("botServerRoleMenu");
+  if (!menu) {
+    menu = document.createElement("div");
+    menu.id = "botServerRoleMenu";
+    menu.className = "msgMenu msgMenu--submenu";
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", "Bot roles");
+    menu.tabIndex = -1;
+    document.body.appendChild(menu);
+    menu.addEventListener("mouseenter", keepBotServerRoleMenuOpen);
+    menu.addEventListener("mouseleave", scheduleBotServerRoleMenuClose);
+    menu.addEventListener("pointerdown", (event) => event.stopPropagation());
+    menu.addEventListener("click", (event) => {
+      event.preventDefault(); event.stopPropagation();
+      const button = eventTargetElement(event)?.closest?.("button");
+      if (!button || button.disabled) return;
+      if (button.hasAttribute("data-bot-roles-reload")) {
+        const current = botServerRoleMenuState;
+        if (current) void openBotServerRoleMenu(current.profile, current.serverId, { anchorEl: current.anchorEl, reload: true, focus: true });
+      } else if (button.hasAttribute("data-bot-server-role")) {
+        void toggleBotServerRole(button.getAttribute("data-bot-server-role"));
+      }
+    });
+    menu.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault(); event.stopPropagation(); closeBotServerRoleMenu({ restoreFocus: true });
+      } else if (event.key === "Escape") {
+        event.preventDefault(); event.stopPropagation(); closeBotContextMenu("escape");
+      } else if (event.key === "Tab") closeBotContextMenu("action");
+      else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault(); event.stopPropagation();
+        const buttons = Array.from(menu.querySelectorAll("button:not(:disabled)"));
+        const index = buttons.indexOf(document.activeElement);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+          : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[next]?.focus({ preventScroll: true });
+      }
+    });
+  }
+  const focusedRole = menu.contains(document.activeElement) ? document.activeElement?.getAttribute("data-bot-server-role") : "";
+  const hadFocus = menu.contains(document.activeElement);
+  const selected = new Set(session.roleIds);
+  const roles = (serverRoleListByServerId.get(session.serverId) || [])
+    .filter((role) => !isDefaultServerRole(role) && (!isManagedServerRole(role) || normId(role.id) === session.managedRoleId))
+    .sort((a, b) => getRoleHierarchyRank(a) - getRoleHierarchyRank(b));
+  const rows = session.loaded ? roles.map((role) => {
+    const rid = normId(role.id);
+    const action = getServerBotRoleActionState(session.serverId, session.botId, rid);
+    const managed = rid === session.managedRoleId;
+    const assigned = managed || selected.has(rid);
+    const disabled = !action.allowed || session.saving || session.stale;
+    const hint = managed ? "Managed automatically by this bot's installation." : getServerRoleActionReasonText(action.reason);
+    return `<button type="button" role="menuitemcheckbox" aria-checked="${assigned}" class="msgMenu__item${disabled ? " is-disabled" : ""}"
+      data-bot-server-role="${escAttr(rid)}" ${disabled ? "disabled" : ""} title="${escAttr(hint)}">
+      <span class="msgMenuRoleMain"><span class="msgMenuRoleSwatch" style="--role-color:${escAttr(normalizeServerRoleColor(role.color || SERVER_ROLE_DEFAULT_COLOR))}"></span>
+        <span class="msgMenuRoleLabel">${esc(role.name)}${managed ? "<small>BOT</small>" : ""}</span></span>
+      <span class="msgMenuRoleCheck${assigned ? " is-on" : ""}" aria-hidden="true">${assigned ? "&#10003;" : ""}</span></button>`;
+  }).join("") : "";
+  menu.innerHTML = `<div class="msgMenu__meta">${esc(session.profile.name)} • Roles</div><div class="msgMenu__divider"></div>${rows}
+    ${session.status ? `<div class="msgMenu__meta" role="status">${esc(session.status)}</div>` : ""}
+    ${session.stale ? '<button type="button" class="msgMenu__item" data-bot-roles-reload>Reload Roles</button>' : ""}`;
+  menu.classList.add("is-open");
+  session.anchorEl.setAttribute("aria-expanded", "true");
+  positionServerMemberSubmenu(menu, session.anchorEl, { fallbackWidth: 240, gap: 2, submenuName: "bot_roles" });
+  if (session.focus || hadFocus) {
+    const buttons = Array.from(menu.querySelectorAll("button:not(:disabled)"));
+    (buttons.find((button) => button.getAttribute("data-bot-server-role") === focusedRole) || buttons[0] || menu).focus({ preventScroll: true });
+    session.focus = false;
+  }
+}
+
+async function openBotServerRoleMenu(profile = {}, serverId = "", { anchorEl = null, reload = false, focus = false } = {}) {
+  const sid = normId(serverId), bid = normId(profile.botId);
+  if (!sid || !bid || !anchorEl || normId(getActiveServerContext()?.serverId) !== sid
+    || !document.getElementById("botContextMenu")?.classList.contains("is-open")) return;
+  if (!reload && botServerRoleMenuState?.anchorEl === anchorEl && isCurrentBotServerRolesSession(botServerRoleMenuState)) {
+    keepBotServerRoleMenuOpen();
+    if (focus) { botServerRoleMenuState.focus = true; renderBotServerRoleMenu(); }
+    return;
+  }
+  closeActivePopover();
+  closeBotProfileCard();
+  closeBotServerRoleMenu();
+  const session = { serverId: sid, botId: bid, actorId: normId(state.user?.id), profile, anchorEl,
+    roleIds: [], managedRoleId: "", loaded: false, saving: false, stale: false, focus, status: "Loading roles...", error: false };
+  botServerRoleMenuState = session;
+  renderBotServerRoleMenu();
+  try {
+    const authority = await ensureServerRolePermissionCache(sid, { force: false });
+    if (!isCurrentBotServerRolesSession(session)) return;
+    if (!authority?.ok) throw authority?.error || new Error("roles_unavailable");
+    const action = getServerBotRoleActionState(sid, bid);
+    if (!action.allowed) throw new Error(action.reason === "permission" ? "missing_manage_roles" : "roles_unavailable");
+    const result = await supabase.rpc("bots_get_server_roles_v1", { p_server_id: sid, p_bot_id: bid });
+    if (!isCurrentBotServerRolesSession(session)) return;
+    if (result.error) throw result.error;
+    if (normId(result.data?.serverId) !== sid || normId(result.data?.botId) !== bid || !Array.isArray(result.data?.roleIds)) throw new Error("roles_unavailable");
+    session.roleIds = normalizeUuidArray(result.data.roleIds);
+    session.managedRoleId = normId(result.data.managedRoleId);
+    session.loaded = true; session.status = "";
+  } catch (error) {
+    if (!isCurrentBotServerRolesSession(session)) return;
+    session.error = true; session.status = getBotServerRolesErrorMessage(error);
+  }
+  if (isCurrentBotServerRolesSession(session)) renderBotServerRoleMenu();
+}
+
+async function toggleBotServerRole(roleId = "") {
+  const session = botServerRoleMenuState;
+  if (!session || !isCurrentBotServerRolesSession(session) || !session.loaded || session.saving || session.stale) return;
+  const { serverId: sid, botId: bid } = session;
+  const rid = normId(roleId);
+  if (!rid || !getServerBotRoleActionState(sid, bid).allowed || !getServerBotRoleActionState(sid, bid, rid).allowed) return;
+  const previous = new Set(session.roleIds);
+  // Toggle only this ordinary role; preserve all other authoritative assignments.
+  const desired = new Set(previous);
+  if (desired.has(rid)) desired.delete(rid); else desired.add(rid);
+  session.saving = true; session.error = false; session.status = "Saving roles...";
+  renderBotServerRoleMenu();
+  try {
+    const result = await supabase.rpc("bots_set_server_roles_v1", { p_server_id: sid, p_bot_id: bid,
+      p_role_ids: Array.from(desired), p_expected_role_ids: session.roleIds });
+    if (result.error) throw result.error;
+    if (!result.data?.ok || normId(result.data.serverId) !== sid || normId(result.data.botId) !== bid
+      || !Array.isArray(result.data.roleIds)) throw new Error("roles_unavailable");
+    session.roleIds = normalizeUuidArray(result.data.roleIds);
+    // Closing a submenu does not cancel a committed write or its capability refresh.
+    if (normId(state.user?.id) === session.actorId && normId(getActiveServerContext()?.serverId) === sid) void refreshServerBotRolesUi(sid);
+    if (isCurrentBotServerRolesSession(session)) closeBotContextMenu("action");
+  } catch (error) {
+    if (!isCurrentBotServerRolesSession(session)) return;
+    session.error = true; session.stale = /bot_roles_changed/.test(String(error?.message || ""));
+    session.status = getBotServerRolesErrorMessage(error);
+  } finally {
+    session.saving = false;
+    if (isCurrentBotServerRolesSession(session)) renderBotServerRoleMenu();
+  }
+}
+
+async function refreshServerBotRolesUi(serverId = "") {
+  const sid = normId(serverId), actorId = normId(state.user?.id);
+  if (!sid || !actorId) return;
+  invalidateServerBotChannelMemberIds(sid);
+  hideBotSlashCommandPicker();
+  if (normId(getActiveServerContext()?.serverId) !== sid) return;
+  await Promise.all([
+    fetchServerSlashCommandsForComposer(sid, { force: true }).catch(() => []),
+    fetchServerBotsForSidebar(sid, { force: true }).catch(() => []),
+  ]);
+  const context = getActiveServerContext();
+  if (normId(state.user?.id) !== actorId || normId(context?.serverId) !== sid) return;
+  await renderServerMembersRightPanel(context, serverMemberListByServerId.get(sid) || [], { forceChannelMembers: false }).catch(() => {});
+}
+
+let botPlatformSurfacesUi = null;
+let botDirectMessagesController = null;
+let botDirectMessageView = null;
+let botDirectMessageSnapshot = null;
+let botDirectMessageAttachments = null;
+let botDmMessageMenuContext = null;
+let botDirectMessageUpload = null;
+let botDirectMessagesInboxOwner = "";
+let botDmAttachmentActionsMenu = null;
+let botDmAttachmentMenuOwner = null;
+let botDmMediaView = null;
+let botDmMediaLightbox = null;
+let botDmInitialMediaLease = null;
+function getActiveBotDirectMessageKey() {
+  return state.activeDm?.kind === "bot_dm" ? String(state.activeDm.botDmKey || "") : "";
+}
+function isActiveBotDirectMessageOwner(snapshot) {
+  return !!snapshot && snapshot.userId === normId(state.user?.id || "") && snapshot.key === getActiveBotDirectMessageKey();
+}
+function getBotDirectMessageAttachments() {
+  return botDirectMessageAttachments ||= createBotDirectMessageAttachments({supabase,getContext:() => ({
+    ...botDirectMessageSnapshot,userId:normId(state.user?.id || ""),key:getActiveBotDirectMessageKey(),
+  })});
+}
+function chooseBotDirectMessageAttachments(snapshot) {
+  if (!isActiveBotDirectMessageOwner(snapshot) || !snapshot.enabled || !snapshot.capabilities?.attachments || botDirectMessageUpload) return;
+  const input = document.createElement("input");input.type="file";input.multiple=true;input.className="sr-only";
+  input.addEventListener("cancel",() => input.remove(),{once:true});
+  input.addEventListener("change", () => {
+    const files=Array.from(input.files || []);input.remove();
+    void queueBotDirectMessageAttachments(files,snapshot);
+  },{once:true});
+  document.body.append(input);input.click();
+}
+async function queueBotDirectMessageAttachments(files,snapshot) {
+    if (!files.length || !isActiveBotDirectMessageOwner(snapshot) || !snapshot.enabled || !snapshot.capabilities?.attachments || botDirectMessageUpload) return;
+    const composer=botDirectMessageView?.getComposerContext(),previous=composer?.attachments || [];
+    if (!composer || previous.length+files.length>10 || files.some(file => file.size<1 || file.size>8*1024*1024)
+      || previous.reduce((total,item)=>total+item.size,0)+files.reduce((total,file)=>total+file.size,0)>16*1024*1024) {
+      botDirectMessageView?.showNotice("Podes enviar até 10 ficheiros, com 8 MB por ficheiro e 16 MB no total.");return;
+    }
+    const operation={key:snapshot.key,userId:snapshot.userId};botDirectMessageUpload=operation;
+    botDirectMessageView.setAttachmentUploadBusy(true,snapshot);
+    botDirectMessageView.showNotice("A carregar ficheiros…");
+    try {
+      const uploaded=[];
+      for (const file of files) uploaded.push(await getBotDirectMessageAttachments().upload({snapshot,file}));
+      if (botDirectMessageUpload!==operation || !isActiveBotDirectMessageOwner(snapshot)) return;
+      const current=botDirectMessageView.getComposerContext();
+      if (!current || current.attachments.length!==previous.length || current.attachments.some((item,index)=>item.uploadId!==previous[index].uploadId)) return;
+      botDirectMessageView.setAttachments([...previous,...uploaded],snapshot);botDirectMessageView.showNotice("");
+    } catch (_) {if(botDirectMessageUpload===operation && isActiveBotDirectMessageOwner(snapshot))botDirectMessageView?.showNotice("Não foi possível carregar os ficheiros. Tenta novamente.");}
+    finally{if(botDirectMessageUpload===operation){botDirectMessageUpload=null;if(isActiveBotDirectMessageOwner(snapshot))botDirectMessageView?.setAttachmentUploadBusy(false,snapshot);}}
+}
+function openBotDmAttachmentActions(snapshot,anchorEl) {
+  if (!isActiveBotDirectMessageOwner(snapshot)) return;
+  botDmAttachmentMenuOwner={snapshot,anchorEl};
+  botDmAttachmentActionsMenu ||= createComposerAttachmentMenu({
+    buttonSelector:'#botDmMain [data-native-dm-role="btnAttach"]',menuId:"botDmAttachmentActions",
+    canOpen:() => {
+      const owner=botDmAttachmentMenuOwner?.snapshot;
+      return isActiveBotDirectMessageOwner(owner) && botDirectMessageSnapshot?.enabled === true
+        && botDirectMessageSnapshot?.capabilities?.attachments === true && !botDirectMessageUpload;
+    },
+    onDenied:() => botDirectMessageView?.showNotice("Não é possível anexar ficheiros nesta conversa."),
+    label:() => t("dm.attach","Attach file"),
+    onFiles:() => chooseBotDirectMessageAttachments(botDmAttachmentMenuOwner?.snapshot),
+    onGif:() => {
+      const owner=botDmAttachmentMenuOwner;
+      if(isActiveBotDirectMessageOwner(owner?.snapshot)) openGifModal({anchorEl:owner.anchorEl,botContext:{key:owner.snapshot.key,userId:owner.snapshot.userId}});
+    },
+  });
+  botDmAttachmentActionsMenu.toggle(anchorEl);
+}
+function isCurrentBotDmMedia(snapshot,row) {
+  if (!isActiveBotDirectMessageOwner(snapshot) || !botDirectMessageSnapshot?.enabled || botDirectMessageView?.root.hidden) return false;
+  const current=[...botDirectMessageSnapshot.messages,...(botDirectMessageSnapshot.pinnedMessages || [])].find(item=>item.id === row.id);
+  // Pin/reaction revisions retain the same admitted file. Content, membership,
+  // deletion, consent and navigation are the authority boundaries for media.
+  return !!current && !current.deleted_at && current.sender === row.sender
+    && current.content === row.content && JSON.stringify(current.attachments) === JSON.stringify(row.attachments);
+}
+function getBotDmMediaView() {
+  return botDmMediaView ||= createBotDirectMessageMediaView({
+    document,host:document.querySelector('.panel.mid'),
+    resolve: (item,row,snapshot,{download}) => getBotDirectMessageAttachments().resolve({snapshot,message:row,attachment:item,download}),
+    isCurrent:isCurrentBotDmMedia,
+    getName:item=>formatAttachmentDisplayName(item.name,item.mime.split('/')[0]),
+    metaLabel:item=>attachmentMetaLabel({name:item.name,mime:item.mime,size:item.size,kind:item.mime.split('/')[0]}),
+    onImageOpen:openBotDmMediaLightbox,
+    canDelete:(snapshot,row)=>isCurrentBotDmMedia(snapshot,row) && row.sender === "user" && botDirectMessageSnapshot?.capabilities?.edit === true
+      && (!!row.content.trim() || botDirectMessageAttachmentItems(row).length>1 || botDirectMessageSnapshot?.capabilities?.delete === true),
+    onDeleteAttachment:deleteBotDmAttachment,
+    onError:(_error,snapshot)=>{if(isActiveBotDirectMessageOwner(snapshot))botDirectMessageView?.showNotice("Não foi possível abrir o ficheiro. Tenta novamente.");},
+    sizeLabel:item=>formatBytesLabel(item.size),
+    bindPlayers:container=>{bindDmVideoPlayerUi(container,{lightboxLabels:mediaLightboxLabels(typeof appLanguage === "string" ? appLanguage : "en")});bindDmAudioPlayerUi(container);},
+  });
+}
+function renderBotDirectMessageAttachments(row,snapshot) {
+  return getBotDmMediaView().render(row,snapshot);
+}
+async function deleteBotDmAttachment(item,row,snapshot) {
+  if(!isCurrentBotDmMedia(snapshot,row) || row.sender !== "user" || !botDirectMessageSnapshot?.capabilities?.edit) return false;
+  const previous=botDirectMessageAttachmentItems(row);
+  const attachments=previous.filter(candidate=>candidate.uploadId !== item.uploadId).map(candidate=>({upload_id:candidate.uploadId}));
+  if(attachments.length === previous.length) return false;
+  // The private actor rejects empty messages. Removing the only content uses
+  // the existing own-message tombstone rather than inventing an empty edit.
+  const removeMessage=!row.content.trim() && !attachments.length;
+  if(removeMessage && !botDirectMessageSnapshot?.capabilities?.delete) return false;
+  const approved=await requestAppConfirm("Apagar este anexo da mensagem?",{title:"Apagar anexo",confirmText:"Apagar",cancelText:"Cancelar"});
+  if(!approved || !isCurrentBotDmMedia(snapshot,row) || !botDirectMessageSnapshot?.capabilities?.edit) return false;
+  if(removeMessage) return botDirectMessageSnapshot?.capabilities?.delete === true && getBotDirectMessagesController().messageAction("delete",row.id,{});
+  return getBotDirectMessagesController().messageAction("edit",row.id,{content:row.content,attachments});
+}
+function botDmLightboxItems() {
+  return (botDmMediaView?.getItems() || []).map(source=>({
+    ...source,zoomable:source.kind === "image" && source.item.mime !== "image/gif",
+    width:640,height:480,dimensionsKnown:false,
+    resolve:async signal=>{
+      if(signal.aborted || !isCurrentBotDmMedia(source.snapshot,source.row)) return null;
+      const initial=botDmInitialMediaLease;
+      const admitted=initial?.key === source.key && isCurrentBotDmMedia(initial.snapshot,initial.row);
+      if(admitted)botDmInitialMediaLease=null;
+      const grant=admitted ? initial.grant : await getBotDirectMessageAttachments().resolve({snapshot:source.snapshot,message:source.row,attachment:source.item});
+      if(signal.aborted || !isCurrentBotDmMedia(source.snapshot,source.row)) return null;
+      return {...source,zoomable:source.kind === "image" && source.item.mime !== "image/gif",url:grant.url,download:source};
+    },
+  }));
+}
+function openBotDmMediaLightbox({item,row,snapshot,grant}) {
+  if(!isCurrentBotDmMedia(snapshot,row)) return false;
+  botDmMediaLightbox ||= createMediaLightbox({
+    labels:()=>mediaLightboxLabels(typeof appLanguage === "string" ? appLanguage : "en"),
+    getContext:()=>`${normId(state.user?.id)}:${getActiveBotDirectMessageKey()}:${botDirectMessageSnapshot?.enabled === true}`,
+    getItems:botDmLightboxItems,bindVideo:bindDmVideoPlayerUi,
+    onClose:()=>{botDmInitialMediaLease=null;},
+    getScrollElement:()=>botDirectMessageView?.root.querySelector('.dmMessages'),
+    download:async source=>{
+      if(!isCurrentBotDmMedia(source.snapshot,source.row)) return;
+      try{
+        const fresh=await getBotDirectMessageAttachments().resolve({snapshot:source.snapshot,message:source.row,attachment:source.item,download:true});
+        if(!isCurrentBotDmMedia(source.snapshot,source.row)) return;
+        const link=document.createElement('a');link.href=fresh.url;link.download=source.item.name;link.rel='noopener noreferrer';
+        document.body.append(link);link.click();link.remove();
+      }catch(_){if(isCurrentBotDmMedia(source.snapshot,source.row))botDirectMessageView?.showNotice("Não foi possível guardar o ficheiro. Tenta novamente.");}
+    },
+  });
+  // The preview action already obtained a fresh private lease. Consume it for
+  // this selection; neighbour navigation and later downloads renew via broker.
+  const initialKey=`${row.id}:${item.uploadId}`;
+  const initial=botDmLightboxItems().find(entry=>entry.key === initialKey);
+  if(!initial) return false;
+  botDmInitialMediaLease={key:initialKey,grant,row,snapshot};
+  const opened=botDmMediaLightbox.open(initialKey);
+  if(!opened)botDmInitialMediaLease=null;
+  return opened;
+}
+function renderBotDirectMessageBody(row) {
+  if (row.deleted_at) return {html:esc(t("message.deleted", "Message deleted")),className:"msg__text msg__text--plain hint"};
+  // Only the existing catalogue envelope can become media. Arbitrary JSON and
+  // bot-supplied attachment URLs remain plain text, never upload authority.
+  try {
+    const value = JSON.parse(row.content);
+    const canonical = value?.delivery === "public-gif-provider-v1" && publicGifMessageContent(value?.attachment?.gifProvider);
+    if (canonical) {
+      const safe = JSON.parse(canonical);
+      if (safe.url === value.url) return {html:deferredGifMessageBodyHtml(safe.attachment.gifProvider,safe.url),className:"msg__text msg__text--gif"};
+    }
+  } catch (_) {}
+  const count = getEmojiOnlyMessageCount(row.content);
+  const html=replaceRegionalFlagEmojiWithImagesInHtml(renderMessageTextHtml(row.content || "", {allowRichEmbeds:false}));
+  return {html:`<span>${html}</span>`,className:`msg__text msg__text--plain${count ? ` msg__text--emojiOnly msg__text--emojiOnly-${Math.min(count,4)}` : ""}`};
+}
+async function handleBotDirectMessageAction(action,row,snapshot,anchor,payload={}) {
+  if (!isActiveBotDirectMessageOwner(snapshot) || row.deleted_at) return;
+  const view = getBotDirectMessageView();
+  if (action === "reply") return view?.beginReply(row,snapshot);
+  if (action === "edit") return view?.beginEdit(row,snapshot);
+  if (action === "react") return openEmojiPicker({mode:"bot_dm",anchorEl:anchor,botContext:{key:snapshot.key,userId:snapshot.userId,messageId:row.id}});
+  if (action === "pin") return getBotDirectMessagesController().messageAction("pin",row.id,{enabled:!row.is_pinned});
+  if (action === "reaction") return getBotDirectMessagesController().messageAction("reaction",row.id,payload);
+  if (action === "delete") {
+    const approved = await requestAppConfirm("Apagar esta mensagem?", {title:"Apagar mensagem",confirmText:"Apagar",cancelText:"Cancelar"});
+    if (!approved || !isActiveBotDirectMessageOwner(snapshot)) return;
+    return getBotDirectMessagesController().messageAction("delete",row.id,{});
+  }
+}
+function getBotDirectMessageActions(row,snapshot) {
+  if (!snapshot.enabled || row.deleted_at) return [];
+  const caps=snapshot.capabilities || {};
+  return [caps.reaction && {action:"react",label:"Escolher emoji",icon:"🙂"},caps.reply && {action:"reply",label:"Reply",icon:"↩"},
+    row.sender === "user" && caps.edit && {action:"edit",label:"Editar",icon:"✎"},
+    caps.pin && {action:"pin",label:row.is_pinned?"Unpin":"Pin",icon:"📌"},
+    row.sender === "user" && caps.delete && {action:"delete",label:"Delete Message",icon:"🗑",danger:true}].filter(Boolean);
+}
+function openBotDirectMessageMenu(row,snapshot,anchorEl,coordinates) {
+  if (!isActiveBotDirectMessageOwner(snapshot)) return;
+  closeActivePopover();closeEmojiPicker();closeMessageMenu();closeBotContextMenu("open_other_menu");
+  const menu=ensureMessageMenu();
+  const actions=[...getBotDirectMessageActions(row,snapshot),{action:"copy",label:"Copiar texto",icon:"⧉"},{action:"copy_id",label:"Copy Message ID",icon:"⧉"}];
+  menu.innerHTML=actions.map(item=>`<button type="button" class="msgMenu__item${item.danger?" msgMenu__item--danger":""}" data-msg-menu-act="${escAttr(item.action)}" data-msg-id="${escAttr(row.id)}"><span>${esc(item.label)}</span><span>${esc(item.icon)}</span></button>`).join("");
+  botDmMessageMenuContext={key:snapshot.key,userId:snapshot.userId,messageId:row.id};
+  menu.classList.add("is-open");msgMenuOpenFor=row.id;
+  const point=coordinates?{x:coordinates.clientX,y:coordinates.clientY}:null;
+  setAltaraContextMenuOpen({type:"message",targetId:row.id,targetKind:"bot_dm_message",menuId:"msgActionMenu",anchorEl,point,reason:point?"contextmenu":"trigger"});
+  if(point)positionMenuAtPoint(menu,point);else positionContextMenuByAnchor(menu,anchorEl);
+}
+function getBotDirectMessageView() {
+  if (botDirectMessageView) return botDirectMessageView;
+  const host = document.getElementById("dmMain")?.parentElement;
+  if (!host) return null;
+  botDirectMessageView = createBotDirectMessageView({
+    host,
+    template: document.getElementById("dmMain"),
+    onSend: (content,options) => getBotDirectMessagesController().send(content,{...options,attachments:(options?.attachments || []).map(item=>({upload_id:item.uploadId}))}),
+    onEdit: (row,content,snapshot) => isActiveBotDirectMessageOwner(snapshot) && getBotDirectMessagesController().messageAction("edit",row.id,{content}),
+    onEmoji: (snapshot,anchorEl) => isActiveBotDirectMessageOwner(snapshot) && openEmojiPicker({mode:"bot_dm",anchorEl,botContext:{key:snapshot.key,userId:snapshot.userId}}),
+    onGif: (snapshot,anchorEl) => isActiveBotDirectMessageOwner(snapshot) && openGifModal({anchorEl,botContext:{key:snapshot.key,userId:snapshot.userId}}),
+    onAttach: openBotDmAttachmentActions,
+    onFiles: queueBotDirectMessageAttachments,
+    onFormat: (mode,composer) => isActiveBotDirectMessageOwner(composer) && applyDmInputSelectionStyle(composer.input,mode,{isolated:true}),
+    onMessageAction: (...args) => Promise.resolve(handleBotDirectMessageAction(...args)).catch(() => {
+      if (isActiveBotDirectMessageOwner(args[2])) botDirectMessageView?.showNotice("Não foi possível confirmar a ação. Tenta novamente.");
+    }),
+    onMore: openBotDirectMessageMenu,
+    onSenderProfile: (_profile,row,snapshot,anchorEl) => {
+      if (!isActiveBotDirectMessageOwner(snapshot)) return;
+      return row.sender === "bot" ? openBotProfileCard(snapshot,{anchorEl}) : openUserCardModal(snapshot.userId,{anchorEl});
+    },
+    getCapabilities: snapshot => ({emoji:true,gif:true,attach:snapshot.capabilities?.attachments === true,messageActions:true,pins:snapshot.capabilities?.pin === true}),
+    getMessageActions: getBotDirectMessageActions,
+    getQuickReactions: () => QUICK_REACTIONS,
+    getReactions: row => row.reactions.map(item => ({...item,enabled:item.me})),
+    getMessagePreview: content => normalizeMessagePreviewText(content),
+    onPins: async snapshot => {
+      if (!isActiveBotDirectMessageOwner(snapshot)) return;
+      await getBotDirectMessagesController().loadPins();
+      if (isActiveBotDirectMessageOwner(snapshot)) botDirectMessageView?.togglePins();
+    },
+    getPinnedMessages: snapshot => snapshot.pinnedMessages || snapshot.messages.filter(row => row.is_pinned && !row.deleted_at),
+    canStack: (previous,row) => previous.sender === row.sender && !row.reply_to_id && !row.deleted_at && !previous.deleted_at
+      && dayKey(previous.created_at) === dayKey(row.created_at) && Date.parse(row.created_at) >= Date.parse(previous.created_at)
+      && Date.parse(row.created_at) - Date.parse(previous.created_at) <= MESSAGE_STACK_WINDOW_MS,
+    onConsent: enabled => getBotDirectMessagesController().saveConsent(enabled),
+    onRetry: () => getBotDirectMessagesController().retry(),
+    onRefresh: () => refreshActiveBotDirectMessage(),
+    onProfile: (snapshot, anchorEl) => {
+      if (snapshot.userId !== normId(state.user?.id || "") || snapshot.key !== getActiveBotDirectMessageKey()) return;
+      return openBotProfileCard({...snapshot, serverId: snapshot.serverId}, {anchorEl});
+    },
+    onOptions: (snapshot, anchorEl) => openBotContextMenuAt(snapshot, {anchorEl, directMessageSnapshot:snapshot}),
+    getProfile: snapshot => ({...snapshot,status:getServerBotPresence(snapshot.serverId,snapshot.botId)?.effectiveStatus || snapshot.presenceStatus || "offline"}),
+    onFullProfile: (profile,snapshot,anchorEl) => isActiveBotDirectMessageOwner(snapshot) && openBotProfileCard(profile,{anchorEl}),
+    renderAvatar: profile => buildAvatarMediaHtml(profile.avatarUrl || "", { alt: profile.name || "Avatar", loading: "lazy" }),
+    renderProfileBanner: profile => {
+      const url=normalizeBannerUrl(profile.bannerUrl || "");
+      return url ? lazyMediaImageHtml(url,{className:"profileBannerMedia",attrs:'data-media-source="profile-banner"',managedGif:isGifLikeUrl(url)}) : "";
+    },
+    onProfileRender: container => {bindLazyMediaImages(container);queueManagedGifPlaybackSync("bot-dm-profile");},
+    renderText: content => renderMessageTextHtml(content, { allowRichEmbeds: false }),
+    renderMessageBody: renderBotDirectMessageBody,
+    renderAttachments: renderBotDirectMessageAttachments,
+    renderNameAttrs: (profile,row) => {
+      const color=row.sender === "user" ? normalizeNameColor(state.me?.name_color) : "";
+      return color ? {className:"userNameCustom",style:`--user-name-color:${color}`} : null;
+    },
+    renderEmbeds: row => row.sender === "bot" ? renderBotEmbeds({source:"bot_channel_messages",metadata:{embeds:row.embeds}}) : "",
+    formatTimestamp: getMessageStamp,
+    getDayKey: dayKey,
+    renderDayDivider: dayDividerHtml,
+    getOwnProfile: () => ({ name: state.me?.display_name || state.me?.username || "Tu", avatarUrl: state.me?.avatar_url || "",nameColor:normalizeNameColor(state.me?.name_color) }),
+  });
+  botDirectMessageView.root.addEventListener("click",event=>{
+    const target=eventTargetElement(event),snapshot=botDirectMessageSnapshot;
+    if(!target || !isActiveBotDirectMessageOwner(snapshot))return;
+    const favorite=target.closest("[data-msg-gif-fav]");
+    const preview=target.closest("[data-msg-gif-load-preview]");
+    if(favorite){event.preventDefault();event.stopPropagation();toggleMessageGifFavoriteFromButton(favorite);}
+    else if(preview){event.preventDefault();event.stopPropagation();loadDeferredGifPreviewFromButton(preview);}
+  });
+  return botDirectMessageView;
+}
+function getBotDirectMessagesController() {
+  if (botDirectMessagesController) return botDirectMessagesController;
+  botDirectMessagesController = createBotDirectMessages({
+    supabase,
+    getContext: () => ({ userId: normId(state.user?.id || "") }),
+    getActiveKey: getActiveBotDirectMessageKey,
+    getProfile: async seed => {
+      const profile = await fetchSafeBotProfile(seed);
+      const server = getServerRowById(seed.serverId);
+      return { name: profile.name, avatarUrl: profile.avatarUrl, serverName: server?.name || "", bannerUrl:profile.bannerUrl,
+        description:profile.description,publicId:profile.publicId,appId:profile.appId,isPublic:profile.isPublic,presenceStatus:profile.presenceStatus };
+    },
+    onActiveChange: snapshot => {
+      if (!snapshot) { botDirectMessageSnapshot=null;botDirectMessageUpload=null;botDmAttachmentActionsMenu?.close();botDmAttachmentMenuOwner=null;
+        botDmMediaLightbox?.close();botDmInitialMediaLease=null;botDmMediaView?.reset();botDirectMessageView?.close();syncBotDirectMessageSidebarHighlight();return; }
+      if (snapshot.userId !== normId(state.user?.id || "") || snapshot.key !== getActiveBotDirectMessageKey()) return;
+      botDirectMessageSnapshot=snapshot;
+      getBotDirectMessageView()?.update(snapshot);
+      botDmMediaView?.hydrate(botDirectMessageView.root);
+      if(!snapshot.enabled){botDmMediaLightbox?.close();botDmInitialMediaLease=null;botDmAttachmentActionsMenu?.close();}
+      bindLazyMediaImages(botDirectMessageView.root);
+      queueManagedGifPlaybackSync(botDirectMessageView.root);
+      syncBotDirectMessageSidebarHighlight();
+    },
+    onInboxChange: () => { queueLightweightDmListRenderFromState(); renderWidgets(); },
+    onIncoming: ({entry, row, userId}) => {
+      if (userId !== normId(state.user?.id || "")) return;
+      const notification = { type: "direct_dm", sender_user_id: entry.botId, ownerType: "messages", reason: "incoming_bot_dm" };
+      if (shouldNotifyInFocus(notification)) playIncomingMessageCueOnce({ ...row, conversation_id: entry.key }, "message_received", notification);
+    },
+  });
+  return botDirectMessagesController;
+}
+function resetBotDirectMessages() {
+  botDirectMessagesInboxOwner = "";
+  botDirectMessagesController?.reset();
+  botDirectMessageView?.reset();
+  if (state.activeDm?.kind === "bot_dm") { state.activeDm = null; setMidMode("friends"); }
+}
+function syncBotDirectMessageSidebarHighlight() {
+  const key = getActiveBotDirectMessageKey();
+  document.querySelectorAll("#dmList [data-bot-dm-key]").forEach(item => {
+    const active = !!key && item.getAttribute("data-bot-dm-key") === key;
+    item.classList.toggle("is-active", active);
+    item.setAttribute("aria-current", active ? "page" : "false");
+  });
+}
+async function refreshActiveBotDirectMessage() {
+  const active = state.activeDm;
+  if (active?.kind !== "bot_dm") return;
+  return getBotDirectMessagesController().open({botId: active.botId, serverId: active.botServerId, name: active.displayName, avatarUrl: active.avatarUrl});
+}
+async function openBotDirectMessage(profile, serverId) {
+  const botId = normId(profile?.botId || ""), sid = normId(serverId || "");
+  if (!botId || !sid || !state.user?.id) return false;
+  const controller = getBotDirectMessagesController();
+  leaveActiveDmView({ captureHistory: false });
+  const intent = beginMainContentNavigationIntent({ reason: "open-bot-direct-message" });
+  activeDmId = null;
+  state.activeDm = {kind: "bot_dm", botDmKey: `bot-dm:${sid}:${botId}`, botId, botServerId: sid, displayName: profile.name || "Bot", avatarUrl: profile.avatarUrl || ""};
+  setMidMode("bot_dm", {skipServerConversationRefresh:true});
+  const result = await controller.open({botId, serverId:sid, name:profile.name || "Bot", avatarUrl:profile.avatarUrl || "", serverName:profile.serverName || getServerRowById(sid)?.name || ""});
+  if (!isMainContentNavigationIntentCurrent(intent) || getActiveBotDirectMessageKey() !== `bot-dm:${sid}:${botId}`) return false;
+  controller.markRead();
+  queueLightweightDmListRenderFromState();
+  getBotDirectMessageView()?.focus();
+  return !!result;
+}
+function renderBotDirectMessageSidebarRow(row, allRows) {
+  const count = Math.max(0, Number(row.unreadCount) || 0);
+  const duplicate = allRows.some(other => other.botId === row.botId && other.key !== row.key);
+  return `<div class="dm-item is-clickable${count ? " is-unread" : ""}" role="button" tabindex="0" data-bot-dm-key="${escAttr(row.key)}" data-bot-dm-id="${escAttr(row.botId)}" data-bot-dm-server="${escAttr(row.serverId)}">
+    <div class="avatar">${buildAvatarMediaHtml(row.avatarUrl || "", {alt: row.name || "Bot", loading:"lazy", deferAnimatedStorage:true})}</div>
+    <div class="dm-text"><div class="dm-name botDmInboxName"><span>${esc(row.name || "Bot")}</span><span class="msg__botBadge">BOT</span></div>${duplicate ? `<div class="dm-handle">${esc(row.serverName || "Conversa no servidor")}</div>` : ""}</div>
+    ${count ? `<span class="botDmUnreadBadge" aria-label="${count} mensagens por ler">${count > 99 ? "99+" : count}</span>` : ""}
+  </div>`;
+}
+let botPlatformAudioBridge = null;
+let botPlatformAudioUi = null;
+function getBotPlatformSurfacesUi() {
+  if(!botPlatformSurfacesUi)botPlatformSurfacesUi=createBotSurfacesUi({supabase,getContext:()=>({userId:normId(state.user?.id||''),serverId:normId(state.activeDm?.serverId||getActiveServerContext?.()?.serverId||''),channelId:normId(state.activeDm?.channelId||'')})});
+  return botPlatformSurfacesUi;
+}
+function getBotAudioConsentContext() {
+  const member=getCurrentUserServerVoiceV2Member();
+  const current=member && normId(member.userId)===normId(state.user?.id) && serverVoiceTransportController?.getSnapshot?.()?.connected===true;
+  return {userId:normId(state.user?.id||''),serverId:current?member.serverId:'',channelId:current?member.channelId:'',mediaGeneration:current?member.mediaGeneration:'',muted:getEffectiveLocalMicMuted(),deafened:getEffectiveLocalDeafened()};
+}
+function getBotAudioConsentMicrophone() {
+  const publication=serverVoiceTransportController?.room?.localParticipant?.getTrackPublication?.('microphone');
+  return publication?.track?.mediaStreamTrack || null;
+}
+function getBotPlatformAudioUi() {
+  if(!botPlatformAudioBridge) {
+    let ownUi;
+    botPlatformAudioBridge=createBotAudioConsentBridge({supabase,loadLiveKit:()=>import('./vendor/livekit-client/livekit-client.esm.mjs'),getContext:getBotAudioConsentContext,getMicrophoneTrack:getBotAudioConsentMicrophone,onChange:entries=>ownUi?.update(entries)});
+    ownUi=createBotAudioConsentUi({bridge:botPlatformAudioBridge,getContext:getBotAudioConsentContext});botPlatformAudioUi=ownUi;
+  }
+  return botPlatformAudioUi;
+}
+function stopBotPlatformAudioSharing() {
+  const bridge=botPlatformAudioBridge;botPlatformAudioBridge=null;
+  botPlatformAudioUi?.close();botPlatformAudioUi=null;
+  if(bridge)void bridge.stop();
+}
 function ensureBotContextMenu() {
   let menu = document.getElementById("botContextMenu");
   if (!menu) {
@@ -28813,6 +29607,21 @@ function ensureBotContextMenu() {
     close: closeBotContextMenu,
     getAnchor: () => altaraContextMenuDebugState.currentType === "bot" ? altaraContextMenuDebugState.anchorEl : null,
   });
+  menu.addEventListener("mouseover", (event) => {
+    const button = eventTargetElement(event)?.closest?.("[data-bot-menu-act]");
+    if (!button) return;
+    if (button.getAttribute("data-bot-menu-act") === "roles" && !button.disabled) {
+      void openBotServerRoleMenu(getBotProfileSeedFromElement(button), button.getAttribute("data-bot-menu-server-id"), { anchorEl: button });
+    } else closeBotServerRoleMenu();
+  });
+  menu.addEventListener("mouseleave", scheduleBotServerRoleMenuClose);
+  menu.addEventListener("keydown", (event) => {
+    const button = eventTargetElement(event)?.closest?.('[data-bot-menu-act="roles"]');
+    if (event.key === "ArrowRight" && button && !button.disabled) {
+      event.preventDefault(); event.stopPropagation();
+      void openBotServerRoleMenu(getBotProfileSeedFromElement(button), button.getAttribute("data-bot-menu-server-id"), { anchorEl: button, focus: true });
+    } else if (event.key === "Tab") closeBotContextMenu("action");
+  });
   menu.addEventListener("click", async (event) => {
     const target = eventTargetElement(event);
     const actionBtn = target?.closest?.("[data-bot-menu-act]");
@@ -28824,17 +29633,36 @@ function ensureBotContextMenu() {
     const serverId = normId(actionBtn.getAttribute("data-bot-menu-server-id") || getActiveServerContext?.()?.serverId || state.activeDm?.serverId || "");
     const timelineMessageId = String(actionBtn.getAttribute("data-bot-menu-message-id") || "").trim();
     const inviteUrl = actionBtn.getAttribute("data-bot-menu-invite") || "";
+    const profileAnchor = altaraContextMenuDebugState.anchorEl;
+    const profileAnchorRect = profileAnchor?.getBoundingClientRect?.() || null;
+    if (action === "roles") {
+      await openBotServerRoleMenu(profile, serverId, { anchorEl: actionBtn, focus: true });
+      return;
+    }
     closeBotContextMenu("action");
 
     if (action === "profile") {
-      await openBotProfileCard(profile);
+      await openBotProfileCard(profile, { anchorEl: profileAnchor, anchorRect: profileAnchorRect });
     } else if (action === "mention") {
       insertBotMentionIntoComposer(profile);
+    } else if (action === "direct_message") {
+      await openBotDirectMessage(profile, serverId);
+    } else if (action === "dm_consent") {
+      // A menu opened before navigation or account switching cannot change the new chat.
+      if (normId(actionBtn.getAttribute("data-bot-dm-owner")) !== normId(state.user?.id || "")
+        || getActiveBotDirectMessageKey() !== `bot-dm:${serverId}:${profile.botId}`) return;
+      await getBotDirectMessagesController().saveConsent(actionBtn.getAttribute("data-bot-dm-enabled") === "1");
+    } else if (action === "audio_consent") {
+      await getBotPlatformAudioUi().open({botId:profile.botId});
     } else if (action === "view_commands") {
+      closeActivePopover();
+      closeBotProfileCard();
+      const session = { userId: normId(state.user?.id || ""), anchorEl: profileAnchor, anchorRect: profileAnchorRect };
+      botProfileCardSession = session;
+      renderBotProfileCard(profile, { commandsLoading: true });
       const full = await fetchSafeBotProfile(profile);
-      renderBotProfileCard(full, { commandsLoading: true });
       const rows = await loadBotProfileCommands(full);
-      renderBotProfileCard(full, { commands: rows });
+      if (botProfileCardSession === session && normId(state.user?.id || "") === session.userId) renderBotProfileCard(full, { commands: rows });
     } else if (action === "copy_bot_id") {
       await copyTextWithPromptFallback(profile?.publicId || profile?.botId || "", "Bot ID");
       showDmComposerNotice("Bot ID copied.", { title: "Bots" });
@@ -29036,9 +29864,11 @@ function getBotContextProfileAttrs(profile = {}, serverId = "", inviteUrl = "") 
   ].filter(Boolean).join(" ");
 }
 
-function openBotContextMenuAt(seed = {}, { point = null, anchorEl = null } = {}) {
+function openBotContextMenuAt(seed = {}, { point = null, anchorEl = null, directMessageSnapshot = null } = {}) {
   const profile = normalizeBotProfileSeed(seed);
   if (!profile.botId && !profile.publicId) return;
+  if (directMessageSnapshot && (directMessageSnapshot.userId !== normId(state.user?.id || "")
+    || directMessageSnapshot.key !== getActiveBotDirectMessageKey())) return;
   const activeServerId = normId(seed?.serverId || seed?.server_id || getActiveServerContext?.()?.serverId || state.activeDm?.serverId || "");
   const manageAppsResolved = isCurrentServerPermissionSnapshotResolved(activeServerId);
   const canManageApps = manageAppsResolved && currentUserCanManageApps(activeServerId);
@@ -29046,6 +29876,7 @@ function openBotContextMenuAt(seed = {}, { point = null, anchorEl = null } = {})
   const inviteUrl = canExposeInvite ? buildBotAuthorizeUrl(profile.appId, getBotDefaultInstallPermissions(profile, ALTARA_BOT_DEFAULT_PERMISSIONS)) : "";
   const attrs = getBotContextProfileAttrs(profile, activeServerId, inviteUrl);
   const menu = ensureBotContextMenu();
+  closeBotServerRoleMenu();
   closeActivePopover();
   closeMessageMenu("open_other_menu");
   closeGroupMemberMenu("open_other_menu");
@@ -29055,9 +29886,9 @@ function openBotContextMenuAt(seed = {}, { point = null, anchorEl = null } = {})
   closeDmUserRoleMenu("open_other_menu");
   closeServerVoiceMemberMenu({ force: true, reason: "open_other_menu" });
 
-  const item = (action, label, { danger = false, disabled = false, hint = "", extraAttrs = "" } = {}) => {
+  const item = (action, label, { danger = false, disabled = false, hint = "", extraAttrs = "", submenu = false } = {}) => {
     const hintHtml = hint ? `<span class="msgMenu__itemHint">${esc(hint)}</span>` : "";
-    return `<button class="msgMenu__item${danger ? " msgMenu__item--danger" : ""}${disabled ? " is-disabled" : ""}" data-bot-menu-act="${escAttr(action)}" ${attrs} ${extraAttrs} ${disabled ? "disabled" : ""}><span class="msgMenu__itemMain"><span>${esc(label)}</span>${hintHtml}</span></button>`;
+    return `<button class="msgMenu__item${danger ? " msgMenu__item--danger" : ""}${disabled ? " is-disabled" : ""}" data-bot-menu-act="${escAttr(action)}" ${attrs} ${extraAttrs} ${submenu ? 'aria-haspopup="menu" aria-expanded="false" aria-controls="botServerRoleMenu"' : ""} ${disabled ? "disabled" : ""}><span class="msgMenu__itemMain"><span>${esc(label)}</span>${hintHtml}</span>${submenu ? '<span aria-hidden="true">&#8250;</span>' : ""}</button>`;
   };
   const divider = '<div class="msgMenu__divider"></div>';
   const isBanned = profile?.isBanned === true;
@@ -29075,10 +29906,18 @@ function openBotContextMenuAt(seed = {}, { point = null, anchorEl = null } = {})
     && messageModeration.sourceTable === "bot_channel_messages"
     && messageModeration.canDelete
   );
-  menu.innerHTML = [
+  menu.innerHTML = (directMessageSnapshot ? [
+    item("profile", "Perfil"),
+    item("dm_consent", directMessageSnapshot.enabled ? "Retirar autorização de mensagens" : "Permitir mensagens", {
+      disabled: !directMessageSnapshot.enabled && !!(directMessageSnapshot.busy || directMessageSnapshot.loading),
+      extraAttrs: `data-bot-dm-owner="${escAttr(directMessageSnapshot.userId)}" data-bot-dm-enabled="${directMessageSnapshot.enabled ? "0" : "1"}"`,
+    }),
+  ] : [
     item("profile", "Profile"),
     item("mention", "Mention"),
     item("view_commands", "View Commands"),
+    item("direct_message", "Mensagem privada", {disabled:!activeServerId||!profile.botId}),
+    item("audio_consent", "Partilhar / retirar microfone", {disabled:!getBotAudioConsentContext().mediaGeneration}),
     divider,
     item("copy_bot_id", "Copy Bot ID", { disabled: !(profile.publicId || profile.botId) }),
     item("copy_app_id", "Copy Application ID", { disabled: !profile.appId }),
@@ -29094,8 +29933,12 @@ function openBotContextMenuAt(seed = {}, { point = null, anchorEl = null } = {})
     canManageServerBot ? divider : "",
     item("remove", "Remove Bot / Kick Bot", { danger: true, disabled: !canRemove, hint: canRemove ? "" : "Requires Manage Apps" }),
     isBanned ? item("unban", "Unban Bot", { disabled: !canUnban, hint: canUnban ? "" : "Requires Manage Apps" }) : item("ban", "Ban Bot", { danger: true, disabled: !canBan, hint: canBan ? "" : "Requires Manage Apps" }),
-    item("roles", "Roles", { disabled: true, hint: "Coming Soon" }),
-  ].filter(Boolean).join("");
+    item("roles", "Roles", {
+      submenu: true,
+      disabled: !getServerBotRoleActionState(activeServerId, profile.botId).allowed,
+      hint: getServerRoleActionReasonText(getServerBotRoleActionState(activeServerId, profile.botId).reason),
+    }),
+  ]).filter(Boolean).join("");
   menu.classList.add("is-open");
   setAltaraContextMenuOpen({
     type: "bot",
@@ -29118,12 +29961,20 @@ function openBotContextMenuAt(seed = {}, { point = null, anchorEl = null } = {})
     if (!positionedByAnchor && cursorPoint) positionMenuAtPoint(menu, cursorPoint, { width: 286, minHeight: 180, margin: 8 });
   }
 }
-async function openBotProfileCard(seed = {}) {
-  await ensureActiveServerBotListLoaded({ force: true });
+async function openBotProfileCard(seed = {}, { anchorEl = null, anchorRect = null } = {}) {
+  closeActivePopover();
+  closeBotProfileCard();
+  const session = { userId: normId(state.user?.id || ""), anchorEl, anchorRect: anchorRect || anchorEl?.getBoundingClientRect?.() || null };
+  botProfileCardSession = session;
   const initial = normalizeBotProfileSeed(seed);
-  if (!initial.botId && !initial.publicId) return;
+  if (!initial.botId && !initial.publicId) { closeBotProfileCard(); return; }
   renderBotProfileCard(initial, { loading: true });
-  const full = normalizeBotProfileSeed(await fetchSafeBotProfile(initial));
+  await ensureActiveServerBotListLoaded({ force: true });
+  if (botProfileCardSession !== session) return;
+  if (normId(state.user?.id || "") !== session.userId) { closeBotProfileCard(); return; }
+  const full = normalizeBotProfileSeed(await fetchSafeBotProfile(normalizeBotProfileSeed(initial)));
+  if (botProfileCardSession !== session) return;
+  if (normId(state.user?.id || "") !== session.userId) { closeBotProfileCard(); return; }
   renderBotProfileCard(full, { loading: false });
 }
 function getDeveloperAppById(appId = "") {
@@ -29240,7 +30091,7 @@ function readBotAuthorizeInviteFromUrl(inviteUrl = "") {
   };
 }
 
-async function openBotAuthorizeUrlInApp(inviteUrl = "") {
+async function openBotAuthorizeUrlInApp(inviteUrl = "", { reviewServerId = "" } = {}) {
   const safeUrl = String(inviteUrl || "").trim();
   if (!safeUrl || !state.user?.id || !isAltaraDeveloperPlatformRoutesEnabled()) return false;
   const invite = readBotAuthorizeInviteFromUrl(safeUrl);
@@ -29253,6 +30104,7 @@ async function openBotAuthorizeUrlInApp(inviteUrl = "") {
     params: invite.params,
     invite,
     inAppOverlay: true,
+    reviewServerId: normId(reviewServerId),
   };
   botRouteActive = route;
   closeProfileOverlay();
@@ -29261,7 +30113,7 @@ async function openBotAuthorizeUrlInApp(inviteUrl = "") {
   setBotRouteLoading("Loading authorization...");
   await loadBotAuthorizeState(route);
   const activeSid = normId(getActiveServerContext?.()?.serverId || state.activeDm?.serverId || "");
-  if (activeSid && botAuthorizeState && !botAuthorizeState.success) {
+  if (!route.reviewServerId && activeSid && botAuthorizeState && !botAuthorizeState.success) {
     const adminServers = getDeveloperPortalAdminServers();
     const activeServer = adminServers.find((server) => server.id === activeSid) || null;
     if (activeServer) {
@@ -29272,9 +30124,10 @@ async function openBotAuthorizeUrlInApp(inviteUrl = "") {
   return true;
 }
 
-async function openBotAuthorizeUrlInAppOrBrowser(inviteUrl = "") {
-  const openedInApp = await openBotAuthorizeUrlInApp(inviteUrl).catch(() => false);
+async function openBotAuthorizeUrlInAppOrBrowser(inviteUrl = "", options = {}) {
+  const openedInApp = await openBotAuthorizeUrlInApp(inviteUrl, options).catch(() => false);
   if (openedInApp) return true;
+  if (options.reviewServerId) throw new Error("Could not open this server's permission review.");
   await openBotAuthorizeUrlInBrowser(inviteUrl);
   return true;
 }
@@ -29686,7 +30539,7 @@ function buildDeveloperBotHtml(app) {
       <div class="botToggleGrid">
         ${intentRow("Presence Intent", "Lets the bot receive presence-related data when supported.")}
         ${intentRow("Server Members Intent", "Lets the bot receive member-related data when supported.")}
-        ${intentRow("Message Content Intent", "Message content is an intent, not a normal install permission.")}
+        ${intentRow("Message Content Intent", "Configure event Intents in the web Developer Portal. Message text also requires Read Message Content, Read Message History and channel access.")}
       </div>
     </section>
   `;
@@ -29862,7 +30715,7 @@ function buildDeveloperPermissionsHtml(app) {
     ${buildDeveloperRouteHeaderHtml("Bot Permissions", "Saved permissions apply to new installs and permission updates. Existing servers must authorize changes.")}
     ${buildDeveloperRouteStatusHtml()}
     <section class="botRoutePanel">
-      <div class="botInstallWarning">Saved permissions apply to new installs and permission updates. Existing servers must authorize changes. Message content is controlled by the Message Content privileged intent on the Bot page, not by a normal install permission.</div>
+      <div class="botInstallWarning">Saved permissions apply to new installs and permission updates. Existing servers must authorize changes. Message events and text also require saved Intents in the web Developer Portal and matching client intents.</div>
       ${buildDeveloperPermissionGroupsHtml(getDeveloperSavedDefaultInstallPermissions(bot || app))}
       ${buildDeveloperPermissionOutputHtml(getDeveloperSavedDefaultInstallPermissions(bot || app))}
       <div class="settingsDeveloperActions"><button class="btn primary" type="button" data-bot-route="/developers/applications/${escAttr(appId)}/installation">Use in Installation</button></div>
@@ -30518,7 +31371,8 @@ async function loadBotAuthorizeState(route) {
     status: "",
     tone: "info",
     success: false,
-    serverId: "",
+    serverId: normId(route?.reviewServerId || ""),
+    reviewServerId: normId(route?.reviewServerId || ""),
     serverName: "",
     installing: false,
     invalidInvite,
@@ -30596,7 +31450,8 @@ function buildBotAuthorizeHtml() {
   const appName = String(app.app_name || "this application").trim();
   const botName = String(app.bot_name || app.app_name || "Bot").trim();
   const adminServers = getDeveloperPortalAdminServers();
-  const selectedServer = adminServers.find((srv) => srv.id === st.serverId) || adminServers[0] || null;
+  const reviewServerId = normId(st.reviewServerId || "");
+  const selectedServer = adminServers.find((srv) => srv.id === (reviewServerId || st.serverId)) || (!reviewServerId ? adminServers[0] : null) || null;
   const serverName = st.serverName || selectedServer?.name || "server";
   const statusHtml = st.status ? `<div class="botAuthorizeNotice" data-tone="${escAttr(st.tone || "info")}">${esc(st.status)}</div>` : "";
   if (st.success) {
@@ -30631,7 +31486,7 @@ function buildBotAuthorizeHtml() {
       </section>
     `;
   }
-  const noServers = !adminServers.length;
+  const noServers = reviewServerId ? !selectedServer : !adminServers.length;
   const hasApp = !!app.app_id;
   const hasUnknownPermissions = Array.isArray(st.unknownPermissions) && st.unknownPermissions.length > 0;
   const installBlocked = app.can_install === false;
@@ -30677,11 +31532,15 @@ function buildBotAuthorizeHtml() {
       <div class="botAuthorizeBody">
         ${statusHtml}
         ${buildBotAuthorizePermissionReviewHtml(st)}
-        <label class="botAuthorizeServerField" for="botAuthorizeServer">
+        ${reviewServerId ? `<div class="botAuthorizeServerField">
+          <span>${esc(serverLabel)}</span>
+          <b>${esc(serverName)}</b>
+          <small>${helperHtml}</small>
+        </div>` : `<label class="botAuthorizeServerField" for="botAuthorizeServer">
           <span>${esc(serverLabel)}</span>
           <select id="botAuthorizeServer" class="input"${noServers ? " disabled" : ""}>${serverOptions}</select>
           <small>${helperHtml}</small>
-        </label>
+        </label>`}
       </div>
       <div class="botAuthorizeActions botAuthorizeFooter"><button class="btn ghost" type="button" data-bot-route-close>Cancel</button><button class="btn primary" type="button" data-bot-authorize${authorizeDisabled ? " disabled" : ""}>${st.installing ? busyLabel : actionLabel}</button></div>
     </section>
@@ -30689,7 +31548,8 @@ function buildBotAuthorizeHtml() {
 }
 async function submitBotAuthorization() {
   const st = botAuthorizeState || {};
-  const serverId = normId(document.getElementById("botAuthorizeServer")?.value || "");
+  // A review opened from server settings always targets that installation.
+  const serverId = normId(st.reviewServerId || document.getElementById("botAuthorizeServer")?.value || "");
   const adminServers = getDeveloperPortalAdminServers();
   const server = adminServers.find((srv) => srv.id === serverId) || null;
   if (st.installing || botPermissionUpdateInFlight) {
@@ -30814,6 +31674,8 @@ async function submitBotAuthorization() {
 async function refreshBotInstallUiAfterChange(serverId = "") {
   const sid = normId(serverId || "");
   if (!sid) return;
+  // Notify other tabs to re-read authoritative installs, without trusting the message as membership data.
+  try { altaraMultiSessionChannel?.postMessage?.({ type: "altara_bot_install_changed", userId: normId(state.user?.id || ""), serverId: sid }); } catch (_) {}
 
   const activeCtx = getActiveServerContext();
   const activeServerId = normId(activeCtx?.serverId || "");
@@ -30914,7 +31776,7 @@ async function handleServerSettingsBotReviewPermissions(botId = "") {
       removedPermissions: diff.removed,
       authorizeUrl: url,
     });
-    await openBotAuthorizeUrlInAppOrBrowser(url);
+    await openBotAuthorizeUrlInAppOrBrowser(url, { reviewServerId: sid });
   } catch (error) {
     botPermissionUpdateDebugState.lastError = { code: error?.code || error?.error || "", message: String(error?.message || error || "unknown error") };
     logBotPermissionUpdateEvent("review_open_error", {
@@ -32002,7 +32864,7 @@ function renderBotSlashCommandPicker(input, commands = [], query = "") {
     const name = String(cmd?.name || "").trim().toLowerCase();
     const botName = String(cmd?.botName || "Bot").trim() || "Bot";
     const desc = String(cmd?.description || "Bot command").trim() || "Bot command";
-    return `<button class="botSlashCommandPicker__item${index === 0 ? " is-active" : ""}" type="button" role="option" aria-selected="${index === 0 ? "true" : "false"}" data-bot-slash-index="${index}" data-bot-slash-pick="${escAttr(name)}">${buildBotAvatarHtml(cmd?.botAvatarUrl || "", botName, "botSlashCommandPicker__avatar")}<span class="botSlashCommandPicker__body"><span class="botSlashCommandPicker__command"><b>/${esc(name)}</b></span><span class="botSlashCommandPicker__desc">${esc(desc)}</span></span><span class="botSlashCommandPicker__bot"><span>${esc(botName)}</span><i>BOT</i></span></button>`;
+    return `<button class="botSlashCommandPicker__item${index === 0 ? " is-active" : ""}" type="button" role="option" aria-selected="${index === 0 ? "true" : "false"}" data-bot-slash-index="${index}" data-bot-slash-pick="${escAttr(name)}"><div class="botSlashCommandPicker__avatar">${buildAvatarMediaHtml(cmd?.botAvatarUrl || "", { userId: cmd?.botId || "", alt: botName, fallbackChar: getGroupOrbFallbackChar(botName, "B"), deferAnimatedStorage: true })}</div><span class="botSlashCommandPicker__body"><span class="botSlashCommandPicker__command"><b>/${esc(name)}</b></span><span class="botSlashCommandPicker__desc">${esc(desc)}</span></span><span class="botSlashCommandPicker__bot"><span>${esc(botName)}</span><i>BOT</i></span></button>`;
   }).join("")}</div>`;
   document.body?.appendChild(picker);
   positionBotSlashCommandPicker(input, picker);
@@ -34568,6 +35430,12 @@ function renderOwnerReportsSettingsUiFromState() {
   const detailLines = [];
   if (activeRow.metadata?.details) detailLines.push(String(activeRow.metadata.details).trim());
   const evidenceHtml = buildOwnerReportEvidenceSectionHtml(activeRow.evidence);
+  const widgetReport = activeRow.metadata?.source === "widget" ? activeRow.metadata : null;
+  const widgetReportHtml = widgetReport ? `
+    <div class="settingsSectionTitle">Widget</div>
+    <div class="settingsReportsReason">${esc(String(widgetReport.widget_name || "Widget"))} · v${esc(String(widgetReport.widget_version || "—"))}</div>
+    <div class="settingsHint">${esc(String(widgetReport.widget_manifest || ""))}</div>
+  ` : "";
   const targetModerationState = normalizeUserModerationStateRow(activeRow.targetModerationState || {});
   const moderationHistoryHtml = buildOwnerReportModerationHistoryHtml(activeRow.moderationActions || []);
   const targetIsBanned = targetModerationState.isBanned === true;
@@ -34649,6 +35517,7 @@ function renderOwnerReportsSettingsUiFromState() {
       </div>
       <div class="settingsSectionTitle">${esc(t("settings.reports.reason", "Reason"))}</div>
       <div class="settingsReportsReason">${esc(activeRow.reason || "—")}</div>
+      ${widgetReportHtml}
       ${evidenceHtml}
       ${detailLines.length ? `
         <div class="settingsSectionTitle">${esc(t("settings.reports.additional", "Additional metadata"))}</div>
@@ -35284,8 +36153,8 @@ function readFileAsDataUrl(file) {
 }
 
 function getWidgetLabel(id) {
-  if (serverWidgetsScope && id === "calendar") return t("surface.events", "Events");
-  if (serverWidgetsScope && id === "online") return "Channels";
+  if (String(id).startsWith("custom-")) return getWidgetMarketplaceController()?.get(id)?.package?.name || "Widget";
+  if (id === "polls") return pollText("Polls", "Votações");
   return t(`widget.${String(id || "").trim()}`, String(id || "").trim() || "Widget");
 }
 
@@ -36789,6 +37658,8 @@ async function getCurrentUserVaultRiskState() {
 }
 
 async function logoutFromSettings() {
+  widgetMarketplaceController?.dispose();
+  widgetMarketplaceController = null;
   if (settingsLogoutInFlight) return;
   settingsLogoutInFlight = true;
   const button = document.getElementById("btnSettingsLogout");
@@ -38189,9 +39060,59 @@ const WIDGET_IDS = Object.freeze([
   "notes",
   "checklist",
   "timer",
+  "polls",
 ]);
 
 var serverWidgetsScope, serverWidgetsMount, serverHomeController;
+var widgetMarketplaceController;
+function getWidgetMarketplaceController() {
+  if (typeof createWidgetMarketplace !== "function") return null;
+  if (!widgetMarketplaceController) widgetMarketplaceController = createWidgetMarketplace({
+    getUserId: () => state.user?.id || "",
+    client: supabase,
+    openWebsite: path => openBotAuthorizeUrlInBrowser(buildWebsiteDeveloperPortalUrl(path)),
+    onChange: (installedId) => {
+      if (serverWidgetsScope) return;
+      ensureWidgetsLayoutState();
+      widgetsLayoutState = normalizeWidgetsLayout(widgetsLayoutState);
+      for (const id of (Array.isArray(installedId) ? installedId : installedId ? [installedId] : [])) setWidgetEnabled(id, true);
+      saveWidgetsLayoutState();
+      renderWidgets();
+    },
+  });
+  return widgetMarketplaceController;
+}
+function getAvailableWidgetIds() {
+  return serverWidgetsScope ? WIDGET_IDS : [...WIDGET_IDS, ...(getWidgetMarketplaceController()?.ids() || [])];
+}
+
+function replaceWidgetGridCards(grid, html) {
+  if (!grid.querySelector('[data-community-widget]')) { grid.innerHTML = html; return; }
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  const wanted = [...template.content.children];
+  const keep = new Set();
+  wanted.forEach((next, index) => {
+    const id = next.dataset.widgetId;
+    const existing = [...grid.children].find(card => card.dataset.widgetId === id);
+    let card = next;
+    if (id?.startsWith('custom-') && existing) {
+      card = existing;
+      card.className = next.className;
+      card.querySelectorAll('.widgetCard__tools,.widgetResizeHandle').forEach(el => el.remove());
+      next.querySelectorAll('.widgetCard__tools,.widgetResizeHandle').forEach(el => card.prepend(el));
+    }
+    keep.add(card);
+    const at = grid.children[index];
+    if (at !== card) {
+      if (card.parentElement === grid && typeof grid.moveBefore === 'function') grid.moveBefore(card, at || null);
+      else grid.insertBefore(card, at || null);
+    }
+  });
+  [...grid.children].forEach(card => { if (!keep.has(card)) card.remove(); });
+}
+
+
 const WIDGET_SIZE_ORDER = Object.freeze(["sm", "md", "lg", "tall", "xl"]);
 const WIDGET_LAYOUT_VERSION = 4;
 const WIDGET_SIZE_LABELS = Object.freeze({
@@ -38209,6 +39130,7 @@ const WIDGET_SIZE_CLASS_NAMES = Object.freeze([
   "widgetCard--size-xl",
 ]);
 const WIDGET_SIZE_DEFAULTS = Object.freeze({
+  polls: "lg",
   online: "sm",
   unread: "md",
   calendar: "sm",
@@ -38218,6 +39140,7 @@ const WIDGET_SIZE_DEFAULTS = Object.freeze({
   timer: "md",
 });
 const WIDGET_ALLOWED_SIZES = Object.freeze({
+  polls: Object.freeze(["lg", "tall"]),
   online: Object.freeze(["sm"]),
   unread: Object.freeze(["sm", "md"]),
   calendar: Object.freeze(["sm", "lg"]),
@@ -39408,7 +40331,6 @@ function getDefaultWidgetSize(widgetId) {
 }
 
 function getWidgetAllowedSizes(widgetId) {
-  if (serverWidgetsScope && widgetId === "online") return ["md", "lg", "tall"];
   const id = String(widgetId || "").trim();
   const fromMap = Array.isArray(WIDGET_ALLOWED_SIZES[id]) ? WIDGET_ALLOWED_SIZES[id] : null;
   const allowed = (fromMap || WIDGET_SIZE_ORDER)
@@ -39438,17 +40360,17 @@ function getWidgetHighlightedSize(sizeInput) {
 }
 
 function normalizeWidgetsLayout(raw) {
-  const enabled = Object.fromEntries(WIDGET_IDS.map((id) => [id, id !== "timer"]));
-  const sizes = Object.fromEntries(WIDGET_IDS.map((id) => [id, getDefaultWidgetSize(id)]));
+  const enabled = Object.fromEntries(getAvailableWidgetIds().map((id) => [id, id !== "timer" && (id !== "polls" || !!serverWidgetsScope)]));
+  const sizes = Object.fromEntries(getAvailableWidgetIds().map((id) => [id, getDefaultWidgetSize(id)]));
   const positions = {};
-  const highlighted = Object.fromEntries(WIDGET_IDS.map((id) => [id, false]));
+  const highlighted = Object.fromEntries(getAvailableWidgetIds().map((id) => [id, false]));
   if (raw?.enabled && typeof raw.enabled === "object") {
-    WIDGET_IDS.forEach((id) => {
+    getAvailableWidgetIds().forEach((id) => {
       if (typeof raw.enabled[id] === "boolean") enabled[id] = raw.enabled[id];
     });
   }
   if (raw?.sizes && typeof raw.sizes === "object") {
-    WIDGET_IDS.forEach((id) => {
+    getAvailableWidgetIds().forEach((id) => {
       sizes[id] = normalizeWidgetSize(raw.sizes[id], id);
     });
   }
@@ -39459,21 +40381,22 @@ function normalizeWidgetsLayout(raw) {
   }
   // Legacy pinned positions are ignored to keep grid packing stable and gap-free.
   if (raw?.highlighted && typeof raw.highlighted === "object") {
-    WIDGET_IDS.forEach((id) => {
+    getAvailableWidgetIds().forEach((id) => {
       if (typeof raw.highlighted[id] === "boolean") highlighted[id] = raw.highlighted[id];
     });
   }
 
   const order = [];
+  enabled.polls = !!serverWidgetsScope && raw?.enabled?.polls !== false;
   if (Array.isArray(raw?.order)) {
     raw.order.forEach((id) => {
       const key = String(id || "").trim();
-      if (!WIDGET_IDS.includes(key) || !enabled[key] || order.includes(key)) return;
+      if (!getAvailableWidgetIds().includes(key) || !enabled[key] || order.includes(key)) return;
       order.push(key);
     });
   }
 
-  WIDGET_IDS.forEach((id) => {
+  getAvailableWidgetIds().forEach((id) => {
     if (!enabled[id] || order.includes(id)) return;
     order.push(id);
   });
@@ -39481,16 +40404,14 @@ function normalizeWidgetsLayout(raw) {
   // Unpack layouts saved by older versions without losing each widget's own size.
   if (Array.isArray(raw?.stacks)) raw.stacks.forEach((candidate) => {
     (Array.isArray(candidate?.members) ? candidate.members : []).forEach((id) => {
-      if (WIDGET_IDS.includes(id) && candidate?.savedSizes?.[id]) {
+      if (getAvailableWidgetIds().includes(id) && candidate?.savedSizes?.[id]) {
         sizes[id] = normalizeWidgetSize(candidate.savedSizes[id], id);
       }
     });
   });
   if (serverWidgetsScope) {
-    for (const id of WIDGET_IDS) if (!["online","notes","checklist"].includes(id)) enabled[id]=false;
-    // Events live exclusively on their dedicated server page.
-    enabled.calendar=false;
-    if (!raw) { sizes.online="md"; }
+    // Retire channel shortcuts without resetting saved notes, tasks or sizes.
+    for (const id of getAvailableWidgetIds()) if (!["notes","checklist","polls"].includes(id)) enabled[id]=false;
     const scopedOrder=order.filter(id=>enabled[id]);
     return {version:WIDGET_LAYOUT_VERSION,serverEventsOptional:true,order:scopedOrder,enabled,sizes,positions,highlighted};
   }
@@ -39528,7 +40449,7 @@ function ensureWidgetsLayoutState() {
 function setWidgetEnabled(widgetId, enabled) {
   ensureWidgetsLayoutState();
   const id = String(widgetId || "").trim();
-  if (!WIDGET_IDS.includes(id)) return;
+  if (!getAvailableWidgetIds().includes(id)) return;
 
   widgetsLayoutState.enabled[id] = !!enabled;
   widgetsLayoutState.sizes = widgetsLayoutState.sizes || {};
@@ -39545,14 +40466,14 @@ function setWidgetEnabled(widgetId, enabled) {
 function getWidgetSize(widgetId) {
   ensureWidgetsLayoutState();
   const id = String(widgetId || "").trim();
-  if (!WIDGET_IDS.includes(id)) return "md";
+  if (!getAvailableWidgetIds().includes(id)) return "md";
   return normalizeWidgetSize(widgetsLayoutState?.sizes?.[id], id);
 }
 
 function setWidgetSize(widgetId, sizeInput) {
   ensureWidgetsLayoutState();
   const id = String(widgetId || "").trim();
-  if (!WIDGET_IDS.includes(id)) return;
+  if (!getAvailableWidgetIds().includes(id)) return;
   widgetsLayoutState.sizes = widgetsLayoutState.sizes || {};
   const size = String(sizeInput || "").trim().toLowerCase();
   if (!getWidgetAllowedSizes(id).includes(size)) return;
@@ -39563,14 +40484,14 @@ function setWidgetSize(widgetId, sizeInput) {
 function isWidgetHighlighted(widgetId) {
   ensureWidgetsLayoutState();
   const id = String(widgetId || "").trim();
-  if (!WIDGET_IDS.includes(id)) return false;
+  if (!getAvailableWidgetIds().includes(id)) return false;
   return !!widgetsLayoutState?.highlighted?.[id];
 }
 
 function setWidgetHighlighted(widgetId, highlightedInput) {
   ensureWidgetsLayoutState();
   const id = String(widgetId || "").trim();
-  if (!WIDGET_IDS.includes(id)) return false;
+  if (!getAvailableWidgetIds().includes(id)) return false;
   widgetsLayoutState.highlighted = widgetsLayoutState.highlighted || {};
   const next = !!highlightedInput;
   widgetsLayoutState.highlighted[id] = next;
@@ -39586,10 +40507,10 @@ function toggleWidgetHighlighted(widgetId) {
 function setExclusiveWidgetHighlighted(widgetId) {
   ensureWidgetsLayoutState();
   const id = String(widgetId || "").trim();
-  if (!WIDGET_IDS.includes(id)) return false;
+  if (!getAvailableWidgetIds().includes(id)) return false;
   widgetsLayoutState.highlighted = widgetsLayoutState.highlighted || {};
   const nextActive = !widgetsLayoutState.highlighted[id];
-  WIDGET_IDS.forEach((wid) => {
+  getAvailableWidgetIds().forEach((wid) => {
     widgetsLayoutState.highlighted[wid] = false;
   });
   if (nextActive) widgetsLayoutState.highlighted[id] = true;
@@ -39600,7 +40521,7 @@ function setExclusiveWidgetHighlighted(widgetId) {
 function getWidgetPinnedPosition(widgetId) {
   ensureWidgetsLayoutState();
   const id = String(widgetId || "").trim();
-  if (!WIDGET_IDS.includes(id)) return null;
+  if (!getAvailableWidgetIds().includes(id)) return null;
   const row = widgetsLayoutState?.positions?.[id];
   if (!row || typeof row !== "object") return null;
   return {
@@ -39612,7 +40533,7 @@ function getWidgetPinnedPosition(widgetId) {
 function setWidgetPinnedPosition(widgetId, colInput, rowInput, { prioritize = true } = {}) {
   ensureWidgetsLayoutState();
   const id = String(widgetId || "").trim();
-  if (!WIDGET_IDS.includes(id)) return;
+  if (!getAvailableWidgetIds().includes(id)) return;
   widgetsLayoutState.positions = widgetsLayoutState.positions || {};
   widgetsLayoutState.positions[id] = {
     col: clampInt(colInput, 1, 12, 1),
@@ -39627,13 +40548,13 @@ function setWidgetPinnedPosition(widgetId, colInput, rowInput, { prioritize = tr
 
 function getActiveWidgetIds() {
   ensureWidgetsLayoutState();
-  const active = (widgetsLayoutState?.order || []).filter((id) => WIDGET_IDS.includes(id) && widgetsLayoutState?.enabled?.[id]);
-  return active.length ? active : WIDGET_IDS.filter((id) => widgetsLayoutState?.enabled?.[id] === true);
+  const active = (widgetsLayoutState?.order || []).filter((id) => getAvailableWidgetIds().includes(id) && widgetsLayoutState?.enabled?.[id]);
+  return active.length ? active : getAvailableWidgetIds().filter((id) => widgetsLayoutState?.enabled?.[id] === true);
 }
 
 function shiftWidgetSize(widgetId, direction = 1) {
   const id = String(widgetId || "").trim();
-  if (!WIDGET_IDS.includes(id)) return false;
+  if (!getAvailableWidgetIds().includes(id)) return false;
   const allowed = getWidgetAllowedSizes(id);
   if (allowed.length <= 1) return false;
   const current = getWidgetSize(id);
@@ -39661,7 +40582,7 @@ function getWidgetsGridMetrics() {
   const cellWidth = Math.max(120, (width - (colGap * (colCount - 1))) / colCount);
   const varRowSize = Number.parseFloat(styles.getPropertyValue("--widgets-row-size") || "");
   const autoRowSize = Number.parseFloat(styles.gridAutoRows || "");
-  const cellHeight = Math.max(serverWidgetsScope ? 1 : 120, varRowSize || autoRowSize || 164);
+  const cellHeight = Math.max(120, varRowSize || autoRowSize || 164);
   return { grid, colCount, colGap, rowGap, cellWidth, cellHeight };
 }
 
@@ -39763,25 +40684,6 @@ function applyWidgetGridPlacements(grid, activeIds, colCountInput, options = {})
   const placements = options && typeof options === "object" && options.placements && typeof options.placements === "object"
     ? options.placements
     : computeWidgetGridPlacements(activeIds, colCountInput, options);
-  if (serverWidgetsScope) {
-    const host = grid.closest(".serverHome");
-    if (host) {
-      const bottom = Math.min(window.innerHeight, host.getBoundingClientRect().bottom);
-      const padding = parseFloat(getComputedStyle(host).paddingBottom) || 0;
-      const available = Math.max(1, bottom - padding - grid.getBoundingClientRect().top);
-      const rows = Math.max(1, ...Object.values(placements).map(slot => slot.row + slot.rows - 1));
-      const gap = parseFloat(getComputedStyle(grid).rowGap) || 16;
-      // The viewport is a ceiling, not a target: preserve normal homepage sizes
-      // when there is spare space rather than stretching cards to fill it.
-      const naturalRowSize = parseFloat(getComputedStyle(grid).getPropertyValue("--widgets-natural-row-size")) || 154;
-      const rowSize = Math.max(1, Math.min(naturalRowSize, Math.floor((available - gap * (rows - 1)) / rows)));
-      const value = `${rowSize}px`;
-      if (grid.style.gridAutoRows !== value) {
-        grid.style.setProperty("--widgets-row-size", value);
-        grid.style.gridAutoRows = value;
-      }
-    }
-  }
   const cardById = new Map();
   grid.querySelectorAll(".widgetCard[data-widget-id]").forEach((card) => {
     const id = String(card.getAttribute("data-widget-id") || "").trim();
@@ -39989,7 +40891,7 @@ function moveWidget(dragId, targetId = "", position = "before") {
 function moveWidgetToGridCell(dragId, cellInput, colCountInput = 0) {
   ensureWidgetsLayoutState();
   const id = String(dragId || "").trim();
-  if (!id || !WIDGET_IDS.includes(id)) return false;
+  if (!id || !getAvailableWidgetIds().includes(id)) return false;
   const cell = cellInput && typeof cellInput === "object" ? cellInput : null;
   if (!cell) return false;
 
@@ -40007,7 +40909,7 @@ function moveWidgetToGridCell(dragId, cellInput, colCountInput = 0) {
 function projectWidgetLayoutToGridCell(dragId, cellInput, colCountInput = 0, options = {}) {
   ensureWidgetsLayoutState();
   const id = String(dragId || "").trim();
-  if (!id || !WIDGET_IDS.includes(id)) return null;
+  if (!id || !getAvailableWidgetIds().includes(id)) return null;
   const cell = cellInput && typeof cellInput === "object" ? cellInput : null;
   if (!cell) return null;
 
@@ -40535,10 +41437,7 @@ function getWidgetGridCellFromEvent(grid, e, widgetId = "", anchor = null, metri
   const rawRow = Math.round(y / rowStep) + 1;
   const maxColStart = Math.max(1, colCount - dims.cols + 1);
   const col = clampInt(rawCol, 1, maxColStart, 1);
-  const maxRowStart = serverWidgetsScope
-    ? Math.max(1, Math.floor((rect.height + metrics.rowGap) / rowStep) - dims.rows + 1)
-    : 999;
-  const row = clampInt(rawRow, 1, maxRowStart, 1);
+  const row = clampInt(rawRow, 1, 999, 1);
   return { col, row, cols: dims.cols, rows: dims.rows, colCount };
 }
 
@@ -41572,29 +42471,41 @@ function getWidgetAddCatalogEntry(widgetId = "") {
   const id = String(widgetId || "").trim();
   const isTimer = id === "timer";
   const allowedSizes = getWidgetAllowedSizes(id);
+  const custom = !serverWidgetsScope && id.startsWith("custom-") ? getWidgetMarketplaceController()?.get(id) : null;
+  let sourceLabel = "";
+  if (custom?.package.kind === "hosted") {
+    try {
+      const url = new URL(custom.package.entry_url);
+      const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+      sourceLabel = `${local ? t("widgets.source.local", "Local test") : t("widgets.source.online", "Online")} · ${url.host}`;
+    } catch (_) {}
+  }
   return {
     id,
     type: id,
     category: isTimer ? "Focus" : "Widgets",
     label: isTimer ? t("widget.timer.add_label", "Focus Timer") : getWidgetLabel(id),
-    description: isTimer
+    removable: !!custom,
+    description: sourceLabel || (isTimer
       ? t("widget.timer.add_subtitle", "Study 20 min - Break 5 min")
       : id === "checklist"
         ? t("widgets.checklist.size_hint", "G: wide · V: tall")
-        : t("widgets.add.default_subtitle", "Personalize your home grid."),
+        : t("widgets.add.default_subtitle", "Personalize your home grid.")),
     iconHtml: isTimer ? "&#9201;" : "+",
     sizes: allowedSizes.map((size) => WIDGET_SIZE_LABELS[size] || String(size || "").toUpperCase()),
   };
 }
 
 function getWidgetAddCatalog() {
-  return WIDGET_IDS.map((id) => getWidgetAddCatalogEntry(id));
+  return getAvailableWidgetIds().filter(id => serverWidgetsScope ? ["notes", "checklist", "polls"].includes(id) : id !== "polls")
+    .map((id) => getWidgetAddCatalogEntry(id));
 }
 
 function renderWidgetAddButtonHtml(widgetId = "") {
   const entry = getWidgetAddCatalogEntry(widgetId);
   const sizeBadges = entry.sizes.map((size) => `<span>${esc(size)}</span>`).join("");
   return `
+    
     <button class="btn ghost widgetsAddBtn widgetsAddBtn--${escAttr(entry.id)}" type="button" data-widget-add="${escAttr(entry.id)}" aria-label="${escAttr(t("widgets.add.action", "Add widget") + ": " + entry.label)}">
       <span class="widgetsAddBtn__icon" aria-hidden="true">${entry.iconHtml}</span>
       <span class="widgetsAddBtn__body">
@@ -41603,6 +42514,7 @@ function renderWidgetAddButtonHtml(widgetId = "") {
       </span>
       <span class="widgetsAddBtn__sizes" aria-hidden="true">${sizeBadges}</span>
     </button>
+
   `;
 }
 
@@ -41636,7 +42548,7 @@ function widgetEditorToolsHtml(widgetId) {
 
 function widgetCardHtml(widgetId, stats) {
   const id = String(widgetId || "").trim();
-  if (!WIDGET_IDS.includes(id)) return "";
+  if (!getAvailableWidgetIds().includes(id)) return "";
   const baseSizeId = getWidgetSize(id);
   const isHighlighted = false;
   const sizeId = isHighlighted ? getWidgetHighlightedSize(baseSizeId) : baseSizeId;
@@ -41654,7 +42566,10 @@ function widgetCardHtml(widgetId, stats) {
 
   const draggable = "false";
 
-  if (serverWidgetsScope && id === "online") return `<article class="${classes} serverNativeWidget" data-widget-id="${id}" draggable="false">${tools}<div class="widgetCard__label">${esc(getWidgetLabel(id))}</div><div class="serverNativeWidgetBody">${serverWidgetsScope.body("channels")}</div></article>`;
+  if (id.startsWith("custom-")) return `<article class="${classes}" data-widget-id="${escAttr(id)}" draggable="false">${tools}<div class="widgetCard__label">${esc(getWidgetLabel(id))}</div><div class="communityWidgetBody" data-community-widget="${escAttr(id)}"></div></article>`;
+
+  if (serverWidgetsScope && id === "polls") return `<article class="${classes} serverNativeWidget" data-widget-id="polls" draggable="false">${tools}<div class="widgetCard__label">${esc(getWidgetLabel(id))}</div><div class="serverNativeWidgetBody serverPollWidget" data-server-polls-widget="${escAttr(serverWidgetsScope.id)}"></div></article>`;
+
   const hydrationKeys = ({ friends: ["friends"], pending: ["requests"], online: ["friends", "presence"], unread: ["contacts", "groups"] })[id];
   const hydrationHint = hydrationKeys ? coldCollectionHint(hydrationKeys) : "";
   if (hydrationHint) return `<article class="${classes}" data-widget-id="${escAttr(id)}">${tools}<div class="widgetCard__label">${esc(getWidgetLabel(id))}</div>${hydrationHint}</article>`;
@@ -41839,6 +42754,17 @@ function widgetCardHtml(widgetId, stats) {
 
 function renderWidgetsEditorUi(activeIds = []) {
   const editBtn = $("btnWidgetsEditMode");
+  if ($("btnWidgetsManage")) $("btnWidgetsManage").hidden = !!serverWidgetsScope;
+  if (editBtn && !serverWidgetsScope) {
+    let manage = $("btnWidgetsManage");
+    if (!manage) {
+      manage = document.createElement("button"); manage.id = "btnWidgetsManage"; manage.type = "button"; manage.className = "btn ghost";
+      editBtn.before(manage);
+    }
+    manage.textContent = t("widgets.manage", "Manage widgets");
+    manage.onclick = () => getWidgetMarketplaceController()?.open("mine");
+  }
+
   if (editBtn) {
     const txt = widgetsEditMode ? t("actions.finish_edit", "Finish editing") : t("actions.edit_widgets", "Edit widgets");
     editBtn.textContent = txt;
@@ -41864,7 +42790,7 @@ function renderWidgetsEditorUi(activeIds = []) {
   const addPanel = $("widgetsAddPanel");
   if (!addPanel) return;
 
-  const available = WIDGET_IDS.filter((id) => (!serverWidgetsScope || ["online","notes","checklist"].includes(id)) && !widgetsLayoutState?.enabled?.[id]);
+  const available = getAvailableWidgetIds().filter((id) => (serverWidgetsScope ? ["notes","checklist","polls"].includes(id) : id !== "polls") && !widgetsLayoutState?.enabled?.[id]);
   addPanel.classList.toggle("hidden", !widgetsEditMode);
   addPanel.setAttribute("aria-hidden", widgetsEditMode ? "false" : "true");
 
@@ -41873,20 +42799,24 @@ function renderWidgetsEditorUi(activeIds = []) {
     return;
   }
 
+  const marketLink = !serverWidgetsScope ? `<button id="btnWidgetMarketplace" class="btn ghost" type="button">${esc(t("widgets.marketplace.add", "Add widget"))}</button>` : "";
+  const bindMarketLink = () => { const button = $("btnWidgetMarketplace"); if (button) button.onclick = () => getWidgetMarketplaceController()?.open(); };
   if (!available.length) {
     addPanel.innerHTML = `
-      <div class="widgetsAddPanel__title">${esc(t("widgets.add.title", "Add widget"))}</div>
+      <div class="widgetsAddPanel__title">${esc(t("widgets.add.title", "Add widget"))}</div>${marketLink}
       <div class="widgetsAddPanel__empty">${esc(t("widgets.add.empty", "All widgets are already active."))}</div>
     `;
+    bindMarketLink();
     return;
   }
 
   addPanel.innerHTML = `
-    <div class="widgetsAddPanel__title">${esc(t("widgets.add.title", "Add widget"))}</div>
+    <div class="widgetsAddPanel__title">${esc(t("widgets.add.title", "Add widget"))}</div>${marketLink}
     <div class="widgetsAddPanel__list">
       ${available.map((id) => renderWidgetAddButtonHtml(id)).join("")}
     </div>
   `;
+  bindMarketLink();
 }
 
 function isWidgetsViewActive() {
@@ -42006,6 +42936,7 @@ function finishWidgetChecklistDrag(event, commit = false) {
 }
 
 function cleanupWidgetsView() {
+  widgetMarketplaceController?.stop();
   disposeWidgetsViewBindings();
   if (!widgetsEditMode) return;
   widgetsEditMode = false;
@@ -43223,6 +44154,12 @@ function dockStageIntoDm(yes, { barInSidebar = false } = {}) {
 }
 
 function setMidMode(mode, options = {}) {
+  if (mode !== "bot_dm") {
+    botDirectMessagesController?.close();
+    botDirectMessageView?.close();
+    if (state.activeDm?.kind === "bot_dm") state.activeDm = null;
+    syncBotDirectMessageSidebarHighlight();
+  }
   if (mode !== "dm" && serverWidgetsMount) serverHomeController?.close();
   if (typeof dmMessageSelection !== "undefined" && mode !== "dm") dmMessageSelection?.reset();
   const dmMain = document.getElementById("dmMain");
@@ -43230,6 +44167,8 @@ function setMidMode(mode, options = {}) {
   const midPanel = dmMain.closest(".panel.mid");
   const midBody = dmMain.closest(".panelBody") || document.querySelector(".midBody");
   const appShell = document.querySelector(".app");
+  midPanel?.classList.toggle("is-bot-dm-conversation-open", mode === "bot_dm");
+  dmMain.setAttribute("aria-hidden", mode === "bot_dm" ? "true" : "false");
   const activeMeta = getActiveConversationMeta(activeDmId) || state.activeDm || {};
   const isServerConversation = isServerConversationKind(activeMeta?.kind) || !!normId(activeMeta?.serverId || "");
   const callActiveNow = !!(
@@ -43241,7 +44180,18 @@ function setMidMode(mode, options = {}) {
     )
   );
 
-  if (mode === "dm") {
+  if (mode === "bot_dm") {
+    cleanupWidgetsView();
+    clearServerVoiceCallViewVisualState({ hideStage: false });
+    dockStageIntoDm(false);
+    dmMain.style.display = "none";
+    midPanel?.classList.add("is-dm-conversation-open");
+    midBody?.classList.add("is-dm-open");
+    appShell?.classList.add("dm-focus");
+    ["tabWidgets", "tabFriends", "tabPending", "tabAdd"].forEach(id => { const tab = $(id); if (tab) tab.style.display = "none"; });
+    setDmJumpLatestVisible(false);
+    setRightSidebarInteractionModeForConversation({ serverMode:false, applyCollapsed:true });
+  } else if (mode === "dm") {
     cleanupWidgetsView();
     midPanel?.classList.add("is-dm-conversation-open");
     $("tabWidgets").style.display = "none";
@@ -47996,6 +48946,7 @@ function applyServerVoiceV2MemberRow(row = {}, reason = "unknown", options = {})
   );
   const suppressForLocalExitPaint = shouldSuppressServerVoiceMembershipRenderForLocalExit(normalized);
   serverVoiceV2MembersByUser.set(normalized.userId, normalized);
+  if(normalized.userId===normId(state.user?.id||''))botPlatformAudioBridge?.sync();
   globalThis.__ALTARA_VOICE_HEARTBEAT_DIAGNOSTICS__?.record("apply_accepted", { row: normalized, previous, reason });
   syncServerVoicePublicCallEpochs(normalized.serverId);
   rememberServerVoiceV2StageAssignment(normalized, reason);
@@ -50371,7 +51322,22 @@ function buildVoiceV2ParticipantAttributes({
   };
 }
 
+function isCurrentChannelMediaBotParticipant(identity = "", conversationId = "") {
+  const session = currentServerVoiceV2Session;
+  const raw = String(identity || "").trim();
+  const convId = normId(conversationId || "");
+  // This exception belongs only to the authenticated per-channel Room. Bots
+  // have their own fenced identities, not human membership assignments.
+  return !!(session?.mediaAuthority
+    && (!convId || normId(session.conversationId) === convId)
+    && session.serverId && session.voiceChannelId
+    && session.roomName === `server-voice-v2:${session.serverId}:${session.voiceChannelId}`
+    && isBotVoiceParticipantIdentity(raw) && getBotIdFromVoiceParticipantIdentity(raw));
+}
+
 function shouldSubscribeToVoiceV2Participant(participant = null) {
+  if (currentServerVoiceV2Session?.mediaAuthority
+    && isCurrentChannelMediaBotParticipant(participant?.identity)) return true;
   if (isCurrentServerVoiceV3Session()) {
     return !!getVoiceV2ParticipantUserId(participant);
   }
@@ -50412,9 +51378,19 @@ function reconcileVoiceV2Subscriptions(reason = "manual") {
     }
   }
   const stage = document.getElementById("callStage");
+  const stageConversationId = currentServerVoiceV2Session?.conversationId || serverVoiceTransportConversationId;
+  const stageTransport = currentServerVoiceV2Session?.mediaAuthority
+    ? getServerVoiceTransportSnapshot(stageConversationId) : null;
   for (const tile of stage?.querySelectorAll?.("[data-call-user-id]") || []) {
     const uid = tile.getAttribute("data-call-user-id");
-    if (uid && !isServerVoiceStageMediaAllowed(currentServerVoiceV2Session?.conversationId || serverVoiceTransportConversationId, uid)) {
+    // Bot participant cards belong to the authenticated channel Room, not human
+    // membership rows. This does not grant screen media or retain departed bots.
+    const currentRoomBotCard = currentServerVoiceV2Session?.mediaAuthority
+      && isCurrentChannelMediaBotParticipant(uid, stageConversationId)
+      && stageTransport?.participantsByUser?.[uid]?.presentInRoom === true
+      && normalizeStageTileType(tile.getAttribute("data-call-tile-type")) !== "screenshare"
+      && normalizeRelayMediaKind(tile.getAttribute("data-call-media-type")) !== "share";
+    if (uid && !currentRoomBotCard && !isServerVoiceStageMediaAllowed(stageConversationId, uid)) {
       for (const video of tile.querySelectorAll("video")) { video.pause?.(); video.srcObject = null; }
       tile.remove();
     }
@@ -50648,7 +51624,12 @@ function getStableServerVoiceV2StageParticipantIds(conversationId, {
     liveKitSource: liveKit.source,
     participantIds: nextIds,
   });
-  return nextIds;
+  const channelBotIds = currentServerVoiceV2Session?.mediaAuthority
+    ? Object.entries(getServerVoiceTransportSnapshot(convId)?.participantsByUser || {})
+    .filter(([identity, participant]) => participant?.presentInRoom === true
+      && isCurrentChannelMediaBotParticipant(identity, convId))
+    .map(([identity]) => identity) : [];
+  return Array.from(new Set([...nextIds, ...channelBotIds]));
 }
 
 function handleServerVoiceV2ParticipantConnected(details = {}) {
@@ -53804,7 +54785,8 @@ function isServerChannelActivelyViewed(context = {}) {
   const sameConversation = !!(convId && activeConvId && convId === activeConvId);
   const sameServerChannel = !!(sid && channelId && activeServerId === sid && activeChannelId === channelId);
   const dmMain = document.getElementById("dmMain");
-  return !!(isElementActuallyVisible(dmMain) && (sameConversation || sameServerChannel));
+  return !!(isElementActuallyVisible(dmMain) && (sameConversation || sameServerChannel)
+    && isDmConversationActivelyViewed(activeConvId));
 }
 
 function getServerNotificationSoundSkipReason(context = {}) {
@@ -53816,20 +54798,68 @@ function getServerNotificationSoundSkipReason(context = {}) {
   return "";
 }
 
+function getBotNotificationMentionUserIds(row = {}) {
+  const users = row?.metadata?.notification_mentions?.users;
+  if (!Array.isArray(users) || users.length > 10) return [];
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return [...new Set(users.filter(id => typeof id === 'string' && uuid.test(id)).map(id => id.toLowerCase()))];
+}
+
+function isCurrentUserBotNotificationMention(row = {}) {
+  const userId = normId(state.user?.id || '').toLowerCase();
+  return !!userId && getBotNotificationMentionUserIds(row).includes(userId);
+}
+
+function claimIncomingBotChannelMessageNotification(row = {}, context = {}) {
+  const userId = normId(state.user?.id || '');
+  const messageId = normId(row?.id || '');
+  const serverId = normId(context.serverId || '');
+  const channelId = normId(context.channelId || '');
+  if (!userId || !messageId || !serverId || !channelId) return false;
+  const key = `${userId}:${serverId}:${channelId}:${messageId}`;
+  if (incomingBotChannelMessageNotificationSeenByKey.has(key)) return false;
+  incomingBotChannelMessageNotificationSeenByKey.set(key, true);
+  while (incomingBotChannelMessageNotificationSeenByKey.size > 2048) {
+    incomingBotChannelMessageNotificationSeenByKey.delete(incomingBotChannelMessageNotificationSeenByKey.keys().next().value);
+  }
+  return true;
+}
+
 function playServerMessageNotificationCue(context = {}, senderUserId = "", sourceTable = "messages") {
   const sid = normId(context.serverId || context.server_id || "");
   const channelId = normId(context.channelId || context.channel_id || context.conversationId || "");
   const skipReason = getServerNotificationSoundSkipReason(context);
   if (skipReason) return { played: false, skippedReason: skipReason };
+  if (sourceTable === 'bot_channel_messages' && getServerNotificationMode(sid) === 'mentions'
+    && !getBotNotificationMentionUserIds(context.botMessageRow).includes(normId(state.user?.id || '').toLowerCase())) {
+    return {played:false, skippedReason:'bot_not_mentioned'};
+  }
   const key = `${sid || "server"}:${channelId || "channel"}`;
   const now = Date.now();
   const last = Number(serverUnreadSoundLastPlayedByKey.get(key) || 0) || 0;
   if (now - last < SERVER_MESSAGE_NOTIFICATION_SOUND_COOLDOWN_MS) return { played: false, skippedReason: "throttled" };
   const notificationMeta = { type: sourceTable === "bot_channel_messages" ? "server_bot_message" : "server_message", sender_user_id: normId(senderUserId || "") || null };
   if (!shouldNotifyInFocus(notificationMeta)) return { played: false, skippedReason: "focus_suppressed" };
+  if (shouldSuppressNotificationSoundForStatus("ui", "message_received", notificationMeta)) return { played: false, skippedReason: "status_suppressed" };
   serverUnreadSoundLastPlayedByKey.set(key, now);
-  playUiCue("message_received", { ...notificationMeta, ownerType: "messages", reason: "incoming_server_message" });
-  return { played: true, skippedReason: "" };
+  const isBot = sourceTable === "bot_channel_messages";
+  const accountId = normId(state.user?.id || '');
+  const playbackCurrent = () => normId(state.user?.id || '') === accountId
+    && canCurrentUserViewServerChannelSync(sid, normId(context.channelId || ''))
+    && !getServerNotificationSoundSkipReason(context) && shouldNotifyInFocus(notificationMeta)
+    && !shouldSuppressNotificationSoundForStatus("ui", "message_received", notificationMeta);
+  const result = { played: !isBot, skippedReason: isBot ? "sound_pending" : "" };
+  const playback = playUiCue("message_received", { ...notificationMeta, ownerType: "messages", reason: "incoming_server_message",
+    ...(isBot ? {isPlaybackCurrent:playbackCurrent} : {}) });
+  result.completion = Promise.resolve(playback).then(outcome => {
+    result.played = !!outcome?.played && (!isBot || playbackCurrent());
+    result.skippedReason = result.played ? "" : (outcome?.failureCategory || "sound_failed");
+    return {played:result.played, skippedReason:result.skippedReason};
+  }).catch(() => {
+    result.played = false; result.skippedReason = "sound_failed";
+    return {played:false, skippedReason:"sound_failed"};
+  });
+  return result;
 }
 
 function buildServerChannelNotificationMappingSnapshot() {
@@ -53928,7 +54958,7 @@ function getCanonicalPrivateUnreadState() {
 }
 
 function getUnreadDmWidgetCount() {
-  return getCanonicalPrivateUnreadState().unreadMessageCount;
+  return getCanonicalPrivateUnreadState().unreadMessageCount + (botDirectMessagesController?.getRows() || []).reduce((total, row) => total + Math.max(0, Number(row.unreadCount) || 0), 0);
 }
 
 function cleanupServerConversationDmState({ conversationId = "", senderUserId = "", reason = "server-channel-classified" } = {}) {
@@ -54126,8 +55156,14 @@ function applyIncomingServerChannelUnread(context = {}, {
   const isOwnMessage = context.isOwnMessage === true || !!(senderUserId && senderUserId === normId(state.user?.id || ""));
   if (activeMatch || isOwnMessage) {
     if (activeMatch) clearServerChannelUnread({ serverId, channelId, conversationId });
-    logNotificationDebug("incoming_server_message", { sourceTable, messageId: row?.id, context: context.type || "server_channel", classificationReason: context.classificationReason || "server_channel_mapping", serverId, channelId, conversationId, senderUserId, isOwnMessage, skippedOwn: isOwnMessage, activeMatch, unreadApplied: false, appliedServerUnread: false, appliedDmUnread: false, soundPlayed: false, skippedReason: activeMatch ? "active_channel" : "own_message", ...cleanup });
-    return { unreadApplied: false, soundPlayed: false, skippedReason: activeMatch ? "active_channel" : "own_message" };
+    const sound = activeMatch && !isOwnMessage && !suppressSound && sourceTable === "bot_channel_messages" && isCurrentUserBotNotificationMention(row)
+      ? playServerMessageNotificationCue({serverId,channelId,conversationId,botMessageRow:row}, senderUserId, sourceTable)
+      : {played:false, skippedReason:activeMatch ? "active_channel" : "own_message"};
+    const result = {unreadApplied:false,soundPlayed:sound.played,skippedReason:sound.skippedReason};
+    const log = () => logNotificationDebug("incoming_server_message", { sourceTable, messageId: row?.id, context: context.type || "server_channel", classificationReason: context.classificationReason || "server_channel_mapping", serverId, channelId, conversationId, senderUserId, isOwnMessage, skippedOwn: isOwnMessage, activeMatch, unreadApplied: false, appliedServerUnread: false, appliedDmUnread: false, soundPlayed: result.soundPlayed, skippedReason: result.skippedReason, ...cleanup });
+    if (sound.completion) result.completion = sound.completion.then(completed => {result.soundPlayed=completed.played;result.skippedReason=completed.skippedReason;log();return result;});
+    else log();
+    return result;
   }
   const prev = Math.max(0, Number(channelUnreadByChannelId.get(channelId) || 0) || 0);
   channelUnreadByChannelId.set(channelId, Math.min(999, prev + 1));
@@ -54141,12 +55177,15 @@ function applyIncomingServerChannelUnread(context = {}, {
   }
   const sound = suppressSound
     ? { played: false, skippedReason: "snapshot_reconciliation" }
-    : playServerMessageNotificationCue({ serverId, channelId, conversationId }, senderUserId, sourceTable);
+    : playServerMessageNotificationCue({ serverId, channelId, conversationId, botMessageRow: sourceTable === 'bot_channel_messages' ? row : undefined }, senderUserId, sourceTable);
   applyServerOrbNotificationDecorations();
   applyServerChannelUnreadDecorations();
   scheduleDmChromeRender({ decorations: true, groupsRail: true, widgets: true });
-  logNotificationDebug("incoming_server_message", { sourceTable, messageId: row?.id, context: context.type || "server_channel", classificationReason: context.classificationReason || "server_channel_mapping", serverId, channelId, conversationId, senderUserId, isOwnMessage, skippedOwn: isOwnMessage, activeMatch, unreadApplied: true, appliedServerUnread: true, appliedDmUnread: false, soundPlayed: sound.played, skippedReason: sound.skippedReason, ...cleanup });
-  return { unreadApplied: true, soundPlayed: sound.played, skippedReason: sound.skippedReason };
+  const result = {unreadApplied:true,soundPlayed:sound.played,skippedReason:sound.skippedReason};
+  const log = () => logNotificationDebug("incoming_server_message", { sourceTable, messageId: row?.id, context: context.type || "server_channel", classificationReason: context.classificationReason || "server_channel_mapping", serverId, channelId, conversationId, senderUserId, isOwnMessage, skippedOwn: isOwnMessage, activeMatch, unreadApplied: true, appliedServerUnread: true, appliedDmUnread: false, soundPlayed: result.soundPlayed, skippedReason: result.skippedReason, ...cleanup });
+  if (sourceTable === "bot_channel_messages" && sound.completion) result.completion = sound.completion.then(completed => {result.soundPlayed=completed.played;result.skippedReason=completed.skippedReason;log();return result;});
+  else log();
+  return result;
 }
 
 function exposeAltaraNotificationsDebugHelper() {
@@ -55003,7 +56042,8 @@ function buildServerChannelItemMenuHtml(target = null) {
   const deleteLabel = isChannel ? t("server.channel.delete", "Delete Channel") : t("server.category.delete", "Delete Category");
   return [
     `<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="settings"${canManage ? "" : " disabled"}>${esc(label)}</button>`,
-    `<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="edit"${canManage ? "" : " disabled"}>${esc(editLabel)}</button>`,
+    isChannel ? `<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="edit"${canManage ? "" : " disabled"}>${esc(editLabel)}</button>` : "",
+    isChannel && String(target?.channelType||'text')==='text' ? '<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="threads">Threads</button>' : '',
     `${!isChannel ? `<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="create_channel"${canManage ? "" : " disabled"}>${esc(t("server.menu.create_channel", "Create Channel"))}</button>` : ""}`,
     `<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="copy_id">${esc(idLabel)}</button>`,
     `<div class="msgMenu__divider"></div>`,
@@ -55017,20 +56057,17 @@ async function runServerChannelItemMenuAction(action = "", target = null) {
   const sid = normId(target?.serverId || "");
   if (!act || !sid) return;
 
-  if (act === "settings") {
-    if (itemType === "category") {
-      await openServerChannelCreateModal({
-        serverId: sid,
-        name: getServerRowById(sid)?.name || "Server",
-        iconUrl: getServerRowById(sid)?.iconUrl || "",
-      }, {
-        mode: "edit",
-        defaultType: "category",
-        categoryId: target?.categoryId || "",
-        name: target?.label || "Category",
-      });
-      return;
+  if(act==='threads' && itemType==='channel') {
+    const channelId = normId(target?.channelId || '');
+    if (!canCurrentUserViewServerChannelSync(sid, channelId)) return;
+    if (normId(state.activeDm?.serverId || '') !== sid || normId(state.activeDm?.channelId || '') !== channelId) {
+      const channel = findServerChannelContextByChannelId(channelId, sid)?.channel;
+      if (!channel || !await openVisibleServerChannelAfterPermissionChange(sid, channel, 'bot_threads_open')) return;
     }
+    await getBotPlatformSurfacesUi().openThreads({serverId:sid,channelId});return;
+  }
+
+  if (act === "settings" || (act === "edit" && itemType === "category")) {
     await openChannelSettingsModal(target);
     return;
   }
@@ -55284,6 +56321,9 @@ function getChannelSettingsChannelRow() {
   const sid = normId(stateRow.serverId || "");
   const cid = normId(stateRow.channelId || "");
   const convId = normId(stateRow.conversationId || "");
+  if (stateRow.itemType === "category") {
+    return (serverChannelCategoryListByServerId.get(sid) || []).find(row => normId(row.id) === normId(stateRow.categoryId)) || stateRow.channel || null;
+  }
   return (serverChannelListByServerId.get(sid) || []).find((row) => (
     (cid && normId(row?.id || "") === cid)
     || (convId && normId(row?.conversationId || "") === convId)
@@ -55330,7 +56370,9 @@ function getChannelPermissionEditorTargets(serverId = "", channelId = "") {
   const sid = normId(serverId || "");
   const cid = normId(channelId || "");
   const targets = [{ targetType: "everyone", targetId: sid }];
-  getChannelPermissionOverwrites(cid).forEach((row) => {
+  (activeChannelSettingsModalState?.itemType === "category"
+    ? getCategoryPermissionOverwrites(activeChannelSettingsModalState.categoryId)
+    : getChannelPermissionOverwrites(cid)).forEach((row) => {
     if (!targets.some((target) => target.targetType === row.targetType && target.targetId === row.targetId)) {
       targets.push({ targetType: row.targetType, targetId: row.targetId });
     }
@@ -55375,7 +56417,9 @@ function renderChannelPermissionTriStateGroup(group) {
 }
 
 function buildChannelPermissionTargetEditorHtml(target = {}) {
-  const row = getChannelPermissionOverwriteForTarget(activeChannelSettingsModalState?.channelId || "", target.targetType, target.targetId);
+  const row = activeChannelSettingsModalState?.itemType === "category"
+    ? getCategoryPermissionOverwrites(activeChannelSettingsModalState.categoryId).find(row => row.targetType === target.targetType && row.targetId === target.targetId)
+    : getChannelPermissionOverwriteForTarget(activeChannelSettingsModalState?.channelId || "", target.targetType, target.targetId);
   const draft = activeChannelSettingsModalState?.permissionDrafts?.[`${target.targetType}:${target.targetId}`];
   const label = getChannelPermissionTargetLabel(activeChannelSettingsModalState?.serverId || "", target.targetType, target.targetId);
   const disabled = activeChannelSettingsSaving || !canCurrentUserTargetChannelPermissionOverride(
@@ -55388,7 +56432,7 @@ function buildChannelPermissionTargetEditorHtml(target = {}) {
       <div class="channelPermissionTarget__head">
         <div>
           <strong>${esc(label)}</strong>
-          <small>${esc(target.targetType === "everyone" ? t("channel.permission.default_override", "Default channel override") : target.targetType)}</small>
+          <small>${esc(target.targetType === "everyone" ? (activeChannelSettingsModalState?.itemType === "category" ? t("channel.permission.category_default", "Category default") : t("channel.permission.default_override", "Default channel override")) : target.targetType)}</small>
         </div>
         <button class="btn ghost" type="button" data-channel-permissions-save-target="1" ${disabled ? "disabled" : ""}>${esc(t("common.save", "Save"))}</button>
       </div>
@@ -55440,18 +56484,19 @@ function buildChannelSettingsPermissionsHtml() {
   const targets = getChannelPermissionEditorTargets(sid, cid);
   const selected = targets.find(target => `${target.targetType}:${target.targetId}` === stateRow.selectedPermissionTarget) || targets[0];
   const channel = getChannelSettingsChannelRow();
-  const hasCategory = !!normId(channel?.categoryId || "");
+  const isCategory = stateRow.itemType === "category";
+  const hasCategory = !isCategory && !!normId(channel?.categoryId || "");
   const isSynced = hasCategory && channel?.permissionsSynced !== false;
   return `
     <div class="channelSettingsSectionIntro">
       <h3>${esc(t("channel.permission.overrides", "Permission Overrides"))}</h3>
       <p>${esc(t("channel.permission.order_hint", "Server defaults apply first, then category and custom channel values. Members override roles; role deny wins over role allow."))}</p>
     </div>
-    <div class="channelSettingsNotice ${isSynced ? "" : "is-warning"}">
+    ${isCategory ? `<div class="channelSettingsNotice"><strong>${esc(t("server.category.settings", "Category Settings"))}</strong><span>${esc(t("channel.permission.category_immediate", "Category changes apply immediately."))}</span></div>` : `<div class="channelSettingsNotice ${isSynced ? "" : "is-warning"}">
       <strong>${isSynced ? t("channel.permission.synced", "Synced with category") : t("channel.permission.custom", "Custom channel permissions")}</strong>
       <span>${hasCategory ? (isSynced ? t("channel.permission.category_immediate", "Category changes apply immediately.") : t("channel.permission.after_category", "Channel values are applied after its category.")) : t("channel.permission.no_category_hint", "This channel has no category; local values apply after server defaults.")}</span>
       ${hasCategory && !isSynced ? `<button class="btn ghost" type="button" data-channel-permissions-sync-category ${activeChannelSettingsSaving || !canManage ? "disabled" : ""}>${esc(t("channel.permission.sync", "Sync with category"))}</button>` : ""}
-    </div>
+    </div>`}
     <details class="channelPermissionAdd">
       <summary>${esc(t("channel.permission.add_target", "Add role or member"))}</summary>
     <div class="channelPermissionToolbar">
@@ -55480,7 +56525,10 @@ function buildChannelSettingsOverviewHtml() {
   const row = getChannelSettingsChannelRow();
   const draft = activeChannelSettingsModalState?.overviewDraft;
   const sid = normId(activeChannelSettingsModalState?.serverId || "");
-  const controlsDisabled = activeChannelSettingsSaving || !currentUserCanManageChannels(sid, activeChannelSettingsModalState?.channelId);
+  const isCategory = activeChannelSettingsModalState?.itemType === "category";
+  const controlsDisabled = activeChannelSettingsSaving || !currentUserCanManageChannels(sid,
+    isCategory ? activeChannelSettingsModalState.categoryId : activeChannelSettingsModalState?.channelId,
+    isCategory ? "category" : "channel");
   const categoryId = draft?.categoryId !== undefined ? normId(draft.categoryId) : row
     ? normId(row.categoryId || row.category_id || "")
     : normId(activeChannelSettingsModalState?.categoryId || "");
@@ -55495,13 +56543,13 @@ function buildChannelSettingsOverviewHtml() {
   return `
     <div class="channelSettingsOverview">
       <label class="field">
-        <span class="label">${esc(t("channel.settings.name", "Channel name"))}</span>
+        <span class="label">${esc(isCategory ? t("server.category.name", "Category name") : t("channel.settings.name", "Channel name"))}</span>
         <input class="input" type="text" data-channel-settings-name value="${escAttr(draft?.name ?? (row?.name || activeChannelSettingsModalState?.label || "general"))}" maxlength="60" ${controlsDisabled ? "disabled" : ""}/>
       </label>
-      <label class="field">
+      ${isCategory ? "" : `<label class="field">
         <span class="label">${esc(t("channel.settings.category", "Category"))}</span>
         <select class="input" data-channel-settings-category ${controlsDisabled ? "disabled" : ""}>${options}</select>
-      </label>
+      </label>`}
       <div class="channelSettingsButtonRow">
         <button class="btn primary" type="button" data-channel-settings-save-overview ${controlsDisabled ? "disabled" : ""}>${esc(t("channel.settings.save", "Save Changes"))}</button>
       </div>
@@ -55518,9 +56566,10 @@ function renderChannelSettingsModal() {
   const sub = document.getElementById("channelSettingsSubtitle");
   const body = document.getElementById("channelSettingsBody");
   const channelType = normalizeConversationChannelType(row?.channelType || stateRow.channelType || "text");
-  const prefix = channelType === "voice" ? "" : "#";
+  const isCategory = stateRow.itemType === "category";
+  const prefix = isCategory || channelType === "voice" ? "" : "#";
   if (title) title.textContent = `${prefix}${row?.name || stateRow.label || "channel"} · ${t("channel.settings.title", "Settings")}`;
-  if (sub) sub.textContent = channelType === "voice" ? t("channel.settings.voice", "Voice channel") : t("channel.settings.text", "Text channel");
+  if (sub) sub.textContent = isCategory ? t("channel.settings.category", "Category") : channelType === "voice" ? t("channel.settings.voice", "Voice channel") : t("channel.settings.text", "Text channel");
   modal.querySelectorAll("[data-channel-settings-tab]").forEach((btn) => {
     const tab = String(btn.getAttribute("data-channel-settings-tab") || "");
     btn.classList.toggle("is-active", tab === activeChannelSettingsTab);
@@ -55531,8 +56580,39 @@ function renderChannelSettingsModal() {
   renderChannelSettingsFeedback();
 }
 
+async function saveCategorySettingsOverviewFromModal(editor) {
+  const sid = normId(editor.serverId), cid = normId(editor.categoryId);
+  if (!sid || !cid || activeChannelSettingsSaving) return;
+  if (!currentUserCanManageChannels(sid, cid, "category")) {
+    setChannelSettingsFeedback("Requires Manage Channels.", { error: true });
+    return;
+  }
+  const name = String(getOrCreateChannelSettingsModalElement().querySelector("[data-channel-settings-name]")?.value || "").trim();
+  activeChannelSettingsSaving = true;
+  setChannelSettingsFeedback("Saving...", { error: false });
+  renderChannelSettingsModal();
+  try {
+    const result = await updateServerChannelCategoryRpc({ serverId: sid, categoryId: cid, name });
+    if (result?.error) throw result.error;
+    if (activeChannelSettingsModalState !== editor) return;
+    delete editor.overviewDraft;
+    const list = serverChannelCategoryListByServerId.get(sid) || [];
+    serverChannelCategoryListByServerId.set(sid, list.map(row => normId(row.id) === cid ? { ...row, name } : row));
+    await refreshActiveServerChannelsFromRealtime("category_updated", { serverId: sid }, { silent: true });
+    if (activeChannelSettingsModalState === editor) setChannelSettingsFeedback("Saved.", { error: false });
+  } catch (error) {
+    if (activeChannelSettingsModalState === editor) setChannelSettingsFeedback(`Could not save: ${getServerChannelManagementErrorMessage(error)}`, { error: true });
+  } finally {
+    if (activeChannelSettingsModalState === editor) {
+      activeChannelSettingsSaving = false;
+      renderChannelSettingsModal();
+    }
+  }
+}
+
 async function saveChannelSettingsOverviewFromModal() {
   const stateRow = activeChannelSettingsModalState || {};
+  if (stateRow.itemType === "category") return saveCategorySettingsOverviewFromModal(stateRow);
   const sid = normId(stateRow.serverId || "");
   const cid = normId(stateRow.channelId || "");
   if (!sid || !cid || activeChannelSettingsSaving) return;
@@ -55600,7 +56680,8 @@ async function saveChannelPermissionTargetFromModal(button) {
   const targetSection = button?.closest?.("[data-channel-permission-target-type]");
   const stateRow = activeChannelSettingsModalState || {};
   const sid = normId(stateRow.serverId || "");
-  const cid = normId(stateRow.channelId || "");
+  const scopeType = stateRow.itemType === "category" ? "category" : "channel";
+  const cid = normId(scopeType === "category" ? stateRow.categoryId : stateRow.channelId);
   const targetType = String(targetSection?.getAttribute("data-channel-permission-target-type") || "").trim().toLowerCase();
   const targetId = normId(targetSection?.getAttribute("data-channel-permission-target-id") || "");
   if (!sid || !cid || !targetType || !targetId || activeChannelSettingsSaving) return;
@@ -55614,7 +56695,7 @@ async function saveChannelPermissionTargetFromModal(button) {
   renderChannelSettingsModal();
   const result = await setServerPermissionOverrideBatch7a({
     serverId: sid,
-    scopeType: "channel",
+    scopeType,
     scopeId: cid,
     targetType,
     targetId,
@@ -55630,25 +56711,28 @@ async function saveChannelPermissionTargetFromModal(button) {
   }
   if (stateRow.permissionDrafts) delete stateRow.permissionDrafts[`${targetType}:${targetId}`];
   await emitServerPermissionsChangedBroadcast(sid, {
-    reason: "channel_permission_overwrite_saved",
-    channelId: cid,
+    reason: `${scopeType}_permission_overwrite_saved`,
+    channelId: scopeType === "channel" ? cid : "",
+    categoryId: scopeType === "category" ? cid : "",
     targetType,
     targetId,
   }).catch(() => {});
-  scheduleActivePermissionsRefresh("channel_permission_overwrite_saved", { serverId: sid, new: { server_id: sid, channel_id: cid } });
+  scheduleActivePermissionsRefresh(`${scopeType}_permission_overwrite_saved`, { serverId: sid, new: { server_id: sid, channel_id: cid } });
   void invokeServerVoicePermissionReconciliation({
     serverId: sid,
-    channelId: cid,
-    scope: "channel",
-    reason: "channel_permission_overwrite_saved",
+    channelId: scopeType === "channel" ? cid : "",
+    categoryId: scopeType === "category" ? cid : "",
+    scope: scopeType,
+    reason: `${scopeType}_permission_overwrite_saved`,
   }).catch((error) => {
     console.warn("[server-voice-permissions] channel reconciliation failed after overwrite save", {
       serverId: sid,
-      channelId: cid,
+      channelId: scopeType === "channel" ? cid : "",
+      categoryId: scopeType === "category" ? cid : "",
       message: error?.message || error,
     });
   });
-  void reconcileActiveServerChannelAfterPermissionChange("channel_permission_overwrite_saved").catch((error) => {
+  void reconcileActiveServerChannelAfterPermissionChange(`${scopeType}_permission_overwrite_saved`).catch((error) => {
     console.warn("[channel-permissions] active channel reconcile failed after save", { message: error?.message || error, error });
   });
   if (activeChannelSettingsModalState !== stateRow) return;
@@ -55687,17 +56771,18 @@ async function syncChannelSettingsPermissionsWithCategoryFromModal() {
 
 async function openChannelSettingsModal(target = null) {
   const sid = normId(target?.serverId || "");
-  const channelId = normId(target?.channelId || "");
+  const isCategory = target?.itemType === "category";
+  const channelId = normId(isCategory ? target?.categoryId : target?.channelId);
   if (!sid || !channelId) return false;
   await Promise.all([
     ensureServerRolePermissionCache(sid, { force: false }).catch(() => null),
     fetchServerMembersForSidebar(sid, { force: false }).catch(() => []),
   ]);
-  if (!currentUserCanManageChannels(sid, channelId)) {
+  if (!currentUserCanManageChannels(sid, channelId, isCategory ? "category" : "channel")) {
     await requestAppAlert("Requires Manage Channels.", { title: "Channel Settings" }).catch(() => {});
     return false;
   }
-  const channel = await resolveServerChannelForServer(sid, {
+  const channel = isCategory ? (serverChannelCategoryListByServerId.get(sid) || []).find(row => normId(row.id) === channelId) : await resolveServerChannelForServer(sid, {
     channelId,
     conversationId: target?.conversationId || "",
   }).catch(() => null);
@@ -55705,7 +56790,8 @@ async function openChannelSettingsModal(target = null) {
     ...(target || {}),
     ...(channel || {}),
     serverId: sid,
-    channelId,
+    channelId: isCategory ? "" : channelId,
+    categoryId: isCategory ? channelId : (channel?.categoryId || target?.categoryId || ""),
     channel,
     extraTargets: [],
   };
@@ -55713,7 +56799,7 @@ async function openChannelSettingsModal(target = null) {
   activeChannelSettingsSaving = false;
   activeChannelSettingsFeedback = "";
   activeChannelSettingsFeedbackIsError = false;
-  await loadChannelPermissionOverwrites(sid, channelId, { force: false }).catch(() => null);
+  await loadServerPermissionOverridesBatch7a(sid, isCategory ? "category" : "channel", channelId, { force: true }).catch(() => null);
   await loadServerSettingsMembersBestEffort(sid, { force: false }).catch(() => []);
   const modal = getOrCreateChannelSettingsModalElement();
   renderChannelSettingsModal();
@@ -56111,7 +57197,9 @@ function revalidateOpenManageChannelsControls(serverId = "", { showDeniedMessage
     && !channelSettingsModal.classList.contains("hidden")
     && normId(activeChannelSettingsModalState?.serverId || "") === sid
   );
-  if (channelSettingsOpen && !currentUserCanManageChannels(sid, activeChannelSettingsModalState?.channelId)) {
+  if (channelSettingsOpen && !currentUserCanManageChannels(sid,
+    activeChannelSettingsModalState.itemType === "category" ? activeChannelSettingsModalState.categoryId : activeChannelSettingsModalState.channelId,
+    activeChannelSettingsModalState.itemType === "category" ? "category" : "channel")) {
     channelSettingsModal.querySelectorAll([
       "[data-channel-settings-name]",
       "[data-channel-settings-category]",
@@ -63435,6 +64523,7 @@ function buildVoiceMemberContextMenuHtml(context = {}) {
   const isSelf = context?.isSelf === true;
   const volumeUserId = normId(context?.targetUserId || "");
   const volumePct = Math.round(clampUserVoiceVolume(getRemoteUserVoiceVolume(volumeUserId)) * 100);
+  const locallyMuted = getRemoteUserVoiceMuted(volumeUserId);
   const channels = getServerVoiceChannelsForMenu(context?.serverId || "", context?.targetUserId || "");
   const currentChannelId = normId(findServerChannelContextByConversationId(context?.conversationId || "")?.channel?.id || "");
   const pendingMute = context?.pendingMute === true;
@@ -63483,35 +64572,40 @@ function buildVoiceMemberContextMenuHtml(context = {}) {
     <div class="msgMenu__divider"></div>
     ${item("profile", "Profile")}
     ${item("mention", "Mention")}
+    ${context?.targetIsActiveBot ? item("bot_options", "Bot options") : ""}
+    ${context?.targetIsActiveBot ? item("audio_consent", "Partilhar / retirar microfone") : ""}
     <div class="msgMenu__divider"></div>
     ${!isSelf && volumeUserId ? `<div class="serverVoiceMemberMenu__volume" role="group" aria-labelledby="serverVoiceMemberVolumeLabel">
       <div class="serverVoiceMemberMenu__volumeRow"><label id="serverVoiceMemberVolumeLabel" for="serverVoiceMemberVolume">${esc(t("call.participant_volume", "User volume"))}</label><span data-voice-member-volume-value aria-hidden="true">${volumePct}%</span></div>
       <input id="serverVoiceMemberVolume" data-voice-member-volume="${escAttr(volumeUserId)}" type="range" min="0" max="200" step="1" value="${volumePct}" aria-valuetext="${volumePct}%" aria-describedby="serverVoiceMemberVolumeHint" />
       <div id="serverVoiceMemberVolumeHint" class="msgMenu__itemHint">${esc(t("call.participant_volume_hint", "Only for you"))}</div>
-    </div><div class="msgMenu__divider"></div>` : ""}
-    ${!isSelf || (context?.hasMuteMembersPermission && context?.selfModerationAvailable) ? item(context?.serverMuted ? "unmute" : "mute", context?.serverMuted ? "Server Unmute" : "Server Mute", {
+    </div>${item(locallyMuted ? "local_unmute" : "local_mute", locallyMuted
+      ? t("call.participant_unmute", "Unmute for me") : t("call.participant_mute", "Mute for me"), {
+        right: `<span class="serverVoiceMemberMenu__state ${locallyMuted ? "is-on" : "is-off"}">${locallyMuted ? "ON" : "OFF"}</span>`,
+      })}<div class="msgMenu__divider"></div>` : ""}
+    ${!context?.targetIsActiveBot && (!isSelf || (context?.hasMuteMembersPermission && context?.selfModerationAvailable)) ? item(context?.serverMuted ? "unmute" : "mute", context?.serverMuted ? "Server Unmute" : "Server Mute", {
       disabled: !context?.canMuteMic,
       pending: pendingMute,
       hint: pendingMute ? "Working" : muteDeniedHint,
       danger: !context?.serverMuted,
       right: `<span class="serverVoiceMemberMenu__state ${pendingMute ? "is-pending" : (context?.serverMuted ? "is-on" : "is-off")}">${pendingMute ? "..." : (context?.serverMuted ? "ON" : "OFF")}</span>`,
     }) : ""}
-    ${!isSelf || (context?.hasDeafenMembersPermission && context?.selfModerationAvailable) ? item(context?.serverDeafened ? "undeafen" : "deafen", context?.serverDeafened ? "Server Undeafen" : "Server Deafen", {
+    ${!context?.targetIsActiveBot && (!isSelf || (context?.hasDeafenMembersPermission && context?.selfModerationAvailable)) ? item(context?.serverDeafened ? "undeafen" : "deafen", context?.serverDeafened ? "Server Undeafen" : "Server Deafen", {
       disabled: !context?.canDeafen,
       pending: pendingDeafen,
       hint: pendingDeafen ? "Working" : deafenDeniedHint,
       danger: !context?.serverDeafened,
       right: `<span class="serverVoiceMemberMenu__state ${pendingDeafen ? "is-pending" : (context?.serverDeafened ? "is-on" : "is-off")}">${pendingDeafen ? "..." : (context?.serverDeafened ? "ON" : "OFF")}</span>`,
     }) : ""}
-    <div class="msgMenu__divider"></div>
+    ${!context?.targetIsActiveBot ? `<div class="msgMenu__divider"></div>
     ${item("roles", "Roles", { disabled: true, hint: activeServerCapabilityState?.canManageRoles ? "Role assignment UI is coming next." : "Requires Manage Roles" })}
     ${item("move_menu", "Move to", {
       disabled: !context?.canMoveMembers || !channels.length,
       hint: !context?.canMoveMembers ? moveDeniedHint : "",
       right: '<span class="serverVoiceMemberMenu__submenuArrow" aria-hidden="true"><svg class="altaraIcon callIcon" data-call-icon="chevronRight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 6 6 6-6 6"/></svg></span>',
     }).replace('data-voice-member-menu-act="move_menu"', 'data-voice-member-menu-act="move_menu" aria-haspopup="menu" aria-expanded="false" aria-controls="serverVoiceMoveSubmenu"')}
-    <div class="msgMenu__divider"></div>
-    ${item("copy_user_id", "Copy User ID", { right: '<span class="msgMenu__kbd">ID</span>' })}
+    <div class="msgMenu__divider"></div>` : ""}
+    ${item("copy_user_id", context?.targetIsActiveBot ? "Copy Bot ID" : "Copy User ID", { right: '<span class="msgMenu__kbd">ID</span>' })}
     </div>
     <div id="serverVoiceMoveSubmenu" class="serverVoiceMemberMenu__moveSubmenu" data-voice-member-move-submenu role="menu" aria-label="Move to voice channel" hidden>
       <div class="msgMenu__meta">Voice channels</div>
@@ -63584,11 +64678,38 @@ function bindServerVoiceMemberMenuOnce(menu) {
       return;
     }
     try {
-      if (action === "profile") {
+      if (action === "local_mute" || action === "local_unmute") {
+        if (context.isSelf || !normId(context.targetUserId)) return;
+        setRemoteUserVoiceMuted(context.targetUserId, action === "local_mute", true, {
+          triggerReason: "server_participant_mute_menu",
+          callerFunction: "bindServerVoiceMemberMenuOnce",
+        });
+        renderVoiceMemberContextMenu(menu, context);
+        return;
+      }
+      if(action==='audio_consent' && context.targetIsActiveBot) {
+        const botId=getBotIdFromVoiceParticipantIdentity(context.targetUserId)||context.targetUserId;
+        closeDmListMenus('audio_consent');await getBotPlatformAudioUi().open({botId});return;
+      }
+      if (action === "profile" || action === "bot_options") {
         const anchorEl = context.anchorEl || menu;
         // Menu cleanup hides this element; retain its visible geometry first.
         const anchorRect = anchorEl.getBoundingClientRect();
         closeDmListMenus("voice_profile");
+        if (context.targetIsActiveBot) {
+          const botId = getBotIdFromVoiceParticipantIdentity(context.targetUserId) || context.targetUserId;
+          const profile = {
+            ...(getCachedServerBotInstallProfile(context.serverId, botId) || {}),
+            botId, name: context.targetDisplayName, serverId: context.serverId,
+          };
+          if (action === "bot_options") {
+            openBotContextMenuAt(profile, { anchorEl, point: { x: anchorRect.left, y: anchorRect.top } });
+          } else {
+            await openBotProfileCard(profile, { anchorEl, anchorRect });
+          }
+          return;
+        }
+        if (action === "bot_options") return;
         await openCallParticipantProfilePreview(context.targetUserId, anchorEl, {
           display_name: context.targetDisplayName,
         }, { conversationId: context.conversationId, serverId: context.serverId, kind: "server", anchorRect });
@@ -63600,8 +64721,10 @@ function bindServerVoiceMemberMenuOnce(menu) {
         return;
       }
       if (action === "copy_user_id") {
-        await copyTextWithPromptFallback(context.targetUserId, "User ID");
-        notifyServerVoiceModerationUi("User ID copied.", { audioCue: "ui_success" });
+        const isBot = context.targetIsActiveBot === true;
+        const copyId = isBot ? getBotIdFromVoiceParticipantIdentity(context.targetUserId) || context.targetUserId : context.targetUserId;
+        await copyTextWithPromptFallback(copyId, isBot ? "Bot ID" : "User ID");
+        notifyServerVoiceModerationUi(isBot ? "Bot ID copied." : "User ID copied.", { audioCue: "ui_success" });
         closeDmListMenus("voice_copy");
         return;
       }
@@ -68186,6 +69309,7 @@ async function resolveCurrentUserServerPermissions({ serverId = "", reason = "se
 
 const CHANNEL_TEXT_CAPABILITY_KEYS = Object.freeze(["attach_files","add_reactions","embed_links","manage_messages","pin_messages","use_application_commands"]);
 const BATCH7A_CHANNEL_PERMISSION_KEYS = Object.freeze([
+  "create_polls",
   ...CHANNEL_TEXT_CAPABILITY_KEYS,
   "connect", "speak", "video", "stream",
   "mute_members", "deafen_members", "move_members", "manage_channels",
@@ -68201,6 +69325,7 @@ const CHANNEL_PERMISSION_STORAGE_KEYS = Object.freeze([
   "manage_channels",
 ]);
 const CHANNEL_PERMISSION_META = Object.freeze([
+  ALTARA_SERVER_PERMISSION_CATALOG.find(permission => permission.key === "create_polls"),
   { key: "view_channels", label: "View Channel", hint: "See this channel in the sidebar and open it." },
   { key: "send_messages", label: "Send Messages", hint: "Send human messages in text or voice-channel timelines." },
   { key: "read_message_history", label: "Read Message History", hint: "Read messages from before the current durable access boundary." },
@@ -69449,6 +70574,18 @@ async function reconcileActiveServerChannelAfterPermissionChange(reason = "chann
   if (!sid) return { ok: true, action: "no_server" };
   const expectedServerId = normId(options?.expectedServerId || "");
   if (expectedServerId && expectedServerId !== sid) return { ok: true, action: "server_mismatch" };
+  if (serverChannelVisibilityAuthorityResolvingByServerId.has(sid)) {
+    const actorId = normId(state.user?.id || "");
+    const settled = await waitForServerChannelVisibilityAuthorityResolution(sid);
+    if (actorId !== normId(state.user?.id || "") || !isServerConversationUiOpen()
+      || activeConvId !== normId(activeDmId || state.activeDm?.conversationId || "")) {
+      return { ok: false, action: "context_changed" };
+    }
+    if (settled?.ok !== true || !hasCurrentServerChannelVisibilityAuthority(sid)) {
+      return { ok: false, action: "visibility_unresolved" };
+    }
+  }
+  if (serverChannelVisibilityFailedClosedByServerId.has(sid)) return { ok: false, action: "visibility_unresolved" };
   const { serverCtx } = getActiveServerChannelsRuntimeContext();
   let sidebarRendered = false;
   if (options?.renderSidebar !== false && serverCtx && normId(serverCtx.serverId || "") === sid) {
@@ -82602,6 +83739,7 @@ function renderServerSettingsBannerPreview() {
 }
 
 function closeServerSettingsModal() {
+  if (typeof closeBotServerRoleMenu === "function") closeBotServerRoleMenu({ restoreFocus: false });
   const modal = document.getElementById("serverSettingsModal");
   if (!modal || modal.classList.contains("hidden")) return;
   // Hide before cleanup: role rendering can re-enter permission checks.
@@ -85535,8 +86673,80 @@ async function fetchServerMemberDisplayProfilesByIds(userIds = []) {
   }
 }
 
+function getServerBotChannelMemberAuthorityStamp(serverId) {
+  return `${Number(serverChannelVisibilityAuthorityEpochByServerId.get(serverId) || 0)}:${Number(serverAppInstallFetchVersionByServerId.get(serverId) || 0)}:${Number(serverBotChannelMemberAuthorityVersionByServerId.get(serverId) || 0)}`;
+}
+
+function invalidateServerBotChannelMemberIds(serverId) {
+  const sid = normId(serverId || "");
+  if (!sid) return;
+  serverBotChannelMemberAuthorityVersionByServerId.set(sid, Number(serverBotChannelMemberAuthorityVersionByServerId.get(sid) || 0) + 1);
+  for (const key of serverBotChannelMemberIdsByContext.keys()) if (key.split(":")[1] === sid) serverBotChannelMemberIdsByContext.delete(key);
+}
+
+function getCachedServerBotChannelMemberIds(serverId, channelId) {
+  const key = `${normId(state.user?.id || "")}:${normId(serverId)}:${normId(channelId)}`;
+  const cached = serverBotChannelMemberIdsByContext.get(key);
+  return cached?.stamp === getServerBotChannelMemberAuthorityStamp(normId(serverId))
+    && (!cached.error || Date.now() - cached.fetchedAt < 5000) ? cached.ids : null;
+}
+
+async function fetchServerBotChannelMemberIds(serverId, channelId) {
+  const sid = normId(serverId || ""), cid = normId(channelId || "");
+  const actorId = normId(state.user?.id || "");
+  if (!sid || !cid || !actorId) return new Set();
+  const key = `${actorId}:${sid}:${cid}`;
+  const stamp = getServerBotChannelMemberAuthorityStamp(sid);
+  const cached = getCachedServerBotChannelMemberIds(sid, cid);
+  if (cached) return cached;
+  const pending = serverBotChannelMemberIdsInFlight.get(key);
+  if (pending?.stamp === stamp) return pending.promise;
+  const current = () => actorId === normId(state.user?.id || "")
+    && stamp === getServerBotChannelMemberAuthorityStamp(sid);
+  const promise = (async () => {
+    const { data, error } = await rpcWithTimeout("bots_list_channel_member_ids", { p_server_id: sid, p_channel_id: cid }, 2500);
+    const ids = new Set(!error && Array.isArray(data) ? data.map((row) => normId(row?.bot_id || "")).filter(Boolean) : []);
+    if (!current()) return new Set();
+    serverBotChannelMemberIdsByContext.set(key, { stamp, ids, error: !!error, fetchedAt: Date.now() });
+    return ids;
+  })().catch(() => {
+    const ids = new Set();
+    if (current()) serverBotChannelMemberIdsByContext.set(key, { stamp, ids, error: true, fetchedAt: Date.now() });
+    return ids;
+  }).finally(() => {
+    if (serverBotChannelMemberIdsInFlight.get(key)?.promise === promise) serverBotChannelMemberIdsInFlight.delete(key);
+  });
+  serverBotChannelMemberIdsInFlight.set(key, { stamp, promise });
+  return promise;
+}
+
+async function fetchServerBotRoleIdsForDisplay(serverId) {
+  const sid = normId(serverId), actorId = normId(state.user?.id);
+  const assignments = new Map();
+  if (!sid || !actorId) return assignments;
+  try {
+    const { data, error } = await rpcWithTimeout("bots_list_server_role_ids_v1", { p_server_id: sid }, 2500);
+    if (error || actorId !== normId(state.user?.id) || !Array.isArray(data)) return assignments;
+    for (const row of data) {
+      const botId = normId(row?.bot_id);
+      if (botId) assignments.set(botId, normalizeUuidArray(row?.role_ids || []));
+    }
+  } catch (_) { /* Unavailable display metadata must not hide installed bots. */ }
+  return assignments;
+}
+
+function resolveServerMemberRoleNameColor(member, roleList, roleMemberMap) {
+  const uid = normId(member?.userId);
+  const botRoles = new Set(member?.isBot ? (member.roleIds || []) : []);
+  const role = (roleList || []).filter(role => role.colorMemberNames === true
+    && (member?.isBot ? botRoles.has(normId(role.id)) : roleMemberMap.get(normId(role.id))?.has(uid)))
+    .sort((a, b) => Number(a.position || 0) - Number(b.position || 0) || String(a.id).localeCompare(String(b.id)))[0];
+  return normalizeNameColor(role?.color || "");
+}
+
 async function fetchServerBotsForSidebar(serverId, { force = false, includeDisabled = false } = {}) {
   const sid = normId(serverId);
+  const actorId = normId(state.user?.id);
   if (!sid || !isAltaraBotVisibilityEnabled()) return [];
   const previousSnapshot = serverBotInstallListByServerId.get(sid) || [];
   const previousManagementSnapshot = serverBotManagementInstallListByServerId.get(sid) || previousSnapshot;
@@ -85546,7 +86756,7 @@ async function fetchServerBotsForSidebar(serverId, { force = false, includeDisab
       ? (serverBotManagementInstallListByServerId.get(sid) || serverBotInstallListByServerId.get(sid) || [])
       : (serverBotInstallListByServerId.get(sid) || []);
   }
-  if (!force && serverBotInstallListByServerId.has(sid) && (!includeDisabled || serverBotManagementInstallListByServerId.has(sid))) {
+  if (!force && !serverBotMetadataDirtyByServerId.has(sid) && serverBotInstallListByServerId.has(sid) && (!includeDisabled || serverBotManagementInstallListByServerId.has(sid))) {
     const cachedBots = applyServerBotPresenceToRows(sid, serverBotInstallListByServerId.get(sid) || []);
     serverBotInstallListByServerId.set(sid, cachedBots);
     scheduleServerBotPresenceRefresh(sid, { force: false });
@@ -85557,9 +86767,11 @@ async function fetchServerBotsForSidebar(serverId, { force = false, includeDisab
   }
 
   const requestVersion = Number(serverAppInstallFetchVersionByServerId.get(sid) || 0) + 1;
+  const metadataRevision = serverBotMetadataDirtyByServerId.get(sid);
   serverAppInstallFetchVersionByServerId.set(sid, requestVersion);
   updateAltaraBotVisibilityDebug({ currentServerId: sid });
   let rows = [];
+  let botRoleIds = new Map();
   let fetchError = null;
   try {
     if (force) logBotPermissionUpdateEvent("background_refresh_start", { phase: "background_refresh_start", rpcName: "bots_list_server_bots", serverId: sid, non_blocking: true });
@@ -85572,6 +86784,7 @@ async function fetchServerBotsForSidebar(serverId, { force = false, includeDisab
       recordAltaraBootEvent("bot_server_refresh_error", { rpcName: "bots_list_server_bots", serverId: sid, message: error?.message || error || "unknown" });
     } else {
       rows = Array.isArray(data) ? data : [];
+      if (rows.length) botRoleIds = await fetchServerBotRoleIdsForDisplay(sid);
       if (force) logBotPermissionUpdateEvent("background_refresh_done", { phase: "background_refresh_done", rpcName: "bots_list_server_bots", serverId: sid, rowCount: rows.length, non_blocking: true });
     }
   } catch (error) {
@@ -85582,6 +86795,7 @@ async function fetchServerBotsForSidebar(serverId, { force = false, includeDisab
     recordAltaraBootEvent("bot_server_refresh_error", { rpcName: "bots_list_server_bots", serverId: sid, message: error?.message || error || "unknown" });
   }
 
+  if (actorId !== normId(state.user?.id)) return [];
   if (serverAppInstallFetchVersionByServerId.get(sid) !== requestVersion) {
     return includeDisabled
       ? (serverBotManagementInstallListByServerId.get(sid) || previousManagementSnapshot)
@@ -85601,6 +86815,7 @@ async function fetchServerBotsForSidebar(serverId, { force = false, includeDisab
     return {
       userId: botId,
       botId,
+      roleIds: botRoleIds.get(botId) || normalizeUuidArray([row?.managed_role_id || row?.managedRoleId].filter(Boolean)),
       role: "bot",
       installId: normId(row?.install_id || row?.id || ""),
       createdAt: String(row?.created_at || ""),
@@ -85632,6 +86847,12 @@ async function fetchServerBotsForSidebar(serverId, { force = false, includeDisab
   }).filter(Boolean);
 
   await refreshServerBotPresenceForSidebar(sid, { force }).catch(() => getCachedServerBotPresenceForServer(sid));
+  if (actorId !== normId(state.user?.id)) return [];
+  if (serverAppInstallFetchVersionByServerId.get(sid) !== requestVersion) {
+    return includeDisabled
+      ? (serverBotManagementInstallListByServerId.get(sid) || [])
+      : (serverBotInstallListByServerId.get(sid) || []);
+  }
   const botsWithPresence = applyServerBotPresenceToRows(sid, managementBots.filter((bot) => bot.active));
   const activeByBotId = new Map(botsWithPresence.map((bot) => [normId(bot?.botId || bot?.userId || ""), bot]));
   const managementWithPresence = managementBots.map((bot) => (
@@ -85641,6 +86862,7 @@ async function fetchServerBotsForSidebar(serverId, { force = false, includeDisab
   ));
   serverBotInstallListByServerId.set(sid, botsWithPresence);
   serverBotManagementInstallListByServerId.set(sid, managementWithPresence);
+  if (!fetchError && serverBotMetadataDirtyByServerId.get(sid) === metadataRevision) serverBotMetadataDirtyByServerId.delete(sid);
   updateAltaraBotVisibilityDebug({
     currentServerId: sid,
     serverBotsCount: botsWithPresence.length,
@@ -85695,7 +86917,7 @@ function getBotIdFromVoiceParticipantIdentity(identity = "") {
   const raw = String(identity || "").trim();
   if (!raw) return "";
   if (isValidAltaraUuid(raw)) return normId(raw);
-  const match = raw.match(/^(?:altara_bot|altara-bot|bot):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+  const match = raw.match(/^(?:altara_bot|altara-bot|bot):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?::voice:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/i);
   return match ? normId(match[1]) : "";
 }
 
@@ -85729,8 +86951,15 @@ function getCachedServerBotInstallProfile(serverId = "", botId = "") {
 function normalizeServerVoiceBotParticipant(convId = "", participantId = "", botSession = null, { includeTransportState = true, participantUiStateByUserId = null } = {}) {
   const sid = resolveServerVoiceServerIdByConversation(convId);
   const botId = normId(botSession?.botId || getBotIdFromVoiceParticipantIdentity(participantId));
+  const transportIdentity = String(participantId || "").trim();
+  const hasTransportPresence = isCurrentChannelMediaBotParticipant(transportIdentity, convId)
+    && getServerVoiceTransportSnapshot(convId)?.participantsByUser?.[transportIdentity]?.presentInRoom === true;
+  // Delayed profile/session metadata cannot hide or re-key a current Room peer.
+  const identity = hasTransportPresence
+    ? transportIdentity
+    : String(botSession?.participantIdentity || participantId || (botId ? `altara_bot:${botId}` : "")).trim();
   const hasVoiceSession = !!botSession;
-  if (!hasVoiceSession && botId && shouldHideServerVoiceBotParticipantForPresence(sid, botId)) {
+  if (!hasVoiceSession && !hasTransportPresence && botId && shouldHideServerVoiceBotParticipantForPresence(sid, botId)) {
     recordBotVoiceUiEvent("bot_voice_row_hidden", {
       botId,
       serverId: sid,
@@ -85744,7 +86973,6 @@ function normalizeServerVoiceBotParticipant(convId = "", participantId = "", bot
     return null;
   }
   const cachedBot = getCachedServerBotInstallProfile(sid, botId) || {};
-  const identity = String(botSession?.participantIdentity || participantId || (botId ? `altara_bot:${botId}` : "")).trim();
   const displayName = normalizeConversationLabel(
     botSession?.botName
       || cachedBot?.botName
@@ -85885,12 +87113,30 @@ function reconcileServerVoiceBotLifecycleSoundsForServer(serverId = "", nextSess
     if (!wasReady) return;
     const joined = Array.from(next).filter((participantId) => !prev.has(participantId));
     const left = Array.from(prev).filter((participantId) => !next.has(participantId));
+    if (left.length) closeStaleBotVoiceUiForLeftParticipants(left, nextSessions);
+    // The channel media Room reports bot transitions immediately. Its delayed
+    // database refresh must not replay the same join/leave cue.
+    if (currentServerVoiceV2Session?.mediaAuthority
+      && normId(currentServerVoiceV2Session.conversationId) === convId) return;
     if (joined.length) playServerVoiceBotLifecycleCue(convId, "server_voice_join", joined[0]);
     if (left.length) {
-      closeStaleBotVoiceUiForLeftParticipants(left, nextSessions);
       playServerVoiceBotLifecycleCue(convId, "server_voice_leave", left[0]);
     }
   });
+}
+
+function reconcileServerVoiceChannelMediaBotSounds(conversationId, previous, next) {
+  const convId = normId(conversationId || "");
+  if (!previous?.connected || !next?.connected) return;
+  const ids = snapshot => new Set(Object.entries(snapshot.participantsByUser || {})
+    .filter(([identity, participant]) => participant?.presentInRoom === true
+      && isCurrentChannelMediaBotParticipant(identity, convId))
+    .map(([identity]) => identity));
+  const before = ids(previous), after = ids(next);
+  const joined = [...after].filter(identity => !before.has(identity));
+  const left = [...before].filter(identity => !after.has(identity));
+  if (joined.length) playServerVoiceBotLifecycleCue(convId, "server_voice_join", joined[0]);
+  if (left.length) playServerVoiceBotLifecycleCue(convId, "server_voice_leave", left[0]);
 }
 
 function clearServerVoiceBotSessionsForServer(serverId = "") {
@@ -85999,15 +87245,18 @@ async function refreshServerVoiceBotSessions(serverId = "", { force = false } = 
       }
       const sessions = setServerVoiceBotSessionsForServer(sid, Array.isArray(data) ? data : []);
       serverVoiceBotSessionsFetchAtByServerId.set(sid, Date.now());
-      sessions.forEach((session) => recordBotVoiceUiEvent("bot_voice_session_refresh", {
-        botId: session?.botId || "",
-        serverId: sid,
-        channelId: session?.channelId || "",
-        conversationId: session?.conversationId || "",
-        rowSource: "bot_voice_sessions_rpc",
-        visible: true,
-        botVoiceSessionPresent: true,
-      }));
+      sessions.forEach((session) => {
+        recordBotVoiceUiEvent("bot_voice_session_refresh", {
+          botId: session?.botId || "",
+          serverId: sid,
+          channelId: session?.channelId || "",
+          conversationId: session?.conversationId || "",
+          rowSource: "bot_voice_sessions_rpc",
+          visible: true,
+          botVoiceSessionPresent: true,
+        });
+        refreshServerVoiceParticipantIdentity(session.participantIdentity);
+      });
       refreshServerVoiceChannelBadges();
       return sessions;
     } catch (error) {
@@ -86113,8 +87362,8 @@ function getBotPresenceMetaLabel(bot = {}) {
   const statusText = status === "online" ? "Online" : (status === "idle" ? t("status.option.idle", "Away") : "Offline");
   const voiceStatus = String(bot?.voiceStatus || "").trim();
   const lastSeen = status === "offline" ? getBotPresenceLastSeenLabel(bot?.presenceLastSeenAt || bot?.lastSeenAt || "") : "";
-  if (voiceStatus && status !== "offline") return `${statusText} � ${voiceStatus}`;
-  if (lastSeen) return `${statusText} � ${lastSeen}`;
+  if (voiceStatus && status !== "offline") return `${statusText} · ${voiceStatus}`;
+  if (lastSeen) return `${statusText} · ${lastSeen}`;
   return statusText;
 }
 
@@ -90643,11 +91892,10 @@ function buildServerVoiceMemberRowsHtml(conversationId, serverMembers = [], opti
     const shareMetaText = "";
     const liveBadgeHtml = isBot ? "" : `<span class="callParticipantLiveBadge serverVoiceMember__live" data-voice-row-live title="Screen sharing"${isServerVoiceRosterParticipantScreenSharing(conversationId, member.userId) ? "" : " hidden"}>LIVE</span>`;
     const stateBits = [];
-    if (isBot) stateBits.push(member.voiceStatus || "Bot connected");
     if (member.isMe) stateBits.push("You");
     if (transportStatusLabel) stateBits.push(transportStatusLabel);
     const stateTextHtml = stateBits.length
-      ? `<span class="serverVoiceMember__stateText"${shareMetaText ? ` title="${escAttr(shareMetaText)}"` : ""}>${esc(stateBits.join(" - "))}</span>`
+      ? `<span class="serverVoiceMember__stateText" title="${escAttr(shareMetaText || stateBits.join(" - "))}">${esc(stateBits.join(" - "))}</span>`
       : "";
     const botBadgeHtml = isBot ? `<span class="serverVoiceMember__botBadge">BOT</span>` : "";
     return `
@@ -90673,7 +91921,7 @@ function buildServerVoiceMemberRowsHtml(conversationId, serverMembers = [], opti
           ${avatarHtml}
           <span class="statusDot" data-status-dot="${escAttr(member.userId)}" data-status="${escAttr(member.presenceStatus || "online")}"></span>
         </span>
-        <span class="serverVoiceMember__name">${esc(member.displayName)}${botBadgeHtml}${member.isMe ? " (You)" : ""}</span>
+        <span class="serverVoiceMember__name"><span class="serverVoiceMember__label">${esc(member.displayName)}${member.isMe ? " (You)" : ""}</span>${botBadgeHtml}</span>
         <span class="serverVoiceMember__state">
           ${liveBadgeHtml}
           ${audioBadgesHtml}
@@ -91614,8 +92862,18 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
       if (!convId) return;
       const channelId = normId(btn.getAttribute("data-server-channel-id") || "");
       if (channelId && !canCurrentUserViewServerChannelSync(sid, channelId)) {
-        await requestAppAlert("You do not have access to this channel.", { title: "Channel Access" }).catch(() => alert("You do not have access to this channel."));
-        return;
+        const actorId = normId(state.user?.id || "");
+        const conversationAtClick = normId(activeDmId || state.activeDm?.conversationId || "");
+        const visibility = await ensureServerChannelVisibilityAuthorityReadyForNavigation(sid, "channel-click");
+        if (actorId !== normId(state.user?.id || "") || sid !== normId(getActiveServerIdForSidebar())
+          || conversationAtClick !== normId(activeDmId || state.activeDm?.conversationId || "")) return;
+        if (visibility?.ok !== true || !canCurrentUserViewServerChannelSync(sid, channelId)) {
+          const message = visibility?.ok === true
+            ? "You do not have access to this channel."
+            : "Could not verify channel access. Please try again.";
+          await requestAppAlert(message, { title: "Channel Access" }).catch(() => alert(message));
+          return;
+        }
       }
       const label = btn.getAttribute("data-server-channel-name") || "general";
       const traceId = beginServerNavigationPerfTrace(sid, "channel-click", event?.timeStamp);
@@ -92269,6 +93527,76 @@ function buildServerMembersPanelSnapshot(serverId = "", groups = []) {
   })));
 }
 
+function patchServerBotMemberPresence(listEl, groups = []) {
+  const bots = new Map(groups.flatMap(group => group.members || [])
+    .filter(member => member?.isBot)
+    .map(member => [normId(member.botId || member.userId), member]));
+  listEl.querySelectorAll('[data-server-right-is-bot="1"]').forEach(row => {
+    const member = bots.get(normId(row.getAttribute("data-server-right-bot-id") || row.getAttribute("data-server-right-user")));
+    if (!member) return;
+    const status = normalizeBotPresenceStatus(member.presenceStatus || member.effectiveStatus || "offline");
+    const attributes = {
+      "data-server-right-presence": status,
+      "data-server-right-last-seen": String(member.presenceLastSeenAt || ""),
+      "data-server-right-connection-mode": String(member.connectionMode || ""),
+      "data-server-right-voice-status": String(member.voiceStatus || ""),
+    };
+    Object.entries(attributes).forEach(([name, value]) => {
+      if (row.getAttribute(name) !== value) row.setAttribute(name, value);
+    });
+    const dot = row.querySelector("[data-status-dot]");
+    if (dot?.getAttribute("data-status") !== status) dot?.setAttribute("data-status", status);
+    const label = row.querySelector(".serverMemberRow__meta span");
+    const text = getBotPresenceMetaLabel(member);
+    if (label && label.textContent !== text) label.textContent = text;
+  });
+}
+
+function updateServerMembersListContent(listEl, html, { preserveRows = false } = {}) {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const rowKey = (row) => `${row.getAttribute("data-server-right-is-bot")}:${row.getAttribute("data-server-right-user")}`;
+  const previousRows = new Map(preserveRows
+    ? Array.from(listEl.querySelectorAll(".serverMemberRow[data-server-right-user]")).map(row => [rowKey(row), row])
+    : []);
+  const previousGroups = new Map(preserveRows
+    ? Array.from(listEl.querySelectorAll("[data-server-members-group]")).map(group => [group.getAttribute("data-server-members-group"), group])
+    : []);
+  const focused = document.activeElement;
+  const retainedGroups = new Set();
+  Array.from(template.content.children).forEach((freshGroup, index) => {
+    const group = previousGroups.get(freshGroup.getAttribute("data-server-members-group")) || freshGroup;
+    const retainedChildren = new Set();
+    Array.from(freshGroup.children).forEach((fresh, childIndex) => {
+      let markup = fresh.outerHTML;
+      if (fresh.matches('[data-server-right-is-bot="1"]')) {
+        // Presence is patched separately; another member changing must not reload this bot's avatar.
+        const structural = fresh.cloneNode(true);
+        ["presence", "last-seen", "connection-mode", "voice-status"].forEach(name => structural.removeAttribute(`data-server-right-${name}`));
+        structural.querySelector("[data-status-dot]")?.removeAttribute("data-status");
+        const label = structural.querySelector(".serverMemberRow__meta span");
+        if (label) label.textContent = "";
+        markup = structural.outerHTML;
+      }
+      const previous = fresh.matches(".serverMemberRow[data-server-right-user]")
+        ? previousRows.get(rowKey(fresh)) : group.children[childIndex];
+      // Compare the last generated markup, not the live DOM patched by presence/media.
+      // Retained rows keep their listeners, focused controls and loaded avatars.
+      const child = previous?._serverMemberMarkup === markup ? previous : fresh;
+      child._serverMemberMarkup = markup;
+      retainedChildren.add(child);
+      if (group.children[childIndex] !== child) group.insertBefore(child, group.children[childIndex] || null);
+    });
+    Array.from(group.children).forEach(child => { if (!retainedChildren.has(child)) child.remove(); });
+    retainedGroups.add(group);
+    if (listEl.children[index] !== group) listEl.insertBefore(group, listEl.children[index] || null);
+  });
+  Array.from(listEl.childNodes).forEach(group => { if (!retainedGroups.has(group)) group.remove(); });
+  if (focused?.isConnected && listEl.contains(focused) && document.activeElement !== focused) {
+    focused.focus({ preventScroll: true });
+  }
+}
+
 async function renderServerMembersRightPanel(serverCtx, members = [], {
   forceChannelMembers = false,
   immediate = false,
@@ -92320,6 +93648,7 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
     const channelId = normId(activeChannelCtx?.channel?.id || "");
     const accessState = getPrivateChannelAccessibleMemberState(channelId);
     const canPreserveExistingRows = listEl.dataset.serverMembersContextKey === panelContextKey
+      && listEl.dataset.serverMembersActorId === normId(state.user?.id || "")
       && !!listEl.querySelector("[data-server-right-user], .serverMembersGroup");
     const renderPrivateMemberState = (message) => {
       listEl.innerHTML = `<div class="hint">${esc(message)}</div>`;
@@ -92361,9 +93690,22 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
     });
   }
 
-  if (!activeChannelCtx?.channel?.isPrivate) {
+  if (activeChannelBelongsToServer && !activeChannelCtx?.channel?.isPrivate) {
     const cachedBotRows = serverBotInstallListByServerId.get(sid) || [];
-    if (Array.isArray(cachedBotRows) && cachedBotRows.length) memberRows = [...memberRows, ...cachedBotRows];
+    if (Array.isArray(cachedBotRows) && cachedBotRows.length) {
+      const allowedBotIds = getCachedServerBotChannelMemberIds(sid, activeChannelCtx.channel.id);
+      if (allowedBotIds) {
+        memberRows = [...memberRows, ...cachedBotRows.filter((bot) => allowedBotIds.has(normId(bot?.botId || bot?.userId || "")))];
+      } else {
+        const actorId = normId(state.user?.id || "");
+        void fetchServerBotChannelMemberIds(sid, activeChannelCtx.channel.id).then(() => {
+          if (actorId !== normId(state.user?.id || "") || renderToken !== serverMembersRightPanelRenderToken
+            || sid !== normId(getActiveServerContext()?.serverId || "")
+            || renderConversationId !== normId(activeDmId || state.activeDm?.conversationId || "")) return;
+          void renderServerMembersRightPanel(serverCtx, allMemberRows, { forceChannelMembers: false });
+        });
+      }
+    }
   }
 
   const currentServerId = normId(getActiveServerContext()?.serverId || "");
@@ -92466,8 +93808,7 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
       username,
       displayName,
       roleNameColor: normalizeNameColor(groupMeta?.nameColor || ""),
-      memberNameRoleColor: normalizeNameColor((roleList || []).filter(role => role.colorMemberNames && roleMemberMap.get(normId(role.id))?.has(normId(m.userId)))
-        .sort((a, b) => Number(a.position || 0) - Number(b.position || 0) || String(a.id).localeCompare(String(b.id)))[0]?.color || ""),
+      memberNameRoleColor: resolveServerMemberRoleNameColor(m, roleList, roleMemberMap),
     });
   });
 
@@ -92558,7 +93899,9 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
     panelLoadSnapshot.presenceLoaded ? "presence-loaded" : "presence-loading",
   ].join("|");
   const previousSnapshot = String(serverMembersPanelSnapshotByContext.get(panelContextKey) || "");
-  const sameContext = listEl.dataset.serverMembersContextKey === panelContextKey;
+  const sameContext = listEl.dataset.serverMembersContextKey === panelContextKey
+    && listEl.dataset.serverMembersServerId === sid
+    && listEl.dataset.serverMembersActorId === normId(state.user?.id || "");
   const hasExistingMemberRows = !!listEl.querySelector("[data-server-right-user], .serverMembersGroup");
   const snapshotUnchanged = sameContext && previousSnapshot === nextSnapshot;
   const previousScrollTop = Number(listEl.scrollTop || 0);
@@ -92602,13 +93945,21 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
     || (groups.length > 0 && !hasExistingMemberRows)
   );
   if (shouldReplaceDom) {
-    listEl.innerHTML = nextHtml;
+    updateServerMembersListContent(listEl, nextHtml, {
+      preserveRows: listEl.dataset.serverMembersServerId === sid
+        && listEl.dataset.serverMembersActorId === normId(state.user?.id || ""),
+    });
     listEl.dataset.serverMembersContextKey = panelContextKey;
     listEl.scrollTop = previousScrollTop;
     serverMembersPanelSnapshotByContext.set(panelContextKey, nextSnapshot);
   } else if (snapshotUnchanged || (sameContext && hasExistingMemberRows && !nextHtml)) {
     serverMembersPanelDebugState.skippedUnchangedRender += 1;
   }
+  listEl.dataset.serverMembersServerId = sid;
+  listEl.dataset.serverMembersActorId = normId(state.user?.id || "");
+  listEl.dataset.serverMembersConversationId = renderConversationId;
+  // The stable roster snapshot excludes presence; bots use their own authoritative presence stream.
+  patchServerBotMemberPresence(listEl, groups);
 
   serverMembersPanelDebugState.renderCount += 1;
   serverMembersPanelDebugState.previousSnapshot = previousSnapshot;
@@ -92644,7 +93995,7 @@ async function renderServerMembersRightPanel(serverCtx, members = [], {
       const userId = normId(btn.getAttribute("data-server-right-user") || "");
       if (!userId) return;
       if (btn.getAttribute("data-server-right-is-bot") === "1") {
-        await openBotProfileCard(getBotProfileSeedFromElement(btn));
+        await openBotProfileCard(getBotProfileSeedFromElement(btn), { anchorEl: btn });
         return;
       }
       const displayName = btn.getAttribute("data-server-right-display") || "member";
@@ -92883,7 +94234,10 @@ async function refreshServerConversationUi({
 
   if (shouldRefreshMembers) {
     try {
-      membersForSnapshots = await fetchServerMembersForSidebar(sid, { force });
+      [membersForSnapshots] = await Promise.all([
+        fetchServerMembersForSidebar(sid, { force }),
+        fetchServerBotsForSidebar(sid, { force }),
+      ]);
       await ensureServerRolePermissionCache(sid, { force: !!force }).catch(() => {});
       const activeChannelContext = findServerChannelContextByConversationId(conversationIdAtStart) || null;
       if (
@@ -94962,7 +96316,7 @@ function renderWidgets() {
       }
     }).join("");
     if (grid.__altaraLastRenderedHtml !== nextCardsHtml || grid.__altaraLastRenderedFirstChild !== grid.firstElementChild) {
-      grid.innerHTML = nextCardsHtml;
+      replaceWidgetGridCards(grid, nextCardsHtml);
       grid.__altaraLastRenderedHtml = nextCardsHtml;
       grid.__altaraLastRenderedFirstChild = grid.firstElementChild;
     }
@@ -94975,6 +96329,9 @@ function renderWidgets() {
     });
   }
 
+  const marketplace = getWidgetMarketplaceController();
+  if (serverWidgetsScope) marketplace?.stop();
+  else marketplace?.mount(grid);
   renderWidgetsEditorUi(activeIds);
   const checklistList = grid.querySelector(".profileChecklistTaskList");
   if (checklistList) checklistList.scrollTop = checklistScrollTop;
@@ -98942,10 +100299,13 @@ function findServerFolderIdByServer(serverId = "") {
 }
 
 function ensureServerOrbOrderLoaded() {
-  if (serverOrbOrderStateLoaded) return;
+  const userId = normId(state?.user?.id || "");
+  if (serverOrbOrderStateLoaded && serverOrbOrderStateUserId === userId) return;
+  serverOrbOrderStateUserId = userId;
   serverOrbOrderStateLoaded = true;
   serverOrbOrderEntries.length = 0;
   serverOrbFoldersById.clear();
+  if (!userId) return;
   try {
     const raw = localStorage.getItem(getServerOrbOrderStorageKey());
     const parsed = raw ? JSON.parse(raw) : [];
@@ -99095,7 +100455,7 @@ function extractServerOrbFromLayout(serverId = "") {
   return { removed, folderId: sourceFolderId };
 }
 
-function syncServerOrbOrderWithServers(servers = state.servers, { persist = true } = {}) {
+function syncServerOrbOrderWithServers(servers = state.servers, { persist = true, pruneMissing = true } = {}) {
   ensureServerOrbOrderLoaded();
   const rows = filterDeletedServerRows(Array.isArray(servers) ? servers : []);
   const validIds = rows
@@ -99117,7 +100477,7 @@ function syncServerOrbOrderWithServers(servers = state.servers, { persist = true
     const localSeen = new Set();
     folder.serverIds.forEach((sidRaw) => {
       const sid = normId(sidRaw);
-      if (!sid || !validSet.has(sid) || localSeen.has(sid) || seenFolderServerIds.has(sid)) {
+      if (!sid || (pruneMissing && !validSet.has(sid)) || localSeen.has(sid) || seenFolderServerIds.has(sid)) {
         changed = true;
         return;
       }
@@ -99177,7 +100537,7 @@ function syncServerOrbOrderWithServers(servers = state.servers, { persist = true
       return;
     }
 
-    if (!validSet.has(entry.id) || seenFolderServerIds.has(entry.id) || seenTopLevelServerIds.has(entry.id)) {
+    if ((pruneMissing && !validSet.has(entry.id)) || seenFolderServerIds.has(entry.id) || seenTopLevelServerIds.has(entry.id)) {
       changed = true;
       return;
     }
@@ -99230,7 +100590,8 @@ function syncServerOrbOrderWithServers(servers = state.servers, { persist = true
 
 function getOrderedServerRailEntries(servers = state.servers) {
   const rows = filterDeletedServerRows(Array.isArray(servers) ? servers.slice() : []);
-  syncServerOrbOrderWithServers(rows, { persist: true });
+  // Shell and cached memberships can be partial; only authoritative loads remove saved entries.
+  syncServerOrbOrderWithServers(rows, { persist: true, pruneMissing: false });
   const rowsById = new Map(
     rows
       .map((row) => [normId(row?.serverId || ""), row])
@@ -99294,10 +100655,14 @@ function moveServerOrbEntryInOrder(entryTokenInput, targetEntryToken, { after = 
   const insertIdx = Math.max(0, Math.min(serverOrbOrderEntries.length, targetIdx + (after ? 1 : 0)));
   serverOrbOrderEntries.splice(insertIdx, 0, entryToken);
 
-  syncServerOrbOrderWithServers(state.servers, { persist });
+  syncServerOrbOrderWithServers(state.servers, { persist: false });
   const afterSerialized = JSON.stringify(serverOrbOrderEntries) + JSON.stringify(Array.from(serverOrbFoldersById.values()));
   if (openServerFolderId && !serverOrbFoldersById.has(openServerFolderId)) openServerFolderId = "";
-  if (persist && beforeSerialized !== afterSerialized) persistServerOrbFoldersToStorage();
+  // The manual move already changed memory; reconciliation can be a no-op, so save the move explicitly.
+  if (persist && beforeSerialized !== afterSerialized) {
+    persistServerOrbOrderToStorage();
+    persistServerOrbFoldersToStorage();
+  }
   return beforeSerialized !== afterSerialized;
 }
 
@@ -99325,9 +100690,13 @@ function moveServerOrbEntryToEnd(entryTokenInput, { persist = true } = {}) {
   }
   serverOrbOrderEntries.push(entryToken);
 
-  syncServerOrbOrderWithServers(state.servers, { persist });
+  syncServerOrbOrderWithServers(state.servers, { persist: false });
   const afterSerialized = JSON.stringify(serverOrbOrderEntries) + JSON.stringify(Array.from(serverOrbFoldersById.values()));
   if (openServerFolderId && !serverOrbFoldersById.has(openServerFolderId)) openServerFolderId = "";
+  if (persist && beforeSerialized !== afterSerialized) {
+    persistServerOrbOrderToStorage();
+    persistServerOrbFoldersToStorage();
+  }
   return beforeSerialized !== afterSerialized;
 }
 
@@ -99404,9 +100773,12 @@ function createServerOrbFolder(dragServerId, targetServerId, { persist = true } 
   insertServerOrbEntryBetween(makeServerOrbOrderEntry("folder", folderId), neighbors);
   openServerFolderId = folderId;
 
-  syncServerOrbOrderWithServers(state.servers, { persist });
+  syncServerOrbOrderWithServers(state.servers, { persist: false });
   const afterSerialized = JSON.stringify(serverOrbOrderEntries) + JSON.stringify(Array.from(serverOrbFoldersById.values()));
-  if (persist && beforeSerialized !== afterSerialized) persistServerOrbFoldersToStorage();
+  if (persist && beforeSerialized !== afterSerialized) {
+    persistServerOrbOrderToStorage();
+    persistServerOrbFoldersToStorage();
+  }
   return beforeSerialized !== afterSerialized;
 }
 
@@ -99437,9 +100809,12 @@ function moveServerOrbIntoFolder(dragServerId, folderId, {
   serverOrbFoldersById.set(fid, folder);
   openServerFolderId = fid;
 
-  syncServerOrbOrderWithServers(state.servers, { persist });
+  syncServerOrbOrderWithServers(state.servers, { persist: false });
   const afterSerialized = JSON.stringify(serverOrbOrderEntries) + JSON.stringify(Array.from(serverOrbFoldersById.values()));
-  if (persist && beforeSerialized !== afterSerialized) persistServerOrbFoldersToStorage();
+  if (persist && beforeSerialized !== afterSerialized) {
+    persistServerOrbOrderToStorage();
+    persistServerOrbFoldersToStorage();
+  }
   return beforeSerialized !== afterSerialized;
 }
 
@@ -99467,8 +100842,12 @@ function dissolveServerOrbFolder(folderId, { persist = true } = {}) {
   serverOrbFoldersById.delete(fid);
   if (openServerFolderId === fid) openServerFolderId = "";
 
-  syncServerOrbOrderWithServers(state.servers, { persist });
+  syncServerOrbOrderWithServers(state.servers, { persist: false });
   const afterSerialized = JSON.stringify(serverOrbOrderEntries) + JSON.stringify(Array.from(serverOrbFoldersById.values()));
+  if (persist && beforeSerialized !== afterSerialized) {
+    persistServerOrbOrderToStorage();
+    persistServerOrbFoldersToStorage();
+  }
   return beforeSerialized !== afterSerialized;
 }
 
@@ -100991,7 +102370,9 @@ function syncDmActiveListHighlight() {
     dmMain &&
     dmMain.style.display !== "none"
   );
-  const activeUserId = normId(state.activeDm?.otherUserId || state.activeDm?.other_user_id || callOtherUserId || "");
+  const activeKind = String(state.activeDm?.kind || "").trim().toLowerCase();
+  const isDirectConversation = !state.activeDm?.isGroup && activeKind !== "group" && activeKind !== "server";
+  const activeUserId = normId(state.activeDm?.otherUserId || state.activeDm?.other_user_id || "");
   const activeUsername = String(state.activeDm?.username || "").trim().toLowerCase();
   const activeConversationId = normId(activeDmId || state.activeDm?.conversationId || "");
 
@@ -101000,7 +102381,7 @@ function syncDmActiveListHighlight() {
     const itemUsername = String(item.getAttribute("data-dm-username") || "").trim().toLowerCase();
     const isMatch = (activeUserId && itemUserId === activeUserId)
       || (!activeUserId && activeUsername && itemUsername === activeUsername);
-    const isActive = isDmOpen && !!isMatch;
+    const isActive = isDmOpen && isDirectConversation && !!isMatch;
     item.classList.toggle("is-active", isActive);
     item.setAttribute("aria-current", isActive ? "page" : "false");
   });
@@ -101687,6 +103068,13 @@ async function loadDmList(options = {}) {
   subscribeTypingInboxForCurrentUser("dm-list-load");
   const renderToken = ++dmSidebarRenderToken;
   const requestUserId = state.user?.id;
+  const botInbox = getBotDirectMessagesController();
+  botInbox.ensureAccount();
+  botInbox.startRealtime();
+  if (requestUserId && botDirectMessagesInboxOwner !== requestUserId) {
+    botDirectMessagesInboxOwner = requestUserId;
+    void botInbox.loadInbox().catch(() => { if (botDirectMessagesInboxOwner === requestUserId) botDirectMessagesInboxOwner = ""; });
+  }
   let friendSequenceAtStart = coldHydration.read("friends").sequence;
   let contactsSequenceAtStart = coldHydration.read("contacts").sequence;
   const serverSidebarAtStart = getActiveServerSidebarContext();
@@ -101887,6 +103275,7 @@ async function loadDmList(options = {}) {
   setDmListPanelTitle(getFriendsMessagesTitle(), { serverMode: false });
 
   const sidebarModel = buildFriendsMessagesSidebarRows({ friends, contacts, groupEntries });
+  const botRows = botInbox.getRows();
   const {
     visiblePeopleRows = [],
     visibleBestFriendRows = [],
@@ -101921,7 +103310,7 @@ async function loadDmList(options = {}) {
     rows: state.dmSidebarRows,
   });
 
-  if (!friends.length && !contacts.length && !groupEntries.length && !serverEntries.length && !draftMessageRequests.length && !incomingMessageRequests.length && !outgoingMessageRequests.length) {
+  if (!botRows.length && !friends.length && !contacts.length && !groupEntries.length && !serverEntries.length && !draftMessageRequests.length && !incomingMessageRequests.length && !outgoingMessageRequests.length) {
     if (abortHomeSidebarRender("load_dm_list_empty_server_guard")) return;
     dmList.innerHTML = coldCollectionHint(["friends", "contacts", "groups"]) || (isAltaraDefinitivelyOffline()
       ? `<div class="hint" role="status">${esc(t("surface.waiting_for_connection", "Waiting for connection…"))}</div>`
@@ -101930,7 +103319,7 @@ async function loadDmList(options = {}) {
     return;
   }
 
-  if (!visiblePeopleRows.length && !visibleBestFriendRows.length && !groupRows.length) {
+  if (!botRows.length && !visiblePeopleRows.length && !visibleBestFriendRows.length && !groupRows.length) {
     if (abortHomeSidebarRender("load_dm_list_no_visible_rows_server_guard")) return;
     dmList.innerHTML = coldCollectionHint(["friends", "contacts", "groups"]) || (isAltaraDefinitivelyOffline()
       ? `<div class="hint" role="status">${esc(t("surface.waiting_for_connection", "Waiting for connection…"))}</div>`
@@ -102114,8 +103503,8 @@ async function loadDmList(options = {}) {
   `;
   };
 
-  const friendsMessagesCountChip = visiblePeopleRows.length
-    ? '<span class="dmListSectionCount">' + String(visiblePeopleRows.length) + '</span>'
+  const friendsMessagesCountChip = visiblePeopleRows.length + botRows.length
+    ? '<span class="dmListSectionCount">' + String(visiblePeopleRows.length + botRows.length) + '</span>'
     : "";
   const sectionsHtml = [
     visibleBestFriendRows.length
@@ -102126,11 +103515,12 @@ async function loadDmList(options = {}) {
         </div>
       `
       : "",
-    visiblePeopleRows.length
+    visiblePeopleRows.length + botRows.length
       ? `
         <div class="dmListSectionTitle">${esc(t("surface.friends_messages", "FRIENDS / MESSAGES"))} ${friendsMessagesCountChip}</div>
         <div class="dmListSection dmListSection--friendsMessages" data-dm-section="friends-messages">
           ${visiblePeopleRows.map((row) => renderFriendsMessagesSidebarRowHtml(row)).join("")}
+          ${botRows.map(row => renderBotDirectMessageSidebarRow(row, botRows)).join("")}
         </div>
       `
       : "",
@@ -102146,6 +103536,15 @@ async function loadDmList(options = {}) {
 
   if (abortHomeSidebarRender("load_dm_list_final_server_guard")) return;
   dmList.innerHTML = sectionsHtml || `<div class="hint">Sem DMs fixas. Pesquisa um amigo para voltar a abrir chat.</div>`;
+  dmList.querySelectorAll("[data-bot-dm-key]").forEach(item => {
+    const open = () => {
+      const row = botInbox.getRows().find(row => row.key === item.getAttribute("data-bot-dm-key"));
+      if (row) void openBotDirectMessage(row, row.serverId);
+    };
+    item.addEventListener("click", open);
+    item.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } });
+  });
+  syncBotDirectMessageSidebarHighlight();
 
   dmList.querySelectorAll(".dm-item[data-dm-conversation]").forEach((item) => {
     const convId = normId(item.getAttribute("data-dm-conversation") || "");
@@ -102430,6 +103829,25 @@ function primeDmOpeningShell(conversationId = "", meta = {}, {
 
   const resetPrivateComposer = rawKind !== "server"
     && activatePrivateDmComposerDraft(convId, navigationIntent);
+  if (rawKind === "server" && convId) {
+    const input = document.getElementById("dmInput");
+    const userId = normId(state.user?.id || "");
+    const hasOwner = !!input?.dataset && Object.prototype.hasOwnProperty.call(input.dataset, "dmDraftUserId");
+    const previousUserId = hasOwner ? normId(input.dataset.dmDraftUserId || "") : userId;
+    const previousConversationId = hasOwner ? normId(input.dataset.dmDraftConversationId || "")
+      : normId(activeDmId || previousActive.conversationId || "");
+    const sameOwner = input?.dataset?.dmDraftUserId === userId && input?.dataset?.dmDraftConversationId === convId;
+    if (input && userId && !sameOwner) {
+      // Prime changes activeDmId before asynchronous channel hydration. Move
+      // composer ownership here so a hidden voice draft cannot leak into text.
+      if (previousUserId === userId && previousConversationId) {
+        persistAltaraOfflineComposerDraft(previousConversationId, input.value || "");
+      }
+      delete input.dataset.dmDraftRestorePending;
+      restoreAltaraOfflineComposerDraft(convId, input, { replace: true });
+      setDmComposerDraftOwner(input, convId);
+    }
+  }
   if (convId) activeDmId = convId;
   else if (pending) activeDmId = null;
 
@@ -104279,6 +105697,7 @@ const serverUnreadByServerId = new Map();
 const channelUnreadByChannelId = new Map();
 const serverUnreadChannelMetaByChannelId = new Map();
 const serverUnreadSoundLastPlayedByKey = new Map();
+const incomingBotChannelMessageNotificationSeenByKey = new Map();
 const lastNotificationEvents = [];
 let serverUnreadStateLoaded = false;
 const SERVER_MESSAGE_NOTIFICATION_SOUND_COOLDOWN_MS = 2000;
@@ -105074,6 +106493,7 @@ let dmMediaLightbox = null;
 const dmLightboxAuthorizedRows = new Map();
 let dmAttachmentModalBound = false;
 let activeDmAttachmentModalPayload = null;
+let activeDmAttachmentModalSelection = null;
 let dmDragDropBound = false;
 let dmDragDepth = 0;
 let dmInternalDragActive = false;
@@ -105774,6 +107194,9 @@ const serverHideMutedChannelsByServerId = new Map();
 const serverMutedByServerId = new Map();
 const serverMemberListByServerId = new Map();
 const serverBotInstallListByServerId = new Map();
+const serverBotChannelMemberIdsByContext = new Map();
+const serverBotChannelMemberIdsInFlight = new Map();
+const serverBotChannelMemberAuthorityVersionByServerId = new Map();
 const serverBotManagementInstallListByServerId = new Map();
 const serverMembersSearchByServerId = new Map();
 const serverMemberLoadInFlightByServerId = new Map();
@@ -105830,6 +107253,7 @@ const serverOrbOrderEntries = [];
 const serverOrbFoldersById = new Map();
 let serverLastChannelStateLoaded = false;
 let serverOrbOrderStateLoaded = false;
+let serverOrbOrderStateUserId = "";
 let openServerFolderId = "";
 let serverHideMutedChannelsStateLoaded = false;
 let serverMutedStateLoaded = false;
@@ -106842,6 +108266,14 @@ function startAltaraMultiSessionDiagnostics() {
       altaraMultiSessionChannel = new BroadcastChannel(ALTARA_MULTI_SESSION_CHANNEL_NAME);
       altaraMultiSessionChannel.onmessage = (event) => {
         const data = event?.data || {};
+        if (data?.type === "altara_bot_metadata_changed") {
+          if (normId(data.userId || "") === getAltaraCurrentUserId()) invalidateServerBotMetadata();
+          return;
+        }
+        if (data?.type === "altara_bot_install_changed") {
+          if (normId(data.userId || "") === getAltaraCurrentUserId()) queueServerBotInstallRealtimeRefresh(data.serverId);
+          return;
+        }
         if (data?.type !== "altara_multi_session_heartbeat") return;
         const tabId = String(data.tabId || "").trim();
         if (!tabId || tabId === getAltaraTabId()) return;
@@ -116513,6 +117945,21 @@ function getMessageAuthorNameColor(m) {
   return resolveUserNameColor(uid, fallback);
 }
 
+function normalizeMessagePreviewText(valueInput = "") {
+  const rawSource = String(valueInput || "");
+  if (!rawSource) return "";
+  const parsedRanges = parseComposerTextWithFormattingRanges(rawSource);
+  let plain = String(parsedRanges?.text || rawSource);
+  plain = plain
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/\*\*\*([^*\n](?:[\s\S]*?[^*\n])?)\*\*\*/g, "$1")
+    .replace(/\*\*([^*\n](?:[\s\S]*?[^*\n])?)\*\*/g, "$1")
+    .replace(/\*([^*\n](?:[\s\S]*?[^*\n])?)\*/g, "$1")
+    .replace(/__([^_\n](?:[\s\S]*?[^_\n])?)__/g, "$1")
+    .replace(/~~([^~\n](?:[\s\S]*?[^~\n])?)~~/g, "$1");
+  return plain.replace(/\s+/g, " ").trim();
+}
+
 function getMessagePreviewText(m) {
   if (!m) return t("msg.deleted", "Deleted message");
   const parsed = getAuthoritativeMessageContent(m);
@@ -116560,21 +118007,7 @@ function getMessagePreviewText(m) {
     const text = getSystemEventDisplayText(m, parsed);
     return text ? `[Sistema] ${text}` : "[Sistema]";
   }
-  const normalizePreviewText = (valueInput = "") => {
-    const rawSource = String(valueInput || "");
-    if (!rawSource) return "";
-    const parsedRanges = parseComposerTextWithFormattingRanges(rawSource);
-    let plain = String(parsedRanges?.text || rawSource);
-    plain = plain
-      .replace(/`([^`\n]+)`/g, "$1")
-      .replace(/\*\*\*([^*\n](?:[\s\S]*?[^*\n])?)\*\*\*/g, "$1")
-      .replace(/\*\*([^*\n](?:[\s\S]*?[^*\n])?)\*\*/g, "$1")
-      .replace(/\*([^*\n](?:[\s\S]*?[^*\n])?)\*/g, "$1")
-      .replace(/__([^_\n](?:[\s\S]*?[^_\n])?)__/g, "$1")
-      .replace(/~~([^~\n](?:[\s\S]*?[^~\n])?)~~/g, "$1");
-    return plain.replace(/\s+/g, " ").trim();
-  };
-  const raw = normalizePreviewText(parsed.text || "");
+  const raw = normalizeMessagePreviewText(parsed.text || "");
   if (!raw) return "(mensagem)";
   return raw.length > 82 ? `${raw.slice(0, 82)}...` : raw;
 }
@@ -118471,6 +119904,7 @@ function setActiveMessageComposerPermissionState(nextState = {}) {
     reason: String(nextState.reason || ""),
     trace: nextState.trace || null,
   };
+  if (typeof serverPollController !== "undefined") serverPollController?.sync();
   return activeMessageComposerPermissionState;
 }
 
@@ -119731,6 +121165,7 @@ function setupActiveServerPermissionsRealtime(serverId = "") {
 }
 
 const ROLE_RECONCILIATION_MESSAGE_PERMISSION_KEYS = Object.freeze([
+  "create_polls",
   "send_messages",
   "read_message_history",
   "add_reactions",
@@ -120373,6 +121808,7 @@ function applyServerRoleAuthorityUiPatchFrame(serverId = "", changes = {}) {
       }
       if (changes.manageChannelsChanged === true) {
         patchActiveServerChannelManagementCapabilityUi(sid);
+        if (normId(activeChannelSettingsModalState?.serverId) === sid) renderChannelSettingsModal();
         revalidateOpenManageChannelsControls(sid, { showDeniedMessage: true });
       }
       if (changes.voicePermissionsChanged === true) {
@@ -120655,6 +122091,8 @@ async function reconcileServerRoleAuthorityVisuallyStable(serverId = "", batch =
     assignmentsChanged: roleSnapshot.assignmentsChanged === true,
     memberPresentationChanged,
   });
+  if (typeof serverPollController !== "undefined") serverPollController?.refresh();
+  if (normId(activeChannelSettingsModalState?.serverId) === sid) renderChannelSettingsModal();
   verifyServerRoleReconciliationVisualStability(baseline.visual, {
     selectedChannelStayedVisible,
     historyChanged,
@@ -120797,6 +122235,7 @@ async function ensureServerChannelVisibilityAuthorityReadyForNavigation(serverId
 }
 
 function scheduleServerRoleAuthorityRefresh(serverId = "", reason = "server_role_authority", details = {}) {
+  invalidateServerBotChannelMemberIds(serverId);
   const sid = normId(serverId || "");
   if (!sid) return false;
   let entry = serverRoleAuthorityRefreshStateByServerId.get(sid);
@@ -120836,6 +122275,7 @@ function scheduleActivePermissionsRefresh(reason = "permissions_realtime", paylo
   const payloadServerId = getServerIdFromPermissionsRealtimePayload(payload);
   const sid = normId(payloadServerId || context.serverId || "");
   if (!sid) return;
+  invalidateServerBotChannelMemberIds(sid);
   const roleSignalDetails = getServerRoleAuthoritySignalDetails(reason, payload);
   if (roleSignalDetails.roleSignal) {
     recordServerRolePermissionSaveTiming("reconcile_signal", { serverId: sid, reason });
@@ -121019,9 +122459,12 @@ function scheduleActivePermissionsRefresh(reason = "permissions_realtime", paylo
       renderServerNicknameModal();
     }
     if (activeChannelSettingsModalState && normId(activeChannelSettingsModalState.serverId || "") === sid) {
-      await loadChannelPermissionOverwrites(sid, activeChannelSettingsModalState.channelId || "", { force: true }).catch(() => {});
+      const editor = activeChannelSettingsModalState;
+      await loadServerPermissionOverridesBatch7a(sid, editor.itemType === "category" ? "category" : "channel",
+        editor.itemType === "category" ? editor.categoryId : editor.channelId, { force: true }).catch(() => {});
       renderChannelSettingsModal();
     }
+    if (typeof serverPollController !== "undefined") serverPollController?.refresh();
     revalidateOpenManageChannelsControls(sid, { showDeniedMessage: true });
     refreshOpenServerMiniProfileContext("server_role_permissions_reconciled");
     recordServerRolePermissionSaveTiming("reconcile_done", { serverId: sid, reason });
@@ -122426,12 +123869,17 @@ function refreshDmComposerFormatToolbar(inputEl = null) {
   }
 }
 
-function applyDmInputSelectionWrapper(inputEl, prefix, suffix = prefix) {
+function applyDmInputSelectionWrapper(inputEl, prefix, suffix = prefix, {isolated=false} = {}) {
   const sel = getDmInputSelectionInfo(inputEl);
   if (!sel.hasSelection) return false;
   const selected = sel.value.slice(sel.start, sel.end);
   const next = `${sel.value.slice(0, sel.start)}${prefix}${selected}${suffix}${sel.value.slice(sel.end)}`;
+  if (isolated && next.length > inputEl.maxLength) return false;
   inputEl.value = next;
+  if (isolated) {
+    const caret=sel.start+prefix.length+selected.length+suffix.length;
+    inputEl.setSelectionRange(caret,caret);inputEl.dispatchEvent(new Event("input",{bubbles:true}));inputEl.focus();return true;
+  }
   reconcileDmComposerColorRanges(next);
   dmComposerStyleRanges = createEmptyComposerStyleRangeState();
   dmComposerStyleRangesSnapshotText = next;
@@ -122443,12 +123891,12 @@ function applyDmInputSelectionWrapper(inputEl, prefix, suffix = prefix) {
   return true;
 }
 
-function applyDmInputSelectionStyle(inputEl, mode = "") {
+function applyDmInputSelectionStyle(inputEl, mode = "", options = {}) {
   const styleMode = String(mode || "").trim().toLowerCase();
   if (!DM_COMPOSER_STYLE_ORDER.includes(styleMode)) return false;
   const marker = DM_COMPOSER_STYLE_MARKERS[styleMode];
   if (!marker?.open || !marker?.close) return false;
-  return applyDmInputSelectionWrapper(inputEl, marker.open, marker.close);
+  return applyDmInputSelectionWrapper(inputEl, marker.open, marker.close,options);
 }
 
 function applyDmInputSelectionColor(inputEl, colorHex = "") {
@@ -123751,6 +125199,10 @@ function positionServerMemberSubmenu(menuEl, actionEl, {
     menuEl.style.maxHeight = `${Math.max(96, viewport.height - (safeMargin * 2))}px`;
     const rect = menuEl.getBoundingClientRect?.() || {};
     const measuredWidth = Math.max(180, Number(fallbackWidth || 232), Math.ceil(Number(rect.width || menuEl.offsetWidth || 0)));
+    // Freeze the measured border box: auto width can grow after moving left,
+    // invalidating the viewport clamp on narrow screens.
+    menuEl.style.boxSizing = "border-box";
+    menuEl.style.width = `${measuredWidth}px`;
     const measuredHeight = Math.min(
       Math.max(96, viewport.height - (safeMargin * 2)),
       Math.max(1, Math.ceil(Number(rect.height || menuEl.offsetHeight || 0)))
@@ -134133,7 +135585,19 @@ async function onEmojiPicked(emoji) {
   if (!em) return;
 
   pushEmojiRecent(em);
-  if (emojiPickerContext.mode === "reaction") {
+  if (emojiPickerContext.mode === "bot_dm") {
+    const owner = emojiPickerContext.botContext;
+    const current = botDirectMessageView?.getComposerContext();
+    if (owner && current && isActiveBotDirectMessageOwner(owner) && current.key === owner.key && current.userId === owner.userId) {
+      if (owner.messageId) {
+        const row = current.snapshot.messages.find(item => item.id === owner.messageId && !item.deleted_at);
+        if (row) {
+          try{await getBotDirectMessagesController().messageAction("reaction",row.id,{emoji:em,enabled:!row.reactions.some(item => item.emoji === em && item.me)});}
+          catch(_){if(isActiveBotDirectMessageOwner(owner))botDirectMessageView?.showNotice("Não foi possível confirmar a reação. Tenta novamente.");}
+        }
+      } else botDirectMessageView.insertText(em,owner);
+    }
+  } else if (emojiPickerContext.mode === "reaction") {
     await toggleMessageReaction(emojiPickerContext.messageId, em);
   } else {
     insertEmojiIntoComposer(em);
@@ -134141,7 +135605,8 @@ async function onEmojiPicked(emoji) {
   closeEmojiPicker();
 }
 
-function openEmojiPicker({ mode = "composer", messageId = null, anchorEl = null, point = null } = {}) {
+function openEmojiPicker({ mode = "composer", messageId = null, anchorEl = null, point = null, botContext = null } = {}) {
+  if (mode === "bot_dm" && (!botContext || !isActiveBotDirectMessageOwner(botContext))) return;
   if (mode === "reaction" && !canAddReactionInCurrentContext()) {
     showServerMessageCapabilityNotice("add_reactions");
     serverMessagePermissionDebugState.lastReactionMutation = {
@@ -134160,7 +135625,7 @@ function openEmojiPicker({ mode = "composer", messageId = null, anchorEl = null,
   const search = document.getElementById("emojiSearch");
   if (!picker) return;
 
-  emojiPickerContext = { mode, messageId: messageId ? String(messageId) : null };
+  emojiPickerContext = { mode, messageId: messageId ? String(messageId) : null, botContext };
   emojiPickerActiveCategory = "all";
   setEmojiPickerNavigationDepth(0);
   picker.classList.remove("hidden");
@@ -134524,6 +135989,7 @@ async function setServerMessagePinned(message, moderationContext, shouldPin) {
 }
 
 function closeMessageMenu(reason = "action") {
+  botDmMessageMenuContext=null;
   const menu = document.getElementById("msgActionMenu");
   if (!menu) return;
   const wasOpen = menu.classList.contains("is-open");
@@ -134593,6 +136059,19 @@ function ensureMessageMenu() {
     const msgId = btn.getAttribute("data-msg-id");
     if (!action || !msgId) return;
 
+    if (botDmMessageMenuContext) {
+      const owner=botDmMessageMenuContext,snapshot=botDirectMessageSnapshot;
+      if (!isActiveBotDirectMessageOwner(owner) || snapshot?.key!==owner.key || snapshot?.userId!==owner.userId || msgId!==owner.messageId) {closeMessageMenu();return;}
+      const row=snapshot.messages.find(item=>item.id===msgId) || snapshot.pinnedMessages?.find(item=>item.id===msgId);
+      closeMessageMenu();if(!row)return;
+      try {
+        if(action==="copy")await copyTextWithPromptFallback(row.deleted_at?"":row.content,"Message");
+        else if(action==="copy_id")await copyTextWithPromptFallback(row.id,"Message ID");
+        else if(getBotDirectMessageActions(row,snapshot).some(item=>item.action===action))await handleBotDirectMessageAction(action,row,snapshot,btn);
+      }catch(_){if(isActiveBotDirectMessageOwner(owner))botDirectMessageView?.showNotice("Não foi possível confirmar a ação. Tenta novamente.");}
+      return;
+    }
+
     if (action === "select") getDmMessageSelection()?.start(msgId);
     else if (action === "reply") setDmReplyTarget(msgId);
     else if (action === "react") {
@@ -134644,6 +136123,7 @@ function ensureMessageMenu() {
 }
 
 function openMessageMenu(messageId, anchorEl, point = null) {
+  botDmMessageMenuContext=null;
   closeActivePopover();
   const m = getMessageById(messageId);
   if (!m || (!anchorEl && !point)) return;
@@ -135210,7 +136690,7 @@ function showModalAttachmentFallbackFromImage(img) {
         <div class="dmAttachmentFileName">${esc(title)}</div>
         <div class="hint">${esc(info || "Preview unavailable")}</div>
       </div>
-      <a class="btn ghost" href="${escAttr(safe.url)}" target="_blank" rel="noopener noreferrer">Open original</a>
+      <button class="btn ghost" type="button" data-dm-attachment-original="1">Open original</button>
     </div>
   `;
   return true;
@@ -135281,6 +136761,78 @@ function readAttachmentFromNode(node) {
   const messageId = String(host.closest?.(".msg[data-msg-id]")?.getAttribute("data-msg-id") || "").trim();
   const messageRow = messageId ? getMessageById(messageId) : null;
   return resolveRenderableAttachmentPayload(descriptor, { messageRow });
+}
+
+function getDmAttachmentActionContext() {
+  const userId = normId(state.user?.id || "");
+  const conversationId = normId(activeDmId || state.activeDm?.conversationId || "");
+  return userId && conversationId && canCurrentUserRenderServerChannelConversation(conversationId)
+    ? `${userId}:${conversationId}:${Number(dmMessageLoadToken || 0)}:${Number(serverChannelUserNavigationVersion || 0)}` : "";
+}
+
+function getDmAttachmentActionContentKey(row) {
+  return canonicalMediaContent(JSON.stringify({ content: persistedTrustedMessageContent(row.content),
+    botAttachments: isBotMessageRow(row) || isPersistedBotChannelMessageRow(row) ? row.metadata?.attachments || [] : null }));
+}
+
+function getDmAttachmentActionSelection(node) {
+  const host = node?.closest?.("[data-att-url]");
+  const messageId = String(host?.closest?.(".msg[data-msg-id]")?.getAttribute("data-msg-id") || "");
+  const row = messageId ? getMessageById(messageId) : null;
+  const context = getDmAttachmentActionContext();
+  if (!host || !context || !row || normId(row.conversation_id) !== normId(activeDmId)
+    || row.deleted_at || row.is_deleted) return null;
+  const parsed = getAuthoritativeMessageContent(row);
+  const attachments = parsed?.type === "gif" && parsed.attachment
+    ? [sanitizeAttachmentPayload(parsed.attachment)] : extractParsedAttachments(parsed);
+  const index = attachments.findIndex(att => att && dmMediaKey(att) === host.getAttribute("data-att-key")
+    && att.url === host.getAttribute("data-att-url"));
+  const attachment = attachments[index];
+  if (!attachment) return null;
+  const optimistic = normId(row.user_id) === normId(state.user?.id)
+    && isLocallyTrustedOptimisticAttachmentUrl(row, attachment.url);
+  const privateUpload = attachment.uploadId
+    && normalizePrivateUploadReference(attachment.referenceUrl) === `altara-private-upload:${attachment.uploadId}`;
+  if (!optimistic && (!privateUpload
+    || (!resolveTrustedAttachmentDeliveryUrl(row, attachment) && !hasExpiredTrustedAttachmentDelivery(row)))) return null;
+  return { context, messageId, index, optimistic, uploadId: String(attachment.uploadId || ""), mediaKey: dmMediaKey(attachment),
+    contentKey: getDmAttachmentActionContentKey(row) };
+}
+
+async function resolveDmAttachmentAction(selection, { isCurrent = () => true } = {}) {
+  if (!selection || !isCurrent() || selection.context !== getDmAttachmentActionContext()) return null;
+  const original = getMessageById(selection.messageId);
+  const matches = row => row && normId(row.conversation_id) === normId(activeDmId)
+    && !row.deleted_at && !row.is_deleted
+    && getDmAttachmentActionContentKey(row) === selection.contentKey;
+  const selected = row => {
+    const parsed = getAuthoritativeMessageContent(row);
+    const items = parsed?.type === "gif" && parsed.attachment
+      ? [sanitizeAttachmentPayload(parsed.attachment)] : extractParsedAttachments(parsed);
+    const item = items[selection.index];
+    return item && String(item.uploadId || "") === selection.uploadId && dmMediaKey(item) === selection.mediaKey ? item : null;
+  };
+  if (!matches(original)) return null;
+  const attachment = selected(original);
+  if (!attachment) return null;
+  if (selection.optimistic) return normId(original.user_id) === normId(state.user?.id)
+    && isLocallyTrustedOptimisticAttachmentUrl(original, attachment.url)
+    ? resolveRenderableAttachmentPayload(attachment, { messageRow: original }) : null;
+  if (resolveTrustedAttachmentDeliveryUrl(original, attachment)) return resolveRenderableAttachmentPayload(attachment, { messageRow: original });
+  const [fresh] = await hydrateTrustedAttachmentRows({ supabase, rows: [original] });
+  const current = getMessageById(selection.messageId);
+  if (!isCurrent() || selection.context !== getDmAttachmentActionContext() || !matches(current)) return null;
+  const [merged] = mergeTrustedAttachmentDeliveryRows([current], [{ ...original, content: current.content }], [fresh]);
+  const updated = selected(merged);
+  if (merged === current || !updated || !resolveTrustedAttachmentDeliveryUrl(merged, updated)) return null;
+  const safe = resolveRenderableAttachmentPayload(updated, { messageRow: merged });
+  if (!safe) return null;
+  dmMessagesCache = mergeDmAttachmentDeliveryRows(dmMessagesCache, [current], [merged]);
+  dmPinsLastValidItems = mergeDmAttachmentDeliveryRows(dmPinsLastValidItems, [current], [merged]);
+  updateActiveConversationMessageCache({ persist: false, source: "attachment-action-renewed" });
+  const index = dmMessagesCache.findIndex(row => String(row.id) === selection.messageId);
+  if (index >= 0) replaceDmMessageNodesAtIndexes([index], { keepBottom: false, reason: "attachment-action-renewed" });
+  return selection.context === getDmAttachmentActionContext() ? safe : null;
 }
 
 function spoilerAttachmentKey(messageId, url) {
@@ -135667,11 +137219,12 @@ function closeDmAttachmentModal() {
   const body = document.getElementById("dmAttachmentModalBody");
   if (body) body.innerHTML = "";
   activeDmAttachmentModalPayload = null;
+  activeDmAttachmentModalSelection = null;
 }
 
-function openDmAttachmentModal(att) {
+function openDmAttachmentModal(att, selection = null) {
   const safe = getTrustedRenderableAttachmentPayload(att);
-  if (!safe) return false;
+  if (!safe || !selection || selection.context !== getDmAttachmentActionContext()) return false;
   bindDmAttachmentModalOnce();
 
   const modal = document.getElementById("dmAttachmentModal");
@@ -135684,13 +137237,17 @@ function openDmAttachmentModal(att) {
     return false;
   }
   activeDmAttachmentModalPayload = safe;
+  activeDmAttachmentModalSelection = selection;
 
   const displayName = formatAttachmentDisplayName(safe.name || "ficheiro", safe.kind);
   const meta = attachmentMetaLabel(safe);
   titleEl.textContent = displayName;
   infoEl.textContent = meta;
-  downloadBtn.href = safe.url;
-  downloadBtn.setAttribute("download", safe.name || displayName || "ficheiro");
+  downloadBtn.removeAttribute("href");
+  if (downloadBtn.tagName === "A") {
+    downloadBtn.setAttribute("role", "button");
+    downloadBtn.setAttribute("tabindex", "0");
+  }
 
   if (safe.kind === "image") {
     const isGif = isGifLikeAttachment(safe) || isGifLikeUrl(safe.url);
@@ -135723,7 +137280,7 @@ function openDmAttachmentModal(att) {
           <div class="dmAttachmentFileName">${esc(displayName)}</div>
           <div class="hint">${esc(meta || "Ficheiro")}</div>
         </div>
-        <a class="btn ghost" href="${esc(safe.url)}" target="_blank" rel="noopener noreferrer">Abrir original</a>
+        <button class="btn ghost" type="button" data-dm-attachment-original="1">Abrir original</button>
       </div>
     `;
   }
@@ -135737,6 +137294,35 @@ function openDmAttachmentModal(att) {
 function bindDmAttachmentModalOnce() {
   if (dmAttachmentModalBound) return;
   dmAttachmentModalBound = true;
+
+  const download = async e => {
+    e.preventDefault();
+    const selection = activeDmAttachmentModalSelection;
+    const isCurrent = () => {
+      const modal = document.getElementById("dmAttachmentModal");
+      return selection === activeDmAttachmentModalSelection && !!modal && !modal.classList.contains("hidden");
+    };
+    const safe = selection ? await resolveDmAttachmentAction(selection, { isCurrent }) : null;
+    const modal = document.getElementById("dmAttachmentModal");
+    if (!modal || modal.classList.contains("hidden") || selection !== activeDmAttachmentModalSelection
+      || (selection && selection.context !== getDmAttachmentActionContext())) return;
+    if (safe) {
+      activeDmAttachmentModalPayload = safe;
+      triggerAttachmentDownload(safe);
+    } else {
+      document.getElementById("btnDmAttachmentDownload")?.removeAttribute("href");
+      const info = document.getElementById("dmAttachmentModalInfo");
+      if (info) info.textContent = t("dm.media_unavailable", "Media unavailable");
+    }
+  };
+  document.getElementById("btnDmAttachmentDownload")?.addEventListener("click", download);
+  const downloadControl = document.getElementById("btnDmAttachmentDownload");
+  if (downloadControl?.tagName === "A") downloadControl.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") void download(e);
+  });
+  document.getElementById("dmAttachmentModalBody")?.addEventListener("click", e => {
+    if (e.target?.closest?.("[data-dm-attachment-original]")) void download(e);
+  });
 
   document.getElementById("btnDmAttachmentClose")?.addEventListener("click", closeDmAttachmentModal);
   document.getElementById("dmAttachmentModal")?.addEventListener("click", (e) => {
@@ -136208,11 +137794,7 @@ function attachmentBodyHtml(att, {
     <div class="msg__attachment msg__attachment--file" ${dataAttrs}>
       <div class="msg__fileRow">
       <button class="msg__fileMain" type="button" data-att-open="1">
-        <svg class="msg__fileIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
-        <span class="msg__fileText">
-          <span class="msg__fileName">${esc(name)}</span>
-          <span class="msg__fileMeta">${esc(meta)}</span>
-        </span>
+        ${nativeAttachmentFileContentHtml({name,meta})}
       </button>
       <div class="msg__fileActions">
         ${canDeleteSingle ? `<button class="msg__fileAction msg__fileAction--delete" type="button" data-att-delete="1" title="${escAttr(t("surface.delete", "Delete"))}" aria-label="${escAttr(t("surface.delete", "Delete"))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button>` : ""}
@@ -136483,9 +138065,22 @@ function renderComposerPreviewTextHtml(text) {
   return out;
 }
 
-function renderMessageTextSegmentHtml(text) {
-  const src = replaceEmojiShortcodesInText(String(text || ""));
-  if (!src) return "";
+function renderMessageTextSegmentHtml(text, { resolveBotMention = null, botMentionPositions = null, botMentionOffset = 0 } = {}) {
+  const original = String(text || "");
+  if (!original) return "";
+  const mentions = [];
+  let mentionMarker = "\u0000BOTMENTION";
+  while (original.includes(mentionMarker)) mentionMarker += "X";
+  const positions = typeof resolveBotMention === "function" ? (botMentionPositions || botMentionTokenPositions(original)) : null;
+  const prepared = positions ? original.replace(/<@!?([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})>/gi, (literal, id, index) => {
+    if (!positions.has(botMentionOffset + index)) return literal;
+    const name = resolveBotMention(id.toLowerCase());
+    if (typeof name !== "string" || !name.trim()) return literal;
+    const token = `${mentionMarker}${mentions.length}\u0000`;
+    mentions.push([token, renderBotMentionTokenHtml(id, name)]);
+    return token;
+  }) : original;
+  const src = replaceEmojiShortcodesInText(prepared);
 
   const tokens = [];
   const put = (html) => {
@@ -136522,6 +138117,10 @@ function renderMessageTextSegmentHtml(text) {
     const i = Number(idx);
     return Number.isInteger(i) && i >= 0 && i < tokens.length ? tokens[i] : "";
   });
+
+  // Cached names are escaped text, restored after markup so names cannot format
+  // themselves or create links. This label never authorizes a notification.
+  for (const [token, label] of mentions) out = out.split(token).join(label);
 
   return out;
 }
@@ -136600,9 +138199,13 @@ function hydrateInviteCards(container) {
   }
 }
 
-function renderMessageTextHtml(text, { allowRichEmbeds = true } = {}) {
+function renderMessageTextHtml(text, { allowRichEmbeds = true, resolveBotMention = null } = {}) {
   const src = String(text || "");
   if (!src) return "";
+  // Scan the complete source once: a URL split must not expose part of a code
+  // fence or a Markdown link label as ordinary mention text.
+  const botMentionPositions = typeof resolveBotMention === "function" ? botMentionTokenPositions(src) : null;
+  const segment = (value, offset) => renderMessageTextSegmentHtml(value, { resolveBotMention, botMentionPositions, botMentionOffset: offset });
 
   const urlRe = /(?:https?:\/\/|altara:\/\/)[^\s<>"']+/gi;
   let out = "";
@@ -136612,7 +138215,7 @@ function renderMessageTextHtml(text, { allowRichEmbeds = true } = {}) {
   while ((match = urlRe.exec(src))) {
     const full = String(match[0] || "");
     const at = Number(match.index || 0);
-    if (at > lastIdx) out += renderMessageTextSegmentHtml(src.slice(lastIdx, at));
+    if (at > lastIdx) out += segment(src.slice(lastIdx, at), lastIdx);
 
     let urlText = full;
     let trailing = "";
@@ -136644,7 +138247,7 @@ function renderMessageTextHtml(text, { allowRichEmbeds = true } = {}) {
     lastIdx = at + full.length;
   }
 
-  if (lastIdx < src.length) out += renderMessageTextSegmentHtml(src.slice(lastIdx));
+  if (lastIdx < src.length) out += segment(src.slice(lastIdx), lastIdx);
   return out;
 }
 
@@ -136676,6 +138279,10 @@ function gifMessageBodyHtml(gifUrl = "", {
   return deferredGifMessageBodyHtml(gif, safeUrl, { sourceArea });
 }
 
+function botThinkingBodyHtml() {
+  return `<span class="msgBotThinking" role="status"><span>${esc(t("bots.thinking", "Thinking"))}</span><span class="msgBotThinking__dots" aria-hidden="true"><i></i><i></i><i></i></span></span>`;
+}
+
 function messageHtml(m, opts = {}) {
   const mid = String(m?.id || "");
   if (isLegacyCallRecordMessage(m)) return historicalLegacyCallRecordHtml(m);
@@ -136685,6 +138292,16 @@ function messageHtml(m, opts = {}) {
   const compact = !!opts?.compact;
   const isMe = isOwnMessage(m);
   const isBotMsg = isBotMessageRow(m);
+  const mentionServerId = isBotMsg && isPersistedBotChannelMessageRow(m) ? normId(m?.server_id || m?.serverId || "") : "";
+  const mentionNames = new Map();
+  const resolveBotMention = mentionServerId ? (userId) => {
+    if (!mentionNames.has(userId)) {
+      const member = getCachedServerMemberForUser(mentionServerId, userId);
+      mentionNames.set(userId, member ? resolveServerDisplayName(mentionServerId, userId, member) : "");
+    }
+    return mentionNames.get(userId);
+  } : null;
+  const isBotThinking = isBotMsg && !!getBotPendingEventIdFromMessage(m);
   const isCommandInvocation = isBotCommandInvocationMessage(m);
   const isEditingCurrent = !!(dmEditTarget?.id && String(dmEditTarget.id) === mid);
   const optimisticSendState = getOptimisticDmMessageState(m);
@@ -136749,7 +138366,7 @@ function messageHtml(m, opts = {}) {
     ? getEmojiOnlyMessageCount(parsed.text || "")
     : 0;
   const rawTextHtml = replaceRegionalFlagEmojiWithImagesInHtml(
-    renderMessageTextHtml(parsed.text || "", { allowRichEmbeds }),
+    renderMessageTextHtml(parsed.text || "", { allowRichEmbeds, resolveBotMention }),
     "msg__emojiFlag"
   );
   // Avoid wrapping in <span> when we have a block-level invite card (div inside span = invalid HTML).
@@ -136771,9 +138388,12 @@ function messageHtml(m, opts = {}) {
     : ((parsed.type === "attachment" || parsed.type === "attachments"))
       ? attachmentCollectionBodyHtml(parsed, { messageId: mid, sourceArea: messageSourceArea, messageRow: m })
       : textBodyHtml;
+  if (isServerMsg && pollMessageQuestion(m)) bodyHtml = getServerPollController().messageSlot(m);
   if (metadataAttachments) {
     bodyHtml += attachmentCollectionBodyHtml(metadataAttachments, { messageId: mid, sourceArea: messageSourceArea, messageRow: m });
   }
+  if (isBotMsg && isPersistedBotChannelMessageRow(m)) bodyHtml += renderBotEmbeds(m, { resolveMention: resolveBotMention });
+  if (isBotMsg && isPersistedBotChannelMessageRow(m)) bodyHtml += renderBotComponents(m);
   const emojiOnlySizeClass = emojiOnlyCount
     ? ` msg__text--emojiOnly msg__text--emojiOnly-${Math.min(emojiOnlyCount, 4)}`
     : "";
@@ -136783,7 +138403,7 @@ function messageHtml(m, opts = {}) {
   const encryptedRestoreHtml = isEncryptedUnavailable && !parsed.e2eePending
     ? '<div class="msg__e2eeRestoreHint">' + esc(t("dm.e2ee.unavailable_subtext", DM_HISTORICAL_ENCRYPTED_PLACEHOLDER_SUBTEXT)) + '</div>'
     : "";
-  const messageBodyHtml = bodyHtml + encryptedRestoreHtml;
+  const messageBodyHtml = isBotThinking ? botThinkingBodyHtml() : bodyHtml + encryptedRestoreHtml;
 
   const pinHtml = m.is_pinned ? `<span class="msg__pin" title="Mensagem pinned">&#x1F4CC;</span>` : "";
   const editedHtml = m.edited_at ? `<span class="msg__edited">(editado)</span>` : "";
@@ -136842,24 +138462,20 @@ function messageHtml(m, opts = {}) {
     isEditingCurrent ? "msg--editingTarget" : "",
     isServerMsg ? "msg--server" : "",
     isBotMsg ? "msg--bot" : "",
+    isBotMsg && isPersistedBotChannelMessageRow(m) && isCurrentUserBotNotificationMention(m) ? "msg--mentioned" : "",
+    isBotThinking ? "msg--botThinking" : "",
     isCommandInvocation ? "msg--commandInvocation" : "",
     isOptimistic && !sendFailed ? "msg--sendPending" : "",
     sendFailed ? "msg--sendFailed" : "",
   ].filter(Boolean).join(" ");
 
-  return `
-    <div class="${msgClasses}" data-msg-id="${escAttr(m.id || "")}" data-message-area="${escAttr(messageSourceArea)}"${isServerMsg ? ' data-server-message="1"' : ""}${botMessageAttrs}${botContextAttrs}>
-      ${avatarColHtml}
-      <div class="msg__body">
-        ${actionsHtml}
-        ${metaHtml}
-        ${replyHtml}
-        <div class="${bodyCls}">${messageBodyHtml}${pendingSendStateHtml}</div>
-        ${failedSendStateHtml}
-        <div class="msg__reactions" data-msg-reactions-for="${escAttr(mid)}">${reactionsHtml}</div>
-      </div>
-    </div>
-  `;
+  return renderDirectMessageFrame({
+    classes:msgClasses,
+    attributes:`data-msg-id="${escAttr(m.id || "")}" data-message-area="${escAttr(messageSourceArea)}"${isServerMsg ? ' data-server-message="1"' : ""}${botMessageAttrs}${botContextAttrs}`,
+    avatarColumnHtml:avatarColHtml,actionsHtml,metaHtml,replyHtml,bodyClass:bodyCls,
+    bodyHtml:messageBodyHtml+pendingSendStateHtml,afterBodyHtml:failedSendStateHtml,
+    reactionsHtml,reactionsAttributes:`data-msg-reactions-for="${escAttr(mid)}"`,
+  });
 }
 
 function buildMessagesHtml(msgs) {
@@ -137664,6 +139280,30 @@ async function toggleMessageReaction(messageId, emoji) {
   }
 }
 
+function toggleMessageGifFavoriteFromButton(gifFavBtn) {
+  const host = gifFavBtn.closest("[data-msg-gif-wrap]");
+  const gifObj = normalizeGifFavoriteEntry({
+    id: host?.getAttribute("data-gif-id") || "",
+    url: host?.getAttribute("data-gif-url") || "",
+    preview: host?.getAttribute("data-gif-preview") || "",
+    title: host?.getAttribute("data-gif-title") || "",
+    animatedPreview: host?.getAttribute("data-gif-animation-preview") || "",
+    previewKind: host?.getAttribute("data-gif-preview-kind") || "animated",
+    dimensionsKind: host?.getAttribute("data-gif-dimensions-kind") || "",
+    width: Number(host?.getAttribute("data-gif-width")) || 0,
+    height: Number(host?.getAttribute("data-gif-height")) || 0,
+  });
+  if (!gifObj) return;
+  const nowFav = toggleFav(gifObj, { syncCloud: true });
+  const nextTitle = nowFav ? t("gif.remove_favorite", "Remove from favorites") : t("gif.add_favorite", "Add to favorites");
+  gifFavBtn.classList.toggle("is-fav", nowFav);
+  gifFavBtn.title = nextTitle;
+  gifFavBtn.setAttribute("aria-label", nextTitle);
+  gifFavBtn.setAttribute("aria-pressed", String(nowFav));
+  gifFavBtn.textContent = nowFav ? "★" : "☆";
+  renderGifQuickTags();
+  if (gifMode === "favorites") loadGifFavorites();
+}
 function bindDmMessageActions() {
   const box = document.getElementById("dmMessages");
   if (!box || box.dataset.dmMsgActionsBound === "1") return;
@@ -137681,28 +139321,7 @@ function bindDmMessageActions() {
     if (gifFavBtn) {
       e.preventDefault();
       e.stopPropagation();
-      const host = gifFavBtn.closest("[data-msg-gif-wrap]");
-      const gifObj = normalizeGifFavoriteEntry({
-        id: host?.getAttribute("data-gif-id") || "",
-        url: host?.getAttribute("data-gif-url") || "",
-        preview: host?.getAttribute("data-gif-preview") || "",
-        title: host?.getAttribute("data-gif-title") || "",
-        animatedPreview: host?.getAttribute("data-gif-animation-preview") || "",
-        previewKind: host?.getAttribute("data-gif-preview-kind") || "animated",
-        dimensionsKind: host?.getAttribute("data-gif-dimensions-kind") || "",
-        width: Number(host?.getAttribute("data-gif-width")) || 0,
-        height: Number(host?.getAttribute("data-gif-height")) || 0,
-      });
-      if (!gifObj) return;
-      const nowFav = toggleFav(gifObj, { syncCloud: true });
-      const nextTitle = nowFav ? t("gif.remove_favorite", "Remove from favorites") : t("gif.add_favorite", "Add to favorites");
-      gifFavBtn.classList.toggle("is-fav", nowFav);
-      gifFavBtn.title = nextTitle;
-      gifFavBtn.setAttribute("aria-label", nextTitle);
-      gifFavBtn.setAttribute("aria-pressed", String(nowFav));
-      gifFavBtn.textContent = nowFav ? "★" : "☆";
-      renderGifQuickTags();
-      if (gifMode === "favorites") loadGifFavorites();
+      toggleMessageGifFavoriteFromButton(gifFavBtn);
       return;
     }
 
@@ -137710,7 +139329,7 @@ function bindDmMessageActions() {
     if (botProfileBtn) {
       e.preventDefault();
       e.stopPropagation();
-      await openBotProfileCard(getBotProfileSeedFromElement(botProfileBtn));
+      await openBotProfileCard(getBotProfileSeedFromElement(botProfileBtn), { anchorEl: botProfileBtn });
       closeMessageMenu();
       return;
     }
@@ -137802,8 +139421,12 @@ function bindDmMessageActions() {
     const attDownloadBtn = target.closest("[data-att-download]");
     if (attDownloadBtn) {
       e.preventDefault();
-      const att = readAttachmentFromNode(attDownloadBtn);
-      if (att) triggerAttachmentDownload(att);
+      const selection = getDmAttachmentActionSelection(attDownloadBtn);
+      const att = selection ? await resolveDmAttachmentAction(selection) : null;
+      if (att && (!selection || selection.context === getDmAttachmentActionContext())) triggerAttachmentDownload(att);
+      else if (selection && selection.context === getDmAttachmentActionContext()) {
+        await requestAppAlert(t("dm.media_unavailable", "Media unavailable"), { title: t("dm.attachment_title", "Ficheiro") });
+      }
       return;
     }
 
@@ -137822,8 +139445,13 @@ function bindDmMessageActions() {
         return;
       }
       if (!openDmMediaLightboxFromNode(attOpenBtn)) {
-        const att = readAttachmentFromNode(attOpenBtn);
-        if (att && !["image", "video"].includes(att.kind)) openDmAttachmentModal(att);
+        const selection = getDmAttachmentActionSelection(attOpenBtn);
+        const att = selection ? await resolveDmAttachmentAction(selection) : null;
+        if (att && !["image", "video"].includes(att.kind)
+          && (!selection || selection.context === getDmAttachmentActionContext())) openDmAttachmentModal(att, selection);
+        else if (!att && selection && selection.context === getDmAttachmentActionContext()) {
+          await requestAppAlert(t("dm.media_unavailable", "Media unavailable"), { title: t("dm.attachment_title", "Ficheiro") });
+        }
       }
       closeMessageMenu();
       return;
@@ -139895,10 +141523,13 @@ function getBotChannelMessageRawId(rowOrId = "") {
 
 function getBotPendingEventIdFromMessage(row = {}) {
   if (!row || typeof row !== "object") return "";
+  const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+  const status = String(metadata.status || row?.status || "").trim().toLowerCase();
+  // A failure notice can retain the placeholder ID to update the same timeline row.
+  if (["failed", "expired", "timeout", "timed_out"].includes(status)) return "";
   const id = String(row?.id || "").trim();
   if (id.startsWith(BOT_PENDING_MESSAGE_ID_PREFIX)) return normId(id.slice(BOT_PENDING_MESSAGE_ID_PREFIX.length));
   if (!isLocalBotRuntimeMessage(row) || isPersistedBotChannelMessageRow(row)) return "";
-  const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
   return normId(metadata.interaction_event_id || metadata.connection_event_id || metadata.event_id || "");
 }
 function getBotCommandInvocationEventIdFromMessage(row = {}) {
@@ -139962,9 +141593,12 @@ function normalizeBuiltinBotResponseRow(row = {}, context = {}) {
   if (!row || typeof row !== "object") return null;
   if (row?.deleted_at || row?.deletedAt) return null;
   const metadata = { ...normalizeBotRowMetadata(row) };
-  delete metadata.attachments;
-  const content = normalizeBotTextOnlyContent(row?.content || row?.message_content || row?.messageContent || metadata.content || "");
-  const metadataAttachments = null;
+  const rawContent = row?.content || row?.message_content || row?.messageContent || metadata.content || "";
+  const items = botAttachmentItems(metadata, rawContent, supabase?.supabaseUrl || "",row);
+  const metadataAttachments = items.length ? items : null;
+  const text = normalizeBotTextOnlyContent(rawContent);
+  const content = metadataAttachments ? JSON.stringify({type:'attachments',items,text: (()=>{try {const parsed=JSON.parse(rawContent);return parsed?.type==='attachments'?String(parsed.text||''):text;}catch{return text;}})()}) : text;
+  if(!metadataAttachments)delete metadata.attachments;
   const rawId = getBotChannelMessageRawId(row);
   const id = getBotRuntimeStableId(BOT_CHANNEL_MESSAGE_ID_PREFIX, rawId);
   const resolvedContext = resolveServerChannelTimelineContext({
@@ -139981,7 +141615,7 @@ function normalizeBuiltinBotResponseRow(row = {}, context = {}) {
   const inferredBotName = String(row?.bot_name || row?.botName || row?.message_bot_name || row?.messageBotName || cachedBot?.botName || cachedBot?.displayName || cachedBot?.name || cachedBot?.username || "").trim();
   const botName = inferredBotName || (/^GORDO\b/i.test(content.trim()) ? "GORDO" : "Bot");
   const botAvatarUrl = String(row?.bot_avatar_url || row?.botAvatarUrl || row?.message_bot_avatar_url || row?.messageBotAvatarUrl || cachedBot?.avatarUrl || cachedBot?.botAvatarUrl || cachedBot?.avatar_url || "").trim();
-  if (!id || (!content.trim() && !metadataAttachments)) {
+  if (!id || (!content.trim() && !metadataAttachments && !botMessageEmbeds({ source: "bot_channel_messages", metadata }).length && !botMessageComponents({ source: "bot_channel_messages", metadata }).length)) {
     logBotHydrationState("response_row_dropped", {
       reason: !id ? "missing_bot_message_id" : "missing_content",
       serverId,
@@ -139991,7 +141625,7 @@ function normalizeBuiltinBotResponseRow(row = {}, context = {}) {
     });
     return null;
   }
-  return {
+  return copyTrustedAttachmentDeliveryState(row, {
     id,
     bot_channel_message_id: rawId,
     message_id: rawId,
@@ -140034,7 +141668,7 @@ function normalizeBuiltinBotResponseRow(row = {}, context = {}) {
       display_name: botName,
       avatar_url: botAvatarUrl,
     },
-  };
+  });
 }
 
 function isSameBotChannelMessage(existing = {}, next = {}) {
@@ -140673,6 +142307,7 @@ function syncBotPendingFromInteractionRows(rows = [], context = {}, registered =
           botId: row?.bot_id || registered?.botId || registered?.bot_id || "",
           botName: row?.bot_name || registered?.botName || registered?.bot_name || "",
           botAvatarUrl: row?.bot_avatar_url || registered?.botAvatarUrl || registered?.bot_avatar_url || "",
+          interactionCreatedAt: row?.created_at || "",
         }, { render, startResponsePolling: false });
       }
     }
@@ -140726,6 +142361,7 @@ async function fetchActiveBotChannelInteractions(context = {}, limit = 100, opti
 }
 
 async function fetchActiveBotChannelResponses(context = {}, limit = 50, options = {}) {
+  const requestingUserId = normId(state.user?.id || '');
   const resolvedContext = resolveServerChannelTimelineContext(context);
   const targetCacheKey = getTimelineCacheKeyForServerChannel(resolvedContext);
   const debugBase = {
@@ -140810,7 +142446,7 @@ async function fetchActiveBotChannelResponses(context = {}, limit = 50, options 
     };
     throw error;
   }
-  if (!isServerMessageHistoryGenerationCurrent(targetCacheKey, historyGeneration)) {
+  if (requestingUserId !== normId(state.user?.id || '') || !isServerMessageHistoryGenerationCurrent(targetCacheKey, historyGeneration)) {
     serverMessageHistoryDebugState.staleFetchDiscardedCount += 1;
     serverMessageHistoryDebugState.lastBotFetch = {
       ...debugBase,
@@ -140826,10 +142462,12 @@ async function fetchActiveBotChannelResponses(context = {}, limit = 50, options 
     });
     return [];
   }
-  const rows = filterRowsForServerMessageHistory(
+  let rows = filterRowsForServerMessageHistory(
     targetCacheKey,
     Array.isArray(data) ? data : []
   );
+  rows = await hydrateTrustedAttachmentRows({supabase,rows:rows.map(row=>normalizeBuiltinBotResponseRow(row,resolvedContext)).filter(Boolean)});
+  if(requestingUserId !== normId(state.user?.id || '') || !isServerMessageHistoryGenerationCurrent(targetCacheKey,historyGeneration)) return [];
   const normalizedCount = rows.map((row) => normalizeBuiltinBotResponseRow(row, resolvedContext)).filter(Boolean).length;
   const cacheBotCountBefore = getCachedBotChannelMessageCountForContext(resolvedContext);
   const reconciled = reconcilePersistedBotChannelMessageSnapshot(rows, resolvedContext, {
@@ -141194,13 +142832,17 @@ function clearBotThinkingForPersistedRow(row = {}, context = {}, reason = "bot-r
 }
 
 async function mergeAndRenderBotChannelRows(rows = [], context = {}, { source = "bot-live", keepBottom = true } = {}) {
+  const requestingUserId = normId(state.user?.id || '');
   const conversationKey = getTimelineCacheKeyForServerChannel(context)
     || normId(context?.conversationId || context?.conversation_id || "");
   if (!conversationKey || !canCurrentUserRenderServerChannelConversation(conversationKey)) {
     return { merged: false, rendered: false, normalizedCount: 0, thinkingCleared: false, skippedReason: "server_channel_not_visible" };
   }
   const list = Array.isArray(rows) ? rows : [rows];
-  const normalizedRows = list.map((row) => normalizeBuiltinBotResponseRow(row, context)).filter(Boolean);
+  let normalizedRows = list.map((row) => normalizeBuiltinBotResponseRow(row, context)).filter(Boolean);
+  normalizedRows = await hydrateTrustedAttachmentRows({supabase,rows:normalizedRows});
+  if (requestingUserId !== normId(state.user?.id || '')) return {merged:false,rendered:false,normalizedCount:0,thinkingCleared:false,skippedReason:'account_changed'};
+  if (!canCurrentUserRenderServerChannelConversation(conversationKey)) return {merged:false,rendered:false,normalizedCount:0,thinkingCleared:false,skippedReason:'server_channel_not_visible'};
   if (!normalizedRows.length) {
     logBotLiveState("merge_skipped", {
       source,
@@ -141893,6 +143535,14 @@ function buildBotConnectionRuntimeMessage({ idPrefix = BOT_NOTICE_MESSAGE_ID_PRE
   const botAvatarUrl = author.avatarUrl || "";
   const botId = author.botId || normId(registered?.botId || registered?.bot_id || "");
   const messageContent = String(content || `${botName} is thinking...`).slice(0, 2000);
+  // Server timestamps keep the provisional reply after its invocation even if
+  // the device clock is behind the database clock.
+  const eventTime = Date.parse(registered?.interactionCreatedAt || "");
+  const invocationTime = Date.parse(registered?.commandCreatedAt || "");
+  const authoritativeTime = Number.isFinite(eventTime) ? eventTime : invocationTime;
+  const createdAt = Number.isFinite(authoritativeTime)
+    ? new Date(Math.max(authoritativeTime, Number.isFinite(invocationTime) ? invocationTime + 1 : authoritativeTime)).toISOString()
+    : (existing?.created_at || existing?.createdAt || new Date().toISOString());
   return {
     id: stableId,
     ...(isThinking ? {
@@ -141933,7 +143583,7 @@ function buildBotConnectionRuntimeMessage({ idPrefix = BOT_NOTICE_MESSAGE_ID_PRE
       bot_name: botName,
       bot_avatar_url: botAvatarUrl || null,
     },
-    created_at: new Date().toISOString(),
+    created_at: createdAt,
     edited_at: null,
     reply_to_id: null,
     is_pinned: false,
@@ -142086,7 +143736,6 @@ function appendBotConnectionPendingMessage(
   });
   if (existing?.id) {
     message.id = String(existing.id || pendingId || message.id);
-    message.created_at = existing.created_at || existing.createdAt || message.created_at;
   }
   const finalAuthorName = String(message?.bot_name || message?.authorName || "Bot").trim() || "Bot";
   const finalAvatarPresent = !!String(message?.bot_avatar_url || message?.avatarUrl || "").trim();
@@ -142235,6 +143884,11 @@ async function waitForBotConnectionModeResponse(eventId = "", context = {}, regi
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (!isBotConnectionModeContextActive(context)) return false;
     await waitForAltaraBotDelay(attempt === 0 ? 900 : 1500);
+    if (!isBotConnectionModeContextActive(context)) return false;
+    if (dmMessagesCache.some((row) => isPersistedBotChannelMessageRow(row) && getBotResponseEventId(row) === eid)) {
+      removeBotConnectionPendingMessage(eid, { render: true, reason: "bot-response-already-received" });
+      return true;
+    }
     const interactionRows = await fetchActiveBotChannelInteractions(context, 50, { render: false, keepBottom: true, source: "bot-interaction-poll" }).catch((error) => {
       if (!isDeveloperPortalMissingSqlError(error)) console.warn("bot interaction status poll failed", error?.message || error);
       return [];
@@ -142292,6 +143946,8 @@ function showBotConnectionPendingNotice(commandName = "", context = {}, register
 
 function getFriendlyBotConnectionModeErrorMessage(error = null) {
   const raw = String(error?.message || error?.code || error || "").toLowerCase();
+  if (/bot_channel_access_denied/.test(raw)) return "This bot does not have permission to view this channel.";
+  if (/bot_channel_permission_denied/.test(raw)) return "This bot does not have permission to send messages in this channel.";
   if (/missing_use_application_commands|application_command_permission_denied/.test(raw)) return "You do not have permission to use application commands in this server.";
   if (/server_member_timed_out/.test(raw)) return "You cannot use application commands while timed out.";
   if (/server_banned|user_banned/.test(raw)) return "You cannot use application commands in this server.";
@@ -142346,7 +144002,7 @@ function buildBotConnectionModeContextOption(parsed = {}, context = {}, { comman
     },
   };
 }
-async function createBotConnectionModeInteraction(parsed = {}, registered = {}, context = {}, { commandMessageId = "", structured: preparedStructured = null } = {}) {
+async function createBotConnectionModeInteraction(parsed = {}, registered = {}, context = {}, { commandMessageId = "", commandCreatedAt = "", structured: preparedStructured = null } = {}) {
   const structured = preparedStructured || await buildBotConnectionModeStructuredOptions(parsed, registered, context);
   const structuredOptions = Array.isArray(structured?.options) ? structured.options : [];
   const shouldKeepRawFallback = !structuredOptions.length && String(parsed?.args || "").trim();
@@ -142386,7 +144042,7 @@ async function createBotConnectionModeInteraction(parsed = {}, registered = {}, 
     lastPingError: null,
     lastRollError: null,
   });
-  showBotConnectionPendingNotice(parsed.name, context, registered, eventId);
+  showBotConnectionPendingNotice(parsed.name, context, { ...registered, interactionCreatedAt: row?.created_at || "", commandCreatedAt }, eventId);
   void waitForBotConnectionModeResponse(eventId, context, registered).catch((error) => {
     removeBotConnectionPendingMessage(eventId, { render: true, reason: "bot-response-refresh-error" });
     console.warn("bot response refresh failed", error?.message || error);
@@ -142568,6 +144224,7 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
   if (!parsed?.name) return false;
   const context = getBotCommandServerTextContext(conversationId);
   if (!context || !state.user?.id) return false;
+  const invocationActorId = normId(state.user.id);
   const knownCommand = isKnownApplicationCommandName(context.serverId, parsed.name);
   const commandCapability = getCurrentApplicationCommandCapability(context);
   serverAppsPermissionsDebugState.selectedCommand = {
@@ -142594,8 +144251,19 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
     return "blocked";
   }
 
-  const commands = await fetchServerSlashCommandsForComposer(context.serverId, { force: false });
-  const registered = (commands || []).find((cmd) => String(cmd?.name || "").trim().toLowerCase() === parsed.name);
+  let commands = await fetchServerSlashCommandsForComposer(context.serverId, { force: false });
+  let registered = (commands || []).find((cmd) => String(cmd?.name || "").trim().toLowerCase() === parsed.name);
+  if (!registered?.commandId) {
+    // A running bot can sync a new command while this composer keeps its cache.
+    commands = await fetchServerSlashCommandsForComposer(context.serverId, { force: true });
+    if (normId(state.user?.id || "") !== invocationActorId || !isBotConnectionModeContextActive(context)) return true;
+    const refreshedCapability = getCurrentApplicationCommandCapability(context);
+    if (!refreshedCapability.allowed) {
+      showApplicationCommandPermissionDenied(refreshedCapability);
+      return "blocked";
+    }
+    registered = (commands || []).find((cmd) => String(cmd?.name || "").trim().toLowerCase() === parsed.name);
+  }
   if (!registered?.commandId) return false;
   serverAppsPermissionsDebugState.lastCommandInvocation = {
     phase: "preparing",
@@ -142658,17 +144326,36 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
     return handled;
   }
   if (isAltaraBotBetaDisabled()) {
-    showBotConnectionTimelineNotice("Bot commands are unavailable right now.", context, registered);
-    serverAppsPermissionsDebugState.lastCommandInvocation = {
-      ...serverAppsPermissionsDebugState.lastCommandInvocation,
-      phase: "unavailable",
-      finishedAt: Date.now(),
-    };
-    return true;
+    const enable = !ALTARA_BOTS_PHASE2A_FRONTEND_FORCED_DISABLED && await requestAppConfirm(
+      t("bots.enable_prompt", "Bot commands are disabled on this device. Enable bot features and send this command?"),
+      { title: "Bots", okText: t("bots.enable", "Enable bots"), cancelText: t("common.cancel", "Cancel") }
+    );
+    // The confirmation can stay open while the account or channel changes.
+    if (enable && (normId(state.user?.id || "") !== invocationActorId || !isBotConnectionModeContextActive(context))) return true;
+    if (!enable || !enableAltaraBotsOnDevice()) {
+      showDmComposerNotice(t("bots.disabled_on_device", "Bot features are disabled on this device."), { title: "Bots" });
+      serverAppsPermissionsDebugState.lastCommandInvocation = {
+        ...serverAppsPermissionsDebugState.lastCommandInvocation,
+        phase: "unavailable",
+        finishedAt: Date.now(),
+      };
+      return true;
+    }
+    const currentCapability = getCurrentApplicationCommandCapability(context);
+    if (!currentCapability.allowed) {
+      showApplicationCommandPermissionDenied(currentCapability);
+      serverAppsPermissionsDebugState.lastCommandInvocation = {
+        ...serverAppsPermissionsDebugState.lastCommandInvocation,
+        phase: "denied",
+        capability: currentCapability,
+        finishedAt: Date.now(),
+      };
+      return "blocked";
+    }
   }
 
   try {
-    const handled = await createBotConnectionModeInteraction(parsed, registered, context, { commandMessageId, structured: preparedStructured });
+    const handled = await createBotConnectionModeInteraction(parsed, registered, context, { commandMessageId, commandCreatedAt: commandMessage?.created_at || "", structured: preparedStructured });
     serverAppsPermissionsDebugState.lastCommandInvocation = {
       ...serverAppsPermissionsDebugState.lastCommandInvocation,
       phase: handled ? "queued" : "not_handled",
@@ -142736,6 +144423,7 @@ function bindDmAttachmentActionsOnce() {
 }
 
 function wireDmComposer() {
+  getServerPollController();
   bindDmAttachmentActionsOnce();
   const input = document.getElementById("dmInput");
   const send = document.getElementById("dmSend");
@@ -143240,6 +144928,7 @@ let gifQuickTagsCache = [];
 let gifTrendingPreviewUrl = "";
 let gifFolderTitle = "Favorites";
 let gifPickerAnchorEl = null;
+let gifPickerBotDmContext = null;
 let gifPickerAnchorPoint = null;
 let gifPickerPositionRaf = 0;
 let gifCatalogController = null;
@@ -143835,10 +145524,12 @@ function closeGifModal() {
   if (quickTags) quickTags.innerHTML = "";
   gifPickerAnchorEl = null;
   gifPickerAnchorPoint = null;
+  gifPickerBotDmContext = null;
 }
 
-function openGifModal({ anchorEl = null, point = null } = {}) {
-  if (!canAttachFilesInCurrentContext()) {
+function openGifModal({ anchorEl = null, point = null, botContext = null } = {}) {
+  if (botContext && (!isActiveBotDirectMessageOwner(botContext) || !botDirectMessageView?.getComposerContext())) return false;
+  if (!botContext && !canAttachFilesInCurrentContext()) {
     showAttachmentCapabilityDeniedFeedback({ source: "gif_picker" });
     return false;
   }
@@ -143849,6 +145540,7 @@ function openGifModal({ anchorEl = null, point = null } = {}) {
   dmAttachmentActionsMenu?.close();
   closeEmojiPicker();
 
+  gifPickerBotDmContext = botContext;
   gifPickerAnchorEl = anchorEl || document.getElementById("btnGif");
   gifPickerAnchorPoint = point || null;
   modal.classList.remove("hidden");
@@ -143857,7 +145549,7 @@ function openGifModal({ anchorEl = null, point = null } = {}) {
   searchInput.placeholder = t("gif.search", "Search GIFs");
   searchInput.setAttribute("aria-label", searchInput.placeholder);
   const footer = modal.querySelector(".gifFooterHint");
-  if (footer) footer.textContent = activeDmSupportsEncryptedTextOnly() && !activeVaultMediaAvailable()
+  if (footer) footer.textContent = !botContext && activeDmSupportsEncryptedTextOnly() && !activeVaultMediaAvailable()
     ? getVaultMediaSendUnavailableNotice()
     : "Powered by KLIPY · " + t("gif.tip", "Use Tab to navigate and Enter to send");
   gifFolderTitle = t("gif.favorites", "Favorites");
@@ -144200,6 +145892,17 @@ function renderGifGrid(list) {
 
 
     const sendSelectedGif = () => {
+      const botContext = gifPickerBotDmContext;
+      if (botContext) {
+        if (!isActiveBotDirectMessageOwner(botContext) || !botDirectMessageView?.getComposerContext()) { closeGifModal(); return; }
+        const content = publicGifMessageContent(gifObj);
+        if (!content || content.length > 2000) { setGifHint("Este GIF não pode ser enviado nesta conversa. Escolhe outro GIF do catálogo."); return; }
+        closeGifModal();
+        void getBotDirectMessagesController().send(content,{replyToId:botDirectMessageView.getComposerContext()?.replyToId || null}).then(sent => {
+          if (sent && isActiveBotDirectMessageOwner(botContext)) botDirectMessageView?.cancelComposeMode();
+        }).catch(() => { if (isActiveBotDirectMessageOwner(botContext)) botDirectMessageView?.showNotice("Não foi possível enviar o GIF. Tenta novamente."); });
+        return;
+      }
       if (!canSubmitSelectedGif()) return;
       const poster = staticPoster;
       const previewFile = takePreviewFile?.() || null;
@@ -145210,14 +146913,14 @@ function getUserScopedVoiceStorageKey(baseKey = "") {
   return uid ? `${key}:${uid}` : key;
 }
 
-function readUserScopedVoiceStorageRaw(baseKey = "") {
+function readUserScopedVoiceStorageRaw(baseKey = "", { allowLegacyFallback = true } = {}) {
   const key = String(baseKey || "").trim();
   if (!key || typeof localStorage === "undefined") return null;
   const scopedKey = getUserScopedVoiceStorageKey(key);
   try {
     const scoped = localStorage.getItem(scopedKey);
     if (scoped !== null) return scoped;
-    return localStorage.getItem(key);
+    return allowLegacyFallback ? localStorage.getItem(key) : null;
   } catch (_) {
     return null;
   }
@@ -145406,6 +147109,33 @@ const CALL_LOCAL_AUDIO_CTX_RESUME_COOLDOWN_MS = 1400;
 const LOCAL_MIC_GATE_POLL_MS = 44;
 const REMOTE_AUDIO_GAIN_MAX = 2;
 const remoteUserVoiceVolumeByUserId = new Map();
+let remoteUserVoiceVolumePrefsUserId = "";
+const participantVolumePreferences = createParticipantVolumePreferences({
+  client: supabase,
+  getUserId: getAltaraCurrentUserId,
+  getLocal: () => remoteUserVoiceVolumePrefsUserId === getAltaraCurrentUserId()
+    ? remoteUserVoiceVolumeByUserId : new Map(),
+  storage: localStorage,
+  apply: preferences => {
+    remoteUserVoiceVolumePrefsUserId = getAltaraCurrentUserId();
+    remoteUserVoiceVolumeByUserId.clear();
+    for (const [id, factor] of preferences) {
+      if (Math.abs(factor - 1) >= 0.001) remoteUserVoiceVolumeByUserId.set(id, factor);
+    }
+    persistRemoteUserVoiceVolumePrefs();
+    applyRemoteAudioVolumes();
+  },
+  onError: error => {
+    console.warn("[voice-preferences] Account sync unavailable; device preferences retained", {
+      code: String(error?.code || "sync_failed").slice(0, 60),
+    });
+    showVoiceModerationToast(t("call.volume_sync_failed", "Volumes saved on this device. Account sync is unavailable."), "error");
+  },
+});
+window.addEventListener("online", () => { void participantVolumePreferences.load({ force: true }); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) void participantVolumePreferences.load({ force: true });
+});
 const remoteUserVoiceMutedByUserId = new Map();
 const remoteStreamVolumeById = new Map();
 const remoteStreamMutedById = new Map();
@@ -149880,6 +151610,7 @@ function applyPreferredOutputDeviceToCallAudioEls() {
 }
 
 function cleanupLocalMicProcessing(keepRawStream = false) {
+  if(!keepRawStream)stopBotPlatformAudioSharing();
   setLocalMicNoiseGateTimer(false);
   try { localMicSourceNode?.disconnect?.(); } catch (_) {}
   try { localMicCompressorNode?.disconnect?.(); } catch (_) {}
@@ -151440,6 +153171,17 @@ function clampUserVoiceVolume(value) {
   return n;
 }
 
+function getRemoteUserVoiceVolumePreferenceId(userId = "") {
+  const uid = normId(userId || "");
+  if (!/^(?:altara_bot|altara-bot|bot):/i.test(uid)) return uid;
+  const botId = getBotIdFromVoiceParticipantIdentity(uid);
+  return botId ? `altara_bot:${botId}` : uid;
+}
+
+function ensureRemoteUserVoiceVolumePrefsOwner() {
+  if (remoteUserVoiceVolumePrefsUserId !== getAltaraCurrentUserId()) loadRemoteUserVoiceVolumePrefs();
+}
+
 function clampRemoteAudioPlaybackGain(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 1;
@@ -151464,35 +153206,46 @@ function persistRemoteUserVoiceVolumePrefs() {
 
 function loadRemoteUserVoiceVolumePrefs() {
   remoteUserVoiceVolumeByUserId.clear();
+  remoteUserVoiceVolumePrefsUserId = getAltaraCurrentUserId();
   try {
-    const raw = String(readUserScopedVoiceStorageRaw(REMOTE_USER_VOICE_VOLUME_KEY) || "").trim();
+    const raw = String(readUserScopedVoiceStorageRaw(REMOTE_USER_VOICE_VOLUME_KEY, { allowLegacyFallback: false }) || "").trim();
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return;
     Object.entries(parsed).forEach(([uid, factor]) => {
-      const userId = normId(uid || "");
+      const userId = getRemoteUserVoiceVolumePreferenceId(uid);
       if (!userId) return;
+      // Existing stable choices win over older per-connection bot keys.
+      if (userId !== normId(uid) && Object.prototype.hasOwnProperty.call(parsed, userId)) return;
       remoteUserVoiceVolumeByUserId.set(userId, clampUserVoiceVolume(factor));
     });
   } catch (_) {}
+  finally { void participantVolumePreferences.activate(); }
 }
 
 function getRemoteUserVoiceVolume(userId) {
-  const uid = normId(userId || "");
+  ensureRemoteUserVoiceVolumePrefsOwner();
+  const uid = getRemoteUserVoiceVolumePreferenceId(userId);
   if (!uid) return 1;
-  return clampUserVoiceVolume(remoteUserVoiceVolumeByUserId.get(uid));
+  return clampUserVoiceVolume(remoteUserVoiceVolumeByUserId.get(uid) ?? remoteUserVoiceVolumeByUserId.get(normId(userId)));
 }
 
 function setRemoteUserVoiceVolume(userId, factor, persist = true, opts = {}) {
+  ensureRemoteUserVoiceVolumePrefsOwner();
   const uid = normId(userId || "");
   if (!uid) return 1;
+  const preferenceId = getRemoteUserVoiceVolumePreferenceId(uid);
+  if (preferenceId !== uid) remoteUserVoiceVolumeByUserId.delete(uid);
   const safe = clampUserVoiceVolume(factor);
   if (Math.abs(safe - 1) < 0.001) {
-    remoteUserVoiceVolumeByUserId.delete(uid);
+    remoteUserVoiceVolumeByUserId.delete(preferenceId);
   } else {
-    remoteUserVoiceVolumeByUserId.set(uid, safe);
+    remoteUserVoiceVolumeByUserId.set(preferenceId, safe);
   }
-  if (persist) persistRemoteUserVoiceVolumePrefs();
+  if (persist) {
+    persistRemoteUserVoiceVolumePrefs();
+    participantVolumePreferences.set(preferenceId, safe);
+  }
   applyRemoteAudioVolumes();
   const tileType = normalizeStageTileType(opts?.tileType || "primary");
   logStageMediaUiEvent("participant_audio.volume_changed", {
@@ -151513,7 +153266,7 @@ function persistRemoteUserVoiceMutedPrefs() {
   try {
     const out = {};
     for (const [uid, muted] of remoteUserVoiceMutedByUserId.entries()) {
-      const userId = normId(uid || "");
+      const userId = getRemoteUserVoiceVolumePreferenceId(uid);
       if (!userId) continue;
       if (!muted) continue;
       out[userId] = true;
@@ -151530,7 +153283,7 @@ function loadRemoteUserVoiceMutedPrefs() {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return;
     Object.entries(parsed).forEach(([uid, muted]) => {
-      const userId = normId(uid || "");
+      const userId = getRemoteUserVoiceVolumePreferenceId(uid);
       if (!userId) return;
       remoteUserVoiceMutedByUserId.set(userId, !!muted);
     });
@@ -151538,13 +153291,13 @@ function loadRemoteUserVoiceMutedPrefs() {
 }
 
 function getRemoteUserVoiceMuted(userId) {
-  const uid = normId(userId || "");
+  const uid = getRemoteUserVoiceVolumePreferenceId(userId);
   if (!uid) return false;
   return !!remoteUserVoiceMutedByUserId.get(uid);
 }
 
 function setRemoteUserVoiceMuted(userId, nextMuted, persist = true, opts = {}) {
-  const uid = normId(userId || "");
+  const uid = getRemoteUserVoiceVolumePreferenceId(userId);
   if (!uid) return false;
   const safeMuted = !!nextMuted;
   if (safeMuted) remoteUserVoiceMutedByUserId.set(uid, true);
@@ -156309,6 +158062,7 @@ function createVoiceProcessingContext() {
   catch (_) { return new Ctor(); }
 }
 
+
 function createVoiceBoostLimiter(ctx) {
   const limiter = ctx.createDynamicsCompressor();
   // A 0 dB threshold avoids the compressor's automatic makeup gain below full scale.
@@ -156336,6 +158090,24 @@ function syncRemoteVoiceBoostPlayback(entry, playback) {
       entry.gainSourceNode.connect(entry.gainNode);
       entry.gainNode.connect(entry.gainLimiterNode);
       entry.gainLimiterNode.connect(entry.gainDestNode);
+      // Chromium needs a playing raw RTC element to keep decoding while the
+      // audible element plays the processed stream. Muted means no double sound.
+      const input = document.createElement("audio");
+      input.autoplay = true;
+      input.muted = true;
+      input.volume = 0;
+      input.style.display = "none";
+      input.setAttribute("aria-hidden", "true");
+      input.srcObject = entry.rawStream;
+      entry.gainInputAudioEl = input;
+      document.body.appendChild(input);
+      void input.play().catch(() => {
+        if (entry.gainInputAudioEl !== input || remoteAudioTrackEls.get(entry.id) !== entry) return;
+        closeRemoteAudioProcessingNodes(entry);
+        entry.gainFailed = true;
+        audioEl.srcObject = entry.rawStream;
+        attemptRemoteAudioPlayback(audioEl);
+      });
       // Keep playback on the existing media element so output-device selection
       // and autoplay recovery still use the common audio path.
     }
@@ -156598,11 +158370,7 @@ function resetCallAudioToSafeDefaults({ resetPerUserVolumes = false } = {}) {
     saveVoiceVideoPref(VOICE_MIC_GAIN_KEY, String(VOICE_MIC_GAIN_DEFAULT));
     changed = true;
   }
-  if (resetPerUserVolumes && remoteUserVoiceVolumeByUserId.size) {
-    remoteUserVoiceVolumeByUserId.clear();
-    persistRemoteUserVoiceVolumePrefs();
-    changed = true;
-  }
+  // Saved listening levels belong to the account/person, not this call session.
   if (resetPerUserVolumes && remoteUserVoiceMutedByUserId.size) {
     remoteUserVoiceMutedByUserId.clear();
     persistRemoteUserVoiceMutedPrefs();
@@ -157577,7 +159345,7 @@ function normalizeStageContextMediaType(value = "", tileType = "") {
 }
 
 function buildRemoteVoicePersistedKey(userId, kind = "volume") {
-  const uid = normId(userId || "");
+  const uid = kind === "mute" ? normId(userId || "") : getRemoteUserVoiceVolumePreferenceId(userId);
   if (!uid) return "";
   return `${getUserScopedVoiceStorageKey(kind === "mute" ? REMOTE_USER_VOICE_MUTED_KEY : REMOTE_USER_VOICE_VOLUME_KEY)}:${uid}`;
 }
@@ -173618,6 +175386,11 @@ async function flushPendingRemoteAudioPlayback() {
 
 function closeRemoteAudioProcessingNodes(entry) {
   if (!entry || typeof entry !== "object") return;
+  const input = entry.gainInputAudioEl;
+  entry.gainInputAudioEl = null;
+  if (input) {
+    try { input.pause(); input.srcObject = null; input.remove(); } catch (_) {}
+  }
   try { entry.gainSourceNode?.disconnect?.(); } catch (_) {}
   try { entry.gainNode?.disconnect?.(); } catch (_) {}
   try { entry.gainLimiterNode?.disconnect?.(); } catch (_) {}
@@ -174952,6 +176725,7 @@ async function disconnectMinimalServerVoiceTransport({
     if (serverVoiceStageCleanupServerId) {
       clearServerVoiceV2StageAssignmentsForServer(serverVoiceStageCleanupServerId, `local_room_teardown:${reason}`);
     }
+    stopBotPlatformAudioSharing();
     serverVoiceTransportController = null;
     serverVoiceTransportConversationId = "";
     currentServerVoiceV2Session = null;
@@ -175355,6 +177129,8 @@ function performCallShutdownCleanup({
   disconnectDisposition = "graceful_close",
 } = {}) {
   const shutdownReason = String(reason || "renderer_shutdown").trim() || "renderer_shutdown";
+  stopBotPlatformAudioSharing();
+  botPlatformSurfacesUi?.close();
   const transientDisconnect = String(disconnectDisposition || "").trim().toLowerCase() === "transient_reconnect";
   const shutdownStartedAt = Date.now();
   callShutdownLifecycleDiagnostics.requestCount += 1;
@@ -181524,6 +183300,7 @@ function isServerVoiceTransportParticipantInChannel(conversationId, userId, part
   if (uid !== meId && isServerVoiceV2Enabled()
     && !activePrivateStage
     && !activeGroupPrivateStage
+    && !(currentServerVoiceV2Session?.mediaAuthority && isCurrentChannelMediaBotParticipant(uid, convId))
     && !isCurrentServerVoiceV3Session({ conversationId: convId })) {
     const context = findServerChannelContextByConversationId(convId) || null;
     const expectedServerId = normId(context?.serverId || context?.server_id || "");
@@ -188437,6 +190214,7 @@ function createPeerConnection() {
 
 /* MUTE / DEAFEN */
 function applyMicMute(reason = "unknown") {
+  botPlatformAudioBridge?.sync();
   const normalizedReason = String(reason || "unknown").toLowerCase();
   if (normalizedReason.includes("server-deafen") || normalizedReason.includes("serverdeafen") || normalizedReason.includes("deaf_server_muted")) {
     console.error("[voice-state] BLOCKED illegal mic change from server deafen", {
@@ -188496,6 +190274,7 @@ function applyMicMute(reason = "unknown") {
   }
 }
 function applyDeafen(reason = "apply-deafen") {
+  botPlatformAudioBridge?.sync();
   muteAllRemoteAudioTracks(getEffectiveLocalDeafened(), reason);
 }
 function getLocalMicControlPresentation(conversationId = "") {
@@ -192642,6 +194421,17 @@ function getGroupMemberIdentity(conversationId, userId, serverMember = null) {
     });
   }
   if (isServerVoiceConversationById(conversationId)) {
+    const botSession = getServerVoiceBotSessionMeta(conversationId, uid);
+    if (botSession || isBotVoiceParticipantIdentity(uid)) {
+      // Transport identities identify bot connections, not public user profiles.
+      const bot = normalizeServerVoiceBotParticipant(conversationId, uid, botSession, { includeTransportState: false });
+      const label = bot?.displayName || "Bot";
+      return {
+        userId: uid, botId: bot?.botId || getBotIdFromVoiceParticipantIdentity(uid), isBot: true,
+        label, avatar: resolveProfileAvatarUrl(bot?.avatarUrl || "", "") || null, avatarSource: "bot",
+        fallbackInitial: resolveAvatarFallbackInitial(bot?.botId || uid, label, label),
+      };
+    }
     const sid = resolveServerVoiceServerIdByConversation(conversationId);
     const member = serverMember || (serverMemberListByServerId.get(sid) || [])
       .find((entry) => normId(entry?.userId || entry?.user_id || entry?.id || "") === uid) || {};
@@ -196497,10 +198287,10 @@ function getServerVoiceJoinIntentRuntimeState(target = {}) {
   const operation = serverVoiceOperationLifecycle.getCurrent() || null;
   const session = currentServerVoiceV2Session || null;
   const operationPhase = String(operation?.phase || "").trim().toLowerCase();
-  // A historical server operation can survive canonical replacement by a
-  // private call. It is not evidence that its old channel is still connected.
+  // A historical operation can outlive its media session or a private-call
+  // replacement. Its phase alone cannot prove the old channel is connected.
   const privateCallOwnsTransport = getGlobalActiveCallSession()?.kind === "private";
-  const phase = privateCallOwnsTransport && operationPhase === "connected"
+  const phase = (privateCallOwnsTransport || (!inCall && !session)) && operationPhase === "connected"
     ? "idle"
     : operationPhase && operationPhase !== "idle"
     ? operationPhase
@@ -197384,6 +199174,9 @@ async function joinServerVoiceChannelV2({
       onSnapshot: (snapshot) => {
         if (serverVoiceTransportController !== controller || !isServerVoiceJoinOperationCurrent(operation)) return;
         const snapshotConversationId = normId(controller.conversationId || serverVoiceTransportConversationId || resolvedConvId);
+        if (joinPayload.mediaAuthority) reconcileServerVoiceChannelMediaBotSounds(
+          snapshotConversationId, getServerVoiceTransportSnapshot(snapshotConversationId), snapshot,
+        );
         if (!joinPayload.mediaAuthority) trackCallTransportConnectionSfx(
           snapshotConversationId,
           snapshot?.connectionState || "",
@@ -207717,6 +209510,7 @@ async function refreshActiveServerChannelsFromRealtime(reason = "channels_realti
       silentMode: silent,
     };
     if (canAffectChannelAccess) {
+      await refreshActiveMessageComposerPermission({ reason: `channels:${reason}`, preserveTimeline: true, preserveLayout: true });
       await reconcileActiveServerMessageHistory(`channels:${reason}`).catch((error) => {
         console.warn("[message-history] channel reconciliation failed", {
           serverId: sid,
@@ -207724,6 +209518,15 @@ async function refreshActiveServerChannelsFromRealtime(reason = "channels_realti
           message: error?.message || error,
         });
       });
+    }
+    if (typeof serverPollController !== "undefined") serverPollController?.refresh();
+    if (normId(activeChannelSettingsModalState?.serverId) === sid) {
+      const editor = activeChannelSettingsModalState;
+      const exists = editor.itemType === "category"
+        ? nextCategories.some(row => normId(row.id) === normId(editor.categoryId))
+        : channelsAfterApply.some(row => normId(row.id) === normId(editor.channelId));
+      if (!exists) closeChannelSettingsModal();
+      else renderChannelSettingsModal();
     }
     return applyResult.changed;
   } catch (error) {
@@ -207947,7 +209750,8 @@ function normalizeServerRoleInvalidationPayload(rawPayload = null) {
   const operation = String(candidate.operation || "").trim().toUpperCase();
   const eventId = normId(candidate.id || "");
   if (!isValidAltaraUuid(serverId)) return null;
-  if (!SERVER_ROLE_INVALIDATION_ENTITIES.has(entity)) return null;
+  if (!SERVER_ROLE_INVALIDATION_ENTITIES.has(entity)
+      && !["server_channels", "server_channel_categories", "server_channel_permission_overwrites", "server_category_permission_overwrites", "server_bot_role_members"].includes(entity)) return null;
   if (!SERVER_ROLE_INVALIDATION_OPERATIONS.has(operation)) return null;
   if (eventId && !isValidAltaraUuid(eventId)) return null;
   return { serverId, entity, operation, eventId };
@@ -207962,7 +209766,19 @@ function handleServerRoleAuthorityInvalidation(rawPayload = null, { source = "pr
   );
   if (!hasLocalMembership) return false;
 
-  const reason = `server_role_${source}`;
+  if (event.entity === "server_bot_role_members") {
+    if (botServerRoleMenuState?.serverId === sid && !botServerRoleMenuState.saving) closeBotServerRoleMenu();
+    void refreshServerBotRolesUi(sid);
+    return true;
+  }
+
+  if (typeof serverPollController !== "undefined") serverPollController?.invalidatePermissions(sid);
+  if (["server_channels", "server_channel_categories"].includes(event.entity)) {
+    scheduleActiveChannelsRefresh(`${event.entity}_invalidation`, { serverId: sid });
+    return true;
+  }
+  const reason = SERVER_ROLE_INVALIDATION_ENTITIES.has(event.entity)
+    ? `server_role_${source}` : `${event.entity}_invalidation`;
   scheduleActivePermissionsRefresh(reason, { serverId: sid, payload: event });
   // Keep the last valid presentation snapshot mounted while the authoritative
   // role rows are refreshed. Open mutation surfaces still fail closed because
@@ -207971,6 +209787,8 @@ function handleServerRoleAuthorityInvalidation(rawPayload = null, { source = "pr
   if (serverSettingsMemberRolesModalState && normId(serverSettingsMemberRolesModalState.serverId || "") === sid) {
     closeServerSettingsMemberRolesModal();
   }
+  if (typeof closeBotServerRoleMenu === "function" && botServerRoleMenuState?.serverId === sid
+    && !botServerRoleMenuState.saving) closeBotServerRoleMenu();
   hideBotSlashCommandPicker();
   return true;
 }
@@ -208009,6 +209827,7 @@ function schedulePrivateRoleBroadcastReconnectCatchup() {
   scheduleActivePermissionsRefresh("server_role_private_broadcast_reconnected", {
     serverId: activeServerId,
   });
+  scheduleActiveChannelsRefresh("channels_reconnected", { serverId: activeServerId });
   return true;
 }
 
@@ -208171,6 +209990,20 @@ function startServerRoleInvalidationAuthStateListener() {
   } catch (_) {}
 }
 
+function invalidateServerBotMetadata() {
+  if (!state.user?.id) return;
+  (state.servers || []).forEach(server => {
+    const sid = normId(server?.serverId || "");
+    if (!sid) return;
+    serverBotMetadataDirtyByServerId.set(sid, Number(serverBotMetadataDirtyByServerId.get(sid) || 0) + 1);
+    // Discard reads started before the acknowledged portal change, preserving the visible roster.
+    serverAppInstallFetchVersionByServerId.set(sid, Number(serverAppInstallFetchVersionByServerId.get(sid) || 0) + 1);
+  });
+  queueActiveServerBotInstallRefresh();
+  const modal = document.getElementById("serverSettingsModal");
+  if (modal && !modal.classList.contains("hidden")) queueServerBotInstallRealtimeRefresh(serverSettingsServerId);
+}
+
 async function flushServerBotInstallRealtimeRefresh(serverId) {
   const sid = normId(serverId || "");
   if (!sid || !state.user?.id || !isAltaraBotVisibilityEnabled()) return;
@@ -208200,14 +210033,14 @@ async function flushServerBotInstallRealtimeRefresh(serverId) {
   };
   if (activeServerId !== sid && !settingsMatches) return;
 
-  await fetchServerBotsForSidebar(sid, { force: true }).catch(() => []);
+  await fetchServerBotsForSidebar(sid, { force: true, includeDisabled: settingsMatches }).catch(() => []);
   if (activeServerId === sid) {
     await fetchServerSlashCommandsForComposer(sid, { force: true }).catch(() => []);
     const members = serverMemberListByServerId.get(sid) || [];
     await renderServerMembersRightPanel(activeCtx, members, { forceChannelMembers: false }).catch(() => {});
   }
   if (settingsMatches) {
-    renderServerSettingsBotsPanel({ force: true });
+    renderServerSettingsBotsPanel({ force: false });
     renderServerSettingsMembersPanel({ force: true });
   }
 }
@@ -209947,8 +211780,16 @@ function processAcceptedIncomingPrivateMessage(row = {}, context = {}, {
   const isOwnMessage = context?.isOwnMessage === true || !!(senderUserId && senderUserId === currentUserId);
   const isSystemOnly = isAuthoritativeIncomingSystemOnlyMessage(row);
   if (context?.type === "server_channel") {
+    // Both global and active subscriptions enter here. Claim once before either
+    // paints the timeline, including when the selected channel is in the background.
+    if (!isOwnMessage && !isSystemOnly && !claimIncomingPrivateMessageEvent(row, conversationId)) {
+      return { accepted: true, unreadApplied: false, soundAttempted: false, skippedReason: "duplicate_event" };
+    }
+    const result = applyIncomingServerChannelUnread(context, {
+      row, sourceTable, isSystemEvent: isSystemOnly, suppressSound: !allowSound,
+    });
     rememberGlobalDmMessageProcessed(row);
-    return { accepted: true, unreadApplied: false, soundAttempted: false, skippedReason: "server_pipeline" };
+    return { accepted: true, ...result, soundAttempted: result.soundPlayed === true };
   }
   if (isOwnMessage || isSystemOnly) {
     if (isOwnMessage && isDmConversationActivelyViewed(conversationId)) clearDmUnreadForConversation(conversationId);
@@ -210148,6 +211989,18 @@ async function reconcileGlobalDmMessageUnreadAfterReconnect({ queueIfRunning = f
   }
 }
 
+async function refreshIncomingServerNotificationContext(row, context) {
+  if (context?.type !== "server_channel" || !context.serverId
+      || canCurrentUserViewServerChannelSync(context.serverId, context.channelId)) return context;
+  // A server that has not been opened yet has no synchronous visibility snapshot.
+  // Resolve it through the same authoritative loader as the sidebar, never by
+  // trusting a membership hint or treating missing permissions as an allow.
+  const result = await fetchServerChannelsForSidebarResult(context.serverId, { force: true });
+  if (result?.ok !== true) throw result?.error || new Error("server_notification_authority_unavailable");
+  const fresh = getKnownIncomingMessageContext(row, { sourceTable: "messages" });
+  return fresh?.type === "server_channel" ? fresh : context;
+}
+
 async function onGlobalDmMessageInserted(row, {
   eventReceivedAt = 0,
   source = "realtime",
@@ -210163,6 +212016,9 @@ async function onGlobalDmMessageInserted(row, {
   const isKnownGroupDm = knownKind === "group"
     || (state.groupDms || []).some((group) => normId(group?.conversationId || "") === convId);
   let messageContext = getKnownIncomingMessageContext(row, { sourceTable: "messages" });
+  if (messageContext?.type === "server_channel") {
+    messageContext = await refreshIncomingServerNotificationContext(row, messageContext);
+  }
   const locallyAuthorized = !!(messageContext && hasLocalDmMessageConversationAccessHint(convId));
   const hasConversationAccess = locallyAuthorized
     ? true
@@ -210182,6 +212038,7 @@ async function onGlobalDmMessageInserted(row, {
   }
   if (!messageContext) {
     messageContext = await getIncomingMessageContext(row, { sourceTable: "messages" });
+    messageContext = await refreshIncomingServerNotificationContext(row, messageContext);
   }
   if (normId(state.user?.id || "") !== receivingUserId || globalDmMessageSyncGeneration !== syncGeneration) return;
   if (!messageContext?.type) throw new Error("dm_message_context_unavailable");
@@ -210219,21 +212076,8 @@ async function onGlobalDmMessageInserted(row, {
     return;
   }
 
-  if (messageContext.type === "server_channel") {
-    if (fromId && fromId === myId) {
-      clearServerUnreadForConversation(convId);
-      return;
-    }
-    // Active server-channel updates are handled by the dedicated channel subscription.
-    if (isAltaraActiveConversationRealtimeSubscribed(convId)) return;
-    applyIncomingServerChannelUnread(messageContext, {
-      row,
-      sourceTable: "messages",
-      isSystemEvent: isAuthoritativeIncomingSystemOnlyMessage(row),
-      suppressSound: source === "reconnect-catchup",
-    });
-    return;
-  }
+  // The shared receipt path already applied server unread/sound exactly once.
+  if (messageContext.type === "server_channel") return;
 
   if (fromId && fromId === myId) {
     if (isDmConversationActivelyViewed(convId)) clearDmUnreadForActiveConversation();
@@ -210310,22 +212154,30 @@ function handleGlobalDmMessageChannelStatus(status, error) {
 
 async function onGlobalBotChannelMessageInserted(row) {
   if (!row || !state.user?.id) return;
+  const accountId = normId(state.user.id);
   const context = await getIncomingMessageContext(row, { sourceTable: "bot_channel_messages" });
-  if (context.type !== "bot_server_channel") return;
+  if (normId(state.user?.id || '') !== accountId || context.type !== "bot_server_channel"
+    || !canCurrentUserViewServerChannelSync(context.serverId, context.channelId)) return;
+  if (!claimIncomingBotChannelMessageNotification(row, context)) return {unreadApplied:false,soundPlayed:false,skippedReason:"duplicate_event"};
   const conversationId = getTimelineCacheKeyForServerChannel(context);
+  // Optional media/timeline hydration must not delay or discard an admitted ping.
+  const result = applyIncomingServerChannelUnread(context, { row, sourceTable: "bot_channel_messages", isSystemEvent: false });
   if (
     conversationId
     && conversationId === normId(activeDmId || state.activeDm?.conversationId || "")
     && !isAltaraActiveConversationRealtimeSubscribed(conversationId)
   ) {
-    await handleBotChannelMessageRealtimePayload(
-      conversationId,
-      { eventType: "INSERT", new: row },
-      "bot-channel-message-global-fallback"
-    );
-    return;
+    try {
+      await handleBotChannelMessageRealtimePayload(
+        conversationId,
+        { eventType: "INSERT", new: row },
+        "bot-channel-message-global-fallback"
+      );
+    } catch (_) {
+      logBotLiveState("realtime_fallback_failed", {rowId:row.id,serverId:context.serverId,channelId:context.channelId});
+    }
   }
-  applyIncomingServerChannelUnread(context, { row, sourceTable: "bot_channel_messages", isSystemEvent: false });
+  return result.completion ? await result.completion : result;
 }
 
 async function startGlobalBotChannelMessageListener() {
@@ -223520,6 +225372,7 @@ function setStatusDotsForUser(userId, status) {
 
   const resolved = normalizePresenceStatus(status || "offline");
   dots.forEach((dot) => {
+    if (dot.closest?.('[data-server-right-is-bot="1"]')) return;
     dot.setAttribute("data-status", resolved);
     syncServerMemberPresenceLabel(dot, resolved);
   });
@@ -223531,6 +225384,7 @@ function applyPresenceStatusDots(snapshot = []) {
     normalizePresenceUserId(entry?.id || entry?.user_id || entry?.userId || ""), entry,
   ]));
   document.querySelectorAll("[data-status-dot]").forEach((dot) => {
+    if (dot.closest?.('[data-server-right-is-bot="1"]')) return;
     const uid = normalizePresenceUserId(dot.getAttribute("data-status-dot") || "");
     if (!uid) return;
     const status = resolveEffectivePresence(uid, { presenceEntry: entries.get(uid) }).effectiveStatus;
@@ -224073,11 +225927,18 @@ function updatePresenceRender() {
 
   if (serverCtx) {
     const serverName = normalizeConversationLabel(serverCtx?.name || "Server", "Server");
-    setRightSidebarToServerMembers({
-      active: true,
-      title: `${serverName} Members`,
-      count: Number(serverCtx?.memberCount || 0),
-    });
+    const renderedMembersList = document.getElementById("serverMembersList");
+    const hasCurrentMemberHeader = renderedMembersList?.dataset?.serverMembersServerId === normId(serverCtx.serverId || "")
+      && renderedMembersList.dataset.serverMembersActorId === normId(state.user?.id || "")
+      && renderedMembersList.dataset.serverMembersConversationId === activeConversationId;
+    // The channel renderer owns the projected title/count; presence must not overwrite it.
+    if (!hasCurrentMemberHeader) {
+      setRightSidebarToServerMembers({
+        active: true,
+        title: `${normalizeConversationLabel(state.activeDm?.displayName || serverName, serverName)} Members`,
+        count: Number(serverCtx?.memberCount || 0),
+      });
+    }
     applyPresenceStatusDots(presenceList);
 
     ensureMeStatusDot();
@@ -224348,6 +226209,9 @@ function startPresenceAuthStateListener() {
         hasAccessToken,
       });
       if (String(event || "").toUpperCase() === "SIGNED_OUT") {
+        resetBotDirectMessages();
+        widgetMarketplaceController?.dispose();
+        widgetMarketplaceController = null;
         void rememberDesktopAccount(null).catch(() => {});
         stopGlobalDmNotificationsForAuthChange();
         clearConversationMessageMemoryCache({ userSwitch: true });
@@ -224355,11 +226219,14 @@ function startPresenceAuthStateListener() {
         serverVoiceStartupReadinessController.cancel("auth-signed-out");
         notifyServerVoiceStartupDependencyChange("auth-signed-out");
         clearPresenceForSignedOutSession("auth:signed_out");
+        botComponentUi.reset();
         return;
       }
       if (!authUserId || !hasAccessToken) return;
       const expectedUserId = normId(state.user?.id || "");
       if (expectedUserId && authUserId !== expectedUserId) {
+        resetBotDirectMessages();
+        botComponentUi.reset();
         stopGlobalDmNotificationsForAuthChange();
         clearConversationMessageMemoryCache({ userSwitch: true });
         serverVoiceStartupReadyUserId = "";
@@ -224458,6 +226325,9 @@ function bindDesktopCallShutdownOnce() {
 }
 
 setAccountSwitchCleanup(async () => {
+  botComponentUi.reset();
+  widgetMarketplaceController?.dispose();
+  widgetMarketplaceController = null;
   if (window.altaraDesktop?.isDesktopApp) return; // Native quit already owns this handshake.
   await performCallShutdownCleanup({ reason: "account_switch", bestEffortImmediate: false, reusableRenderer: false });
   stopSpotifyActivityPolling({ clearActivity: true, reason: "account_switch" });
@@ -225534,6 +227404,51 @@ document.addEventListener("click", (event) => {
   if (button) { event.preventDefault(); void getServerHomeController().open(button.dataset.serverId, button.dataset.serverHome); }
 });
 
+var serverPollController;
+function getServerPollController() {
+  if (!serverPollController) serverPollController = createServerPolls({
+    client: supabase,
+    context: () => ({
+      userId: state.user?.id || "",
+      serverId: serverWidgetsScope?.id || getActiveServerContext()?.serverId || "",
+      conversationId: activeDmId || "", channelType: state.activeDm?.channelType || "text",
+      widget: !!serverWidgetsScope,
+    }),
+    canCreate: () => {
+      const ctx = getActiveMessageComposerPermissionContext();
+      const snapshot = activeMessageComposerPermissionState;
+      return !!ctx.serverId && ctx.channelType === "text" && snapshot?.key === ctx.key
+        && !snapshot.loading && snapshot.canSend && !getCurrentUserServerTimeout(ctx.serverId)
+        && !isAltaraConnectionBlockingNetworkActions();
+    },
+    channels: () => {
+      const sid = serverWidgetsScope?.id || getActiveServerContext()?.serverId;
+      if (!sid || getCurrentUserServerTimeout(sid)) return [];
+      return Array.from(document.querySelectorAll('#serverChannelsPanel [data-server-channel-open]'))
+        .filter(node => {
+          const conversationId = node.getAttribute('data-server-channel-open');
+          const channelId = node.getAttribute('data-server-channel-id');
+          const permission = getMyEffectiveServerChannelPermission(sid, channelId);
+          if (permission) return permission.canViewChannels && permission.canSendMessages;
+          const ctx = getActiveMessageComposerPermissionContext();
+          return conversationId === ctx.conversationId && ctx.serverId === sid
+            && activeMessageComposerPermissionState?.key === ctx.key
+            && !activeMessageComposerPermissionState.loading && activeMessageComposerPermissionState.canSend;
+        })
+        .map(node => ({conversationId: node.getAttribute('data-server-channel-open'),name: node.getAttribute('data-server-channel-name') || node.textContent.trim().replace(/^#\s*/, '')}));
+    },
+    openChannel: conversationId => {
+      const node = Array.from(document.querySelectorAll('#serverChannelsPanel [data-server-channel-open]'))
+        .find(node => node.getAttribute('data-server-channel-open') === conversationId);
+      if (node && !node.disabled) node.click();
+    },
+    onCreated: ({conversationId}) => {
+      if (!serverWidgetsScope && activeDmId === conversationId) void fetchMessages(conversationId, {initialLatest: true, reason: "poll-created"});
+    },
+  });
+  return serverPollController;
+}
+
 var personalServerCalendar;
 async function refreshPersonalServerCalendar(force = false) {
   const userId = state.user?.id;
@@ -225585,7 +227500,7 @@ function mountServerNativeWidgets({container,toolbar,current,saved,body}) {
     if (localStorage.getItem(notesKey)===null) localStorage.setItem(notesKey,saved.notes||"");
     if (localStorage.getItem(todoKey)===null) localStorage.setItem(todoKey,JSON.stringify(saved.checklist||[]));
   } catch (_) {}
-  root.classList.add("serverNativeWidgets");root.style.display="block";
+  root.classList.add("serverNativeWidgets");root.style.display="flex";
   container.append(root);toolbar.prepend(button);
   const host = root.closest(".serverHome");
   host?.classList.add("hasNativeWidgets");

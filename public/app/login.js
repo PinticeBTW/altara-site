@@ -268,6 +268,8 @@ function resolvePostLoginReturnUrl() {
     const path = String(target.pathname || "/");
     const hash = String(target.hash || "");
     const allowedPath = path === "/oauth2/authorize"
+      || path === "/widgets"
+      || path === "/marketplace"
       || path === "/developers"
       || path.startsWith("/developers/");
     const allowedHash = hash.startsWith("#/oauth2/authorize")

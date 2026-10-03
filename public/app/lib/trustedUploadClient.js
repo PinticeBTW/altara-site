@@ -112,6 +112,14 @@ function collectTrustedAttachmentDeliveryEntries(value, supabaseOrigin, out = []
   return out;
 }
 
+export function copyTrustedAttachmentDeliveryState(source, target) {
+  const delivery=source?.[TRUSTED_ATTACHMENT_DELIVERY_STATE];
+  if(source?.id===target?.id && delivery?.token===TRUSTED_ATTACHMENT_DELIVERY_TOKEN) {
+    Object.defineProperty(target,TRUSTED_ATTACHMENT_DELIVERY_STATE,{configurable:true,enumerable:true,writable:false,value:delivery});
+  }
+  return target;
+}
+
 export function markTrustedAttachmentDeliveryFromDescriptors(row, descriptors = [], {
   supabaseOrigin = "",
 } = {}) {

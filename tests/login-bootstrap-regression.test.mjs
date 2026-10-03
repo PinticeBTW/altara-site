@@ -155,3 +155,11 @@ test("try route remains valid on apex and www origins", async () => {
     else process.env.NEXT_PUBLIC_TRY_IN_BROWSER_URL = previousPublicUrl;
   }
 });
+
+test("widget login returns preserve the chosen listing and reject foreign destinations", async () => {
+  const source = extractFunction(await readAppFile("login.js"), "resolvePostLoginReturnUrl");
+  for (const [target, expected] of [["/marketplace?widget=release-1", "/marketplace?widget=release-1"], ["/marketplace-other", "./index.html"], ["/widgets?widget=release-1", "/widgets?widget=release-1"], ["/developers/widgets", "/developers/widgets"], ["https://evil.example/widgets", "./index.html"], ["//evil.example/widgets", "./index.html"], ["/widgets-other", "./index.html"]]) {
+    const context = { URL, window: { location: { href: `https://altaraapp.com/login.html?return_to=${encodeURIComponent(target)}`, origin: "https://altaraapp.com" } } };
+    assert.equal(vm.runInNewContext(`${source}; resolvePostLoginReturnUrl();`, context), expected);
+  }
+});

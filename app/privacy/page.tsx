@@ -5,7 +5,7 @@ import { SiteFooter, SiteNav } from "../components/site-chrome";
 const description =
   "Read ALTARA's Privacy Policy, including what data is collected, why it is used, your GDPR rights, and how to contact support.";
 
-const lastUpdated = "May 14, 2026";
+const lastUpdated = "September 29, 2026";
 const publicPath = "/privacy";
 const productionUrl = "https://www.altaraapp.com/privacy";
 
@@ -192,6 +192,61 @@ export default function PrivacyPage() {
                 <p>
                   Some providers may process data outside Portugal or the European Union. When this
                   happens, we use appropriate safeguards required by applicable law.
+                </p>
+              </section>
+
+              <section id="community-widgets" style={{ scrollMarginTop: "100px" }}>
+                <h2>Community widgets: privacy and security</h2>
+                <p>
+                  Widgets are made by independent creators. ALTARA stores publication metadata,
+                  fixed release files, account installation records and ratings. Public installations
+                  sync across your devices. Data saved through the widget SDK stays on that device,
+                  scoped to your account and that installation; it is not synced as chat data.
+                </p>
+                <p>
+                  Widgets run in isolated frames. The widget SDK does not provide your messages,
+                  contacts, account credentials, filesystem or desktop app APIs. Camera, microphone,
+                  location, clipboard access, popups and downloads are not enabled for widgets.
+                  Isolation is not a review of a creator or a guarantee that a widget is trustworthy.
+                </p>
+                <p>
+                  A fixed release stores its HTML and scripts with ALTARA and verifies them before
+                  opening. Published code cannot be edited in place: you choose when to install a
+                  replacement release. Remote scripts and dynamic code execution are blocked in this
+                  format. HTTP API requests are blocked by default. A fixed release needs the
+                  network permission to make HTTPS API requests; the installation or update notice
+                  shows this access before you approve. Online API responses can still change. Older live website installations are
+                  paused until you choose a fixed release, with saved data retained. Public manifest
+                  links added for testing save a fixed copy of release.html on this device. Only
+                  explicit live previews and localhost development follow changes on their hosts.
+                </p>
+                <p>
+                  Fetching manifests or icons contacts the creator’s host even before a widget runs.
+                  External widgets and online services called by a fixed release can receive your IP
+                  address, browser request information and anything you enter or choose to upload.
+                  Those services apply their own privacy policies. Installing a widget does not give
+                  it access to your ALTARA conversations, but it can imitate a login or payment form.
+                  Never enter ALTARA passwords, login codes or payment details inside widgets.
+                </p>
+                <p>
+                  Widgets can use CPU, memory, network bandwidth and battery. A name, icon or rating
+                  does not verify a creator’s identity. Before previewing or installing a new release,
+                  ALTARA shows an access notice. Installation approves running that release on your
+                  account’s devices without repeating the notice each time you open Home.
+                </p>
+                <p>
+                  Use Manage widgets to check for updates or uninstall. Uninstalling deactivates the
+                  account installation and removes its SDK data on devices when they synchronize;
+                  historical installation records can remain for reinstalling and aggregate counts.
+                  A creator can remove a listing while keeping existing installations running, or
+                  disable that release on connected apps. Uninstalling cannot delete information
+                  already sent to another service; contact that service to request deletion.
+                </p>
+                <p>
+                  Use Report widget in its Marketplace page or Manage widgets to send the release,
+                  reason and description to ALTARA moderation. Reports are visible to you and ALTARA
+                  moderation, not to the widget creator. You can also ask about your data at{' '}
+                  <a href="mailto:support@altaraapp.com" className="legal-inline-link">support@altaraapp.com</a>.
                 </p>
               </section>
 

@@ -1,6 +1,7 @@
 const PRIVATE_UPLOAD_REFERENCE_PREFIX = "altara-private-upload:";
 const PRIVATE_UPLOAD_REFERENCE_RE = /^altara-private-upload:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRUSTED_ATTACHMENT_BUCKET = "altara-message-attachments-v1";
+const TRUSTED_BOT_ATTACHMENT_BUCKET = "altara-bot-attachments-v1";
 const TRUSTED_PUBLIC_UPLOAD_BUCKET = "avatars";
 const MAX_MESSAGE_MEDIA_URL_LENGTH = 4096;
 const PRIVATE_MESSAGE_UPLOAD_CONTEXTS = new Set(["dm_attachment", "dm_attachment_preview"]);
@@ -99,7 +100,7 @@ export function normalizeTrustedAttachmentDeliveryUrl(value = "", {
   if (parts.length < 3) return "";
   if (parts[0] !== "sign") return "";
   try {
-    if (decodeURIComponent(parts[1]) !== TRUSTED_ATTACHMENT_BUCKET) return "";
+    if (![TRUSTED_ATTACHMENT_BUCKET,TRUSTED_BOT_ATTACHMENT_BUCKET].includes(decodeURIComponent(parts[1]))) return "";
   } catch (_) {
     return "";
   }

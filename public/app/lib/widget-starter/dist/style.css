@@ -1,0 +1,12 @@
+:root { color-scheme: dark; font: 14px system-ui, sans-serif; color: #eee8de; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #1c1b19; }
+main { padding: clamp(14px, 5vw, 28px); }
+.eyebrow { color: #cab99d; font-size: 10px; letter-spacing: .15em; }
+h1 { margin: 10px 0; font-size: clamp(15px, 6vw, 24px); }
+output { display: block; font-size: clamp(30px, 14vw, 64px); font-weight: 700; line-height: 1.2; margin: 10px 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+button { padding: 8px 16px; border: 1px solid #514838; border-radius: 10px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+#increment { background: #ead1ad; color: #201b15; }
+button:focus-visible { outline: 2px solid #ead1ad; outline-offset: 3px; }
+#status { font-size: 11px; color: #aaa296; }

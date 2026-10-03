@@ -7,7 +7,7 @@ import { renderServerEventCard, syncServerEventCards } from './serverEventCard.j
 import { createEventDraft, eventFromDraft, localEventDate, renderServerEventEditor } from './serverEventEditor.js';
 import { readAltaraLocalePreference } from './locale.js';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export const SERVER_WIDGETS = ['channels', 'notes', 'checklist'];
+export const SERVER_WIDGETS = ['notes', 'checklist', 'polls'];
 export function normalizeServerWidgets(value) {
   const order = Array.isArray(value?.order) ? [...new Set(value.order.filter(x => SERVER_WIDGETS.includes(x)))] : [...SERVER_WIDGETS];
   return { order, notes: String(value?.notes || '').slice(0,4000),

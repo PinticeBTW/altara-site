@@ -1,20 +1,22 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
-<script src="./lib/browserAccountContext.js"></script>
+<script src="/app/lib/browserAccountContext.js"></script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ALTARA</title>
   <link rel="icon" href="/app/build/icon.ico" sizes="any" />
   <link rel="icon" href="/app/assets/brand/LOGO%20ALTARA%20BRANCO.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/app/style.css" />
+  <link rel="stylesheet" href="/app/style.css?v=bot-inbox-controls-v10" />
+  <link rel="stylesheet" href="/app/lib/serverPolls.css" />
+  <link rel="stylesheet" href="/app/lib/widgetMarketplace.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600;700;800&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" media="print" onload="this.media='all'" />
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600;700;800&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" /></noscript>
-  <link rel="stylesheet" href="runtimeChrome.css" />
-  <link rel="modulepreload" href="./ui.js" />
-  <link rel="modulepreload" href="./supabaseClient.js" />
+  <link rel="stylesheet" href="/app/runtimeChrome.css" />
+  <link rel="modulepreload" href="/app/ui.js" />
+  <link rel="modulepreload" href="/app/supabaseClient.js" />
   <style id="serverPermissionsInvitesV1Styles">
     .serverSettingsInvitesRoot{min-height:0;overflow:auto}
     .serverSettingsInvitesToolbar{display:grid;grid-template-columns:minmax(180px,1fr) auto auto auto;gap:8px;align-items:center;margin-bottom:12px}
@@ -816,6 +818,11 @@
             Pending <span id="pendingBadge" class="badge" style="display:none;">0</span>
           </button>
           <button class="chip" data-tab="add" type="button">Add Friend</button>
+          <div class="widgetsHeaderActions">
+            <button id="btnWidgetsEditMode" class="btn ghost widgetsEditFab" type="button" title="Edit widgets">
+              Edit widgets
+            </button>
+          </div>
         </div>
       </div>
 
@@ -830,11 +837,6 @@
           <section class="widgetCard" data-static-fallback-shell="1"><div class="widgetTitle">Call</div><strong>Sem chamada ativa</strong></section>
           <section class="widgetCard" data-static-fallback-shell="1"><div class="widgetTitle">Notepad</div><div class="hint">Ready offline.</div></section>
           <section class="widgetCard" data-static-fallback-shell="1"><div class="widgetTitle">Checklist</div><div class="hint">Ready offline.</div></section>
-        </div>
-        <div class="widgetsEditFabRow">
-          <button id="btnWidgetsEditMode" class="btn ghost widgetsEditFab" type="button" title="Edit widgets">
-            Edit widgets
-          </button>
         </div>
       </section>
 
@@ -2673,7 +2675,7 @@
           <div id="dmAttachmentModalInfo" class="hint"></div>
         </div>
         <div class="dmAttachmentTopActions">
-          <a id="btnDmAttachmentDownload" class="btn ghost" href="#" download target="_blank" rel="noopener noreferrer" title="Download">Download</a>
+          <button id="btnDmAttachmentDownload" class="btn ghost" type="button" title="Download">Download</button>
           <button id="btnDmAttachmentClose" class="btn ghost" type="button">&times;</button>
         </div>
       </div>
@@ -3922,6 +3924,6 @@
       }
     });
   </script>
-  <script type="module" src="/app/app.js?release=0.1.141&amp;v=server-read-message-history-ux-v3&amp;hotfix=offline-auth-reconnect-v1"></script>
+  <script type="module" src="/app/app.js?release=0.1.143&amp;v=server-read-message-history-ux-v3-bot-platform-v2-20261003-native-inbox-controls-v10&amp;hotfix=offline-auth-reconnect-v1"></script>
 </body>
 </html>

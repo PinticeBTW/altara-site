@@ -1,0 +1,36 @@
+/* The same voting card lives inside chat messages and the home widget canvas. */
+.serverPollCard { width:100%; max-width:460px; box-sizing:border-box; padding:18px; border:1px solid var(--altara-border,var(--stroke)); border-radius:16px; background:var(--altara-surface,var(--surface-1)); color:var(--altara-text,var(--text-main)); font-size:13px; line-height:1.45; white-space:normal; }
+.serverPollCard h3 { margin:10px 0 16px; font-size:17px; line-height:1.4; overflow-wrap:anywhere; }
+.serverPollEyebrow { display:flex; justify-content:space-between; gap:10px; color:var(--altara-text-muted,var(--text-muted)); font-size:10px; font-weight:650; letter-spacing:.05em; }
+.serverPollOptions { display:grid; gap:8px; }
+.serverPollOption { position:relative; isolation:isolate; overflow:hidden; display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:42px; width:100%; padding:10px 12px; border:1px solid var(--altara-border,var(--stroke)); border-radius:10px; background:var(--altara-input,var(--surface-2)); color:inherit; text-align:left; font:inherit; cursor:pointer; }
+.serverPollOption:disabled { cursor:default; opacity:1; }
+.serverPollOption.is-selected { border-color:var(--altara-accent,var(--accent)); }
+.serverPollOption:not(:disabled):hover { border-color:var(--altara-accent,var(--accent)); }
+.serverPollOption:focus-visible,.serverPollCard button:focus-visible { outline:2px solid var(--altara-accent,var(--accent)); outline-offset:3px; }
+.serverPollBar { position:absolute; inset:0 auto 0 0; z-index:-1; background:var(--altara-accent-soft,var(--accent-soft)); transition:width .2s ease; }
+.serverPollOptionText { min-width:0; overflow-wrap:anywhere; }
+.serverPollCount { flex-shrink:0; color:var(--altara-text-soft,var(--text-soft)); font-size:11px; font-variant-numeric:tabular-nums; }
+.serverPollFooter { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 12px; margin-top:12px; font-size:10px; color:var(--altara-text-muted,var(--text-muted)); }
+.serverPollActions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+.serverPollActions:empty { display:none; }
+.serverPollActions .btn { font-size:11px; min-height:28px; padding:5px 9px; }
+.serverPollMuted,.serverPollEmpty p { color:var(--altara-text-muted,var(--text-muted)); font-size:12px; line-height:1.5; }
+.serverPollError { color:var(--altara-danger,#e98d8d); font-size:12px; line-height:1.45; }
+.serverPollWidget { display:flex; flex-direction:column; gap:12px; }
+.serverPollWidgetList { min-height:0; flex:1; overflow:auto; overscroll-behavior:contain; }
+.serverPollCard.is-widget { max-width:none; padding:0 0 16px; border:0; border-bottom:1px solid var(--altara-border,var(--stroke)); border-radius:0; background:transparent; margin-bottom:16px; }
+.serverPollCard.is-widget:last-child { margin-bottom:0; border-bottom:0; padding-bottom:0; }
+.serverPollCard.is-widget h3 { font-size:14px; margin:8px 0 12px; }
+.serverPollEmpty { display:flex; min-height:110px; height:100%; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:12px; box-sizing:border-box; }
+.serverPollEmpty strong { font-size:15px; }.serverPollEmpty p { max-width:240px; }
+.serverPollWidgetFooter { flex-shrink:0; }.serverPollWidgetFooter .btn { width:100%; font-size:12px; min-height:30px; }
+.serverPollComposer { flex-shrink:0; min-width:32px; padding:0 8px; }.serverPollComposer[hidden] { display:none!important; }
+.serverPollDialog { width:min(480px,calc(100vw - 32px)); max-height:calc(100dvh - 48px); overflow:auto; box-sizing:border-box; padding:24px; border:1px solid var(--altara-border,var(--stroke)); border-radius:18px; background:var(--altara-surface,var(--surface-1)); color:var(--altara-text,var(--text-main)); box-shadow:0 24px 80px #0008; }
+.serverPollDialog::backdrop { background:#0009; }
+.serverPollDialog form { display:grid; gap:16px; }.serverPollDialog header,.serverPollDialog footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.serverPollDialog h2 { margin:0; font-size:21px; }.serverPollDialog label { display:grid; gap:7px; font-size:12px; font-weight:600; }
+.serverPollDialog input,.serverPollDialog select { box-sizing:border-box; width:100%; min-width:0; min-height:40px; padding:9px 11px; border:1px solid var(--altara-border,var(--stroke)); border-radius:9px; background:var(--altara-input,var(--surface-2)); color:inherit; font:inherit; }
+.serverPollDialog [data-poll-draft-options] { display:grid; gap:12px; }.serverPollDialog [data-poll-draft-option] > div { display:flex; gap:8px; }
+.serverPollDialog [data-poll-form-error]:empty { display:none; }.serverPollDialog footer { justify-content:flex-end; }
+@media(prefers-reduced-motion:reduce) { .serverPollBar { transition:none; } }

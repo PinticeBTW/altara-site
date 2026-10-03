@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { DeveloperPortalClient } from "../components/developer-portal-client";
+import { DeveloperHub } from "../components/developer-space";
 
 export const metadata: Metadata = {
   title: "Developer Portal",
@@ -19,5 +20,6 @@ type DevelopersPageProps = {
 
 export default async function DevelopersPage({ params }: DevelopersPageProps) {
   const resolved = await params;
+  if (!resolved.slug?.length) return <DeveloperHub />;
   return <DeveloperPortalClient initialSlug={resolved.slug || []} />;
 }
