@@ -2,6 +2,7 @@ const DEFAULT_WINDOW_MS = 60_000;
 const DEFAULT_LONG_WINDOW_MS = 5 * 60_000;
 const DEFAULT_SAMPLE_MS = 100;
 const DEFAULT_RESOURCE_SAMPLE_MS = 5_000;
+const DEFAULT_FRAME_PROBE_INTERVAL_MS = 1_000;
 const MAX_SAMPLES = 3_600;
 const MAX_INPUTS = 120;
 const MAX_SAFE_EVENTS = 200;
@@ -151,6 +152,7 @@ export function createRuntimePerfDiagnostics({
   rollingWindowMs = DEFAULT_WINDOW_MS,
   longRollingWindowMs = DEFAULT_LONG_WINDOW_MS,
   resourceSampleIntervalMs = DEFAULT_RESOURCE_SAMPLE_MS,
+  animationFrameProbeIntervalMs = DEFAULT_FRAME_PROBE_INTERVAL_MS,
   getRuntimeSnapshot = () => ({}),
   trackTimers = true,
   trackConsole = true,
@@ -184,6 +186,8 @@ export function createRuntimePerfDiagnostics({
   };
   let eventLoopTimer = null;
   let animationFrameProbe = null;
+  let animationFrameProbeTimer = null;
+  let lastFrameProbeAt = null;
   let longTaskObserver = null;
   let eventTimingObserver = null;
   let installed = false;
@@ -195,6 +199,7 @@ export function createRuntimePerfDiagnostics({
   let restoreTimers = null;
   let restoreConsole = null;
   let nativeSetTimeoutForProbe = null;
+  let nativeClearTimeoutForProbe = null;
   let nativeRequestAnimationFrameForProbe = null;
   let nativeCancelAnimationFrameForProbe = null;
   let windowErrorHandler = null;
@@ -340,8 +345,10 @@ export function createRuntimePerfDiagnostics({
   }
 
   function handleVisibilityChange() {
-    // Background rAF suspension is platform behavior, not a renderer freeze.
-    lastAnimationFrameAt = dateNow();
+    // Do not wake a hidden renderer just to measure it, or report the browser's
+    // timer/rAF suspension as an application freeze after returning.
+    stopSampling();
+    if (!isDocumentHidden()) startSampling();
   }
 
   function markInputHandlerStart(label = "application_handler", event = null) {
@@ -427,6 +434,7 @@ export function createRuntimePerfDiagnostics({
     if (!nativeSetTimeout || !nativeClearTimeout || !nativeSetInterval || !nativeClearInterval) return;
 
     nativeSetTimeoutForProbe = nativeSetTimeout;
+    nativeClearTimeoutForProbe = nativeClearTimeout;
     nativeRequestAnimationFrameForProbe = nativeRequestAnimationFrame || null;
     nativeCancelAnimationFrameForProbe = nativeCancelAnimationFrame || null;
     windowImpl.setTimeout = (callback, delay, ...args) => {
@@ -580,18 +588,56 @@ export function createRuntimePerfDiagnostics({
     trimByAge(resourceSamples, now, longRollingWindowMs, 120);
   }
 
+  function isDocumentHidden() {
+    return String(documentImpl?.visibilityState || "visible").toLowerCase() === "hidden";
+  }
+
+  function startAnimationFrameProbe() {
+    animationFrameProbeTimer = null;
+    if (destroyed || isDocumentHidden() || animationFrameProbe != null) return;
+    lastFrameProbeAt = null;
+    animationFrameProbe = nativeRequestAnimationFrameForProbe?.(onAnimationFrame) ?? null;
+  }
+
   function onAnimationFrame() {
-    if (destroyed) return;
+    animationFrameProbe = null;
+    if (destroyed || isDocumentHidden()) return;
     const now = dateNow();
-    const hidden = String(documentImpl?.visibilityState || "visible").toLowerCase() === "hidden";
-    if (lastAnimationFrameAt && !hidden) {
-      const gapMs = Math.max(0, now - lastAnimationFrameAt);
+    lastAnimationFrameAt = now;
+    if (lastFrameProbeAt != null) {
+      const gapMs = Math.max(0, now - lastFrameProbeAt);
       animationFrameGaps.push({ at: now, durationMs: roundMs(gapMs) });
       trimByAge(animationFrameGaps, now, longRollingWindowMs, MAX_SAMPLES);
       if (gapMs > 250) captureFreeze(gapMs, "animation_frame_gap");
+      lastFrameProbeAt = null;
+      // Measure a pair of adjacent frames, then let Chromium idle. A perpetual
+      // rAF loop made the diagnostic itself request a frame every display tick.
+      animationFrameProbeTimer = nativeSetTimeoutForProbe?.(
+        startAnimationFrameProbe,
+        Math.max(250, finiteNumber(animationFrameProbeIntervalMs, DEFAULT_FRAME_PROBE_INTERVAL_MS)),
+      ) ?? null;
+      return;
     }
-    lastAnimationFrameAt = now;
+    lastFrameProbeAt = now;
     animationFrameProbe = nativeRequestAnimationFrameForProbe?.(onAnimationFrame) ?? null;
+  }
+
+  function stopSampling() {
+    if (eventLoopTimer != null) windowImpl?.clearInterval?.(eventLoopTimer);
+    eventLoopTimer = null;
+    if (animationFrameProbe != null) nativeCancelAnimationFrameForProbe?.(animationFrameProbe);
+    animationFrameProbe = null;
+    if (animationFrameProbeTimer != null) nativeClearTimeoutForProbe?.(animationFrameProbeTimer);
+    animationFrameProbeTimer = null;
+    lastFrameProbeAt = null;
+  }
+
+  function startSampling() {
+    if (destroyed || isDocumentHidden() || eventLoopTimer != null) return;
+    expectedSampleAt = perfNow() + sampleIntervalMs;
+    eventLoopTimer = windowImpl?.setInterval?.(sampleEventLoop, sampleIntervalMs) || null;
+    sampleResources();
+    startAnimationFrameProbe();
   }
 
   function start() {
@@ -604,10 +650,7 @@ export function createRuntimePerfDiagnostics({
     documentImpl?.addEventListener?.("visibilitychange", handleVisibilityChange);
     installErrorTracking();
     installObservers();
-    expectedSampleAt = perfNow() + sampleIntervalMs;
-    eventLoopTimer = windowImpl?.setInterval?.(sampleEventLoop, sampleIntervalMs) || null;
-    sampleResources();
-    animationFrameProbe = nativeRequestAnimationFrameForProbe?.(onAnimationFrame) ?? null;
+    startSampling();
     return api;
   }
 
@@ -680,6 +723,8 @@ export function createRuntimePerfDiagnostics({
       longTasks: summarizeDurations(longTasks, { since: now - rollingWindowMs }),
       longTasks5m: summarizeDurations(longTasks, { since: now - longRollingWindowMs }),
       animationFrames: {
+        samplingMode: "adjacent-frame-pairs",
+        probeIntervalMs: Math.max(250, finiteNumber(animationFrameProbeIntervalMs, DEFAULT_FRAME_PROBE_INTERVAL_MS)),
         lastSuccessfulAt: lastAnimationFrameAt ? new Date(lastAnimationFrameAt).toISOString() : null,
         last60s: summarizeDurations(animationFrameGaps, { since: now - rollingWindowMs }),
         last5m: summarizeDurations(animationFrameGaps, { since: now - longRollingWindowMs }),
@@ -785,8 +830,7 @@ export function createRuntimePerfDiagnostics({
     if (unhandledRejectionHandler) windowImpl?.removeEventListener?.("unhandledrejection", unhandledRejectionHandler);
     windowErrorHandler = null;
     unhandledRejectionHandler = null;
-    if (eventLoopTimer != null) windowImpl?.clearInterval?.(eventLoopTimer);
-    if (animationFrameProbe != null) nativeCancelAnimationFrameForProbe?.(animationFrameProbe);
+    stopSampling();
     longTaskObserver?.disconnect?.();
     eventTimingObserver?.disconnect?.();
     restoreTimers?.();

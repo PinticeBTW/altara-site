@@ -88,7 +88,7 @@ export function FaqBrowser({
       <h2 className="hp-visually-hidden">Frequently asked questions</h2>
 
       <div className="hp-faq-controls">
-        <div className="hp-glass hp-faq-search">
+        <div className="hp-glass hp-faq-search" data-clarity-mask="true">
           <IconSearch className="hp-faq-search-icon" aria-hidden="true" />
           <label htmlFor={searchId} className="hp-visually-hidden">
             Search frequently asked questions

@@ -17,9 +17,10 @@ test('creators update an existing project by link or file without replacing earl
     if(process.env.ALTARA_WIDGET_SOURCE) await context.route('**/widget-assets/*.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(process.env.ALTARA_WIDGET_SOURCE,path.basename(new URL(route.request().url()).pathname)),'utf8')}));
     await context.route('https://tbbgwjmmaiclkhssimhf.supabase.co/**',async route=>{
       const request=route.request(),url=new URL(request.url()); let body=[];
+      if(url.pathname.includes('/rpc/widget_commerce_'))return route.fulfill({status:404,contentType:'application/json',body:JSON.stringify({code:'PGRST202'}),headers:{'access-control-allow-origin':'*'}});
       if(url.pathname.endsWith('/user'))body=user;
       else if(url.pathname.includes('/home_widget_releases')){
-        if(failLatest && url.searchParams.get('select')==='snapshot_sha256,permissions')return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'Test latest-release failure'})});
+        if(failLatest && url.searchParams.get('select')?.includes('snapshot_sha256')&&!url.searchParams.has('id'))return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'Test latest-release failure'})});
         if(request.method()==='POST'){
           const payload=request.postDataJSON();writes.push(payload);
           rows.unshift({...payload,id:`00000000-0000-4000-8000-${String(10+writes.length).padStart(12,'0')}`,status:'published'});
@@ -29,6 +30,7 @@ test('creators update an existing project by link or file without replacing earl
         body=request.headers().accept?.includes('object')?filtered[0]:filtered;
       }else if(url.pathname.includes('/rpc/widget_marketplace_details'))body=rows.map(row=>({id:row.id,author_id:actor,creator_name:'Test Maker',creator_username:'maker',downloads:2,rating_count:1,rating_average:5}));
       else if(request.method()==='POST'&&url.pathname.includes('/install'))throw Error('Publishing must not update installations');
+      if(url.pathname.includes('/home_widget_releases')&&url.searchParams.get('select')){const keys=url.searchParams.get('select').split(',');const pick=row=>row?Object.fromEntries(keys.map(key=>[key,row[key]])):row;body=Array.isArray(body)?body.map(pick):pick(body);} 
       await route.fulfill({contentType:'application/json',body:JSON.stringify(body),headers:{'access-control-allow-origin':'*'}});
     });
     await context.route('https://widget.example.com/manifest.json',route=>route.fulfill({contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify({manifest_version:1,name:'Different manifest title',description:'Different description',version:'1.1.0',entry:'./index.html',permissions:['storage']})}));
@@ -92,7 +94,7 @@ test('creators update an existing project by link or file without replacing earl
     const sameFile={name:'release.html',mimeType:'text/html',buffer:Buffer.from('<h1>Version 2</h1>')};
     failLatest=true;
     await page.locator('[name=release]').setInputFiles(sameFile);
-    await page.getByText('Could not check the latest release. Try again before publishing.',{exact:true}).waitFor();
+    await page.getByText('Could not complete the widget request. Check your connection and try again.',{exact:true}).waitFor();
     assert.equal(await publish.isDisabled(),true,'latest-release read failures cannot bypass the check');
     failLatest=false;
     await page.locator('[name=release]').setInputFiles(sameFile);

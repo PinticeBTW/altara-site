@@ -1,4 +1,5 @@
 import { validateWidgetPackage } from './widgetPackages.js';
+import { subscribeWidgetAppearance, widgetAppearanceBootstrapSource } from './widgetAppearance.js';
 
 // Only this trusted renderer runs on the iframe's main thread. Creator code runs
 // in a worker with an opaque origin and an inherited, network-denying CSP.
@@ -105,18 +106,24 @@ export function mountWidgetRuntime(container, input, { state = {}, onState = () 
   const csp = "default-src 'none'; script-src 'unsafe-inline' blob:; worker-src blob:; connect-src 'none'; style-src 'unsafe-inline'; img-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'";
   frame.srcdoc = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><style>
     :root{color-scheme:dark;font:13px system-ui;color:#eae8e4}body{margin:0;padding:4px;overflow-wrap:anywhere}*{box-sizing:border-box}.column{display:flex;flex-direction:column;gap:12px}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}p{margin:0}.muted{color:#aaa69f}.stat{font-size:38px;line-height:1.1}button,input{font:inherit;color:inherit;background:#232321;border:1px solid #3b3934;border-radius:9px;padding:9px 12px;max-width:100%}button{cursor:pointer}button:hover{border-color:#e8cda7}button:focus-visible,input:focus-visible{outline:2px solid #e8cda7}input{width:100%}progress{accent-color:#e8cda7;width:100%}
-    </style></head><body><div id="view">Starting widget…</div><script>(${sandboxRuntime.toString()})();<\/script></body></html>`;
-  let alive = true;
+    </style></head><body><div id="view">Starting widget…</div><script>${widgetAppearanceBootstrapSource().replace(/<\/script/gi,'<\\/script')}\n(${sandboxRuntime.toString()})();<\/script></body></html>`;
+  let alive = true, ready = false, appearance = null;
+  const unsubscribeAppearance = subscribeWidgetAppearance(container.ownerDocument || document, value => {
+    appearance = value;
+    if (value?.active) frame.style.colorScheme = value.colorScheme;
+    else frame.style.removeProperty('color-scheme');
+    if (alive && ready) frame.contentWindow?.postMessage({type:'altara:widget:appearance',version:1,appearance},'*');
+  });
   const receive = event => {
     if (!alive || event.source !== frame.contentWindow) return;
-    if (event.data?.type === 'ready') frame.contentWindow.postMessage({ type: 'start', code: pkg.code, state }, '*');
+    if (event.data?.type === 'ready') { ready = true; frame.contentWindow.postMessage({ type: 'start', version:1, code: pkg.code, state, appearance }, '*'); }
     if (event.data?.type === 'runtime-error') onError(String(event.data.message));
     if (event.data?.type === 'state') {
       state = event.data.state;
       try { onState(state); } catch (error) { onError(error.message); dispose(); container.textContent = 'Could not save widget data. Free some local storage and try again.'; }
     }
   };
-  function dispose() { alive = false; window.removeEventListener('message', receive); frame.remove(); }
+  function dispose() { alive = false; unsubscribeAppearance(); window.removeEventListener('message', receive); frame.remove(); }
   window.addEventListener('message', receive); container.replaceChildren(frame);
   return { dispose, frame };
 }

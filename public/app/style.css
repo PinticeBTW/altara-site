@@ -2125,6 +2125,44 @@ body.desktop-install-welcome-open {
   flex-direction: column;
 }
 
+#botServerSettingsModal .modalCard {
+  width: min(540px, 96vw);
+  max-height: calc(100dvh - 32px);
+}
+
+.botServerSettingsForm {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.botServerSettingsForm .botServerSettingsToggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.botServerSettingsToggle input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.botServerSettingsForm .serverCreateFooter {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.botServerSettingsForm .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.botServerSettingsForm [data-bot-server-settings-reload] {
+  margin-right: auto;
+}
+
 .serverChannelCreateCard {
   width: min(480px, 96vw);
   max-height: min(80vh, 620px);
@@ -9157,6 +9195,42 @@ html.altara-smooth-scroll-off :is(#dmMessages,[data-native-dm-role="dmMessages"]
   box-shadow: inset 3px 0 #e8cfa6;
 }
 .msg--mentioned:hover { background: rgba(232, 207, 166, .12); }
+
+.composerMentionMenu {
+  position: fixed;
+  z-index: 1800;
+  padding: 6px;
+  border: 1px solid var(--border, #383838);
+  border-radius: 12px;
+  background: var(--panel, #202020);
+  color: var(--text, #eee);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .35);
+  box-sizing: border-box;
+}
+.composerMentionMenu[hidden] { display: none; }
+.composerMentionMenu__title { padding: 6px 8px 8px; font-size: 11px; font-weight: 700; color: var(--muted, #aaa); }
+.composerMentionMenu__list { max-height: 280px; overflow-y: auto; overscroll-behavior: contain; }
+.composerMentionMenu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 7px;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.composerMentionMenu__item:hover, .composerMentionMenu__item.is-active { background: rgba(232, 207, 166, .12); }
+.composerMentionMenu__item:focus-visible { outline: 2px solid #e8cfa6; outline-offset: -2px; }
+.composerMentionMenu__avatar { display: grid; place-items: center; overflow: hidden; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; background: rgba(255, 255, 255, .08); }
+.composerMentionMenu__avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.composerMentionMenu__body { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.composerMentionMenu__name { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composerMentionMenu__meta { font-size: 11px; color: var(--muted, #aaa); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .serverMemberRow--bot {
   cursor: pointer;
@@ -22549,6 +22623,40 @@ body::after {
   font-weight: 900;
 }
 
+.botSlashCommandPicker__item.botSlashCommandPicker__item--advanced {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.botSlashCommandPicker__item--advanced .botSlashCommandPicker__command b {
+  overflow-wrap: anywhere;
+}
+
+.serverResourceDialog { box-sizing:border-box; width:min(760px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); margin:auto; padding:20px; border:1px solid var(--stroke,#444); border-radius:14px; background:var(--ui-card-bg,#191919); color:var(--text-main,#eee); box-shadow:0 24px 80px #0006; overflow:auto; }
+.serverResourceDialog::backdrop { background:#0009; }
+.serverResourceDialog header,.serverResourceDialog footer { display:flex; align-items:center; gap:12px; justify-content:space-between; }
+.serverResourceDialog h2 { margin:0; font-size:20px; }
+.serverResourceDialog button { padding:9px 12px; border:1px solid var(--stroke,#444); border-radius:8px; background:#222; color:inherit; cursor:pointer; }
+.serverResourceDialog button:disabled { opacity:.55; cursor:default; }
+.serverResourceBody { display:grid; grid-template-columns:minmax(160px,1fr) minmax(0,2fr); gap:20px; margin-top:20px; }
+.serverResourceRows,.serverResourceDialog form { display:flex; flex-direction:column; gap:12px; min-width:0; }
+.serverResourceRow { text-align:left; display:grid; gap:5px; }
+.serverResourceRow span { display:flex; gap:8px; align-items:center; overflow-wrap:anywhere; }
+.serverResourceRow img { width:32px; height:32px; object-fit:contain; }
+.serverResourceDialog label { display:grid; gap:6px; }
+.serverResourceDialog fieldset { margin:0; padding:0; border:0; min-width:0; }
+.serverResourceDialog fieldset:not([hidden]) { display:grid; gap:12px; }
+.serverResourceDialog input:not([type="checkbox"]),.serverResourceDialog textarea,.serverResourceDialog select { box-sizing:border-box; width:100%; padding:10px; border:1px solid #444; border-radius:8px; background:#111; color:inherit; }
+.serverResourceDialog .serverResourceCheck { display:flex; align-items:center; }
+.serverResourceDialog p { font-size:13px; color:var(--text-soft,#bbb); }
+@media(max-width:540px) { .serverResourceBody { grid-template-columns:minmax(0,1fr); } }
+.serverExpression { display:inline-flex; align-items:center; vertical-align:middle; max-width:100%; }
+.serverExpression img { width:28px; height:28px; object-fit:contain; }
+.serverExpression--sticker img { width:160px; height:160px; max-width:100%; }
+.serverExpression.is-ready>span { display:none; }
+.serverExpressionPicker { grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fill,minmax(42px,1fr)); gap:6px; }
+.serverExpressionPicker .emojiSectionTitle { grid-column:1/-1; }
+.serverExpressionPicker .serverExpression--sticker img { width:40px; height:40px; }
+
 .botSlashCommandPicker__avatar img {
   width: 100%;
   height: 100%;
@@ -23282,6 +23390,25 @@ body::after {
   justify-content: space-between;
   gap: 12px;
 }
+
+#profileOverlay .billingCountryCard h3,
+#profileOverlay .billingCountryCard h4,
+#profileOverlay .billingCountryCard p { margin: 0; }
+#profileOverlay .billingCountrySummary { font-weight: 650; overflow-wrap: anywhere; }
+#profileOverlay .billingCountryForm { display: grid; gap: 12px; }
+#profileOverlay .billingCountryForm label { display: grid; gap: 6px; color: var(--settings-text); }
+#profileOverlay .billingCountryForm input,
+#profileOverlay .billingCountryForm select {
+  width: 100%; min-width: 0; box-sizing: border-box; padding: 10px 12px;
+  border: 1px solid var(--settings-border); border-radius: 8px;
+  color: var(--settings-text); background: var(--settings-surface);
+}
+#profileOverlay .billingCountryActions { display: flex; flex-wrap: wrap; gap: 8px; }
+#profileOverlay .billingCountryPreview { display: grid; gap: 12px; border-top: 1px solid var(--settings-border); padding-top: 14px; }
+#profileOverlay .billingCountryConsent { display: flex; align-items: flex-start; gap: 8px; }
+#profileOverlay .billingCountryConsent input { flex: 0 0 auto; margin-top: 3px; }
+#profileOverlay .billingCountryCard .btn { white-space: normal; }
+#profileOverlay .billingCountryCard [hidden] { display: none !important; }
 
 #profileOverlay .settingsAltaraPlusStatusLabel {
   color: var(--settings-muted);
@@ -61168,6 +61295,23 @@ body:not(.authPage) #serverSettingsModal .serverSettingsPreviewChannel {
   padding: 3px;
   margin: -3px;
 }
+/* Long bios must wrap inside the mini profile instead of widening its activity cards. */
+body:not(.authPage) #meProfilePopout:not(.is-server-context) .meProfilePopout__body {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+body:not(.authPage) #meProfilePopout:not(.is-server-context) .meProfilePopout__about {
+  min-width: 0;
+}
+body:not(.authPage) #meProfilePopout:not(.is-server-context) .meProfilePopout__about > .meProfilePopout__bio {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .profileActivityStack[open] .gameActivityCard__name {
   white-space: normal;
   overflow-wrap: anywhere;
@@ -62225,6 +62369,16 @@ body:not(.authPage) .widgetsHeaderActions .btn { min-height: 32px; padding: 7px 
 .botComponentModal [data-close]{border:1px solid #45423d;background:#25231f;color:#ddd5c6;border-radius:8px;padding:8px 12px;cursor:pointer;}
 .botComponentModal [role=status]{font-size:12px;color:#cabb9f;}
 .botComponentModal footer{justify-content:flex-end;}
+.botPrivateResponses{flex:0 1 auto;max-height:45%;overflow:auto;min-height:0;padding:0 20px;}
+.botPrivateResponse{max-width:100%;margin:10px 0;padding:14px 16px;border:1px solid var(--border,#45423d);border-left:3px solid #e9cfaa;border-radius:9px;background:var(--surface,#1b1b18);overflow-wrap:anywhere;}
+.botPrivateResponse__author{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px;}
+.botPrivateResponse__avatar{flex:0 0 28px;width:28px;height:28px;border-radius:50%;overflow:hidden;}
+.botPrivateResponse__avatar .profileAvatarMediaClip{width:100%;height:100%;}
+.botPrivateResponse__text{white-space:pre-wrap;font-size:14px;line-height:1.5;}
+.botPrivateResponse footer{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted,#aaa59a);}
+.botPrivateResponse [data-bot-private-dismiss]{border:0;padding:3px;background:transparent;color:inherit;text-decoration:underline;cursor:pointer;font:inherit;}
+.botPrivateResponse [data-bot-private-dismiss]:focus-visible{outline:2px solid #e9cfaa;outline-offset:3px;}
+@media(max-width:480px){.botPrivateResponses{padding:0 12px;}.botPrivateResponse{padding:12px;}}
 
 /* Native bot inbox uses the same main chat surface as personal messages. */
 .panel.mid.is-dm-conversation-open.is-bot-dm-conversation-open #dmMain{display:none!important;}
@@ -62233,6 +62387,9 @@ body:not(.authPage).desktop-titlebar-overlay .panel.mid.is-bot-dm-conversation-o
 body:not(.authPage) .panel.mid #botDmMain[hidden],body:not(.authPage) .panel.mid.is-dm-conversation-open #botDmMain[hidden]{display:none!important;}
 .botDmMain [hidden]{display:none!important;}
 .botDmMain{min-height:0;overflow:hidden;}
+.botDmMain .botDmMessages:focus:not(:focus-visible){outline:none;}
+.botDmMain .botDmMessages:focus-visible{outline:2px solid var(--altara-accent,#ead0ab);outline-offset:-2px;}
+.botDmMain :is(#btnDmProfileClose,[data-native-dm-role="btnDmProfileClose"]),.botDmMain :is(#btnDmPinsClose,[data-native-dm-role="btnDmPinsClose"]){display:inline-flex;align-items:center;justify-content:center;}
 .botDmConsentBar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 13px;border-bottom:1px solid var(--border,rgba(255,255,255,.08));font-size:12px;color:var(--muted,#aaa);}
 .botDmConsentBar[hidden]{display:none;}
 .botDmConsentBar .btn{font-size:12px;flex-shrink:0;}
@@ -62240,7 +62397,748 @@ body:not(.authPage) .panel.mid #botDmMain[hidden],body:not(.authPage) .panel.mid
 .botDmStatus[hidden]{display:none;}
 .botDmMain .dmComposerTools[hidden]{display:none!important;}
 .botDmEmpty{padding:20px;}
+body:not(.authPage) .leftDockDms #dmList .dm-item[data-bot-dm-key]{padding-right:40px;}
+.leftDockDms #dmList .dm-item[data-bot-dm-key] .dm-handle{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.leftDockDms #dmList .dm-item[data-bot-dm-key] .dm-item-remove{z-index:1;}
+.botProfileCard .botProfileCard__actions .botProfileCard__message{flex:1 1 100%;}
 .botDmInboxName{display:flex;align-items:center;gap:6px;}
 .botDmInboxName>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .botDmInboxName .msg__botBadge{flex-shrink:0;}
-.botDmUnreadBadge{flex-shrink:0;min-width:19px;padding:2px 5px;border-radius:10px;background:#ead0ab;color:#171412;text-align:center;font-size:11px;font-weight:700;}
+.botDmUnreadBadge,.dmUnreadBadge{flex-shrink:0;min-width:19px;padding:2px 5px;border-radius:10px;background:#ead0ab;color:#171412;text-align:center;font-size:11px;font-weight:700;}
+.botContextCommands__title{padding:6px 10px;font-size:11px;color:var(--muted,#999);font-weight:700;}
+.botComponentContainer{border:1px solid var(--border,#333);border-left:3px solid var(--bot-component-accent,#d8bf97);border-radius:10px;padding:14px;max-width:640px;display:grid;gap:10px;background:var(--panel,#181818);}
+.botComponentSection{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.botComponentSection>div{min-width:0;overflow-wrap:anywhere;}
+.botComponentText{white-space:pre-wrap;overflow-wrap:anywhere;}
+.botComponentSeparator{padding:4px 0;}
+.botComponentSeparator--2{padding:10px 0;}
+.botComponentSeparator hr{border:0;border-top:1px solid var(--border,#333);margin:0;}
+.botComponentGallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;max-width:640px;}
+.botComponentMedia,.botComponentFile{border:1px solid var(--border,#333);border-radius:8px;background:var(--panel,#181818);color:inherit;max-width:100%;overflow:hidden;cursor:pointer;padding:8px;text-align:left;}
+.botComponentMedia img{display:block;max-width:100%;max-height:320px;object-fit:contain;}
+.botComponentMedia--unavailable{font-size:12px;color:var(--muted,#999);}
+.botComponentSpoiler>summary{cursor:pointer;font-size:12px;color:var(--muted,#999);padding:4px;}
+.botComponentEntityMenu input[type=search]{width:100%;box-sizing:border-box;padding:8px;background:var(--panel,#111);color:inherit;border:1px solid var(--border,#333);border-radius:7px;}
+.botComponentMenu__status{font-size:12px;color:var(--muted,#999);}
+.dmComposer.is-forum-channel> :not(.forumChannelComposer),.dm__composer.is-forum-channel> :not(.forumChannelComposer){display:none!important;}
+.forumChannelComposer{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:8px;box-sizing:border-box;}
+.forumChannelComposer>span{font-size:13px;color:var(--muted,#999);overflow-wrap:anywhere;}
+.forumChannelComposer>.btn{flex-shrink:0;}
+@media(max-width:600px){.forumChannelComposer{align-items:stretch;flex-direction:column;}}
+
+/* Local translation stays separate from the authoritative message text. */
+.msg__translation{margin-top:6px;color:var(--text-muted,#aaa);font-size:11px;line-height:1.45;}
+.msg__translation--notice,.msg__translation[data-translation-status="pending"]{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;}
+.msg__translation--result{padding-left:9px;border-left:1px solid var(--stroke,rgba(255,255,255,.14));}
+.msg__translationText{color:var(--text-soft,#ddd);font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;}
+.msg__translationMeta{display:flex;align-items:center;gap:10px;margin-top:2px;}
+.msg__translationLabel{font-size:10px;color:var(--text-muted,#999);}
+.msg__translationButton{border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:2px 0;text-align:left;}
+.msg__translationButton:hover{color:var(--text-main,#eee);text-decoration:underline;}
+.msg__translationButton:focus-visible{outline:2px solid var(--accent,#cda984);outline-offset:3px;border-radius:3px;}
+.msg__translationButton:disabled{opacity:.5;cursor:default;text-decoration:none;}
+
+.messageTranslationSettingsCard{width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 40px);overflow:auto;background:var(--surface-1,#1a1d25);border:1px solid var(--stroke,rgba(255,255,255,.14));box-shadow:0 22px 70px rgba(0,0,0,.3);}
+.messageTranslationSettingsBody{display:grid;gap:16px;padding:18px 20px;}
+.messageTranslationSettingsField{display:grid;gap:6px;color:var(--text-soft,#ddd);font-size:13px;}
+.messageTranslationSettingsField select{width:100%;padding:9px 11px;border:1px solid var(--stroke,rgba(255,255,255,.14));border-radius:9px;background:var(--surface-2,#15181e);color:var(--text-main,#eee);font:inherit;}
+.messageTranslationSettingsField select:focus-visible{outline:2px solid var(--accent,#5865f2);outline-offset:2px;}
+.messageTranslationSettingsPrivacy{margin:0;color:var(--text-muted,#aaa);font-size:12px;line-height:1.5;}
+.messageTranslationSettingsAuto{display:flex;align-items:flex-start;gap:9px;color:var(--text-soft,#ddd);font-size:13px;line-height:1.5;}
+.messageTranslationSettingsAuto input[type="checkbox"]{width:16px;height:16px;min-height:16px;flex:0 0 16px;margin:2px 0 0;accent-color:var(--accent,#5865f2);}
+.messageTranslationSettingsStatus{min-height:0;color:var(--text-muted,#aaa);font-size:12px;line-height:1.5;}
+.messageTranslationSettingsStatus:empty{display:none;}
+.messageTranslationSettingsActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--stroke,rgba(255,255,255,.14));}
+.messageTranslationSettingsActions .btn{min-height:34px;font-size:13px;}
+
+/* Panoramic full profile. Repeated ID matches legacy appearance specificity; compact cards stay unchanged. */
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) { padding: 18px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardCard {
+  position: relative;
+  inset: auto !important;
+  display: flex;
+  flex-direction: column;
+  width: min(1120px, calc(100vw - 36px));
+  max-width: min(1120px, calc(100vw - 36px));
+  height: auto;
+  min-height: 0;
+  max-height: min(880px, calc(100vh - 36px));
+  max-height: min(880px, calc(100dvh - 36px));
+  border-radius: 18px;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardSurface {
+  display: block;
+  height: auto;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--profile-border, #ffffff26) transparent;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  isolation: isolate;
+  background: var(--profile-surface, #151318) !important;
+}
+/* The full-width media box keeps the saved 4:1 crop. The overlaid body can grow the header without stretching the banner. */
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBanner {
+  position: relative;
+  grid-area: 1 / 1;
+  align-self: start;
+  inset: auto;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: var(--altara-profile-banner-ratio, 4 / 1);
+  padding: 0;
+  border: 0;
+  z-index: 0;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBanner > .profileBannerMedia {
+  object-position: var(--user-card-banner-position, 50% 50%) !important;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBanner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(0deg, var(--profile-surface, #151318), color-mix(in srgb, var(--profile-surface, #151318) 82%, transparent) 30%, color-mix(in srgb, var(--profile-surface, #151318) 20%, transparent) 72%, transparent);
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody {
+  --profile-info-top: 28px;
+  position: relative;
+  grid-area: 1 / 1;
+  align-self: end;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 155px 155px;
+  /* The activity spans the right deck; its controls share one compact footer below. */
+  grid-template-rows: max-content max-content max-content minmax(0, 1fr) auto;
+  align-content: end;
+  align-items: start;
+  width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  gap: 7px 18px;
+  /* An expanded deck grows the overview below a visible strip of the original banner. */
+  margin-top: 96px;
+  padding: var(--profile-info-top) 28px 22px;
+}
+/* Protect the letter edges without placing an opaque layer over the banner. */
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview :is(.userCardName,.userCardHandle,.userCardBio,.userCardFact--created,.profile-connection-title,.profileActivityStack__hint) {
+  text-shadow: 0 1px 3px color-mix(in srgb, var(--profile-surface, #151318) 95%, transparent) !important;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) :is(.userCardIdentity,.userCardSection,.userCardFacts) { display: contents; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardIdentityMeta { grid-column: 2; grid-row: 1; min-width: 0; grid-template-columns: minmax(0,max-content) minmax(0,auto); justify-content: start; gap: 5px 10px; align-items: center; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardAvatar {
+  grid-column: 1;
+  grid-row: 1 / 4;
+  width: 96px;
+  height: 96px;
+  margin: 0;
+  border-width: 4px;
+  box-shadow: 0 8px 24px #0003;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardName { grid-column: 1; grid-row: 1; min-width: 0; max-width: 100%; font-size: clamp(24px, 2.2vw, 29px); line-height: 1.1; letter-spacing: -.035em; overflow-wrap: anywhere; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardHandle { grid-column: 1 / -1; grid-row: 2; font-size: 13px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBadgeRow { grid-column: 2; grid-row: 1; min-width: 0; width: auto; max-width: 100%; justify-content: flex-start; gap: 7px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBadgeRow--header {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+  flex-wrap: wrap;
+  min-height: 1.5em;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBadgeRow--header .altaraPlusProfileBadge__img { width: 22px; height: 22px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) :is(.userCardStatus,.userCardRelation) { font-size: 10px; padding: 3px 7px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBio {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  font-size: 13px;
+  line-height: 1.5;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBio--inProfile {
+  min-height: 1.5em;
+  height: 1.5em;
+  visibility: hidden;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .profile-connections-more:focus-visible {
+  outline: 2px solid var(--profile-accent, var(--accent));
+  outline-offset: 3px;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardAbout {
+  min-width: 0;
+  margin: 0 0 18px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--profile-border, var(--border));
+  color: var(--profile-text, var(--text-1));
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardAboutTitle {
+  margin: 0 0 7px;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardAboutText {
+  max-width: 100%;
+  margin: 0;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardSection__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .profileActivityStack {
+  grid-column: 3 / 5;
+  grid-row: 1 / 5;
+  align-self: end;
+  width: 100%;
+}
+/* Live games and music share the same protected activity slot; an expanded deck grows the header naturally. */
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 90px;
+  padding: 12px;
+  border: 1px solid var(--profile-border, #ffffff18) !important;
+  border-radius: 12px;
+  background: var(--profile-panel, #211f24) !important;
+  color: var(--profile-text, #eee) !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard .gameActivityCard__icon { width: 64px; height: 64px; min-width: 64px; min-height: 64px; border-radius: 7px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard .gameActivityCard__body { gap: 3px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard .gameActivityCard__eyebrow { font-size: 10px; line-height: 1.3; letter-spacing: .04em; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard .gameActivityCard__name { font-size: 13px; font-weight: 750; line-height: 1.3; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard .gameActivityCard__meta { font-size: 11px; line-height: 1.35; }
+/* Keep the listening card legible beside the identity instead of compressing its artwork and timeline. */
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard.gameActivityCard--spotify {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 3px 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--profile-border, #ffffff18) !important;
+  border-radius: 12px;
+  background: var(--profile-panel, #211f24) !important;
+  box-shadow: none;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard--spotify :is(.spotifyListeningTrack,.gameActivityCard__body) { display: contents; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard--spotify .gameActivityCard__icon {
+  grid-column: 1;
+  grid-row: 1 / 5;
+  align-self: center;
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  min-height: 64px;
+  border-radius: 7px;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard--spotify .spotifyListeningHeader { grid-column: 2; grid-row: 1; min-width: 0; font-size: 10px; gap: 5px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard--spotify .gameActivityCard__name { grid-column: 2; grid-row: 2; min-width: 0; font-size: 13px; font-weight: 750; line-height: 1.3; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard--spotify .gameActivityCard__meta { grid-column: 2; grid-row: 3; min-width: 0; font-size: 11px; line-height: 1.35; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard--spotify .spotifyActivityProgress { grid-column: 2; grid-row: 4; min-width: 0; margin-top: 3px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .gameActivityCard--spotify .spotifyActivityProgress__time { font-size: 10px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions {
+  grid-column: 3;
+  grid-row: 5;
+  align-self: center;
+  justify-content: stretch;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 7px;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions .btn { flex: 0 1 auto; min-width: 0; min-height: 36px; border-radius: 10px; font-size: 12px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions .userCardProfileEditBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid var(--profile-border, #ffffff24) !important;
+  border-radius: 11px;
+  background: var(--profile-panel, #211f24) !important;
+  color: var(--profile-text, #eee) !important;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions .userCardProfileEditBtn:hover { background: var(--profile-hover, #302c35) !important; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions .userCardProfileEditBtn[hidden] { display: none !important; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardProfileEditBtn__icon { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 15px; height: 15px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardProfileEditBtn__icon svg { display: block; width: 15px; height: 15px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardFact {
+  grid-column: auto;
+  grid-row: auto;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-size: 11px;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardFact--created {
+  grid-column: 4;
+  grid-row: 5;
+  align-self: center;
+  padding: 0;
+  border: 0 !important;
+  background: transparent !important;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardFact__label { font-size: 9px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody:not(:has(.profileActivityStack)) .userCardActions { grid-row: 1 / 4; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody:not(:has(.profileActivityStack)) .userCardFact--created { grid-row: 1 / 4; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardFact__value { font-size: 11px; font-weight: 500; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardProfileConnections {
+  grid-column: 2;
+  grid-row: 3;
+  min-width: 0;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connections-compact { margin: 0; gap: 0; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connections-compact__title { display: none; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connections-list { display: flex; align-items: center; flex-wrap: nowrap; min-width: 0; gap: 5px 12px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connection-row {
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 0;
+  border: 0 !important;
+  border-radius: 6px;
+  background: transparent !important;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connection-body { flex: 1 1 auto; min-width: 0; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connections-more {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 26px;
+  padding: 3px 6px;
+  border: 1px solid var(--profile-border, #ffffff18);
+  border-radius: 6px;
+  background: var(--profile-panel, #ffffff08);
+  color: var(--profile-text, var(--text-1));
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connections-more:hover { background: var(--profile-hover, #ffffff0c); }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connection-row:is(:hover,:focus-visible) { background: var(--profile-hover, #ffffff0c) !important; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connection-icon { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 6px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connection-iconGlyph { width: 17px; height: 17px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connection-title { position: relative; display: block; font-size: 11px; font-weight: 650; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connection-title:has(.profile-connection-verified) { padding-right: 19px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview .profile-connection-verified { position: absolute; top: 50%; right: 0; transform: translateY(-50%); width: 13px; height: 13px; font-size: 9px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview :is(.profile-connection-subtitle,.profile-connection-link) { display: none; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardPanelsArea { display: block; min-height: 0; overflow: visible; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardTabs {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: 46px;
+  gap: 28px;
+  padding: 0 28px;
+  background: var(--profile-surface, #151318) !important;
+  border-bottom: 1px solid var(--profile-border, #ffffff18);
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardTab { color: var(--profile-muted, #aaa) !important; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardTab.is-active { color: var(--profile-text, #eee) !important; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardPanels { display: block; overflow: visible; min-height: 0; padding: 19px 28px 26px; scrollbar-gutter: auto; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .userCardWidgetsShell--collection { align-content: start; gap: 10px !important; min-height: 0; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetPanelIntro { gap: 0; min-height: 0; padding: 0; margin: 0; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetPanelIntro .userCardPanelTitle { font-size: clamp(23px, 2.2vw, 29px); line-height: 1.12; letter-spacing: -.04em; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetPanelIntro .userCardPanelText { margin-top: 5px; font-size: 12px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetSectionHeader { min-height: 0; padding: 0; margin: 0; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetAddItemBtn { color: var(--profile-text, #eee) !important; background: var(--profile-hover, #ffffff07) !important; border-color: transparent !important; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetAddWidgetBtn { background: var(--profile-accent, #e8cfae) !important; color: var(--profile-accent-text, #252018) !important; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetAddWidgetBtn::before { background: var(--profile-accent-text, #252018); color: var(--profile-accent, #e8cfae); }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetBoard { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px 24px !important; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf {
+  --collection-cover-width: 150px;
+  --collection-cover-height: 190px;
+  padding: 9px 0 15px !important;
+  border-bottom-color: var(--profile-border, #ffffff18) !important;
+}
+/* The first visible widget leads the collection, including after a reorder. */
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetBoard > .profileWidgetCard { grid-column: auto; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetBoard > .profileWidgetCard:first-child { grid-column: 1 / -1; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetItemsArea { gap: 3px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetTopRow { margin-bottom: 2px; gap: 9px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetCategoryMark { width: 21px; height: 21px; font-size: 17px; filter: grayscale(1); }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetTitle { font-size: 14px; font-weight: 700; letter-spacing: -.02em; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetItemCount { min-width: 0; width: auto; height: auto; background: transparent !important; font-size: 11px; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetShelf {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: flex-start;
+  gap: 18px !important;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 7px 1px 9px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 1px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--profile-border, #ffffff21) transparent;
+  overscroll-behavior-x: contain;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetShelfItem {
+  position: relative;
+  flex: 0 0 var(--collection-cover-width);
+  width: var(--collection-cover-width) !important;
+  min-height: 0 !important;
+  max-width: none;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 3px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  scroll-snap-align: start;
+  overflow: visible;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetShelfItem:not(.is-profile-dragging) { background: transparent !important; }
+/* Drag sources retain their drop target surface above the collection resets. */
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel :is(.profileWidgetCard,.profileWidgetItem).is-profile-dragging {
+  position: relative;
+  opacity: 1 !important;
+  border: 1px dashed color-mix(in srgb, var(--profile-accent, #e8cfae) 55%, var(--profile-border, #ffffff26)) !important;
+  border-radius: 8px !important;
+  background: color-mix(in srgb, var(--profile-accent, #e8cfae) 8%, var(--profile-panel, #252525)) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--profile-accent, #e8cfae) 10%, transparent) !important;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel :is(.profileWidgetCard,.profileWidgetItem).is-profile-dragging::before {
+  color: var(--profile-accent, #e8cfae);
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetItemOpen {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  min-height: 0;
+  border-radius: 3px;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--profile-text, #eee);
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetItemMedia {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  width: 100% !important;
+  height: var(--collection-cover-height) !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+  overflow: hidden;
+  border: 1px solid var(--profile-border, #ffffff26) !important;
+  border-radius: 3px;
+  background: var(--profile-panel, #252525) !important;
+  box-shadow: 0 4px 12px #0002;
+  transform: none;
+  transition: border-color .16s ease;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetItemMedia img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetSpineTitle { display: none; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetItemBody {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: 5px;
+  min-height: 0;
+  height: auto;
+  padding: 9px 0 0 !important;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetItemTitle { display: block; min-height: 16px; max-height: none; overflow: visible; overflow-wrap: anywhere; font-size: 12px !important; font-weight: 700; line-height: 1.4; letter-spacing: -.01em; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetItemSecondary { display: -webkit-box; -webkit-line-clamp: 2; overflow: hidden; color: var(--profile-muted, #aaa); font-size: 11px; line-height: 1.4; white-space: normal; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetShelfItem:is(:hover,:focus-within,.is-shelf-selected) .profileWidgetItemMedia { border-color: color-mix(in srgb, var(--profile-accent, #e8cfae) 45%, var(--profile-border, #ffffff26)) !important; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetItemDragHandle { top: 6px; right: 6px; width: 26px; height: 26px; border: 1px solid var(--profile-border, #ffffff22); border-radius: 7px; background: var(--profile-surface, #222); color: var(--profile-text, #eee); opacity: 0; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetShelfItem:is(:hover,:focus-within) .profileWidgetItemDragHandle { opacity: 1; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetShelfNav { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; margin-left: auto; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetShelfNav[hidden] { display: none !important; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetShelfArrow { display: grid; place-items: center; width: 27px; height: 27px; padding: 0; border: 1px solid var(--profile-border, #ffffff26); border-radius: 50%; background: transparent; color: var(--profile-muted, #aaa); font: inherit; font-size: 16px; cursor: pointer; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetShelfArrow:hover { background: var(--profile-hover, #ffffff0c); color: var(--profile-text, #eee); }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetShelfArrow:disabled { opacity: .35; background: transparent; color: var(--profile-muted, #aaa); cursor: default; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel :is(.profileWidgetShelfArrow,.profileWidgetShelf):focus-visible { outline: 2px solid var(--profile-accent, #e8cfae); outline-offset: 3px; }
+@media (min-width: 761px) {
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetBoard > .profileWidgetCard--shelf:not(:first-child):not(.profileWidgetCard--music) { --collection-cover-width: 130px; --collection-cover-height: 165px; }
+}
+/* Reserve the complete sleeve and disc footprint, including the title beneath it. */
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--music.profileWidgetCard--shelf {
+  --collection-music-cover: 136px;
+  --collection-cover-width: calc(var(--collection-music-cover) * 1.25);
+  --collection-cover-height: var(--collection-music-cover);
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--music.profileWidgetCard--shelf .profileWidgetItemMedia {
+  width: var(--collection-music-cover) !important;
+  height: var(--collection-music-cover) !important;
+  overflow: visible;
+  border: 0 !important;
+  border-radius: 2px;
+  background: transparent !important;
+  box-shadow: none;
+  isolation: isolate;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--music.profileWidgetCard--shelf .profileWidgetItemMedia :is(img,.profileWidgetItemFallback) { position: relative; z-index: 1; width: 100%; height: 100%; border: 1px solid #ffffff15; border-radius: 2px; box-shadow: 0 5px 12px #0003; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetShelfRecord {
+  position: absolute;
+  z-index: 0;
+  top: 3%;
+  right: -22%;
+  width: 94%;
+  height: 94%;
+  border: 1px solid #ffffff23;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, #171717 0 3px, var(--profile-accent, #dfc5aa) 3px 19px, #272727 20px 23px, transparent 24px), repeating-radial-gradient(circle at center, #181818 0 1px, #343434 1px 2px, #171717 2px 4px);
+  box-shadow: 3px 5px 10px #0003;
+  pointer-events: none;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--music.profileWidgetCard--shelf .profileWidgetItemFallback { background: var(--profile-panel, #252525); }
+@media (min-width: 1101px) {
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetBoard > .profileWidgetCard--games:first-child .profileWidgetShelf:not(.profileWidgetShelf--compact) .profileWidgetShelfItem { flex-basis: calc((100% - 90px) / 6); width: calc((100% - 90px) / 6) !important; }
+}
+@media (max-width: 1100px) {
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody { --profile-info-top: 24px; grid-template-columns: 92px minmax(0,1fr) 140px 140px; gap: 7px 18px; padding: var(--profile-info-top) 26px 20px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardAvatar { width: 92px; height: 92px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions .btn { flex: 0 1 auto; min-width: 0; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) :is(.userCardTabs,.userCardPanels) { padding-inline: 26px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetBoard { gap: 4px 22px !important; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--music.profileWidgetCard--shelf { --collection-music-cover: 128px; }
+}
+@media (max-width: 760px) {
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) { padding: 10px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardCard { width: calc(100vw - 20px); max-width: calc(100vw - 20px); height: auto; max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); border-radius: 14px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardOverview { min-height: 0; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody { --profile-info-top: clamp(84px,17vw,120px); grid-template-columns: 80px minmax(0,1fr); grid-template-rows: auto auto auto; min-height: 0; gap: 10px 16px; margin-top: 0; padding: var(--profile-info-top) 22px 20px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardAvatar { width: 80px; height: 80px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardName { font-size: 25px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .profileActivityStack { grid-column: 1 / -1; grid-row: 4; max-width: 420px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions { grid-column: 1 / -1; grid-row: 5; max-width: 420px; flex-direction: row; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions .btn { flex: 1 1 0; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardFact--created { grid-column: 1 / -1; grid-row: 6; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody:not(:has(.profileActivityStack)) .userCardActions { grid-row: 4; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody:not(:has(.profileActivityStack)) .userCardFact--created { grid-row: 5; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardTabs { height: 46px; gap: 23px; padding-inline: 22px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardPanels { padding: 18px 22px 24px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetBoard { grid-template-columns: minmax(0,1fr); gap: 2px !important; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--paired { grid-column: 1; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf { --collection-cover-width: 150px; --collection-cover-height: 190px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetSectionHeader { flex-direction: row; align-items: center; gap: 12px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetAddWidgetBtn { white-space: nowrap; padding-inline: 11px !important; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetShelf { gap: 18px !important; }
+}
+@media (max-width: 430px) {
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody { grid-template-columns: 68px minmax(0,1fr); column-gap: 12px; padding-inline: 16px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardAvatar { width: 68px; height: 68px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardAvatar { grid-row: 1; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardName { font-size: 23px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBio { grid-column: 1 / -1; grid-row: 2; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBadgeRow--header { grid-column: 1 / -1; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardProfileConnections { grid-column: 1 / -1; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardPanels { padding-inline: 16px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetSectionHeader { align-items: flex-start; flex-direction: column; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetTopRow { flex-wrap: wrap; gap: 6px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetHeaderActions { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetItemMedia { transition: none; }
+}
+@media (hover: none) {
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) #userCardWidgetsPanel .profileWidgetCard--shelf .profileWidgetItemDragHandle { opacity: .8; }
+}
+/* The left tabs share the desktop deck's bottom row; activity stays close to the divider. */
+@media (min-width: 761px) {
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardSurface { --profile-header-footer-height: 46px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody {
+    grid-template-rows: max-content max-content max-content minmax(0, 1fr) minmax(var(--profile-header-footer-height), max-content);
+    margin-top: 104px;
+    padding-bottom: 8px;
+  }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardPanelsArea { margin-top: calc(-1 * var(--profile-header-footer-height)); }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .profileActivityStack { grid-row: 3 / 6; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions { grid-column: 4; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardFact--created { grid-column: 3; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody:has(.profileActivityStack) :is(.userCardActions,.userCardFact--created) { grid-row: 1 / 3; align-self: end; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody:has(.profileActivityStack) .userCardFact--created { margin-bottom: 5px; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody:not(:has(.profileActivityStack)) :is(.userCardActions,.userCardFact--created) { grid-row: 5; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardTabs {
+    width: max-content;
+    max-width: calc(100% - 380px);
+    border-bottom: 0;
+  }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardPanels { border-top: 1px solid var(--profile-border, #ffffff18); }
+}
+@media (max-width: 760px) {
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardActions { grid-row: 4; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardFact--created { grid-row: 5; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .profileActivityStack { grid-row: 6; }
+}
+/* A collection with no visible categories has a compact, deliberate empty state. */
+body:not(.authPage) #userCardWidgetsPanel .profileCollectionEmpty {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 20px;
+  border-color: var(--profile-border, var(--border));
+  background: var(--profile-panel, var(--panel));
+}
+body:not(.authPage) #userCardWidgetsPanel .profileCollectionEmpty__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--profile-hover, #ffffff08);
+  color: var(--profile-accent, var(--accent));
+}
+body:not(.authPage) #userCardWidgetsPanel .profileCollectionEmpty__icon svg { width: 22px; height: 22px; fill: currentColor; }
+body:not(.authPage) #userCardWidgetsPanel .profileCollectionEmpty__body { display: grid; gap: 5px; min-width: 0; }
+body:not(.authPage) #userCardWidgetsPanel .profileCollectionEmpty__title { color: var(--profile-text, var(--text-1)); font-size: 14px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+body:not(.authPage) #userCardWidgetsPanel .profileCollectionEmpty__text { color: var(--profile-muted, var(--muted)); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+/* Other people's dates and actions form one independent header column. */
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody--foreignFull .userCardHeaderAside {
+  grid-column: 3 / 5;
+  grid-row: 1 / 6;
+  align-self: end;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardHeaderAside #userCardFacts { display: contents; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardHeaderMeta {
+  order: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  min-width: 0;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardHeaderAside .userCardHeaderMeta .userCardFact {
+  grid-column: auto;
+  grid-row: auto;
+  align-self: start;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardHeaderMeta :is(.userCardFact__label,.userCardFact__value) { white-space: normal; overflow-wrap: anywhere; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardHeaderAside .userCardActions {
+  order: 2;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardHeaderAside .userCardActions .btn { flex: 1 1 120px; min-width: 0; max-width: 100%; }
+body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardHeaderAside .profileActivityStack { order: 3; width: 100%; max-width: none; }
+@media (max-width: 760px) {
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody--foreignFull { grid-template-rows: max-content max-content max-content auto; }
+  body:not(.authPage) #userCardModal#userCardModal.userCardModal--overlay:not(.userCardModal--preview) .userCardBody--foreignFull .userCardHeaderAside { grid-column: 1 / -1; grid-row: 4; align-self: start; max-width: none; }
+}
+/* Current and recently shared games belong to the full profile Activity tab. */
+#userCardActivityPanel .profileActivityPanel { display: grid; gap: 26px; min-width: 0; }
+#userCardActivityPanel .profileCurrentActivity,
+#userCardActivityPanel .profileRecentActivity { min-width: 0; }
+#userCardActivityPanel .profileRecentActivity__title {
+  margin: 0;
+  color: var(--profile-text, var(--text));
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+#userCardActivityPanel .profileCurrentActivity__cards { display: grid; gap: 10px; margin-top: 10px; min-width: 0; }
+#userCardActivityPanel .profileCurrentActivity__cards .userCardGameActivityCard { margin: 0; }
+#userCardActivityPanel .profileRecentActivity__subtitle,
+#userCardActivityPanel .profileRecentActivity__state {
+  margin: 5px 0 0;
+  color: var(--profile-muted, var(--muted));
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+#userCardActivityPanel .profileRecentActivity__state { padding: 12px 0; }
+#userCardActivityPanel .profileRecentActivity__list { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+#userCardActivityPanel .profileRecentActivity__card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--profile-border, var(--line));
+  border-radius: 14px;
+  background: var(--profile-panel, var(--panel));
+}
+#userCardActivityPanel .profileRecentActivity__artwork {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--profile-panel-strong, var(--panel));
+}
+#userCardActivityPanel .profileRecentActivity__fallback { display: grid; place-items: center; color: var(--profile-muted, var(--muted)); }
+#userCardActivityPanel .profileRecentActivity__fallback svg { width: 28px; height: 28px; }
+#userCardActivityPanel .profileRecentActivity__image { position: absolute; inset: 0; display: grid; place-items: center; background: var(--profile-panel, var(--panel)); }
+#userCardActivityPanel .profileRecentActivity__image[hidden] { display: none !important; }
+#userCardActivityPanel .profileRecentActivity__image img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+#userCardActivityPanel .profileRecentActivity__artwork:has(.profileRecentActivity__image:not([hidden])) .profileRecentActivity__fallback { visibility: hidden; }
+#userCardActivityPanel .profileRecentActivity__body { display: grid; gap: 5px; min-width: 0; }
+#userCardActivityPanel .profileRecentActivity__name { color: var(--profile-text, var(--text)); font-size: 13px; font-weight: 750; line-height: 1.4; overflow-wrap: anywhere; }
+#userCardActivityPanel .profileRecentActivity__time { color: var(--profile-muted, var(--muted)); font-size: 11px; line-height: 1.4; }

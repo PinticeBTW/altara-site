@@ -333,8 +333,14 @@ test("embedded app shell preserves the offline hotfix cache-buster", async () =>
   assert.match(patcher, /const offlineReconnectMarker/);
   assert.match(patcher, /hotfix=\$\{encodeURIComponent\(offlineReconnectMarker\)\}/);
   assert.match(patcher, /appJsQuery/);
-  assert.match(
-    appShell,
-    /src="\/app\/app\.js\?release=0\.1\.143&amp;v=server-read-message-history-ux-v3-bot-platform-v2-20261003-native-inbox-controls-v10&amp;hotfix=offline-auth-reconnect-v1"/,
-  );
+  const manifest = JSON.parse(await source("public/app/release.json"));
+  const query = /src="(\/app\/app\.js\?[^"]+)"/.exec(appShell)?.[1];
+  assert.ok(query, "app shell has the versioned renderer URL");
+  const url = new URL(query.replaceAll("&amp;", "&"), "https://local.invalid");
+  assert.equal(url.searchParams.get("release"), process.env.ALTARA_WEB_EXPECTED_RELEASE || manifest.version);
+  assert.equal(url.searchParams.get("patch") || "", manifest.patch || "");
+  const currentAssetVersion = /const assetVersion = "([^"]+)"/.exec(await source("public/app/app.js"))?.[1];
+  assert.match(currentAssetVersion, /^server-read-message-history-ux-v3/);
+  assert.equal(url.searchParams.get("v"), currentAssetVersion);
+  assert.equal(url.searchParams.get("hotfix"), "offline-auth-reconnect-v1");
 });

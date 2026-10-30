@@ -3,7 +3,7 @@ import { safeVaultMime } from './vaultMediaCrypto.js';
 
 // Only authenticated blobs enter the normal media presentation. No persistent cache.
 export function createVaultMediaViewer({ supabase, getRow, getManifest, captureOwner, canView,
-  onImageOpen, onInvalidate, onReady, onPhase, favoriteButton, labels = {}, document: doc = document, urlApi = URL, download = downloadVaultAttachment }) {
+  onImageOpen, onInvalidate, onReady, onPhase, favoriteButton, getUnlockProof = () => '', labels = {}, document: doc = document, urlApi = URL, download = downloadVaultAttachment }) {
   const text = { loading: 'A carregar…', retry: 'Não foi possível carregar. Tentar novamente', save: 'Guardar ficheiro', open: 'Abrir imagem', ...labels };
   const resources = new Map(), queue = new Set(), transfers = new Map();
   const blobs = new Map(); let blobBytes = 0;
@@ -30,7 +30,7 @@ export function createVaultMediaViewer({ supabase, getRow, getManifest, captureO
       try {
         assertCurrent();
         const blob = await download({ supabase, descriptor, context: { conversationId: row.conversation_id, messageId: row.id, fileId: descriptor.fileId },
-          signal: controller.signal, assertCurrent, onPhase });
+          signal: controller.signal, assertCurrent, onPhase, unlockProof: getUnlockProof(row.conversation_id) });
         assertCurrent(); remember(getRow(row.id), descriptor, blob); return blob;
       } finally {
         owner.signal.removeEventListener('abort', transfer.abort);

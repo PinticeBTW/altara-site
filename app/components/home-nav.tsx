@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { DOWNLOAD_URL } from "./site-chrome";
+import { DOWNLOADS_URL } from "./site-chrome";
 
 const NAV_LINKS = [
   { href: "/", label: "Home", key: "home" },
@@ -14,14 +14,25 @@ const NAV_LINKS = [
   { href: "/developers", label: "Developers", key: "developers" },
 ] as const;
 
-type NavKey = (typeof NAV_LINKS)[number]["key"] | "discord-alternative";
+type NavKey =
+  | (typeof NAV_LINKS)[number]["key"]
+  | "discord-alternative"
+  | "downloads";
 
-export function HomeNav({ active = "home" }: { active?: NavKey }) {
+export function HomeNav({
+  active = "home",
+  skipToContent = false,
+}: {
+  active?: NavKey | null;
+  skipToContent?: boolean;
+}) {
   const [condensed, setCondensed] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const ticking = useRef(false);
   const lastY = useRef(0);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const onScroll = () => {
@@ -37,7 +48,7 @@ export function HomeNav({ active = "home" }: { active?: NavKey }) {
         // steps out of the way while the visitor is reading down the
         // page, and returns the moment they scroll back up or land
         // near the top. It never hides while the mobile menu is open.
-        if (!menuOpen) {
+        if (!menuOpen && !headerRef.current?.contains(document.activeElement)) {
           setHidden(y > lastY.current && y > 140);
         }
 
@@ -56,75 +67,127 @@ export function HomeNav({ active = "home" }: { active?: NavKey }) {
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        toggleRef.current?.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [menuOpen]);
 
   return (
-    <header
-      className={`hp-nav-wrap${condensed ? " is-condensed" : ""}${navHidden ? " is-hidden" : ""}`}
-      inert={navHidden}
-    >
-      <div className={`hp-nav hp-glass${menuOpen ? " is-open" : ""}`}>
-        <Link href="/" className="hp-nav-brand" onClick={() => setMenuOpen(false)}>
-          <Image src="/logo.png" alt="" width={26} height={26} loading="eager" className="hp-nav-mark" />
-          <span>ALTARA</span>
-        </Link>
-
-        <nav className="hp-nav-links" aria-label="Primary">
-          {NAV_LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              aria-current={link.key === active ? "page" : undefined}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="hp-nav-actions">
-          <a href={DOWNLOAD_URL} target="_blank" rel="noopener noreferrer" className="hp-nav-cta">
-            Download
-          </a>
-          <button
-            type="button"
-            className="hp-nav-toggle"
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            aria-expanded={menuOpen}
-            aria-controls="hp-nav-sheet"
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            <span />
-            <span />
-          </button>
-        </div>
-      </div>
-
-      <div
-        id="hp-nav-sheet"
-        className={`hp-nav-sheet hp-glass${menuOpen ? " is-open" : ""}`}
-        inert={!menuOpen}
-      >
-        <nav aria-label="Mobile">
-          {NAV_LINKS.map((link) => (
-            <Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)}>
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-        <a
-          href={DOWNLOAD_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hp-nav-cta hp-nav-cta-sheet"
-          onClick={() => setMenuOpen(false)}
-        >
-          Download ALTARA
+    <>
+      {skipToContent && (
+        <a className="ed-skip" href="#main-content">
+          Skip to content
         </a>
-      </div>
-    </header>
+      )}
+      <header
+        ref={headerRef}
+        className={`hp-nav-wrap${condensed ? " is-condensed" : ""}${navHidden ? " is-hidden" : ""}`}
+        inert={navHidden}
+      >
+        <div className={`hp-nav hp-glass${menuOpen ? " is-open" : ""}`}>
+          <Link
+            href="/"
+            className="hp-nav-brand"
+            onClick={() => setMenuOpen(false)}
+          >
+            <Image
+              src="/logo.png"
+              alt=""
+              width={26}
+              height={26}
+              loading="eager"
+              className="hp-nav-mark"
+            />
+            <span>ALTARA</span>
+          </Link>
+
+          <nav className="hp-nav-links" aria-label="Primary">
+            {NAV_LINKS.map((link) =>
+              link.key === "developers" || link.key === "marketplace" ? (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  aria-current={link.key === active ? "page" : undefined}
+                >
+                  {link.label}
+                </a>
+              ) : (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  aria-current={link.key === active ? "page" : undefined}
+                >
+                  {link.label}
+                </Link>
+              ),
+            )}
+          </nav>
+
+          <div className="hp-nav-actions">
+            <Link
+              href={DOWNLOADS_URL}
+              className="hp-nav-cta"
+              aria-current={active === "downloads" ? "page" : undefined}
+            >
+              Download
+            </Link>
+            <button
+              type="button"
+              ref={toggleRef}
+              className="hp-nav-toggle"
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
+              aria-controls="hp-nav-sheet"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <span />
+              <span />
+            </button>
+          </div>
+        </div>
+
+        <div
+          id="hp-nav-sheet"
+          className={`hp-nav-sheet hp-glass${menuOpen ? " is-open" : ""}`}
+          inert={!menuOpen}
+        >
+          <nav aria-label="Mobile">
+            {NAV_LINKS.map((link) =>
+              link.key === "developers" || link.key === "marketplace" ? (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  aria-current={link.key === active ? "page" : undefined}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {link.label}
+                </a>
+              ) : (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  aria-current={link.key === active ? "page" : undefined}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {link.label}
+                </Link>
+              ),
+            )}
+          </nav>
+          <Link
+            href={DOWNLOADS_URL}
+            aria-current={active === "downloads" ? "page" : undefined}
+            className="hp-nav-cta hp-nav-cta-sheet"
+            onClick={() => setMenuOpen(false)}
+          >
+            Download ALTARA
+          </Link>
+        </div>
+      </header>
+    </>
   );
 }

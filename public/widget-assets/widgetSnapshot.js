@@ -1,3 +1,5 @@
+import { widgetAppearanceBootstrapSource } from './widgetAppearance.js';
+
 export const MAX_SNAPSHOT_BYTES = 524288;
 export function snapshotFields(input) {
   if (input.snapshot_html == null && input.snapshot_sha256 == null) return {};
@@ -36,15 +38,18 @@ export async function snapshotDocument(pkg) {
   const snapshot = snapshotFields(pkg);
   if (hex(await digest(snapshot.snapshot_html)) !== snapshot.snapshot_sha256) throw Error('The saved widget release failed its integrity check.');
   const template = inspect(snapshot.snapshot_html);
-  const hashes = await Promise.all(Array.from(template.content.querySelectorAll('script'), script => hashSource(script.textContent)));
+  // The release stays immutable. Add only ALTARA's bounded appearance receiver
+  // after verifying the creator's original bytes, never arbitrary theme CSS.
+  const appearanceBootstrap = widgetAppearanceBootstrapSource();
+  const hashes = await Promise.all([...Array.from(template.content.querySelectorAll('script'), script => script.textContent), appearanceBootstrap].map(hashSource));
   // Network is a release permission, so a publisher cannot turn it on for an
   // already-installed snapshot. Live development previews are a separate mode.
   const connections = pkg.permissions?.includes('network') ? 'https:' : "'none'";
   const common = `default-src 'none'; script-src ${hashes.join(' ') || "'none'"}; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src ${connections}; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';`;
-  const inner = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${common} frame-src 'none';"><meta name="referrer" content="no-referrer">${template.innerHTML}`;
+  const inner = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${common} frame-src 'none';"><meta name="referrer" content="no-referrer"><style>html{color-scheme:dark}body{color:#eee;background:#1d1c1a;font-family:system-ui}</style>${template.innerHTML}<script>${appearanceBootstrap}</script>`;
   // A separate opaque parent confines child navigation to local blobs. The
   // widget cannot edit this frame's CSP or obtain the application's DOM/bridge.
-  const source = `const child=document.createElement('iframe');child.sandbox='allow-scripts';child.referrerPolicy='no-referrer';child.setAttribute('allow',"camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; payment 'none'; usb 'none'; display-capture 'none'");child.title='Fixed widget release';let ready=false,pending;function forward(){if(ready&&pending){child.contentWindow.postMessage(pending.data,'*',pending.ports);pending=null;}}window.addEventListener('message',e=>{if(e.source===parent&&e.data?.type==='altara:widget:connect'&&e.ports.length){pending={data:e.data,ports:[e.ports[0]]};forward();}});child.onload=()=>{ready=true;forward();};child.src=URL.createObjectURL(new Blob([${JSON.stringify(inner).replace(/</g, '\\u003c')}],{type:'text/html'}));document.body.append(child);`;
+  const source = `const child=document.createElement('iframe');child.sandbox='allow-scripts';child.referrerPolicy='no-referrer';child.setAttribute('allow',"camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; payment 'none'; usb 'none'; display-capture 'none'");child.title='Fixed widget release';let ready=false,pending,appearance;function material(value){const active=value?.active===true,scheme=active&&['dark','light'].includes(value.colorScheme)?value.colorScheme:'normal';document.documentElement.style.colorScheme=child.style.colorScheme=scheme;document.documentElement.style.background=document.body.style.background=active?'transparent':'#1d1c1a';}function forward(){if(!ready)return;if(pending){child.contentWindow.postMessage(pending.data,'*',pending.ports);pending=null;}if(appearance)child.contentWindow.postMessage(appearance,'*');}window.addEventListener('message',e=>{if(e.source!==parent||e.data?.version!==1)return;if(e.data.type==='altara:widget:connect'&&e.ports.length){pending={data:e.data,ports:[e.ports[0]]};material(e.data.appearance);forward();}else if(e.data.type==='altara:widget:appearance'&&!e.ports.length){appearance={type:e.data.type,version:1,appearance:e.data.appearance};material(e.data.appearance);forward();}});child.onload=()=>{ready=true;forward();};child.src=URL.createObjectURL(new Blob([${JSON.stringify(inner).replace(/</g, '\\u003c')}],{type:'text/html'}));document.body.append(child);`;
   const policy = common.replace(/script-src [^;]+;/, `script-src ${[...hashes, await hashSource(source)].join(' ')};`);
   return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${policy} frame-src blob:;"><meta name="referrer" content="no-referrer"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#1d1c1a}iframe{display:block;width:100%;height:100%;border:0}</style><body><script>${source}</script></body>`;
 }

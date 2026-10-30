@@ -7,6 +7,9 @@ import {
   ALTARA_SITE_LINUX_INSTALLERS_MARKER,
 } from "./lib/altara-linux-release";
 import "./globals.css";
+import "./marketing.css";
+import "./support-pages.css";
+import "./marketplace.css";
 
 const siteUrl = "https://www.altaraapp.com";
 const siteDescription =
@@ -46,10 +49,10 @@ export const metadata: Metadata = {
     description: siteDescription,
     images: [
       {
-        url: "/altara-home-page-clean.png",
-        width: 1592,
-        height: 988,
-        alt: "ALTARA home page showing widgets, friends, calendar, notes, calls, unread DMs, and active friends",
+        url: "/altara-appearance-real-2026.webp",
+        width: 1100,
+        height: 800,
+        alt: "ALTARA appearance settings with built-in themes and custom colors",
       },
     ],
   },
@@ -57,14 +60,13 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "ALTARA | Where friends stay close",
     description: siteDescription,
-    images: ["/altara-home-page-clean.png"],
+    images: ["/altara-appearance-real-2026.webp"],
   },
   other: {
     "altara-site-build-marker": ALTARA_SITE_LINUX_DOWNLOAD_MARKER,
     "altara-site-platform-aware-download-marker":
       ALTARA_SITE_PLATFORM_AWARE_DOWNLOAD_MARKER,
-    "altara-site-linux-installers-marker":
-      ALTARA_SITE_LINUX_INSTALLERS_MARKER,
+    "altara-site-linux-installers-marker": ALTARA_SITE_LINUX_INSTALLERS_MARKER,
     "altara-linux-branding-routing-marker":
       ALTARA_LINUX_BRANDING_ROUTING_MARKER,
   },
@@ -80,9 +82,7 @@ export default function RootLayout({
       lang="en"
       className={`${bricolage.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        {children}
-      </body>
+      <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
 }

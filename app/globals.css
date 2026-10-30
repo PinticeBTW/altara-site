@@ -2959,6 +2959,53 @@ p {
   font-family: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
 }
 
+.marketing-privacy-link {
+  margin-top: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.marketing-privacy-link:hover,
+.marketing-privacy-link:focus-visible { color: var(--fg); }
+
+.marketing-consent {
+  position: fixed;
+  z-index: 1000;
+  right: 20px;
+  bottom: 20px;
+  left: 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-soft);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .45);
+  color: var(--fg);
+}
+
+.marketing-consent strong { font-size: 16px; }
+.marketing-consent p { margin: 8px 0 0; color: var(--fg-muted); font-size: 14px; line-height: 1.5; }
+.marketing-consent a { text-decoration: underline; }
+.marketing-consent-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.marketing-consent-actions button {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.marketing-consent-actions button:focus-visible { outline: 2px solid var(--accent-1); outline-offset: 2px; }
+.marketing-consent-actions .marketing-consent-accept { background: var(--accent-1); color: #111; }
+
 .footer-wordmark {
   font-family: var(--font-bricolage), "Bricolage Grotesque", sans-serif;
   font-size: clamp(80px, 18vw, 240px);
@@ -5655,7 +5702,7 @@ p {
   max-width: 600px;
   margin-left: auto;
   aspect-ratio: 1290 / 266;
-  background-image: url("/altara-dashboard-hero.png");
+  background-image: none;
   background-repeat: no-repeat;
   background-size: 148.6% 383.46%;
   background-position: 57.58% 68.7%;

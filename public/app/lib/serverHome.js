@@ -6,6 +6,7 @@ import { safeGoogleMapsUrl } from './serverEventMaps.js';
 import { renderServerEventCard, syncServerEventCards } from './serverEventCard.js';
 import { createEventDraft, eventFromDraft, localEventDate, renderServerEventEditor } from './serverEventEditor.js';
 import { readAltaraLocalePreference } from './locale.js';
+import { createEventLifecycleController, renderEventLifecycleControls } from './botChannelModesUi.js';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const SERVER_WIDGETS = ['notes', 'checklist', 'polls'];
 export function normalizeServerWidgets(value) {
@@ -31,6 +32,9 @@ export function createServerHome({ client, context, channels, openChannel, event
   let host, current, view = 'widgets', events = [], interested = new Set(), widgets, loading = false, error = '', busy = false, editing, generation = 0, returnFocus, editLayout=false, addOpen=false, eventError='', drag=null, picker='', pickerMonth='', refreshTimer=null, refreshFingerprint='';
   let placeRequest=null,attendeesDialog=null;
   let stopRealtime=()=>{}, refreshDebounce=null, refreshDirty=false, pendingInterests=new Set();
+  let lifecycleSupport=null;const lifecycleControllers=new Map();
+  const validId=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  const lifecyclePending=()=>[...lifecycleControllers.values()].some(controller=>{const state=controller.snapshot();return state?.busy||state?.retryable;});
   const pt = () => readAltaraLocalePreference().startsWith('pt');
   const text = (en, por) => pt() ? por : en;
   const key = () => `altara.server-home.v1:${current.userId}:${current.id}`;
@@ -43,13 +47,18 @@ export function createServerHome({ client, context, channels, openChannel, event
       else button.removeAttribute('aria-current');
     });
   }
-  function close() { attendeesDialog?.close();attendeesDialog=null; placeRequest?.abort();placeRequest=null;stopRealtime();stopRealtime=()=>{};clearTimeout(refreshDebounce);refreshDirty=false;document.removeEventListener('visibilitychange',onVisible);window.removeEventListener('online',requestRefresh);syncNavigation(); clearInterval(refreshTimer); refreshTimer=null; generation++; releaseLayout(); host?.remove(); host = null; document.getElementById('dmMain')?.classList.remove('serverHomeOpen'); returnFocus?.focus?.(); }
+  function close() { for(const controller of lifecycleControllers.values())controller.close();lifecycleControllers.clear();attendeesDialog?.close();attendeesDialog=null; placeRequest?.abort();placeRequest=null;stopRealtime();stopRealtime=()=>{};clearTimeout(refreshDebounce);refreshDirty=false;document.removeEventListener('visibilitychange',onVisible);window.removeEventListener('online',requestRefresh);syncNavigation(); clearInterval(refreshTimer); refreshTimer=null; generation++; releaseLayout(); host?.remove(); host = null; document.getElementById('dmMain')?.classList.remove('serverHomeOpen'); returnFocus?.focus?.(); }
   function date(value) { return new Intl.DateTimeFormat(pt() ? 'pt-PT' : 'en', { dateStyle:'medium', timeStyle:'short' }).format(new Date(value)); }
   function eventCards(list, compact=false) {
     if (loading) return `<p class="serverHomeMuted" role="status">${text('Loading events…','A carregar eventos…')}</p>`;
     if (eventError) return `<div class="serverHomeEmpty" role="status"><span aria-hidden="true">▦</span><p>${escape(eventError)}</p>${button('refresh',text('Try again','Tentar novamente'))}</div>`;
     if (!list.length) return `<div class="serverHomeEmpty"><span aria-hidden="true">▦</span><h3>${text('No upcoming events','Sem eventos marcados')}</h3><p>${text('New server events will appear here automatically.','Os novos eventos do servidor aparecem aqui automaticamente.')}</p></div>`;
-    return list.map(event => renderServerEventCard(event,{text,channels:eventChannels(current.id),interested:interested.has(event.id),manage:current.manage,busy:busy||pendingInterests.has(event.id),compact})).join('');
+    return list.map(event => {
+      const lifecycle=event.lifecycle_supported?renderEventLifecycleControls(event,{canManage:context(current.id)?.manage===true,busy:busy||event.lifecycle_busy||event.lifecycle_retryable}):'';
+      const notice=event.lifecycle_error?`<p class="serverHomeError" role="status">${escape(event.lifecycle_error)}</p>`:'';
+      const retry=event.lifecycle_retryable?`<button type="button" class="eventEdit" data-event-lifecycle-retry="${escape(event.id)}" ${event.lifecycle_busy?'disabled':''}>${text('Try again','Tentar novamente')}</button>`:'';
+      return renderServerEventCard(event,{text,channels:eventChannels(current.id),interested:interested.has(event.id),manage:current.manage,busy:busy||pendingInterests.has(event.id)||event.lifecycle_busy||event.lifecycle_retryable,compact,lifecycle:lifecycle+notice+retry});
+    }).join('');
   }
 
   function widgetBody(id) {
@@ -88,15 +97,26 @@ export function createServerHome({ client, context, channels, openChannel, event
   function requestRefresh(){
     refreshDirty=true;clearTimeout(refreshDebounce);
     refreshDebounce=setTimeout(()=>{
-      if(!host||document.hidden||editing||busy||loading||pendingInterests.size)return;
+      if(!host||document.hidden||editing||busy||loading||pendingInterests.size||lifecyclePending())return;
       refreshDirty=false;void load(true);
     },150);
   }
   async function load(quiet=false) {
-    if(quiet&&(editing||busy||loading||pendingInterests.size)){refreshDirty=true;return;}
-    const token=++generation;loading=true;if(!quiet){eventError='';render();}
+    if(quiet&&(editing||busy||loading||pendingInterests.size||lifecyclePending())){refreshDirty=true;return;}
+    const token=++generation,mount=host,serverId=current.id,actor=current.userId;loading=true;if(!quiet){eventError='';render();}
     const result=await client.from('altara_server_events_v1').select('*').eq('server_id',current.id).or('starts_at.gte.'+new Date(new Date().setHours(0,0,0,0)).toISOString()+',ends_at.gte.'+new Date().toISOString()).order('starts_at').limit(100).then(value=>value,()=>({error:true}));
+    if(token!==generation||host!==mount||current.id!==serverId||context(serverId)?.userId!==actor)return;
     let summaries={data:[]};
+    let lifecycles={data:[],available:false},lifecycleMissing=false;
+    const ids=(result.data||[]).map(row=>row.id).filter(validId);
+    if(!result.error&&ids.length&&lifecycleSupport!==false){
+      try{
+        const records=await client.from('altara_event_lifecycle_v1').select('event_id,server_id,status,revision').eq('server_id',serverId).in('event_id',ids);
+        if(records.error)throw records.error;
+        if(!Array.isArray(records.data)||records.data.length>ids.length||new Set(records.data.map(row=>row.event_id)).size!==records.data.length||records.data.some(row=>!ids.includes(row.event_id)||row.server_id!==serverId||!['scheduled','active','completed','canceled'].includes(row.status)||(row.revision!==null&&!validId(row.revision))))throw Error('invalid_lifecycle_response');
+        lifecycles={data:records.data,available:true};
+      }catch(error){if(/PGRST205|PGRST202|42P01|42883/.test(`${error?.code||''}`))lifecycleMissing=true;}
+    }
     if(!result.error&&result.data?.length)summaries=await Promise.resolve(client.rpc('altara_event_response_summaries_v1',{p_event_ids:result.data.map(e=>e.id)})).catch(()=>({error:true}));
     if(!summaries.error){
       try{
@@ -105,17 +125,23 @@ export function createServerHome({ client, context, channels, openChannel, event
         for(const row of summaries.data||[])row.preview=(row.preview||[]).map(person=>({...person,display_name:profiles.get(person.user_id)?.display_name,username:profiles.get(person.user_id)?.username,avatar_url:profiles.get(person.user_id)?.avatar_url}));
       }catch{summaries.error=true;}
     }
-    if(token!==generation||!host)return;
+    if(token!==generation||host!==mount||current.id!==serverId||context(serverId)?.userId!==actor)return;
+    if(lifecycleMissing)lifecycleSupport=false;
     loading=false;
     if(result.error||summaries.error){
       if(quiet)return;
       eventError=text('Events are temporarily unavailable. Reconnecting automatically…','Os eventos estão temporariamente indisponíveis. A restabelecer a ligação…');
-    }else{eventError='';events=(result.data||[]).map(e=>({...e,rsvp:summaries.data?.find(r=>r.event_id===e.id)||{going:0,not_going:0,own:null,preview:[]}}));attendeesDialog?.refresh();interested=new Set(events.filter(row=>row.rsvp.own==='going').map(row=>row.id));}
+    }else{eventError='';if(lifecycles.available)lifecycleSupport=true;events=(result.data||[]).map(e=>{
+      const supported=(lifecycles.available||lifecycleSupport===true)&&(!e.channel_id||eventChannels(current.id).some(channel=>channel.id===e.channel_id));
+      // Once this server has lifecycle controls, a failed refresh must not turn a
+      // canceled or active event back into an apparently scheduled event.
+      return{...e,lifecycle_supported:supported,lifecycle_status:lifecycles.available?(lifecycles.data.find(row=>row.event_id===e.id)?.status||'scheduled'):'unknown',lifecycle_error:supported&&!lifecycles.available?text('Could not confirm the event state. Reconnecting automatically…','Não foi possível confirmar o estado do evento. A restabelecer a ligação…'):'',rsvp:summaries.data?.find(r=>r.event_id===e.id)||{going:0,not_going:0,own:null,preview:[]}};
+    });attendeesDialog?.refresh();interested=new Set(events.filter(row=>row.rsvp.own==='going').map(row=>row.id));}
     if(quiet)patchEvents();else render();
     if(refreshDirty)requestRefresh();
   }
   async function setResponse(id,response) {
-    const row=events.find(row=>row.id===id);if(!row||pendingInterests.has(id)||!['going','not_going'].includes(response)||row.rsvp.own===response||new Date(row.starts_at).getTime()<=Date.now())return;
+    const row=events.find(row=>row.id===id);if(!row||pendingInterests.has(id)||!['going','not_going'].includes(response)||row.rsvp.own===response||new Date(row.starts_at).getTime()<=Date.now()||(row.lifecycle_supported&&row.lifecycle_status!=='scheduled'))return;
     const mount=host,previous=structuredClone(row.rsvp),next=response;
     generation++;loading=false;pendingInterests.add(id);
     if(previous.own)row.rsvp[previous.own]=Math.max(0,row.rsvp[previous.own]-1);
@@ -139,7 +165,31 @@ export function createServerHome({ client, context, channels, openChannel, event
     catch {if(token===generation&&host){error=text('Could not save. Check your connection and server permissions, then try again.','Não foi possível guardar. Verifica a ligação e as permissões e tenta novamente.');}}
     finally {if(host===mount){busy=false;render();}}
   }
+  async function setLifecycle(eventId,status,retry=false){
+    const row=events.find(row=>row.id===eventId),scope=context(current?.id);
+    if(!row?.lifecycle_supported||!host||busy||loading||pendingInterests.size||scope?.userId!==current.userId||scope?.manage!==true)return;
+    let controller=lifecycleControllers.get(eventId);
+    if(!controller){
+      const mount=host,serverId=current.id,actor=current.userId;
+      controller=createEventLifecycleController({rpc:(name,args)=>client.rpc(name,args),getContext:()=>{
+        const live=context(serverId),event=events.find(event=>event.id===eventId);const visible=host===mount&&current.id===serverId&&live?.userId===actor&&!!event&&(!event.channel_id||eventChannels(serverId).some(channel=>channel.id===event.channel_id));
+        return{actor:live?.userId,serverId,canReadEvents:visible,canManageEvents:visible&&live?.manage===true};
+      },onChange:value=>{
+        if(!value||host!==mount)return;const target=events.find(event=>event.id===eventId);if(!target)return;
+        target.lifecycle_busy=value.busy;target.lifecycle_retryable=value.retryable;target.lifecycle_error=value.error;
+        if(value.data)target.lifecycle_status=value.data.status;patchEvents();
+      }});
+      lifecycleControllers.set(eventId,controller);if(!await controller.open(eventId))return;
+    }else if(!retry&&!controller.snapshot()?.retryable){
+      // Another session may have changed the event after the last mutation.
+      if(!await controller.refresh())return;
+    }
+    const success=retry?await controller.retry():await controller.setStatus(status);
+    if(success){onEventsChanged();requestRefresh();}
+  }
   async function click(event) {
+    const lifecycleButton=event.target.closest('[data-event-lifecycle-id],[data-event-lifecycle-retry]');
+    if(lifecycleButton){if(!lifecycleButton.disabled)await setLifecycle(lifecycleButton.dataset.eventLifecycleId||lifecycleButton.dataset.eventLifecycleRetry,lifecycleButton.dataset.eventLifecycleStatus,lifecycleButton.hasAttribute('data-event-lifecycle-retry'));return;}
     const btn=event.target.closest('[data-home-action]');if(!btn)return;
     const action=btn.dataset.homeAction,id=btn.dataset.id;
     if(action==='close'){close();return;}
@@ -196,7 +246,7 @@ export function createServerHome({ client, context, channels, openChannel, event
     if(action==='delete'&&editing?.id){if(!window.confirm(text('Cancel this event for everyone?','Cancelar este evento para todos?')))return;await mutate(()=>client.from('altara_server_events_v1').delete().eq('id',editing.id).eq('server_id',current.id).select('id').single());}
   }
   async function open(id, nextView='widgets') {
-    close(); current=context(id);if(!current?.userId)return;view=nextView==='widgets'?'widgets':'events';editLayout=false;addOpen=false;eventError='';events=[];interested=new Set();picker='';editing=nextView==='create'&&current.manage?createEventDraft():null;busy=false;error='';pendingInterests=new Set();
+    close(); current=context(id);if(!current?.userId)return;view=nextView==='widgets'?'widgets':'events';editLayout=false;addOpen=false;eventError='';events=[];interested=new Set();picker='';editing=nextView==='create'&&current.manage?createEventDraft():null;busy=false;error='';pendingInterests=new Set();lifecycleSupport=null;
     try {widgets=normalizeServerWidgets(JSON.parse(localStorage.getItem(key())||'null'));}catch{widgets=normalizeServerWidgets();}
     const parent=document.getElementById('dmMain');if(!parent)return;
     returnFocus=document.activeElement;host=document.createElement('section');host.className='serverHome';host.setAttribute('aria-label',text('Server homepage','Homepage do servidor'));parent.appendChild(host);parent.classList.add('serverHomeOpen');

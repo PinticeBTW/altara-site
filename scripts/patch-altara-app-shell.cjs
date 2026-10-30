@@ -71,12 +71,6 @@ function stripBaseTag(html) {
   return html.replace(/\s*<base\s+[^>]*>\s*/i, "\n");
 }
 
-// Nested authorization/developer routes need the same static asset root.
-// Preserve cache queries, and leave external URLs and app navigation unchanged.
-function patchStaticAssets(html) {
-  return html.replace(/((?:src|href)=["'])(?:\.\/)?((?:lib|assets|build)\/[^"']+|(?:style\.css|runtimeChrome\.css|ui\.js|supabaseClient\.js)(?:\?[^"']*)?)(["'])/g, '$1/app/$2$3');
-}
-
 function patchAppShell(html) {
   let out = stripBaseTag(html);
   out = out.replace(/href=(["'])(?:\.\/)?style\.css\1/g, 'href="/app/style.css"');
@@ -85,22 +79,22 @@ function patchAppShell(html) {
     `src="/app/app.js${appJsQuery ? `?${appJsQuery}` : ""}"`,
   );
   out = out.replace(/src=(["'])(?:\.\/)?build\/icon\.jpg\1/g, 'src="/app/build/icon.jpg"');
-  out = out.replace(/href=(["'])(?:\.\/)?build\/icon\.png\1/g, 'href="/app/build/icon.png"');
+  out = out.replace(/href=(["'])(?:\.\/)?build\/icon\.png(\?[^"']*)?\1/g, 'href="/app/build/icon.png$2"');
   out = out.replace(/(src|href)=(["'])(?:\.\/)?assets\/brand\/([^"']+)\2/g, '$1="/app/assets/brand/$3"');
   out = out.replace(/href=(["'])(?:\.\/)?build\/icon\.ico\1/g, 'href="/app/build/icon.ico"');
-  return patchStaticAssets(out);
+  return out;
 }
 
 function patchAuthPage(html) {
   let out = stripBaseTag(html);
   out = out.replace(/href=(["'])(?:\.\/)?style\.css\1/g, 'href="/app/style.css"');
-  out = out.replace(/href=(["'])(?:\.\/)?build\/icon\.png\1/g, 'href="/app/build/icon.png"');
+  out = out.replace(/href=(["'])(?:\.\/)?build\/icon\.png(\?[^"']*)?\1/g, 'href="/app/build/icon.png$2"');
   out = out.replace(/src=(["'])(?:\.\/)?build\/icon\.jpg\1/g, 'src="/app/build/icon.jpg"');
   out = out.replace(/src=(["'])(?:\.\/)?(login|register|profile)\.js\1/g, 'src="/app/$2.js"');
   out = out.replace(/href=(["'])\.\/(login|register|profile|index)\.html\1/g, 'href="/app/$2.html"');
   out = out.replace(/(src|href)=(["'])(?:\.\/)?assets\/brand\/([^"']+)\2/g, '$1="/app/assets/brand/$3"');
   out = out.replace(/href=(["'])(?:\.\/)?build\/icon\.ico\1/g, 'href="/app/build/icon.ico"');
-  return patchStaticAssets(out);
+  return out;
 }
 
 let changed = 0;

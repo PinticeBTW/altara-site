@@ -722,7 +722,7 @@ export function createPresenceSystem({
 
   function clearGracePruneTimer() {
     if (!gracePruneTimer) return;
-    clearInterval(gracePruneTimer);
+    clearTimeout(gracePruneTimer);
     gracePruneTimer = null;
   }
 
@@ -897,6 +897,9 @@ export function createPresenceSystem({
       }
       lastPresenceError = String(e?.message || e || "unknown");
       lastTrackResult = "error";
+      // Consumers become unready on this error. The next full snapshot must
+      // publish completion again even when its rows have not changed.
+      lastEmittedSnapshotState = "failed";
       tracePresence("TRACK_RESULT", {
         channelGeneration: trackGeneration,
         rawResult: "error",
@@ -916,9 +919,25 @@ export function createPresenceSystem({
 
   function startGracePruneTimer() {
     clearGracePruneTimer();
-    gracePruneTimer = setInterval(() => {
+    if (!started) return;
+    let earliestExpiryAt = Infinity;
+    for (const userId of lastLiveSessionsByUserId.keys()) {
+      if (Number(lastRawSessionCountByUserId.get(userId) || 0) > 0) continue;
+      const lastSeenAt = Number(lastSeenLiveAtByUserId.get(userId) || 0);
+      if (lastSeenAt) earliestExpiryAt = Math.min(earliestExpiryAt, lastSeenAt + REMOTE_PRESENCE_GRACE_MS + 1);
+    }
+    // Live sessions expire through the authoritative transport. Only missing
+    // sessions retained for reconnect grace need a local timer, never idle polling.
+    if (!Number.isFinite(earliestExpiryAt)) return;
+    const scheduledGeneration = trackGeneration;
+    const scheduledTimer = setTimeout(() => {
+      if (gracePruneTimer !== scheduledTimer) return;
+      gracePruneTimer = null;
+      if (!started || scheduledGeneration !== trackGeneration) return;
       emitCurrentPresenceList("grace-prune");
-    }, 1000);
+      startGracePruneTimer();
+    }, Math.max(1, earliestExpiryAt - Date.now()));
+    gracePruneTimer = scheduledTimer;
   }
 
   function buildLiveSessionsByUserId(state) {
@@ -1324,6 +1343,7 @@ export function createPresenceSystem({
       const rawLiveSessionsByUserId = buildLiveSessionsByUserId(st);
       const nextLiveSessionsByUserId = applyPresenceGrace(rawLiveSessionsByUserId, st, reason, authoritativeLeaveUserIds);
       lastLiveSessionsByUserId = nextLiveSessionsByUserId;
+      startGracePruneTimer();
       const requestedSource = lastCanonicalPresenceSource;
       lastCanonicalPresenceSource = resolveCanonicalPresenceSource(nextLiveSessionsByUserId, requestedSource);
 

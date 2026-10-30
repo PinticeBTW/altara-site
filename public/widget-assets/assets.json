@@ -1,0 +1,162 @@
+{
+  "format": "altara-widget-site-assets",
+  "version": 1,
+  "files": [
+    {
+      "source": "lib/altaraWidgetSdk.js",
+      "path": "altaraWidgetSdk.js",
+      "sha256": "a710948d29b09ecb03d650442df8aec38265685fd623a5e42629a7faa047c995",
+      "bytes": 11117
+    },
+    {
+      "source": "lib/widgetAppearance.js",
+      "path": "widgetAppearance.js",
+      "sha256": "91046fcd2be9aa0091c93a51749279c2b49df3215942f1402c36604c388904d4",
+      "bytes": 27499
+    },
+    {
+      "source": "lib/widgetRuntime.js",
+      "path": "widgetRuntime.js",
+      "sha256": "84a54943220f4065b7c3dbbf1647f411df98c2e7a9792a62caae342193dc39a0",
+      "bytes": 8810
+    },
+    {
+      "source": "lib/widgetHosted.js",
+      "path": "widgetHosted.js",
+      "sha256": "905278c52d14aec94271453514e4d3618f583c4319b577a58d687ed0e26aed8b",
+      "bytes": 15227
+    },
+    {
+      "source": "lib/widgetSnapshot.js",
+      "path": "widgetSnapshot.js",
+      "sha256": "b14bda316761042a8cbd371640747d0cc1638178dd55dff2fb529c24f2dff7a4",
+      "bytes": 5879
+    },
+    {
+      "source": "lib/widgetPackages.js",
+      "path": "widgetPackages.js",
+      "sha256": "e2d7886d35f9d5c076d87936e70ab62eacfa53689851795e5e389ec8ebe6fde3",
+      "bytes": 6087
+    },
+    {
+      "source": "lib/widgetAccount.js",
+      "path": "widgetAccount.js",
+      "sha256": "b946e9dd0f374cb6c3ed7a9d4c6a411581603853f6a867f32b8692331b61fee6",
+      "bytes": 7460
+    },
+    {
+      "source": "lib/widgetCommerce.js",
+      "path": "widgetCommerce.js",
+      "sha256": "76a9c494d805a6379f1cf9cd6a41dc897ba6544a8839bd5926774deff81d4f29",
+      "bytes": 30922
+    },
+    {
+      "source": "lib/widgetRefunds.js",
+      "path": "widgetRefunds.js",
+      "sha256": "ee61e97cc84ed8418172f05e1d91e1f0f295dc92ab12453079ae7683541a164c",
+      "bytes": 39098
+    },
+    {
+      "source": "lib/widgetPublicationDraft.js",
+      "path": "widgetPublicationDraft.js",
+      "sha256": "afabebbe1604484997f4509b2199ca1e68ce1c9d219cd694b84b036fbe1b10fb",
+      "bytes": 6566
+    },
+    {
+      "source": "lib/widgetMarketplace.js",
+      "path": "widgetMarketplace.js",
+      "sha256": "11d91f6cfe1fd7d0bcabf815510a3a9a093412b1c8d23443c4a02781b07753b9",
+      "bytes": 148057
+    },
+    {
+      "source": "lib/widgetMarketplace.css",
+      "path": "widgetMarketplace.css",
+      "sha256": "95a3efa7ef8b4655f917232dec92820d2890e81d3bf7c60ae81c1a6eaa623052",
+      "bytes": 19943
+    },
+    {
+      "source": "lib/widget-starter.zip",
+      "path": "widget-starter.zip",
+      "sha256": "e74fa124afb68447155c0a9a8493df2fe52259fcde10f43417ff71c1e20af793",
+      "bytes": 36819
+    },
+    {
+      "source": "lib/widget-starter/_headers",
+      "path": "widget-starter/_headers",
+      "sha256": "8fc68ff0304728ab6d4c8cbdfe6ca583b0c37fa6fc42c7a39f2da538258827d1",
+      "bytes": 36
+    },
+    {
+      "source": "lib/widget-starter/altara-sdk.js",
+      "path": "widget-starter/altara-sdk.js",
+      "sha256": "a710948d29b09ecb03d650442df8aec38265685fd623a5e42629a7faa047c995",
+      "bytes": 11117
+    },
+    {
+      "source": "lib/widget-starter/build.mjs",
+      "path": "widget-starter/build.mjs",
+      "sha256": "99a1f346b714931c2cc69ec154cbe539937268d6ca4b93234e01bd8bcc8e357b",
+      "bytes": 1481
+    },
+    {
+      "source": "lib/widget-starter/dev.mjs",
+      "path": "widget-starter/dev.mjs",
+      "sha256": "ff2d095fa89acded84a3d159d4bd1366e3a58643ea5fc6947318b259225d54e9",
+      "bytes": 2620
+    },
+    {
+      "source": "lib/widget-starter/icon.svg",
+      "path": "widget-starter/icon.svg",
+      "sha256": "25b76590b2ad68a9680fd7092744c25752004eb940f7afb2c11cb3c7f368fc29",
+      "bytes": 244
+    },
+    {
+      "source": "lib/widget-starter/index.html",
+      "path": "widget-starter/index.html",
+      "sha256": "6cdf68c5f9566ea39112fe8f3d9f9eb6ec8f22e6b53c02a1bd8c4fd3dcd86ea1",
+      "bytes": 716
+    },
+    {
+      "source": "lib/widget-starter/manifest.json",
+      "path": "widget-starter/manifest.json",
+      "sha256": "64939a7ac3f4d4f416d78c143ba0574f76d7fca34f300c59c9244358b16650a2",
+      "bytes": 236
+    },
+    {
+      "source": "lib/widget-starter/netlify.toml",
+      "path": "widget-starter/netlify.toml",
+      "sha256": "06a1bfd9f426d1d5ff35d06034b4ee691a6d7e1f13a439382a4797c2c70816c0",
+      "bytes": 55
+    },
+    {
+      "source": "lib/widget-starter/package.json",
+      "path": "widget-starter/package.json",
+      "sha256": "5a1aee1eee71c3169df5d6f0b1416188edd7eeccd6c93b2e6c4688bb2d9f67f7",
+      "bytes": 161
+    },
+    {
+      "source": "lib/widget-starter/README.md",
+      "path": "widget-starter/README.md",
+      "sha256": "f9972bdbbcd662e4a377cf727d3f1601a341f94c16ae83f3234de69f3eb35b11",
+      "bytes": 36291
+    },
+    {
+      "source": "lib/widget-starter/release.html",
+      "path": "widget-starter/release.html",
+      "sha256": "ab150a0d2de3b2e220066d8c78721f6561453858b8f8414da6f65fe2e39e9bb8",
+      "bytes": 14046
+    },
+    {
+      "source": "lib/widget-starter/style.css",
+      "path": "widget-starter/style.css",
+      "sha256": "304979ab9b03b670bffac09fa52e077227f81f9bc2e18897526d3814c6104717",
+      "bytes": 1247
+    },
+    {
+      "source": "lib/widget-starter/widget.js",
+      "path": "widget-starter/widget.js",
+      "sha256": "5e01c0d19c44181ae66cd96353c610ba70c7e917a94b6b030dd6613c21d36273",
+      "bytes": 1058
+    }
+  ]
+}

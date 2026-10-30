@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { HomeNav } from "../components/home-nav";
-import { Reveal } from "../components/reveal";
 import {
   LINUX_DOWNLOAD_URL,
   SiteFooter,
@@ -26,17 +25,17 @@ export const metadata: Metadata = {
     description,
     images: [
       {
-        url: "/altara-dashboard-hero.png",
-        width: 1917,
-        height: 1020,
-        alt: "The ALTARA dashboard",
+        url: "/altara-appearance-real-2026.webp",
+        width: 1100,
+        height: 800,
+        alt: "ALTARA appearance settings with built-in themes and custom colors",
       },
     ],
   },
   twitter: {
     title: "ALTARA FAQ",
     description,
-    images: ["/altara-dashboard-hero.png"],
+    images: ["/altara-appearance-real-2026.webp"],
   },
 };
 
@@ -52,7 +51,50 @@ const faqs: Faq[] = [
     category: "plus",
     question: "Is ALTARA free?",
     answer:
-      "Yes — the core app is free to use. ALTARA+ is an optional upgrade with higher limits and extras: Core is €4.99/mo and Nova is €7.99/mo, both cheaper billed yearly.",
+      "Yes. The core app includes messages, calls, Best Friends pins, Focus profiles, basic Spatial Audio in server voice channels and DM privacy locks. ALTARA+ increases saved capacity, server capacity and upload limits, and adds higher-quality screen sharing and supporter badges: Core is €4.99/mo and Nova is €7.99/mo, both cheaper billed yearly.",
+  },
+  {
+    id: "why-altara-plus",
+    category: "plus",
+    question: "Why does ALTARA+ exist?",
+    answer:
+      "Running screen sharing, file storage and transfers costs money. Optional paid plans help cover that infrastructure and support the service as a whole, including free access, maintenance and development. Our aim is to keep features free whenever we can offer them without extra running costs for ALTARA. Core and Nova offer more capacity and higher-quality screen sharing while helping keep the app running.",
+  },
+  {
+    id: "free-personal-tools",
+    category: "plus",
+    question: "Are Focus and Spatial Audio free, and how much can I save?",
+    answer:
+      "Focus profiles and basic Spatial Audio in server voice channels are included in Free. Free includes 3 saved Focus profiles. Core adds capacity for 10 Focus profiles and 5 Spatial Audio layouts; Nova adds capacity for 25 profiles and 15 layouts. Check the app for the controls and saved-layout capacity available with your version and plan.",
+  },
+  {
+    id: "screen-sharing-plans",
+    category: "plus",
+    question: "Which screen sharing modes are included in each plan?",
+    answer:
+      "Free includes 720p at 30 or 60fps and 1080p at 30fps. Core and Nova both add 1080p60, 1440p and 4K at 30 or 60fps, plus native source resolution. Nova has the same extra sharing modes as Core; its higher limits are for servers, uploads and saved profiles and layouts. These are selectable modes, not a guarantee of delivered resolution or frame rate: available options and actual quality depend on your app version, device, browser, capture source and connection. System audio availability also depends on the platform, rather than your plan.",
+  },
+  {
+    id: "upload-limits",
+    category: "plus",
+    question: "Do the upload limits apply to every kind of file?",
+    answer:
+      "The general per-file limits for chat attachments are 25MB on Free, 50MB on Core and 1GB on Nova. Vault attachments, avatars, server icons, banners and some other upload types have lower technical limits. Check the limit shown where you upload; the plan limit does not override a lower limit for that feature.",
+  },
+  {
+    id: "marketplace-purchases",
+    category: "plus",
+    question: "Does ALTARA+ include paid Marketplace widgets and themes?",
+    answer:
+      "Paid Marketplace widgets and themes are separate one-time purchases from their creators. Core and Nova do not include those purchases. Free Marketplace items remain free, and you can review each item's price and permissions before installing it.",
+  },
+  {
+    id: "saved-capacity-downgrade",
+    category: "plus",
+    question:
+      "What happens to saved profiles and layouts when my plan returns to Free?",
+    answer:
+      "Existing saved Focus profiles and Spatial Audio layouts are kept. New saved items follow your current plan and version: if you are already at or above a limit, you cannot add another until you are below it or increase your plan. Server and upload limits also follow your current plan. Check the capacity shown inside the app.",
   },
   {
     id: "discord-alternative",
@@ -113,10 +155,10 @@ const faqJsonLd = {
 
 export default function FAQPage() {
   return (
-    <div className="hp">
-      <HomeNav active="faq" />
+    <div className="hp editorial ed-support ed-faq">
+      <HomeNav active="faq" skipToContent />
 
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -124,39 +166,47 @@ export default function FAQPage() {
           }}
         />
 
-        <section className="hp-hero hp-hero--compact">
+        <section className="ed-page-hero">
           <div className="hp-container">
-            <Reveal className="hp-hero-copy">
+            <div className="hp-hero-copy">
+              <p className="ed-eyebrow">Help / frequently asked questions</p>
               <h1 className="hp-h1 hp-h1--compact">Questions, answered.</h1>
               <p className="hp-hero-sub">
-                Plain answers about pricing, platforms, and what ALTARA actually is — search or
-                browse by category below.
+                Plain answers about pricing, platforms, and what ALTARA actually
+                is — search or browse by category below.
               </p>
               <p className="hp-hero-sub">
-                Considering a switch? <Link href="/discord-alternative">Read the Discord alternative guide</Link>.
+                Considering a switch?{" "}
+                <Link href="/discord-alternative">
+                  Read the Discord alternative guide
+                </Link>
+                .
               </p>
-            </Reveal>
+            </div>
           </div>
         </section>
 
-        <section>
+        <section className="ed-faq-content">
           <div className="hp-container">
-            <Reveal>
+            <div>
               <FaqBrowser faqs={faqs} categories={categories} />
-            </Reveal>
+            </div>
           </div>
         </section>
 
         <section className="hp-cta">
           <div className="hp-container">
-            <Reveal className="hp-cta-panel">
+            <div className="hp-cta-panel">
               <h2 className="hp-h2 hp-h2--section">Still need help?</h2>
               <p className="hp-lead">
-                Can&apos;t find your answer here? Reach the team directly, or just jump in and try
-                ALTARA.
+                Can&apos;t find your answer here? Reach the team directly, or
+                just jump in and try ALTARA.
               </p>
               <div className="hp-hero-cta">
-                <a href="mailto:support@altaraapp.com" className="hp-btn hp-btn-primary">
+                <a
+                  href="mailto:support@altaraapp.com"
+                  className="hp-btn hp-btn-primary"
+                >
                   Email support
                 </a>
                 <a
@@ -179,7 +229,7 @@ export default function FAQPage() {
               <a href={TRY_IN_BROWSER_URL} className="hp-cta-link">
                 Try in browser
               </a>
-            </Reveal>
+            </div>
           </div>
         </section>
       </main>

@@ -20,19 +20,26 @@ copy authorization decisions or role grants blindly between platforms.
 | Bot profile, installation, slash commands and options | Supported |
 | Server roles, name colours, protected managed role, channel permissions | Supported; ALTARA permission rules apply |
 | Replies and own-message actions | Text replies, reactions, pins, own-message editing/deletion with the relevant grants |
-| New messages/member joins | Opt-in polling handlers after event backend activation, owner Intents and server authorization; metadata is redacted by default. No full Discord Gateway or presence feed |
+| New messages/member joins and additional events | Active opt-in polling: member/message changes, reactions, protected basic presence, voice and threads; consenting bot DMs have a separate feed. Owner/client intents and server grants are required; message content is redacted by default. No full Discord Gateway |
 | Structured rich message cards | Hosted backend active; SDK send/reply/edit and updated local chat rendering. Older chat releases need updated assets. See the SDK guide |
-| Buttons, interaction menus, modals | Pending platform/API support |
+| Buttons, interaction menus, modals | Active buttons, string-select menus and text-input modals for Bot Token Connection clients; see ALTARA_BOTS_COMPONENTS.md for limits |
 | Link previews | Supported with `bot:embed_links`; structured cards share this permission |
-| File uploads | Public attachment permission remains reserved/disabled; do not treat the client argument as an available upload API |
+| File uploads and explicit member mentions | Active scoped private-upload API and explicit allowed_mentions with reviewed grants, limits and current channel/member access; see ALTARA_BOTS_FILES.md and ALTARA_BOTS_MENTIONS.md |
 | Voice | Scoped connection/state and exact-connection lifecycle methods; Node music starter publishes local files and optional YouTube links/search or Spotify track matches. Activation and audible live verification tracked in ALTARA_BOTS_MUSIC.md |
-| General moderation / server and channel management | No equivalent complete API in these source clients |
+| Moderation / server, role, channel and scheduled-event management | Active scoped APIs with per-action grants, hierarchy, ceilings, audit and idempotency; no complete Discord guild or permission-overwrite API |
+| Bot DMs, threads and scoped webhooks | Active ALTARA APIs; bot DMs need member consent, threads inherit current parent-channel access, webhook secrets are scoped |
 | Direct drop-in discord.js / discord.py compatibility | Not available |
 
 The target is a broad ALTARA bot platform, including the categories covered by
 Discord bots. The table reports what is actually available now; it is not a
 restriction to ping/welcome bots. Track the remaining work in
 [Bot capabilities](ALTARA_BOTS_CAPABILITIES.md).
+
+The 2026-10-02 backend expansion is active after explicit approval, with hosted
+catalog/authentication/access checks. Its new authenticated real-chat flows and
+microphone reception/recording were not tested today. Read the
+[activation record](ALTARA_BOTS_PLATFORM_V2.md#hosted-activation-2026-10-02)
+before treating local tests or deployment status as end-to-end verification.
 
 ### 1. Inventory your bot
 

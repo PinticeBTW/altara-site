@@ -54,13 +54,22 @@ export function createWidgetLibrary(storage, userId) {
     read,
     applyAccount(row) {
       const data = read();
-      const index = data.installs.findIndex(item => item.accountId === row.id || (!item.accountId && item.package?.manifest_url === row.package.manifest_url));
+      // A local install can migrate only into its own source. A shared hosting
+      // URL does not identify the publisher or authorise reuse of saved data.
+      const sourceId = row.source_id || '';
+      const sourceAuthorId = row.source_author_id || '';
+      const index = data.installs.findIndex(item => item.accountId === row.id || (!item.accountId
+        && (item.sourceId || '') === sourceId
+        && (!item.sourceAuthorId || item.sourceAuthorId === sourceAuthorId)
+        && item.package?.kind === row.package.kind
+        && item.package?.manifest_url === row.package.manifest_url
+        && item.package?.entry_url === row.package.entry_url));
       const previous = data.installs[index];
       if (!row.active) {
         if (previous) { data.installs.splice(index, 1); save(data); storage.removeItem(`${key}:state:${previous.id}`); storage.removeItem(`${key}:consent:${previous.id}`); }
         return null;
       }
-      const item = { id: previous?.id || `custom-${row.id}`, accountId: row.id, sourceId: row.source_id || '', disabled: row.disabled === true, package: validateWidgetPackage(row.package) };
+      const item = { id: previous?.id || `custom-${row.id}`, accountId: row.id, sourceId, sourceAuthorId, disabled: row.disabled === true, package: validateWidgetPackage(row.package) };
       if (index >= 0) data.installs[index] = item; else data.installs.push(item);
       save(data); return item;
     },

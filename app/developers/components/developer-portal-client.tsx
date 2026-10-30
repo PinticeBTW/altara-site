@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { getSupabaseBrowserClient } from "@/app/lib/supabase-browser";
+import { normalizeCommandDefinition } from "@/app/lib/bot-command-schema.mjs";
 import { uploadViaTrustedAuthority } from "@/public/app/lib/trustedUploadClient.js";
 import { BotImageEditor, type BotImageKind } from "./bot-image-editor";
 
@@ -48,6 +49,7 @@ type DeveloperApp = {
 
 type BotCommand = {
   command_id: string;
+  command_type?: "CHAT_INPUT" | "USER" | "MESSAGE";
   name: string;
   description?: string | null;
   options?: JsonValue;
@@ -68,6 +70,16 @@ type EndpointInfo = {
   last_status?: string | null;
   last_error?: string | null;
 };
+
+type CommandDeliveryMode = "bot_token" | "https";
+type CommandDeliveryState = { scope: string; available: boolean; mode: CommandDeliveryMode; httpsReady: boolean; error?: string };
+function parseCommandDeliveryState(value: unknown, scope: string): CommandDeliveryState {
+  const row = asRecord(value);
+  if ((row.mode !== "bot_token" && row.mode !== "https") || typeof row.https_ready !== "boolean") {
+    throw new Error("Could not confirm command delivery settings.");
+  }
+  return { scope, available: true, mode: row.mode, httpsReady: row.https_ready };
+}
 
 type DeveloperUserProfile = {
   display_name?: string | null;
@@ -98,7 +110,7 @@ function parseEventIntentState(value: unknown, scope: string): EventIntentState 
 }
 
 type SecretNotice = {
-  kind: "bot-token";
+  kind: "bot-token" | "signing-secret";
   label: string;
   value: string;
   userId: string;
@@ -150,6 +162,10 @@ const PERMISSIONS = [
   { key: "bot:read_voice_state", label: "Read Voice State", supported: true, note: "Read basic voice session state." },
   { key: "bot:set_voice_status", label: "Set Voice Status", supported: true, note: "Show a short status for the bot's voice session." },
   { key: "bot:attach_files", label: "Attach Files", supported: true, note: "Private uploads up to 8 MiB per file; channel permissions protect downloads." },
+  { key: "bot:create_polls", label: "Create Polls", supported: true, note: "Single-choice channel polls, with the existing voting and access rules." },
+  { key: "bot:view_audit_log", label: "View Audit Log", supported: true, note: "Capped server audit metadata with sensitive content removed." },
+  { key: "bot:manage_automod", label: "Manage AutoMod", supported: true, note: "Manage bounded keyword blocking rules in this server." },
+  { key: "bot:manage_expressions", label: "Manage Emojis and Stickers", supported: true, note: "Manage server-scoped emoji and sticker assets." },
   { key: "bot:send_direct_messages", label: "Consenting Direct Messages", supported: true, note: "Requires each member's explicit, revocable consent." },
   { key: "bot:create_threads", label: "Create and Reply in Threads", supported: true, note: "Threads inherit their parent channel's access." },
   { key: "bot:manage_threads", label: "Manage Threads", supported: true, note: "Archive permitted threads." },
@@ -294,8 +310,13 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
   const [botsLoading, setBotsLoading] = useState(false);
   const [botsError, setBotsError] = useState("");
   const [commands, setCommands] = useState<BotCommand[]>([]);
+  const [commandRegistryScope, setCommandRegistryScope] = useState("");
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [endpoint, setEndpoint] = useState<EndpointInfo | null>(null);
+  const [commandDeliveryState, setCommandDeliveryState] = useState<CommandDeliveryState | null>(null);
+  const [commandDeliveryDraft, setCommandDeliveryDraft] = useState<{ scope: string; mode: CommandDeliveryMode } | null>(null);
+  const commandDeliveryRequestRef = useRef(0);
+  const commandDeliveryWriteVersionRef = useRef(0);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [secretNotice, setSecretNotice] = useState<SecretNotice | null>(null);
   const [userProfile, setUserProfile] = useState<DeveloperUserProfile | null>(null);
@@ -324,6 +345,9 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
   const permissions = permissionDraft?.scope === scopeKey ? permissionDraft.values : savedPermissions;
   const permissionsDirty = !samePermissionSet(permissions, savedPermissions);
   const currentEventSettings = eventIntentState?.scope === scopeKey ? eventIntentState : null;
+  const currentCommandDelivery = commandDeliveryState?.scope === scopeKey ? commandDeliveryState : null;
+  const commandDeliveryMode = commandDeliveryDraft?.scope === scopeKey ? commandDeliveryDraft.mode : currentCommandDelivery?.mode || "bot_token";
+  const commandDeliveryDirty = !!currentCommandDelivery?.available && commandDeliveryMode !== currentCommandDelivery.mode;
   const eventIntents = eventIntentDraft?.scope === scopeKey ? eventIntentDraft.values : currentEventSettings?.intents || [];
   const eventIntentsDirty = !samePermissionSet(eventIntents, currentEventSettings?.intents || []);
   const installUrl = selectedBot?.app_id ? buildInstallUrl(selectedBot.app_id, savedPermissions) : "";
@@ -347,6 +371,10 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
         setCommands([]);
         setLogs([]);
         setEndpoint(null);
+        commandDeliveryRequestRef.current += 1;
+        commandDeliveryWriteVersionRef.current += 1;
+        setCommandDeliveryState(null);
+        setCommandDeliveryDraft(null);
         setNotice(null);
         setSecretNotice(null);
         setUserProfile(null);
@@ -507,8 +535,18 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
     const generation = detailsRequestRef.current;
     const isCurrent = () => generation === detailsRequestRef.current && identityRef.current === ownerId && selectionRef.current.botId === botId;
     try {
-      const rows = await rpc<BotCommand[]>("bots_list_app_commands", { p_bot_id: botId });
-      if (isCurrent()) setCommands(Array.isArray(rows) ? rows : []);
+      let rows: BotCommand[], advanced = true;
+      try { rows = await rpc<BotCommand[]>("bots_list_app_application_commands_v1", { p_bot_id: botId }); }
+      catch (error) {
+        const code = asRecord(error).code;
+        if (!["PGRST202", "42883"].includes(String(code)) || !errorMessage(error).includes("bots_list_app_application_commands_v1")) throw error;
+        advanced = false;
+        rows = await rpc<BotCommand[]>("bots_list_app_commands", { p_bot_id: botId });
+      }
+      if (isCurrent()) {
+        setCommands(Array.isArray(rows) ? rows : []);
+        setCommandRegistryScope(advanced ? `${ownerId}:${botId}:${generation}` : "");
+      }
     } catch (error) {
       if (isCurrent()) setDetailsError(`Could not load commands: ${errorMessage(error)}`);
     }
@@ -544,6 +582,23 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
     }
   }
 
+  async function loadCommandDeliveryMode(app: DeveloperApp) {
+    const ownerId = user?.id || "", scope = `${ownerId}:${app.app_id}:${app.bot_id || ""}`;
+    const generation = detailsRequestRef.current, version = commandDeliveryWriteVersionRef.current;
+    const requestId = ++commandDeliveryRequestRef.current;
+    const isCurrent = () => !!ownerId && identityRef.current === ownerId && generation === detailsRequestRef.current
+      && requestId === commandDeliveryRequestRef.current && version === commandDeliveryWriteVersionRef.current
+      && selectionRef.current.appId === app.app_id && selectionRef.current.botId === app.bot_id;
+    if (!isCurrent()) return;
+    try {
+      const value = await rpc("bots_get_command_delivery_mode_v1", { p_app_id: app.app_id });
+      if (isCurrent()) setCommandDeliveryState(parseCommandDeliveryState(value, scope));
+    } catch {
+      if (isCurrent()) setCommandDeliveryState({ scope, available: false, mode: "bot_token", httpsReady: false,
+        error: "Command delivery settings are unavailable. Reload and try again." });
+    }
+  }
+
   useEffect(() => {
     if (!user) return;
     const timer = window.setTimeout(() => { void loadBots(); }, 0);
@@ -558,9 +613,25 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedBot?.app_id, selectedBot?.bot_id]);
 
+  useEffect(() => {
+    if (!user || !selectedBot?.bot_id || !["webhooks", "interactions"].includes(route.section)) return;
+    const timer = window.setTimeout(() => { void loadCommandDeliveryMode(selectedBot); }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, selectedBot?.app_id, selectedBot?.bot_id, route.section]);
+
   async function copyText(text: string, label = "Copied.") {
     await navigator.clipboard.writeText(text);
     setNotice({ tone: "success", message: label });
+  }
+
+  async function handleCopySecret(secret: SecretNotice | null) {
+    if (!secret || identityRef.current !== secret.userId || selectionRef.current.appId !== secret.appId) return;
+    const generation = detailsRequestRef.current;
+    const isCurrent = () => identityRef.current === secret.userId && selectionRef.current.appId === secret.appId && generation === detailsRequestRef.current;
+    try { await navigator.clipboard.writeText(secret.value); }
+    catch { if (isCurrent()) setNotice({ tone: "error", message: "Could not copy the secret. Please try again." }); return; }
+    if (isCurrent()) setNotice({ tone: "success", message: secret.kind === "signing-secret" ? "Signing secret copied." : "Token copied." });
   }
 
   async function runAction<T>(name: string, action: () => Promise<T>): Promise<T | null> {
@@ -769,43 +840,124 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
 
   async function handleSaveEndpoint(formData: FormData) {
     if (!selectedBot) return;
+    const app = selectedBot, ownerId = user?.id || "", generation = detailsRequestRef.current;
+    const isCurrent = () => identityRef.current === ownerId && generation === detailsRequestRef.current && selectionRef.current.appId === app.app_id;
     await runAction("save-endpoint", async () => {
       const row = firstRow<EndpointInfo>(await rpc("bots_save_interaction_endpoint", {
-        p_app_id: selectedBot.app_id,
+        p_app_id: app.app_id,
         p_endpoint_url: String(formData.get("endpoint_url") || "").trim(),
       }));
-      if (identityRef.current !== user?.id || selectionRef.current.appId !== selectedBot.app_id) return;
+      if (!isCurrent()) return;
       setEndpoint(row);
-      setNotice({ tone: "success", message: "Webhook endpoint saved. Use this only for Advanced Webhook Mode." });
+      setCommandDeliveryState(current => current?.scope === `${ownerId}:${app.app_id}:${app.bot_id || ""}` ? { ...current, httpsReady: false } : current);
+      await loadCommandDeliveryMode(app);
+      if (isCurrent()) setNotice({ tone: "success", message: "Endpoint saved. Verify it before choosing HTTPS delivery." });
     });
   }
 
   async function handleTestEndpoint() {
     if (!selectedBot) return;
+    const app = selectedBot, ownerId = user?.id || "", generation = detailsRequestRef.current;
+    const isCurrent = () => identityRef.current === ownerId && generation === detailsRequestRef.current && selectionRef.current.appId === app.app_id;
     await runAction("test-endpoint", async () => {
       const { data, error } = await supabase.functions.invoke("altara-bot-interaction-dispatch", {
-        body: { action: "verify_endpoint", app_id: selectedBot.app_id },
+        body: { action: "verify_endpoint", app_id: app.app_id },
       });
+      if (!isCurrent()) return;
       if (error) throw error;
       const result = asRecord(data);
       if (result.ok !== true) throw new Error(String(result.error || "verification_failed"));
-      await loadEndpoint(selectedBot.app_id);
-      setNotice({ tone: "success", message: "Endpoint verified." });
+      await Promise.all([loadEndpoint(app.app_id), loadCommandDeliveryMode(app)]);
+      if (isCurrent()) setNotice({ tone: "success", message: "Endpoint verified. Command delivery changes only when you save the mode." });
+    });
+  }
+
+  async function handleSaveCommandDeliveryMode() {
+    if (!user?.id || !selectedBot?.bot_id) return;
+    const app = selectedBot, botId = selectedBot.bot_id, ownerId = user.id, scope = `${ownerId}:${app.app_id}:${botId}`;
+    const settings = commandDeliveryState?.scope === scope ? commandDeliveryState : null;
+    const mode = commandDeliveryDraft?.scope === scope ? commandDeliveryDraft.mode : settings?.mode;
+    if (!settings?.available || (mode !== "bot_token" && mode !== "https")) {
+      setNotice({ tone: "error", message: "Could not confirm command delivery settings. Reload and try again." }); return;
+    }
+    if (mode === settings.mode) return;
+    if (mode === "https" && !settings.httpsReady) {
+      setNotice({ tone: "error", message: "Verify the saved HTTPS endpoint before selecting this mode." }); return;
+    }
+    const generation = detailsRequestRef.current;
+    const isCurrent = () => identityRef.current === ownerId && generation === detailsRequestRef.current
+      && selectionRef.current.appId === app.app_id && selectionRef.current.botId === botId;
+    if (!isCurrent()) return;
+    await runAction("save-command-delivery-mode", async () => {
+      // Ignore reads that began before this explicit preference write.
+      const version = ++commandDeliveryWriteVersionRef.current;
+      commandDeliveryRequestRef.current += 1;
+      const stillCurrent = () => isCurrent() && version === commandDeliveryWriteVersionRef.current;
+      let result;
+      try { result = await rpc("bots_set_command_delivery_mode_v1", { p_app_id: app.app_id, p_mode: mode }); }
+      catch { if (stillCurrent()) throw new Error("Could not save command delivery. Reload settings and try again."); return; }
+      if (!stillCurrent()) return;
+      const acknowledged = parseCommandDeliveryState(result, scope);
+      if (acknowledged.mode !== mode) throw new Error("Could not confirm saved command delivery. Reload and try again.");
+      setCommandDeliveryState(acknowledged);
+      setCommandDeliveryDraft(current => current?.scope === scope && current.mode === mode ? null : current);
+      notifyBotMetadataChanged(ownerId, app.app_id, botId);
+      setNotice({ tone: "success", message: `Command delivery saved: ${mode === "https" ? "HTTPS webhook" : "Bot Token Connection"}.` });
+    });
+  }
+
+  async function handleRotateSigningSecret() {
+    if (!user?.id || !selectedBot?.bot_id || actionLockRef.current || busyAction) return;
+    const app = selectedBot, botId = selectedBot.bot_id, ownerId = user.id;
+    const generation = detailsRequestRef.current;
+    const isCurrent = () => identityRef.current === ownerId && generation === detailsRequestRef.current
+      && selectionRef.current.appId === app.app_id && selectionRef.current.botId === botId;
+    if (!isCurrent()) return;
+    await runAction("rotate-signing-secret", async () => {
+      // The previous signing key may be replaced even if the response is lost.
+      setSecretNotice(current => current?.kind === "signing-secret" && current.userId === ownerId && current.appId === app.app_id ? null : current);
+      let result;
+      try { result = await rpc("bots_rotate_signing_secret", { p_app_id: app.app_id }); }
+      catch { if (isCurrent()) throw new Error("Could not confirm signing secret replacement. No new key was displayed."); return; }
+      if (!isCurrent()) return;
+      const row = Array.isArray(result) && result.length === 1 ? asRecord(result[0]) : {};
+      if (row.app_id !== app.app_id || typeof row.signing_secret !== "string" || !row.signing_secret.trim()
+        || typeof row.signing_secret_prefix !== "string" || !row.signing_secret_prefix.trim()) {
+        throw new Error("Could not confirm the new signing secret. No new key was displayed.");
+      }
+      setSecretNotice({ kind: "signing-secret", label: "Signing secret shown once", value: row.signing_secret, userId: ownerId, appId: app.app_id });
+      await loadCommandDeliveryMode(app);
+      if (isCurrent()) {
+        notifyBotMetadataChanged(ownerId, app.app_id, botId);
+        setNotice({ tone: "success", message: "Signing secret replaced. Copy it now, update the endpoint and verify it again." });
+      }
     });
   }
 
   async function handleManualCommand(formData: FormData) {
-    if (!selectedBot?.bot_id) return;
+    if (!selectedBot?.bot_id || !user?.id) return;
+    const botId = selectedBot.bot_id, ownerId = user.id, generation = detailsRequestRef.current;
+    const isCurrent = () => generation === detailsRequestRef.current && identityRef.current === ownerId && selectionRef.current.botId === botId;
+    const advanced = commandRegistryScope === `${ownerId}:${botId}:${generation}`;
     await runAction("manual-command", async () => {
-      await rpc("bots_upsert_slash_command", {
-        p_bot_id: selectedBot.bot_id,
-        p_name: String(formData.get("name") || "").trim().replace(/^\//, "").toLowerCase(),
-        p_description: String(formData.get("description") || "").trim(),
-        p_options: [],
+      const type = advanced ? String(formData.get("type") || "CHAT_INPUT") : "CHAT_INPUT";
+      let options;
+      try { options = JSON.parse(String(formData.get("options") || "[]")); }
+      catch { throw new Error("Options must be a valid JSON array."); }
+      const definition = normalizeCommandDefinition(String(formData.get("name") || ""), { type, description: type === "CHAT_INPUT" ? String(formData.get("description") || "").trim() : "", options });
+      if (!isCurrent()) return;
+      await rpc(advanced ? "bots_upsert_application_command_v1" : "bots_upsert_slash_command", {
+        p_bot_id: botId,
+        p_name: definition.name,
+        p_description: definition.description,
+        p_options: definition.options,
         p_callback_url: null,
         p_server_id: null,
+        ...(advanced ? { p_command_type: definition.type } : {}),
       });
-      await loadCommands(selectedBot.bot_id || "");
+      if (!isCurrent()) return;
+      await loadCommands(botId);
+      if (!isCurrent()) return;
       setNotice({ tone: "success", message: "Manual command saved. Code sync remains the normal flow." });
     });
   }
@@ -825,7 +977,7 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
 
   return (
     <DeveloperPortalFrame route={route} bots={bots} selectedBot={selectedBot} user={user} userProfile={userProfile} onOpenCreate={() => setCreateModalOpen(true)} onSignOut={handleSignOut}>
-      <StatusNotice notice={notice} secret={visibleSecret} onCopySecret={() => visibleSecret ? copyText(visibleSecret.value, "Token copied.") : undefined} />
+      <StatusNotice notice={notice} secret={visibleSecret} onCopySecret={() => handleCopySecret(visibleSecret)} />
       {detailsScope === scopeKey && detailsError ? <StatusNotice notice={{ tone: "error", message: detailsError }} secret={null} onCopySecret={() => undefined} /> : null}
       {renderContent()}
       {createModalOpen ? <CreateBotModal onClose={() => setCreateModalOpen(false)} onCreate={handleCreateBot} busy={busyAction} /> : null}
@@ -845,10 +997,12 @@ export function DeveloperPortalClient({ initialSlug }: { initialSlug: string[] }
     if (["install", "installation", "oauth2"].includes(route.section)) return <InstallPage app={selectedBot} installUrl={installUrl} onSave={handleSaveInstall} busy={busyAction} copyText={copyText} />;
     if (route.section === "permissions") return <PermissionsPage permissions={permissions} setPermissions={(values) => setPermissionDraft({ scope: scopeKey, values })} copyText={copyText} dirty={permissionsDirty} busy={Boolean(busyAction)} onSave={handleSavePermissions} installHref={`${appBase(selectedBot.app_id)}/install`} eventsAvailable={currentEventSettings?.available === true} />;
     if (route.section === "intents") return <IntentsPage settings={currentEventSettings} intents={eventIntents} setIntents={(values) => setEventIntentDraft({ scope: scopeKey, values })} dirty={eventIntentsDirty} busy={Boolean(busyAction)} onSave={handleSaveEventIntents} permissionsHref={`${appBase(selectedBot.app_id)}/permissions`} />;
-    if (route.section === "commands") return <CommandsPage key={selectedBot.app_id} app={selectedBot} commands={detailsScope === scopeKey ? commands : []} onManual={handleManualCommand} busy={busyAction} />;
+    if (route.section === "commands") return <CommandsPage key={selectedBot.app_id} app={selectedBot} commands={detailsScope === scopeKey ? commands : []} advanced={commandRegistryScope === `${user?.id || ""}:${selectedBot.bot_id}:${detailsRequestRef.current}`} onManual={handleManualCommand} busy={busyAction} />;
     if (route.section === "code") return <CodePage appId={selectedBot.app_id} />;
     if (route.section === "hosting") return <HostingPage appId={selectedBot.app_id} />;
-    if (["webhooks", "interactions"].includes(route.section)) return <WebhooksPage key={selectedBot.app_id} endpoint={detailsScope === scopeKey ? endpoint : null} onSave={handleSaveEndpoint} onTest={handleTestEndpoint} busy={busyAction} />;
+    if (["webhooks", "interactions"].includes(route.section)) return <WebhooksPage key={selectedBot.app_id} endpoint={detailsScope === scopeKey ? endpoint : null} onSave={handleSaveEndpoint} onTest={handleTestEndpoint} busy={busyAction}
+      delivery={currentCommandDelivery} deliveryMode={commandDeliveryMode} deliveryDirty={commandDeliveryDirty}
+      onDeliveryModeChange={mode => setCommandDeliveryDraft({ scope: scopeKey, mode })} onSaveDeliveryMode={handleSaveCommandDeliveryMode} onRotateSigningSecret={handleRotateSigningSecret} />;
     if (route.section === "logs") return <LogsPage logs={detailsScope === scopeKey ? logs : []} onRefresh={() => selectedBot.bot_id ? loadLogs(selectedBot.bot_id) : undefined} />;
     if (["advanced-ids", "ids"].includes(route.section)) return <AdvancedIdsPage app={selectedBot} copyText={copyText} />;
     return <BotProfilePage key={selectedBot.app_id} app={selectedBot} onSave={handleSaveProfile} busy={busyAction} />;
@@ -1310,7 +1464,9 @@ function IntentsPage({ settings, intents, setIntents, dirty, busy, onSave, permi
   );
 }
 
-function CommandsPage({ app, commands, onManual, busy }: { app: DeveloperApp; commands: BotCommand[]; onManual: (formData: FormData) => Promise<void>; busy: string }) {
+function CommandsPage({ app, commands, advanced, onManual, busy }: { app: DeveloperApp; commands: BotCommand[]; advanced: boolean; onManual: (formData: FormData) => Promise<void>; busy: string }) {
+  const [type, setType] = useState("CHAT_INPUT");
+  useEffect(() => { if (!advanced) setType("CHAT_INPUT"); }, [advanced]);
   return (
     <>
       <PageHeader title="Commands" eyebrow="Code-first registry" description="Commands are defined in your bot code with bot.command(). When your bot starts, ALTARA syncs them automatically." />
@@ -1322,7 +1478,7 @@ function CommandsPage({ app, commands, onManual, busy }: { app: DeveloperApp; co
         <div className="commandTable">
           {commands.length ? commands.map((cmd) => (
             <div className="commandRow" key={cmd.command_id}>
-              <b>/{cmd.name}</b><span>{cmd.description || "No description"}</span><span>{optionCount(cmd.options)} options</span><span>{cmd.status || "active"}</span>
+              <b>{!cmd.command_type || cmd.command_type === "CHAT_INPUT" ? "/" : ""}{cmd.name}</b><span>{cmd.command_type === "USER" ? "Member action" : cmd.command_type === "MESSAGE" ? "Message action" : cmd.description || "No description"}</span><span>{optionCount(cmd.options)} options</span><span>{cmd.status || "active"}</span>
             </div>
           )) : <EmptyState title="No synced commands" body="Run your bot process with bot.run() or bot.login() to publish commands from code." />}
         </div>
@@ -1331,8 +1487,10 @@ function CommandsPage({ app, commands, onManual, busy }: { app: DeveloperApp; co
         <summary>Advanced manual registration</summary>
         <p className="developerWarning">Most bots should not use this. Sync commands from code instead.</p>
         <form className="developerForm" action={(formData) => { void onManual(formData); }}>
+          {advanced ? <label>Command type<select name="type" value={type} onChange={event => setType(event.target.value)}><option value="CHAT_INPUT">Slash command /</option><option value="USER">Action on a member</option><option value="MESSAGE">Action on a message</option></select></label> : null}
           <label>Command name<input name="name" defaultValue="hello" maxLength={32} /></label>
-          <label>Description<input name="description" defaultValue="Says hello" maxLength={120} /></label>
+          {type === "CHAT_INPUT" ? <label>Description<input name="description" defaultValue="Says hello" maxLength={120} /></label> : null}
+          {advanced && type === "CHAT_INPUT" ? <label>Options JSON<textarea name="options" defaultValue="[]" rows={8} maxLength={16000} spellCheck={false} /></label> : null}
           <button className="devButton secondary" disabled={busy === "manual-command"} type="submit">Save manual command</button>
         </form>
       </details>
@@ -1392,25 +1550,78 @@ function HostingPage({ appId }: { appId: string }) {
           <li><b>PM2/Docker:</b> useful later for process management.</li>
           <li><b>No endpoint needed:</b> default Bot Token Connection mode needs no tunnel.</li>
           <li><b>Advanced Webhook Mode:</b> serverless/public HTTPS only.</li>
-          <li><b>Voice:</b> connection and status helpers are available; the music example still needs an audio publisher.</li>
+          <li><b>Voice:</b> the music starter includes an RTC audio publisher and playback controls. Read its music setup guide for the required grants and runtime.</li>
         </ul>
       </section>
     </>
   );
 }
 
-function WebhooksPage({ endpoint, onSave, onTest, busy }: { endpoint: EndpointInfo | null; onSave: (formData: FormData) => Promise<void>; onTest: () => Promise<void>; busy: string }) {
+function WebhooksPage({ endpoint, onSave, onTest, busy, delivery, deliveryMode, deliveryDirty, onDeliveryModeChange, onSaveDeliveryMode, onRotateSigningSecret }: {
+  endpoint: EndpointInfo | null; onSave: (formData: FormData) => Promise<void>; onTest: () => Promise<void>; busy: string;
+  delivery: CommandDeliveryState | null; deliveryMode: CommandDeliveryMode; deliveryDirty: boolean;
+  onDeliveryModeChange: (mode: CommandDeliveryMode) => void; onSaveDeliveryMode: () => Promise<void>;
+  onRotateSigningSecret: () => Promise<void>;
+}) {
+  const [secretRotationArmed, setSecretRotationArmed] = useState(false);
   return (
     <>
       <PageHeader title="Advanced Webhook Mode" eyebrow="Optional" description="Most bots do not need this. Use Bot Token Connection mode unless building a serverless webhook bot." />
       <section className="developerPanel">
+        <h2>Get the HTTPS example running</h2>
+        <p>Use a dedicated test bot for this optional path. The normal starters use Bot Token Connection and need no public endpoint.</p>
+        <div className="copyRow">
+          <a className="devButton primary" href="/bot-starters/altara-webhook-node.zip" download>HTTPS bot (JavaScript)</a>
+          <a className="devButton secondary" href="/bot-starters/ALTARA_BOTS_HTTPS_QUICKSTART.md" target="_blank" rel="noreferrer">HTTPS quickstart</a>
+        </div>
+        <ol className="developerSteps developerSetupSteps" role="list">
+          <li><h3>Download and prepare</h3><p>Extract the ZIP and open a terminal in its folder. Run <code>npm ci</code> to install the locked dependencies.</p></li>
+          <li><h3>Configure privately</h3><p>Copy <code>.env.example</code> to <code>.env</code> only if it does not already exist. Keep .env private and configure <code>ALTARA_SIGNING_SECRET</code> on the server using the signing-secret controls below.</p><p>Set <code>ALTARA_FUNCTIONS_URL</code> to the public <code>DEFAULT_FUNCTIONS_URL</code> in the included <code>altara-client.js</code> for hosted ALTARA, or your own deployment&apos;s Functions URL.</p></li>
+          <li><h3>Register demo commands if needed</h3><p>The optional <code>npm run register</code> adds five demo commands and preserves existing commands. Use a Bot Token only for registration; the signed receiver does not use it. You can instead add commands from the Commands page.</p></li>
+          <li><h3>Start the signed receiver</h3><p>Run <code>npm start</code> on your existing public HTTPS host. Install the test bot in a server with the four default command permissions. Keep signing secrets and tokens out of browser code and shared logs.</p></li>
+          <li><h3>Verify, then select HTTPS</h3><p>Save the endpoint below and click <b>Test endpoint</b>. Wait for verified status, then choose <b>HTTPS webhook</b> and click <b>Save delivery mode</b>. Saving or testing the endpoint alone never selects this mode.</p></li>
+        </ol>
+      </section>
+      <section className="developerPanel">
+        <h2>Command delivery</h2>
+        <p>Choose how this bot receives slash commands. Saving or testing an endpoint does not change this choice.</p>
+        <form className="developerForm" action={() => { void onSaveDeliveryMode(); }}>
+          <label>Delivery mode<select name="command_delivery_mode" value={deliveryMode} disabled={!delivery?.available || Boolean(busy)} onChange={event => onDeliveryModeChange(event.currentTarget.value as CommandDeliveryMode)}>
+            <option value="bot_token">Bot Token Connection (default)</option>
+            <option value="https" disabled={!delivery?.httpsReady}>HTTPS webhook</option>
+          </select></label>
+          {!delivery ? <p role="status">Loading command delivery settings...</p> : !delivery.available ? <p role="status">{delivery.error}</p> : !delivery.httpsReady ? <p>Verify the saved endpoint before choosing HTTPS delivery.</p> : null}
+          <button className="devButton primary" type="submit" disabled={!delivery?.available || !deliveryDirty || Boolean(busy) || (deliveryMode === "https" && !delivery.httpsReady)}>{busy === "save-command-delivery-mode" ? "Saving..." : "Save delivery mode"}</button>
+        </form>
+      </section>
+      <section className="developerPanel">
         <p className="developerWarning">Webhook mode requires a public HTTPS endpoint and signed request verification. It is not the normal bot flow.</p>
         <form className="developerForm" action={(formData) => { void onSave(formData); }}>
           <label>Endpoint URL<input name="endpoint_url" defaultValue={endpoint?.endpoint_url || ""} placeholder="https://example.com/altara/interactions" /></label>
-          <button className="devButton primary" type="submit" disabled={busy === "save-endpoint"}>Save endpoint</button>
-          <button className="devButton secondary" type="button" onClick={() => { void onTest(); }} disabled={busy === "test-endpoint"}>Test endpoint</button>
+          <button className="devButton primary" type="submit" disabled={Boolean(busy)}>Save endpoint</button>
+          <button className="devButton secondary" type="button" onClick={() => { void onTest(); }} disabled={Boolean(busy)}>Test endpoint</button>
         </form>
         <div className="developerMeta"><span>Status</span><code>{endpoint?.last_status || "not_configured"}</code></div>
+      </section>
+      <section className="developerPanel">
+        <h2>Signing secret</h2>
+        <p>Use this server-side key to verify ALTARA requests at your HTTPS endpoint. A replacement is shown only once.</p>
+        <button className="devButton secondary" data-signing-secret-trigger type="button" disabled={Boolean(busy)} onClick={() => setSecretRotationArmed(true)}>Rotate signing secret</button>
+        {secretRotationArmed ? <div role="group" aria-label="Confirm signing secret replacement">
+          <p className="developerWarning">Replacing the old signing secret can interrupt HTTPS commands. Update your endpoint with the new key and verify it again.</p>
+          <div className="developerActions">
+            <button className="devButton danger" type="button" disabled={Boolean(busy)} onClick={event => {
+              const trigger = event.currentTarget.closest("section")?.querySelector<HTMLButtonElement>("[data-signing-secret-trigger]");
+              setSecretRotationArmed(false);
+              void onRotateSigningSecret().then(() => { if (trigger?.isConnected && !trigger.disabled) trigger.focus(); });
+            }}>Replace signing secret</button>
+            <button className="devButton secondary" type="button" autoFocus disabled={Boolean(busy)} onClick={event => {
+              const trigger = event.currentTarget.closest("section")?.querySelector<HTMLButtonElement>("[data-signing-secret-trigger]");
+              setSecretRotationArmed(false);
+              if (trigger?.isConnected && !trigger.disabled) trigger.focus();
+            }}>Cancel</button>
+          </div>
+        </div> : null}
       </section>
     </>
   );
@@ -1486,7 +1697,7 @@ function Docs() {
           <li>Optional grants: link previews, bounded public history, reactions, pins and editing/deleting the bot&apos;s own messages.</li>
           <li>Voice playback with pause, queue and volume controls, public playlist lookup and scoped connection recovery.</li>
           <li>Polling events include messages, members, reactions, visible basic presence, voice changes and threads. Saved Intents, approved server grants and client intents must agree.</li>
-          <li>Buttons, selection menus and text forms are available for Bot Token Connection clients. Read the interactive messages guide for setup and limits.</li>
+          <li>Buttons, selection menus and text forms are available through Bot Token Connection and HTTPS webhook delivery. Read the interactive messages guide for setup and limits.</li>
           <li>Structured message cards are available through the JavaScript and Python clients. Use an updated ALTARA chat client to display them. Read the Client API guide for limits and examples.</li>
           <li>Private file uploads, explicit member mentions, role and member moderation, server/channel/event management, threads and scoped webhooks.</li>
           <li>Dedicated bot DMs and microphone sharing require each member&apos;s explicit consent; microphone sharing includes visible stop controls.</li>
@@ -1529,7 +1740,15 @@ function BotStarterDownloads() {
       <a className="devButton secondary" href="/bot-starters/ALTARA_BOTS_DISCORD_MIGRATION.md" download>Discord migration guide</a>
       <a className="devButton secondary" href="/bot-starters/ALTARA_BOTS_SDK.md" download>Client API guide</a>
     </div>
-    <p className="developerFootnote">Keep .env private. ALTARA syncs the code registry at startup, so run these starters on a separate test bot.</p>
+    <details className="advancedDetails">
+      <summary>Optional HTTPS webhook starter</summary>
+      <p>For a bot with its own public HTTPS endpoint and signed request verification. Bot Token Connection remains the default for the starters above.</p>
+      <div className="copyRow">
+        <a className="devButton secondary" href="/bot-starters/altara-webhook-node.zip" download>HTTPS bot (JavaScript)</a>
+        <a className="devButton secondary" href="/bot-starters/ALTARA_BOTS_HTTPS_QUICKSTART.md" target="_blank" rel="noreferrer">HTTPS quickstart</a>
+      </div>
+    </details>
+    <p className="developerFootnote">Keep .env private and use a separate test bot. SDK starters sync the code registry at startup; the HTTPS starter uses a separate, explicit registration step.</p>
   </section>;
 }
 

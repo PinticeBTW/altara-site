@@ -1,10 +1,10 @@
-# ALTARA Home Widget SDK v1 — developer preview
+# ALTARA Home Widget SDK v1 — legacy inline reference
 
-> Legacy inline format, retained for existing installations. New widgets use the hosted website workflow described in `WIDGET_HOSTED_GUIDE.md`. The in-app code editor has been retired; existing drafts can still be exported.
+> Legacy inline format, retained for existing installations. **The creation and publication workflow below is historical; the in-app code editor has been retired.** For new free or paid widgets, use [Build your ALTARA widget](./WIDGET_HOSTED_GUIDE.md): build the hosted project, upload a fixed `release.html` in **Developer Portal → Widgets**, then choose **Free** or **One-time purchase**. Existing legacy drafts can still be exported.
 
-Create widgets with JavaScript, try them privately, and share immutable free releases with the community. Open **Home → Widgets → Marketplace → Create**. No visual builder or dependency installation is required.
+The original preview used JavaScript-only packages and immutable free releases. Its **Home → Widgets → Marketplace → Create** path is historical. Keep the package and SDK reference below for an existing inline widget; use the hosted guide for new creation and publication.
 
-## Workflow
+## Historical preview workflow (retired UI)
 
 1. Start from the counter template, or import a `.altara-widget.json` package.
 2. Edit the name, description, semantic version and JavaScript code.
@@ -65,20 +65,26 @@ draw();
 
 `altara.render(view)` replaces the previous view. Keep transient input changes in your own state and avoid redrawing focused inputs on a timer. Views accept up to 100 nodes, eight nested levels, and 2,000 characters per text field. Unknown components and oversized messages stop the widget.
 
+### Automatic appearance
+
+The trusted renderer styles the supported components with ALTARA's current appearance. A community theme changes the colors, typography, surfaces, borders and control styling of every v1 widget through the same shared appearance contract. Creators do not need to detect theme names, publish a version for each theme or change their worker code.
+
+Appearance updates change presentation in place. They do not restart the worker, replace its view, fire actions or change storage. The worker receives no theme CSS, account identity, credentials or extra permissions. Semantic controls, focus, disabled states and progress values keep their existing behavior.
+
 `altara.storage.get(key)` synchronously reads saved state. Missing keys return `undefined`. `altara.storage.set(key, value)` updates JSON-compatible state; storage is limited to 16 KB per installed instance. Keys use letters, digits, `_` and `-`, up to 64 characters. Each preview starts empty. Do not store passwords or credentials in widget state.
 
 The worker has no app DOM, session, account data, Electron bridge or network access. Creator code cannot create nested workers. Trusted UI code renders text and a fixed set of components inside a separate sandboxed frame. Updates are rate limited, and a watchdog terminates nonresponsive code. Browser resource limits still apply: this is a developer preview, not a promise of unlimited or crash-proof computation.
 
 Widgets stop when leaving the Widgets view and restart from saved state when returning. Use timestamps to calculate elapsed time; do not depend on a timer continuing in the background.
 
-## Publishing and versions
+## Historical publishing and versions
 
-The catalog shows the latest 50 free releases and refreshes while open when community releases change. Publishing requires authentication. Only the author can unpublish a release. Published content cannot be edited in place: change the version and publish a new row. Previewing a community release does not install it. **Add to home** creates a pinned local copy, with its own empty state.
+The original preview catalog showed the latest 50 free releases and refreshed while open when releases changed. Publishing required authentication and only the author could unpublish a release. Published content could not be edited in place: a changed version created a new row. Previewing did not install a release. **Add to home** created a pinned local copy with empty state. This describes the retired preview, not the current hosted Marketplace workflow.
 
-Public source is downloadable through the package export workflow. Paid licensing, reviews, moderation tooling, automatic updates, cloud state and external API permissions are not implemented in v1. Creator payments and ALTARA's commission need a separate checkout, entitlement, refund and payout implementation; no percentage is selected or charged by this release.
+In that historical preview, public source was downloadable through package export. Paid licensing, reviews, moderation tooling, automatic updates, cloud state and external API permissions were not implemented; no creator payments or commission were charged by that preview. These limitations do not describe current hosted widgets. Follow the [current free or paid workflow](./WIDGET_HOSTED_GUIDE.md), including account access, user-chosen updates, ratings and refunds.
 
-Database activation: `supabase/manual_patches/2026-09-28_home_widget_marketplace_v1.sql`. This creates one new table and its ownership policies and adds it to realtime publication. It does not modify subscription billing or existing tables. Apply only after review under this repository's SQL rules.
+Historical database reference: `supabase/manual_patches/2026-09-28_home_widget_marketplace_v1.sql` created the preview table and ownership policies and added it to realtime publication. It did not modify subscription billing or existing tables. This is not a setup step for current hosted widgets; do not apply it from this guide. Any database change requires review under this repository's SQL rules.
 
-## Prompt for an AI coding assistant
+## Historical prompt for an existing inline widget
 
 > Write an ALTARA SDK v1 widget as a JSON package containing sdkVersion: 1, name, description, version and code. Code is plain JavaScript in a worker, with no DOM, imports, network or account access. Render a tree with altara.render(view). Supported components are column/row with children, text/stat with text, button with text/action, input with value/label/action, and progress with value 0–100/label. Handle interactions with altara.onAction((action, value) => {}). Store only JSON values with altara.storage.get(key) and altara.storage.set(key, value), within 16 KB. Timers stop when the widget is not displayed. Use the provided counter example as the package format. Build: [describe your widget here].

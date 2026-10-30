@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { MarketingAnalytics } from "./marketing-analytics";
 
 export const DOWNLOAD_URL = "/download";
 export const DOWNLOADS_URL = "/downloads";
@@ -86,7 +87,7 @@ export function WindowsDownloadOption({ version }: { version?: string } = {}) {
 
 export function MacDownloadOption() {
   return (
-    <Link
+    <a
       href={MAC_DOWNLOAD_URL}
       className="platform-btn"
     >
@@ -99,13 +100,13 @@ export function MacDownloadOption() {
         <span className="platform-name">Download for macOS</span>
         <span className="platform-detail">Apple Silicon · Intel</span>
       </span>
-    </Link>
+    </a>
   );
 }
 
 export function BrowserDownloadOption() {
   return (
-    <Link href={TRY_IN_BROWSER_URL} className="platform-btn">
+    <a href={TRY_IN_BROWSER_URL} className="platform-btn">
       <span className="platform-icon" aria-hidden="true">
         <svg
           viewBox="0 0 24 24"
@@ -124,7 +125,7 @@ export function BrowserDownloadOption() {
         <span className="platform-name">Try in browser</span>
         <span className="platform-detail">No desktop install required</span>
       </span>
-    </Link>
+    </a>
   );
 }
 
@@ -158,9 +159,11 @@ export function SiteNav({ active }: { active?: NavPage }) {
           <Link href="/about" className={active === "about" ? "active" : undefined}>
             About
           </Link>
-          <Link href="/developers" className={active === "developers" ? "active" : undefined}>
+          {/* A document navigation prevents marketing analytics from surviving into the portal. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/developers" className={active === "developers" ? "active" : undefined}>
             Developers
-          </Link>
+          </a>
         </div>
       </div>
     </nav>
@@ -188,6 +191,8 @@ const footerColumns = [
       { label: "About", href: "/about" },
       { label: "Terms", href: "/terms" },
       { label: "Privacy", href: "/privacy" },
+      { label: "Your data", href: "/privacy-requests" },
+      { label: "Delete account", href: "/delete-account" },
       { label: "Contact", href: "mailto:support@altaraapp.com" },
       { label: "GitHub releases", href: RELEASES_URL },
     ],
@@ -207,6 +212,9 @@ function isExternalLink(href: string) {
 }
 
 function FooterLinkItem({ link }: { link: FooterLink }) {
+  if (link.href === "/developers" || link.href === TRY_IN_BROWSER_URL || link.href.startsWith("/downloads?")) {
+    return <a href={link.href}>{link.label}</a>;
+  }
   if (isExternalLink(link.href)) {
     return (
       <a href={link.href} target="_blank" rel="noopener noreferrer">
@@ -226,7 +234,7 @@ function FooterLinkItem({ link }: { link: FooterLink }) {
   );
 }
 
-export function SiteFooter() {
+export function SiteFooter({ analytics = true }: { analytics?: boolean } = {}) {
   return (
     <footer className="footer">
       <div className="container">
@@ -259,6 +267,7 @@ export function SiteFooter() {
           <span>&copy; 2026 ALTARA. Made by friends, for friends.</span>
           <span>ALTARA &middot; pintice</span>
         </div>
+        {analytics && <MarketingAnalytics />}
       </div>
     </footer>
   );

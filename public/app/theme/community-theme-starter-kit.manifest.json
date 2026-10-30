@@ -1,0 +1,108 @@
+{
+  "format": "altara-theme-starter-kit",
+  "version": 1,
+  "sha256": "3e8e1178430b6e2f05bef8999e09cc356fe7c047b06edf4de87fdfd229da3c7c",
+  "bytes": 102819,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 7360,
+      "sha256": "756faac9a6703ed1d8cb2bbc0cd5bb4e6161b0864589f31bcd492b89da6396bd"
+    },
+    {
+      "path": "docs/COMMUNITY_THEMES_V1.md",
+      "bytes": 36163,
+      "sha256": "4893cb924a73ef7fd524c72a2a5e3507b1e6a3bc8f79b05a1bb33c52c8bcbfe0"
+    },
+    {
+      "path": "example.altara-theme.json",
+      "bytes": 2488,
+      "sha256": "330bdfa4a44c19436d20b1703b48687eaaaf648d6b0f6af775dd59dda7723750"
+    },
+    {
+      "path": "examples/community-themes/shell-regions/README.md",
+      "bytes": 2784,
+      "sha256": "14e2874d94e899e6bcc78d0cfc1df0e3921f50df19642d5e41e2ad5cb87e92f5"
+    },
+    {
+      "path": "examples/community-themes/shell-regions/header/metadata.json",
+      "bytes": 294,
+      "sha256": "4ada1ea24fad3a18d2bf5051b696a58e7f68d1e1f06603368618b49c3cf133ac"
+    },
+    {
+      "path": "examples/community-themes/shell-regions/header/theme.css",
+      "bytes": 1188,
+      "sha256": "3e390d6a9803c3b1adec7fee49c7c2dce375517c8df48f4249e51210e0fcb345"
+    },
+    {
+      "path": "examples/community-themes/shell-regions/lateral/metadata.json",
+      "bytes": 285,
+      "sha256": "a877f79dfdcae97791d0559da2d5a552b9e6d68d90daece15662705ec9b90872"
+    },
+    {
+      "path": "examples/community-themes/shell-regions/lateral/theme.css",
+      "bytes": 1382,
+      "sha256": "d482a3c4e0241a023ba4429d48089bf5b6aecc5909463b947673b1ece02b22f6"
+    },
+    {
+      "path": "examples/community-themes/shell-regions/mirror/metadata.json",
+      "bytes": 302,
+      "sha256": "34cbcf9b7e7219cfa117c49217c40a67040a1c32a6d07f82ec866af5d349c884"
+    },
+    {
+      "path": "examples/community-themes/shell-regions/mirror/theme.css",
+      "bytes": 1350,
+      "sha256": "6a4faef6d4fe50149a6452fb396fd158ade654e42adbceae403fa755fb83db6f"
+    },
+    {
+      "path": "lib/communityThemeLayout.js",
+      "bytes": 22459,
+      "sha256": "4bdc898a350cb28d2100a280b488bbcda3ad657dd6f9374c68cbb72b5689b695"
+    },
+    {
+      "path": "lib/communityThemePackages.js",
+      "bytes": 40806,
+      "sha256": "1ba751f501f41ea621ae8326ce410b345d9b0fc7907d144a5c4155afaaa72486"
+    },
+    {
+      "path": "lib/themeCanonical.js",
+      "bytes": 492,
+      "sha256": "9d5e69db3ca100c1352d9fdbaeaf9fc633284f60838419556a14d85b06ddfd77"
+    },
+    {
+      "path": "lib/vendor/css-tree/LICENSE",
+      "bytes": 1065,
+      "sha256": "719a251ceca49c057ea90a1152af6546b767ec88e6d573bb6324454267b32c22"
+    },
+    {
+      "path": "lib/vendor/css-tree/NOTICE.txt",
+      "bytes": 278,
+      "sha256": "a4c90309bab9add20d856ef91fff2547298277ed223d833f2600052aba5ee2c6"
+    },
+    {
+      "path": "lib/vendor/css-tree/csstree.esm.js",
+      "bytes": 202536,
+      "sha256": "a34589878a06f95e4e144c27748db5e6d81ba19619d3f36036027098e16c3522"
+    },
+    {
+      "path": "metadata.json",
+      "bytes": 204,
+      "sha256": "0ae8877da17fdbe958aceb26bf7e1936b03b996cbfd022337e69b104aea2a4b2"
+    },
+    {
+      "path": "package.json",
+      "bytes": 81,
+      "sha256": "835ec0111e1d1b3cfc60297cd16384db30bf6f9a8410cf5da85251b465264713"
+    },
+    {
+      "path": "scripts/theme-package.mjs",
+      "bytes": 3536,
+      "sha256": "d29b91a8c81252cb9561140f056d8af21d0e463b9be7e82fc788f156c04980a1"
+    },
+    {
+      "path": "theme.css",
+      "bytes": 2226,
+      "sha256": "822b824388add09ccce9015994c26191f204294f3c7f5829e97f0074cb2a6517"
+    }
+  ]
+}

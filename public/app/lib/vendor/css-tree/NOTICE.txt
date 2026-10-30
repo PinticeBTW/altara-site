@@ -1,0 +1,5 @@
+CSS-tree 3.2.1, MIT license.
+Upstream: https://github.com/csstree/csstree
+Pinned npm release: css-tree@3.2.1
+Package integrity: sha512-X7sjQzceUhu1u7Y/ylrRZFU2FS6LRiFVp6rKLPg23y3x3c3DOKAwuXGDp+PAGjh6CSnCjYeAul8pcT8bAl+lSA==
+Browser ESM distribution copied without modification.

@@ -3,14 +3,16 @@ import { uploadSignedFile } from './signedUploadTransport.js';
 import { normalizeTrustedAttachmentDeliveryUrl } from './messageMediaPolicy.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export async function invokeVaultMedia(supabase, body, { signal, assertCurrent = () => {} } = {}) {
+export async function invokeVaultMedia(supabase, body, { signal, assertCurrent = () => {}, unlockProof = '' } = {}) {
   assertCurrent(); if (signal?.aborted) throw new Error('Vault transfer cancelled.');
-  const { data, error } = await supabase.functions.invoke('altara-vault-media', { body, signal });
+  if (unlockProof && !/^[A-Za-z0-9_-]{43}$/.test(unlockProof)) throw new Error('Invalid DM unlock proof.');
+  const { data, error } = await supabase.functions.invoke('altara-vault-media', { body, signal,
+    ...(unlockProof ? { headers: { 'x-altara-dm-unlock': unlockProof } } : {}) });
   assertCurrent(); if (signal?.aborted) throw new Error('Vault transfer cancelled.');
   if (error || data?.ok !== true) throw new Error('Os anexos encriptados Vault ainda não estão disponíveis neste servidor ou nesta conversa.');
   return data;
 }
-export async function uploadVaultAttachment({ supabase, file, context, signal, assertCurrent = () => {}, onProgress, onPhase, transfer = {}, upload = uploadSignedFile }) {
+export async function uploadVaultAttachment({ supabase, file, context, signal, assertCurrent = () => {}, onProgress, onPhase, transfer = {}, upload = uploadSignedFile, unlockProof = '' }) {
   const startedAt = performance.now();
   const fingerprint = JSON.stringify([context.conversationId, context.messageId, context.fileId, context.epoch]);
   if (transfer.fingerprint && (transfer.fingerprint !== fingerprint || transfer.file !== file)) throw new Error('Vault transfer context changed.');
@@ -20,7 +22,7 @@ export async function uploadVaultAttachment({ supabase, file, context, signal, a
   await Promise.all([
     transfer.encrypted || encryptVaultFile(file, context, { signal, assertCurrent, onProgress }).then(value => (transfer.encrypted = value)),
     transfer.claim || invokeVaultMedia(supabase, { action: 'authorize', conversation_id: context.conversationId, message_id: context.messageId, file_id: context.fileId, epoch: context.epoch, size: encryptedSize,
-      ...(preferInline ? { prefer_inline: true } : {}) }, { signal, assertCurrent }).then(value => (transfer.claim = value)),
+      ...(preferInline ? { prefer_inline: true } : {}) }, { signal, assertCurrent, unlockProof }).then(value => (transfer.claim = value)),
   ]);
   assertCurrent();
   const encrypted = transfer.encrypted;
@@ -39,7 +41,8 @@ export async function uploadVaultAttachment({ supabase, file, context, signal, a
       // Retries retain the same upload ID and encrypted bytes.
       onProgress?.({ phase: 'uploading', loaded: 0, total: encryptedSize });
       const { data, error } = await supabase.functions.invoke('altara-vault-media?action=upload_complete', {
-        body: encrypted.blob, signal, headers: { 'Content-Type': 'application/octet-stream', 'x-vault-upload-id': claim.upload_id },
+        body: encrypted.blob, signal, headers: { 'Content-Type': 'application/octet-stream', 'x-vault-upload-id': claim.upload_id,
+          ...(unlockProof ? { 'x-altara-dm-unlock': unlockProof } : {}) },
       });
       assertCurrent(); if (signal?.aborted) throw new Error('Vault transfer cancelled.');
       if (error || data?.ok !== true || data.upload_id !== claim.upload_id) throw new Error('Não foi possível enviar o GIF. Tenta novamente.');
@@ -53,12 +56,12 @@ export async function uploadVaultAttachment({ supabase, file, context, signal, a
       } catch (error) {
         // A signed PUT can succeed while its response is lost. Only the broker's
         // exact stored-size/header check may confirm that uncertain upload.
-        await invokeVaultMedia(supabase, { action: 'complete', upload_id: claim.upload_id }, { signal, assertCurrent }).catch(() => { throw error; });
+        await invokeVaultMedia(supabase, { action: 'complete', upload_id: claim.upload_id }, { signal, assertCurrent, unlockProof }).catch(() => { throw error; });
         transfer.completed = true;
       }
       transfer.uploaded = true;
     }
-    if (!transfer.completed) await invokeVaultMedia(supabase, { action: 'complete', upload_id: claim.upload_id }, { signal, assertCurrent });
+    if (!transfer.completed) await invokeVaultMedia(supabase, { action: 'complete', upload_id: claim.upload_id }, { signal, assertCurrent, unlockProof });
     transfer.completed = true;
     const descriptor = { fileId: context.fileId, uploadId: claim.upload_id, key: encrypted.key, size: file.size,
       encryptedSize: encryptedVaultSize(file.size), name: (file.name || 'ficheiro').replace(/[\\/\u0000-\u001f\u007f]/g, '_').slice(0, 180),
@@ -70,9 +73,9 @@ export async function uploadVaultAttachment({ supabase, file, context, signal, a
     onPhase?.('vault_upload_total', { durationMs: performance.now() - startedAt, rowCount: 1, ok: transfer.completed === true });
   }
 }
-export async function downloadVaultAttachment({ supabase, descriptor, context, signal, assertCurrent = () => {}, fetchImpl = fetch, onPhase }) {
+export async function downloadVaultAttachment({ supabase, descriptor, context, signal, assertCurrent = () => {}, fetchImpl = fetch, onPhase, unlockProof = '' }) {
   const grantStarted = performance.now();
-  const grant = await invokeVaultMedia(supabase, { action: 'download', upload_id: descriptor.uploadId, message_id: context.messageId }, { signal, assertCurrent });
+  const grant = await invokeVaultMedia(supabase, { action: 'download', upload_id: descriptor.uploadId, message_id: context.messageId }, { signal, assertCurrent, unlockProof });
   onPhase?.('vault_download_grant', { durationMs: performance.now() - grantStarted, rowCount: 1 });
   const url = normalizeTrustedAttachmentDeliveryUrl(grant.url, { supabaseOrigin: new URL(supabase.supabaseUrl).origin });
   if (!url || grant.size !== descriptor.encryptedSize) throw new Error('Invalid encrypted download grant.');

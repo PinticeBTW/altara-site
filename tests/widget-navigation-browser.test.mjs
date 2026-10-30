@@ -17,8 +17,10 @@ test('widget navigation restores views and scroll; background refresh keeps unch
   let reads=0;
   await context.route('https://tbbgwjmmaiclkhssimhf.supabase.co/**',async route=>{
    const url=new URL(route.request().url());let data=[];
+   if(url.pathname.includes('/rpc/widget_commerce_'))return route.fulfill({status:404,contentType:'application/json',body:JSON.stringify({code:'PGRST202'})});
    if(url.pathname.includes('/home_widget_releases')){reads++;const id=url.searchParams.get('id')?.slice(3);const found=id?rows.filter(r=>r.id===id):rows;data=route.request().headers().accept?.includes('object')?found[0]:found;}
    else if(url.pathname.includes('/rpc/widget_marketplace_details'))data=rows.map(r=>({id:r.id,author_id:author,creator_name:'Maker',creator_username:'maker',downloads:2,rating_count:0}));
+   if(url.pathname.includes('/home_widget_releases')&&url.searchParams.get('select')){const keys=url.searchParams.get('select').split(',');const pick=row=>row?Object.fromEntries(keys.map(key=>[key,row[key]])):row;data=Array.isArray(data)?data.map(pick):pick(data);} 
    await route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
   });
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -33,6 +35,7 @@ test('widget navigation restores views and scroll; background refresh keeps unch
   await page.getByRole('button',{name:'Preview & install',exact:true}).nth(10).scrollIntoViewIfNeeded();
   const scroll=await page.evaluate(()=>window.scrollY);
   await page.getByRole('button',{name:'Preview & install',exact:true}).nth(10).click();
+  await page.getByRole('button',{name:'Back',exact:true}).waitFor();
   await page.getByRole('heading',{name:'Counter 11',exact:true}).waitFor();
   assert.equal(new URL(page.url()).searchParams.get('widget'),rows[10].id);
   await page.getByRole('checkbox',{name:'I understand and want to use this external widget.',exact:true}).check();

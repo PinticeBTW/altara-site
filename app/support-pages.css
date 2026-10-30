@@ -1,0 +1,443 @@
+/* Supporting public routes share the marketing shell without changing their tools. */
+.ed-support .ed-warm-text {
+  color: var(--accent-1);
+}
+
+.ed-support .ed-page-hero .hp-hero-copy {
+  margin: 0;
+  max-width: 1000px;
+  text-align: left;
+}
+
+.ed-support .hp-hero-cta {
+  justify-content: flex-start;
+}
+
+.ed-support .hp-cta-panel {
+  padding: clamp(28px, 4vw, 48px);
+  text-align: left;
+}
+
+.ed-support .hp-cta-panel h2 {
+  font-size: clamp(28px, 3.3vw, 42px);
+}
+
+.ed-support .hp-cta-panel .hp-lead {
+  margin: 20px 0 0;
+  max-width: 62ch;
+  font-size: 16px;
+}
+
+.ed-support .hp-cta-link {
+  display: inline-block;
+  margin-top: 22px;
+}
+
+.ed-faq .ed-page-hero {
+  padding-bottom: 48px;
+}
+
+.ed-faq .ed-page-hero .hp-hero-sub + .hp-hero-sub {
+  font-size: 14px;
+}
+
+.ed-faq .hp-hero-sub a {
+  color: var(--accent-1);
+  text-decoration: underline;
+}
+
+.ed-faq-content {
+  padding-bottom: 36px;
+}
+
+.ed-faq .hp-faq-block {
+  margin: 0;
+}
+
+.ed-faq .hp-faq-search {
+  max-width: 560px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #191917;
+  box-shadow: none;
+}
+
+.ed-faq .hp-faq-chip {
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.ed-faq .hp-faq-chip[aria-pressed="true"] {
+  border-color: var(--accent-1);
+  background: var(--accent-1);
+  color: #10100f;
+}
+
+.ed-faq .hp-faq-controls {
+  margin-bottom: 34px;
+}
+
+.ed-faq .hp-faq-trigger {
+  padding: 25px 0;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.ed-faq .hp-faq-answer-inner p {
+  max-width: 82ch;
+  padding: 0 28px 26px 0;
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.ed-legal .ed-page-hero h1 {
+  margin: 0;
+}
+
+.ed-legal .ed-page-hero > .hp-container > p {
+  max-width: 66ch;
+  margin: 24px 0 0;
+  color: var(--fg-muted);
+  font-size: 18px;
+  line-height: 1.75;
+}
+
+.ed-legal .legal-meta {
+  margin-top: 28px;
+  justify-content: flex-start;
+  gap: 8px 14px;
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--fg-dim);
+}
+
+.ed-legal .legal-content-section {
+  padding: 0 0 96px;
+  border-top: 0;
+}
+
+.ed-legal .legal-content {
+  max-width: 940px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ed-legal .legal-content > section {
+  padding: 34px 0;
+  border-top: 1px solid var(--border);
+}
+
+.ed-legal .legal-content > section + section {
+  margin-top: 0;
+}
+
+.ed-legal .legal-content h2 {
+  margin: 0 0 18px;
+  font-size: clamp(25px, 2.6vw, 32px);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+}
+
+.ed-legal .legal-content :is(p, li) {
+  font-size: 15px;
+  line-height: 1.85;
+  color: var(--fg-muted);
+}
+
+.ed-legal .legal-content :is(ul, ol) {
+  padding-left: 22px;
+  margin-block: 16px;
+}
+
+.ed-legal .legal-note {
+  border-radius: 5px;
+  background: #1c1a17;
+  border-color: var(--border);
+}
+
+.ed-legal .legal-inline-link {
+  color: var(--accent-1);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+.ed-linux .linux-download-hero h1 {
+  max-width: 20ch;
+}
+
+.ed-linux .linux-download-hero > .hp-container > p {
+  margin: 24px 0 0;
+  max-width: 65ch;
+  color: var(--fg-muted);
+  font-size: 18px;
+  line-height: 1.75;
+}
+
+.ed-linux .linux-download-hero > .hp-container > .linux-preview-copy {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.ed-linux .linux-help-actions {
+  justify-content: flex-start;
+}
+
+.ed-linux .linux-help-section {
+  padding: 48px 0 88px;
+}
+
+.ed-linux .linux-help-card {
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #191917;
+  box-shadow: none;
+}
+
+.ed-linux .linux-help-card-primary {
+  background: #211e19;
+}
+
+.ed-linux .linux-help-card h2 {
+  margin-top: 0;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.ed-linux .linux-help-card h3 {
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.ed-linux .linux-help-card .ed-eyebrow {
+  margin-bottom: 18px;
+}
+
+.ed-linux .linux-help-card pre {
+  border-radius: 4px;
+}
+
+.ed-linux .btn {
+  border-radius: 5px;
+  box-shadow: none;
+  font-size: 14px;
+}
+
+.ed-linux .linux-download-alert {
+  border-radius: 5px;
+}
+
+.ed-support.da .da-hero {
+  padding: 156px 0 70px;
+  background: transparent;
+}
+
+.ed-support.da .da-hero::before,
+.ed-support.da .da-hero::after {
+  display: none;
+}
+
+.ed-support.da .da-hero-grid {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 64px;
+}
+
+.ed-support.da .da-hero h1 {
+  max-width: 13ch;
+  margin-top: 0;
+  font-size: clamp(46px, 5.3vw, 76px);
+  font-weight: 550;
+  line-height: 1.04;
+}
+
+.ed-support.da .da-hero-lead {
+  font-size: 18px;
+}
+
+.ed-support.da .da-image-frame {
+  border-radius: 5px;
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.ed-support.da .da-image-frame--hero {
+  transform: none;
+}
+
+.ed-support.da .da-visual-caption {
+  margin-top: 16px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-align: left;
+}
+
+.ed-support.da .da-highlight-grid {
+  gap: 0 44px;
+  margin-top: 38px;
+  border-top: 1px solid var(--border);
+}
+
+.ed-support.da .da-highlight-card {
+  min-height: 0;
+  padding: 32px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.ed-support.da .da-highlight-card h3 {
+  max-width: 22ch;
+  margin-top: 16px;
+  font-size: clamp(25px, 2.8vw, 36px);
+  font-weight: 500;
+}
+
+.ed-support.da .da-highlight-card p {
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.ed-support.da .da-card-tags {
+  margin-top: 22px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
+.ed-support.da .da-section-heading h2,
+.ed-support.da .da-fit h2,
+.ed-support.da .da-final h2 {
+  font-size: clamp(32px, 3.7vw, 52px);
+  font-weight: 550;
+}
+
+.ed-support.da .da-group-head h3 {
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.ed-support.da .da-feature-group li::before {
+  width: 4px;
+  height: 1px;
+  border-radius: 0;
+}
+
+.ed-support.da .da-fit {
+  background: #1c1a17;
+}
+
+.ed-support.da .da-fit h2 {
+  max-width: 15ch;
+}
+
+.ed-support.da .da-final-panel {
+  max-width: none;
+  padding: 44px;
+  border-radius: 5px;
+  background: #1c1a17;
+  border-color: var(--border);
+  text-align: left;
+}
+
+.ed-support.da .da-final h2,
+.ed-support.da .da-final-panel > p:not(.ed-eyebrow) {
+  margin-left: 0;
+  margin-right: 0;
+  max-width: 24ch;
+}
+
+.ed-support.da .da-final-panel > p:not(.ed-eyebrow) {
+  max-width: 60ch;
+}
+
+.ed-support.da .da-final .da-hero-actions {
+  justify-content: flex-start;
+}
+
+.ed-not-found .ed-page-hero {
+  min-height: 65vh;
+}
+
+@media (max-width: 1000px) {
+  .ed-support.da .da-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+
+  .ed-support.da .da-hero h1 {
+    max-width: 16ch;
+  }
+
+  .ed-support.da .da-hero-visual {
+    max-width: 850px;
+  }
+}
+
+@media (max-width: 720px) {
+  .ed-support.da .da-hero {
+    padding-top: 118px;
+  }
+
+  .ed-support.da .da-hero h1 {
+    font-size: clamp(43px, 11vw, 64px);
+  }
+
+  .ed-support.da .da-highlight-grid,
+  .ed-support.da .da-feature-groups,
+  .ed-support.da .da-fit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ed-support.da .da-final-panel {
+    padding: 28px;
+  }
+
+  .ed-support.da .da-final {
+    padding: 62px 0;
+  }
+
+  .ed-support.da .da-highlights,
+  .ed-support.da .da-all-features {
+    padding-top: 62px;
+  }
+
+  .ed-faq .hp-faq-trigger {
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .ed-faq .hp-faq-categories {
+    gap: 8px;
+  }
+
+  .ed-faq .hp-faq-chip {
+    padding-inline: 12px;
+  }
+
+  .ed-legal .legal-content-section {
+    padding-bottom: 58px;
+  }
+
+  .ed-legal .legal-meta {
+    overflow-wrap: anywhere;
+  }
+
+  .ed-linux .linux-help-card {
+    padding: 24px;
+  }
+
+  .ed-linux .linux-release-files {
+    position: static;
+  }
+}

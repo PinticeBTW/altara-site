@@ -1,4 +1,5 @@
 import { snapshotFields, snapshotDocument, MAX_SNAPSHOT_BYTES } from './widgetSnapshot.js';
+import { getWidgetAppearance, normalizeWidgetAppearance, subscribeWidgetAppearance } from './widgetAppearance.js';
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 // Fetch text only. A creator's release is never executed in the publishing page.
 export async function fetchWidgetRelease(value, { signal, fetcher = fetch } = {}) {
@@ -97,16 +98,40 @@ export async function fetchWidgetManifest(value, { development = false, signal, 
 
 // Hosted HTML remains an opaque sandbox origin, including after redirects. Never
 // add allow-same-origin: an external page could redirect to ALTARA's own origin.
-export function mountHostedWidget(container, input, { state = {}, onState = () => {}, development = false } = {}) {
+export function mountHostedWidget(container, input, { state = {}, onState = () => {}, development = false, appearance, onRetry } = {}) {
   const pkg = validateHostedWidget(input, { development });
-  const frame = document.createElement('iframe');
+  let saved = JSON.parse(JSON.stringify(state));
+  const ownerDocument = container.ownerDocument || document;
+  const frame = ownerDocument.createElement('iframe');
   frame.title = `${pkg.name} widget`; frame.className = 'communityWidgetFrame';
   frame.setAttribute('sandbox', 'allow-scripts');
   frame.setAttribute('referrerpolicy', 'no-referrer');
   // Best-effort cookie isolation in supporting browsers; the sandbox is still required.
   frame.setAttribute('credentialless', '');
   frame.setAttribute('allow', "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; payment 'none'; usb 'none'; display-capture 'none'");
-  let alive = true, port, requests = 0, windowStart = Date.now(), attempt = 0, request, loadTimer;
+  let alive = true, ready = false, port, requests = 0, windowStart = Date.now(), attempt = 0, request, loadTimer;
+  let currentAppearance = normalizeWidgetAppearance(appearance === undefined ? getWidgetAppearance(ownerDocument) : appearance);
+  let appearanceSignature = JSON.stringify(currentAppearance);
+  function frameMaterial() {
+    // Chromium makes iframe canvases opaque when their embedding color scheme
+    // disagrees with the child document, even with transparent backgrounds.
+    if (currentAppearance?.active) frame.style.colorScheme = currentAppearance.colorScheme;
+    else frame.style.removeProperty('color-scheme');
+  }
+  frameMaterial();
+  function sendAppearance() {
+    if (!alive || !ready || !frame.isConnected) return;
+    frame.contentWindow?.postMessage({ type: 'altara:widget:appearance', version: 1, appearance: currentAppearance }, '*');
+  }
+  function setAppearance(value) {
+    if (!alive) return false;
+    const next = normalizeWidgetAppearance(value), signature = JSON.stringify(next);
+    if (!next) return false;
+    if (signature === appearanceSignature) return true;
+    currentAppearance = next; appearanceSignature = signature; frameMaterial(); sendAppearance();
+    return true;
+  }
+  const unsubscribeAppearance = appearance === undefined ? subscribeWidgetAppearance(ownerDocument, setAppearance) : () => {};
   const local = LOOPBACK.has(new URL(pkg.entry_url).hostname);
   const tr = (en, pt) => /^pt\b/i.test(document.documentElement.lang) ? pt : en;
   const panel = document.createElement('div'); panel.className = 'widgetLoadStatus'; panel.setAttribute('role', 'status');
@@ -117,11 +142,14 @@ export function mountHostedWidget(container, input, { state = {}, onState = () =
     panel.append(heading, detail); container.replaceChildren(panel);
     if (retry) {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'btn ghost';
-      button.textContent = tr('Try again', 'Tentar novamente'); button.onclick = load; panel.append(button);
+      button.textContent = tr('Try again', 'Tentar novamente');
+      // Marketplace retries must return through its current access check.
+      button.onclick = typeof onRetry === 'function' ? () => { if (alive) onRetry(); } : load; panel.append(button);
     }
   }
   function failed() {
     if (!alive) return;
+    ready = false;
     clearTimeout(loadTimer); detachPort(); frame.remove(); frame.removeAttribute('src'); frame.removeAttribute('srcdoc');
     message(local ? tr('Local widget is offline', 'O widget local está desligado') : tr('Could not load this widget', 'Não foi possível carregar este widget'), local
       ? tr('Start its development server, or install the online version from the catalog. Publishing does not replace this local installation.', 'Inicia o servidor de desenvolvimento ou instala a versão online pelo catálogo. Publicar não substitui esta instalação local.')
@@ -129,6 +157,7 @@ export function mountHostedWidget(container, input, { state = {}, onState = () =
   }
   async function load() {
     if (!alive) return;
+    ready = false;
     const ticket = ++attempt; request?.abort(); request = new AbortController(); clearTimeout(loadTimer); detachPort(); frame.remove();
     message(tr('Loading widget…', 'A carregar widget…'), new URL(pkg.entry_url).hostname);
     try {
@@ -148,10 +177,10 @@ export function mountHostedWidget(container, input, { state = {}, onState = () =
       loadTimer = setTimeout(failed, 15000);
     } catch { if (alive && ticket === attempt) failed(); }
   }
-  let saved = JSON.parse(JSON.stringify(state));
   function detachPort() { if (port) { port.onmessage = null; port.close(); port = null; } }
   frame.onload = () => {
     if (!alive || !frame.isConnected || (!frame.hasAttribute('src') && !frame.hasAttribute('srcdoc'))) return;
+    ready = true;
     clearTimeout(loadTimer); panel.remove(); frame.hidden = false;
     detachPort(); requests = 0; windowStart = Date.now();
     const channel = new MessageChannel(); port = channel.port1;
@@ -177,9 +206,10 @@ export function mountHostedWidget(container, input, { state = {}, onState = () =
       port?.postMessage(reply);
     };
     port.start();
-    frame.contentWindow.postMessage({ type: 'altara:widget:connect', version: 1, permissions: pkg.permissions }, '*', [channel.port2]);
+    frame.contentWindow.postMessage({ type: 'altara:widget:connect', version: 1, permissions: pkg.permissions, appearance: currentAppearance }, '*', [channel.port2]);
+    sendAppearance();
   };
   frame.onerror = failed;
   void load();
-  return { frame, dispose() { alive = false; attempt++; request?.abort(); clearTimeout(loadTimer); frame.onload = null; frame.onerror = null; detachPort(); frame.remove(); panel.remove(); } };
+  return { frame, setAppearance, dispose() { alive = false; ready = false; attempt++; unsubscribeAppearance(); request?.abort(); clearTimeout(loadTimer); frame.onload = null; frame.onerror = null; detachPort(); frame.remove(); panel.remove(); } };
 }

@@ -1,0 +1,354 @@
+/* Public catalogues share the editorial shell; product controls retain their layout. */
+.ed-marketplace :is(.widgetWebsite, .themeWebsite) {
+  max-width: 1400px;
+  padding: 156px var(--pad) 88px;
+  min-height: 75vh;
+}
+
+.ed-marketplace :is(.widgetWebsiteIntro, .themeWebsiteIntro) {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 26px;
+  margin-bottom: 44px;
+}
+
+.ed-marketplace :is(.widgetWebsiteIntro, .themeWebsiteIntro) h1 {
+  margin: 0 0 24px;
+  font-size: clamp(48px, 6.3vw, 86px);
+  font-weight: 550;
+  line-height: 1.01;
+}
+
+.ed-marketplace :is(.widgetWebsiteIntro, .themeWebsiteIntro) p {
+  max-width: 65ch;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 18px;
+  line-height: 1.75;
+}
+
+.ed-marketplace .widgetWebsiteIntro p + p {
+  max-width: 82ch;
+  margin-top: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--fg-dim);
+}
+
+.ed-marketplace :is(.widgetWebsiteEyebrow, .themeWebsiteEyebrow) {
+  margin-bottom: 20px;
+}
+
+.ed-marketplace :is(.widgetWebsiteLinks, .themeWebsiteLinks) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.ed-marketplace :is(.widgetWebsiteLinks, .themeWebsiteLinks) a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 12px 18px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #191917;
+  color: var(--accent-1);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.ed-marketplace :is(.widgetWebsiteLinks, .themeWebsiteLinks) a:hover {
+  background: #26221c;
+  border-color: var(--accent-2);
+}
+
+.ed-marketplace :is(.widgetWebsiteLinks, .themeWebsiteLinks) a:last-child {
+  background: var(--accent-1);
+  border-color: var(--accent-1);
+  color: #10100f;
+}
+
+.ed-marketplace :is(.widgetMarketPage, .communityThemeMarket) {
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #191917;
+  box-shadow: none;
+}
+
+.ed-marketplace :is(.widgetMarketTabs, .communityThemeMarketTabs) {
+  padding: 20px 24px;
+  border-color: var(--border);
+  gap: 10px;
+}
+
+.ed-marketplace .widgetMarketPage .widgetMarketBody {
+  min-height: 260px;
+  padding: 32px;
+}
+
+.ed-marketplace .widgetMarketPage :is(h2, h3),
+.ed-marketplace .communityThemeMarket :is(h2, h3) {
+  font-family: var(--font-inter), sans-serif;
+  font-size: 22px;
+  line-height: 1.35;
+  font-weight: 550;
+  letter-spacing: -0.025em;
+}
+
+.ed-marketplace .widgetMarketPage h3,
+.ed-marketplace .communityThemeMarket h3 {
+  font-size: 18px;
+}
+
+.ed-marketplace :is(.widgetMarketPage, .communityThemeMarket) .btn {
+  border-radius: 5px;
+  min-height: 42px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.ed-marketplace :is(.widgetMarketCard, .communityThemesCard, .widgetDetailAside) {
+  border-radius: 6px;
+  background: #201e1a;
+  border-color: var(--border);
+}
+
+.ed-marketplace .widgetMarketPage .widgetMarketFootnote {
+  padding: 18px 32px;
+  border-color: var(--border);
+  color: var(--fg-dim);
+  line-height: 1.7;
+}
+
+.ed-marketplace :is(.themeDownloadSteps, .themeSafetyNotice, .widgetSafety, .themeWebsiteStatus, .themeWebsiteError) {
+  border-radius: 6px;
+}
+
+.ed-marketplace .themeDownloadSteps {
+  padding: 26px 28px;
+  background: #1c1a17;
+  border-color: var(--border);
+}
+
+.ed-marketplace .themeSafetyNotice {
+  background: #1c1a17;
+  border-color: #4b4338;
+}
+
+.ed-marketplace .themeSafetyNotice h2 {
+  font-family: var(--font-inter), sans-serif;
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+
+.ed-marketplace .themeSafetyNotice p {
+  color: var(--fg-muted);
+}
+
+.ed-marketplace .communityThemeMarket {
+  --altara-bg: #10100f;
+  --altara-surface: #191917;
+  --altara-surface-elevated: #24211c;
+  --altara-input: #141412;
+  --altara-border: #39352d;
+  --altara-border-strong: #625442;
+  --altara-accent: #e8cdb0;
+  --settings-surface-2: #24211c;
+  --settings-border: #39352d;
+  --settings-soft: #b6b0a6;
+}
+
+.ed-marketplace .communityThemesEmpty {
+  padding: 28px;
+  border-color: var(--border);
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* The developer hub has the same public header; the studio navigation stays local. */
+.ed-developers .developerSpaceHeader {
+  max-width: 1288px;
+  margin: 82px auto 0;
+  padding: 34px var(--pad) 22px;
+  border-color: var(--border);
+  background: transparent;
+}
+
+.ed-developers .developerSpaceBrand {
+  color: var(--accent-1);
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.ed-developers .developerSpaceBrand b {
+  font-weight: 500;
+}
+
+.ed-developers .developerSpaceHeader nav a {
+  border-radius: 5px;
+  background: #191917;
+  border-color: var(--border);
+}
+
+.ed-developers .developerSpaceTabs,
+.ed-developers .developerSpaceContent {
+  max-width: 1288px;
+  padding-inline: var(--pad);
+}
+
+.ed-developers .developerSpaceTabs {
+  gap: 18px;
+  padding-block: 12px;
+  border-color: var(--border);
+}
+
+.ed-developers .developerSpaceTabs > a {
+  border-radius: 0;
+  padding: 10px 0;
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.ed-developers .developerSpaceTabs > a[aria-current="page"] {
+  background: transparent;
+  border-color: transparent;
+  border-bottom-color: var(--accent-1);
+  color: var(--accent-1);
+}
+
+.ed-developers .developerSpaceContent {
+  padding-block: 58px 88px;
+}
+
+.ed-developers .developerSpaceContent h1 {
+  margin: 12px 0 22px;
+  font-size: clamp(38px, 4.5vw, 64px);
+  font-weight: 550;
+  letter-spacing: -0.045em;
+}
+
+.ed-developers .developerSpaceContent h2 {
+  font-family: var(--font-bricolage), sans-serif;
+  font-size: 26px;
+  line-height: 1.3;
+  font-weight: 550;
+  letter-spacing: -0.035em;
+}
+
+.ed-developers .developerSpaceContent :is(.widgetMarket, .communityThemeMarket, .themeSafetyNotice, .themeCodeGuide) h2 {
+  font-family: var(--font-inter), sans-serif;
+  font-size: 18px;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+
+.ed-developers .developerSpaceIntro p,
+.ed-developers .developerSpaceContent > p {
+  max-width: 75ch;
+  color: var(--fg-muted);
+  line-height: 1.8;
+}
+
+.ed-developers .developerSpaceGrid {
+  margin-top: 40px;
+  gap: 0;
+  border-block: 1px solid var(--border);
+}
+
+.ed-developers .developerSpaceGrid > a {
+  border: 0;
+  border-radius: 0;
+  min-height: 300px;
+  padding: 32px;
+  background: transparent;
+}
+
+.ed-developers .developerSpaceGrid > a + a {
+  border-left: 1px solid var(--border);
+}
+
+.ed-developers .developerSpaceGrid > a:hover {
+  background: #1c1a17;
+}
+
+.ed-developers :is(.widgetMarket, .communityThemeMarket, .themeCodeGuide > div, .themeCodeExample, .themeSafetyNotice) {
+  border-radius: 6px;
+}
+
+.ed-developers :is(.btn, .themeWebsiteLinks a) {
+  border-radius: 5px;
+}
+
+/* The bot console keeps its tool layout, theme choice and account controls. */
+.developerPortal .developerTopBar {
+  background: #141412;
+  border-color: rgba(232, 205, 176, 0.14);
+}
+
+.developerPortal .developerTopBrand > span,
+.developerPortal :is(.developerPanel, .developerAppCard, .devButton, .developerUserButton) {
+  border-radius: 5px;
+}
+
+.developerPortal .developerMain h1 {
+  font-family: var(--font-bricolage), sans-serif;
+  font-weight: 550;
+  letter-spacing: -0.04em;
+}
+
+@media (max-width: 1000px) {
+  .ed-marketplace :is(.widgetWebsite, .themeWebsite) {
+    padding-top: 136px;
+  }
+}
+
+@media (max-width: 720px) {
+  .ed-marketplace :is(.widgetWebsite, .themeWebsite) {
+    padding-top: 116px;
+    padding-bottom: 64px;
+  }
+  .ed-marketplace :is(.widgetWebsiteIntro, .themeWebsiteIntro) h1 {
+    font-size: clamp(42px, 10vw, 58px);
+  }
+  .ed-marketplace :is(.widgetWebsiteIntro, .themeWebsiteIntro) p {
+    font-size: 16px;
+  }
+  .ed-marketplace .widgetMarketPage .widgetMarketBody {
+    padding: 24px 18px;
+  }
+  .ed-marketplace :is(.widgetMarketTabs, .communityThemeMarketTabs) {
+    padding: 16px;
+    gap: 8px;
+  }
+  .ed-marketplace .widgetMarketPage .widgetMarketFootnote {
+    padding: 18px;
+  }
+  .ed-developers .developerSpaceHeader {
+    margin-top: 70px;
+    gap: 18px;
+    padding-top: 26px;
+  }
+  .ed-developers .developerSpaceGrid > a + a {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .ed-developers .developerSpaceGrid > a {
+    min-height: 250px;
+    padding: 28px 0;
+  }
+  .ed-developers .developerSpaceContent {
+    padding-block: 36px 64px;
+  }
+}

@@ -16,6 +16,7 @@ test('developer hub separates authoring, custom publication metadata, creator pr
     if(process.env.ALTARA_WIDGET_SOURCE) await context.route('**/widget-assets/*.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(process.env.ALTARA_WIDGET_SOURCE,path.basename(new URL(route.request().url()).pathname)),'utf8')}));
     await context.route('https://tbbgwjmmaiclkhssimhf.supabase.co/**',async route=>{
       const url=new URL(route.request().url());let body=[];
+      if(url.pathname.includes('/rpc/widget_commerce_'))return route.fulfill({status:404,contentType:'application/json',body:JSON.stringify({code:'PGRST202'}),headers:{'access-control-allow-origin':'*'}});
       if(url.pathname.endsWith('/user'))body=user;
       else if(url.pathname.includes('/home_widget_releases')){
         if(route.request().method()==='POST')published={...route.request().postDataJSON(),id:'00000000-0000-4000-8000-000000000009',status:'published'};
@@ -23,6 +24,7 @@ test('developer hub separates authoring, custom publication metadata, creator pr
         filters.push(url.searchParams.get('author_id'));
         body=route.request().headers().accept?.includes('object')?published:published?[published]:[];
       }else if(url.pathname.includes('/rpc/widget_marketplace_details'))body=published?[{id:published.id,author_id:actor,creator_name:'Test Maker',creator_username:'maker',downloads:0,rating_count:0,rating_average:null}]:[];
+      if(url.pathname.includes('/home_widget_releases')&&url.searchParams.get('select')){const keys=url.searchParams.get('select').split(',');const pick=row=>row?Object.fromEntries(keys.map(key=>[key,row[key]])):row;body=Array.isArray(body)?body.map(pick):pick(body);} 
       await route.fulfill({contentType:'application/json',body:JSON.stringify(body),headers:{'access-control-allow-origin':'*'}});
     });
     await context.route('https://widget.example.com/manifest.json',route=>route.fulfill({contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify({manifest_version:1,name:'Original name',description:'Original description',version:'1.0.0',entry:'./index.html',icon:'./icon.svg',permissions:['storage']})}));
@@ -65,9 +67,9 @@ test('developer hub separates authoring, custom publication metadata, creator pr
     await page.getByRole('button',{name:'Manage publication',exact:true}).click();
     await page.getByRole('button',{name:'Publish again',exact:true}).click();await page.getByText('Published',{exact:true}).waitFor();assert.equal(published.status,'published');
     await page.goto(base+'/developers/themes');
-    await page.getByRole('heading',{name:'Themes, made by you.'}).waitFor();
+    await page.getByRole('heading',{name:'Theme projects',exact:true}).waitFor();
     await page.setViewportSize({width:390,height:844});
-    for(const route of ['/developers','/developers/widgets','/marketplace']){
+    for(const route of ['/developers','/developers/widgets','/developers/themes','/marketplace','/themes']){
       await page.goto(base+route);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,route+' fits mobile');
     }
     assert.deepEqual(errors,[]);

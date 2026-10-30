@@ -23,6 +23,7 @@ test('website catalog preserves login destination and installs into the account 
     if(process.env.ALTARA_WIDGET_SOURCE) await context.route('**/widget-assets/*.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(process.env.ALTARA_WIDGET_SOURCE,path.basename(new URL(route.request().url()).pathname)),'utf8')}));
       await context.route('https://tbbgwjmmaiclkhssimhf.supabase.co/**',async route=>{
         const url=new URL(route.request().url());let body=[];
+      if(url.pathname.includes('/rpc/widget_commerce_'))return route.fulfill({status:404,contentType:'application/json',body:JSON.stringify({code:'PGRST202'}),headers:{'access-control-allow-origin':'*'}});
         if(url.pathname.endsWith('/user'))body=user;
         else if(url.pathname.includes('/home_widget_releases'))body=route.request().headers().accept?.includes('object')?release:[release];
         else if(url.pathname.includes('/rpc/widget_marketplace_details'))body=[{id:release.id,author_id:release.author_id,creator_name:'Test Creator',creator_username:'testmaker',downloads:writes?1:0,rating_count:rating?1:0,rating_average:rating?.stars??null}];
@@ -36,8 +37,9 @@ test('website catalog preserves login destination and installs into the account 
           body=rating;
         }
         else if(url.pathname.includes('/home_widget_installs')){if(route.request().method()==='PATCH')installs=installs.map(row=>({...row,...route.request().postDataJSON()}));body=route.request().headers().accept?.includes('object')?installs[0]:installs;}
-        else if(url.pathname.includes('/rpc/install_home_widget')){writes++;const payload=route.request().postDataJSON();assert.equal(payload.p_source_id,release.id);assert.equal(payload.p_package.icon_url,release.icon_url);body=[{...payload.p_package,id:'00000000-0000-4000-8000-000000000004',user_id:actor,source_id:release.id,active:true}];installs=body;}
-        await route.fulfill({contentType:'application/json',body:JSON.stringify(body),headers:{'access-control-allow-origin':'*'}});
+        else if(url.pathname.includes('/rpc/install_home_widget')){writes++;const payload=route.request().postDataJSON();assert.equal(payload.p_source_id,release.id);assert.equal(payload.p_package.icon_url,release.icon_url);body=[{...payload.p_package,id:'00000000-0000-4000-8000-000000000004',user_id:actor,source_id:release.id,source_author_id:release.author_id,active:true}];installs=body;}
+        if(url.pathname.includes('/home_widget_releases')&&url.searchParams.get('select')){const keys=url.searchParams.get('select').split(',');const pick=row=>row?Object.fromEntries(keys.map(key=>[key,row[key]])):row;body=Array.isArray(body)?body.map(pick):pick(body);} 
+      await route.fulfill({contentType:'application/json',body:JSON.stringify(body),headers:{'access-control-allow-origin':'*'}});
       });
       await context.route('https://widgets.example.com/icon.svg',route=>route.fulfill({contentType:'image/svg+xml',headers:{'access-control-allow-origin':'*'},body:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="gold"/></svg>'}));
       await context.route('https://widgets.example.com/index.html',route=>route.fulfill({contentType:'text/html',body:'<p>Widget preview</p>'}));
@@ -49,9 +51,10 @@ test('website catalog preserves login destination and installs into the account 
       assert.equal(new URL(page.url()).pathname,'/marketplace','legacy widget links redirect to the catalog');
       await page.getByRole('link',{name:'Test Creator @testmaker'}).waitFor();
       assert.equal(await page.getByRole('button',{name:'Developers',exact:true}).count(),0,'no editor tab in public catalog');
-      await page.getByRole('button',{name:'Themes · Coming soon',exact:true}).click();
-      await page.getByRole('heading',{name:'A new look is on its way.'}).waitFor();
-      await page.getByRole('button',{name:'Widgets',exact:true}).click();
+      await page.getByRole('button',{name:'Themes',exact:true}).click();
+      await page.waitForURL('**/themes');
+      await page.getByRole('heading',{name:'Themes',exact:true}).waitFor();
+      await page.getByRole('link',{name:'Widgets',exact:true}).click();
       let second;
       if(authenticated){second=await context.newPage();await second.goto(process.env.ALTARA_WIDGET_SITE_URL+'/marketplace');await second.getByRole('button',{name:'Manage widgets',exact:true}).click();await second.getByText('No community widgets installed yet.',{exact:true}).waitFor();}
       await page.getByRole('button',{name:'Preview & install',exact:true}).click();

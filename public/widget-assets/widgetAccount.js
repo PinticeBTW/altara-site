@@ -4,7 +4,7 @@ import { validateHostedWidget } from './widgetHosted.js';
 export function createWidgetAccount({ client, userId, library, onChange = () => {} }) {
   let disposed = false, channel, bus, timer, pending = false, running = false, generation = 0;
   let snapshot = JSON.stringify(library.read().installs);
-  const fields = 'id,name,description,version,kind,sdkVersion,manifest_url,entry_url,permissions,source_id,active,disabled,icon_url,snapshot_sha256';
+  const fields = 'id,name,description,version,kind,sdkVersion,manifest_url,entry_url,permissions,source_id,source_author_id,active,disabled,icon_url,snapshot_sha256';
   function emit(id) {
     const next = JSON.stringify(library.read().installs);
     if (next !== snapshot || id) { snapshot = next; onChange(id); }
@@ -18,10 +18,16 @@ export function createWidgetAccount({ client, userId, library, onChange = () => 
       while (pending && !disposed) {
         pending = false;
         const ticket = generation;
-        let { data, error } = await client.from('home_widget_installs').select(fields).eq('user_id', userId);
-        // Keep account sync available while the optional icon column is deployed.
-        if (error && ['42703', 'PGRST204'].includes(error.code) && /icon_url/.test(error.message || '')) {
-          ({ data, error } = await client.from('home_widget_installs').select(fields.replace(',icon_url', '')).eq('user_id', userId));
+        let selected = fields;
+        let { data, error } = await client.from('home_widget_installs').select(selected).eq('user_id', userId);
+        // Old schemas have no creator namespace. Omit only a confirmed missing
+        // optional column; authorization and network errors never retry loosely.
+        for (let attempt = 0; error && attempt < 2; attempt++) {
+          if (!['42703', 'PGRST204'].includes(error.code)) break;
+          const column = ['icon_url', 'source_author_id'].find(name => selected.split(',').includes(name) && new RegExp(`\\b${name}\\b`).test(error.message || ''));
+          if (!column) break;
+          selected = selected.split(',').filter(name => name !== column).join(',');
+          ({ data, error } = await client.from('home_widget_installs').select(selected).eq('user_id', userId));
         }
         if (disposed) return;
         if (ticket !== generation) { pending = true; continue; }
@@ -64,7 +70,15 @@ export function createWidgetAccount({ client, userId, library, onChange = () => 
     generation++;
     const { data, error } = await client.rpc('install_home_widget', { p_package: safe, p_source_id: sourceId || null });
     if (disposed) throw Error('Your account changed. Open your widgets again.');
-    if (error) throw Error('Could not save the widget to your account. Check your connection and try again.');
+    if (error) {
+      // Show only known public reasons, never raw database/transport diagnostics.
+      const reason = String(error.message || '').trim();
+      if (error.code === 'P0001' && reason === 'You can install up to 30 account widgets') throw Error('You can install up to 30 account widgets. Remove a widget in Manage widgets before adding another.');
+      if (['42501', 'P0001'].includes(error.code) && reason === 'widget_purchase_required') throw Error('This widget is unavailable or your purchase access is paused. Refresh its details to check access.');
+      if (error.code === '23514' && reason === 'widget_install_creator_changed') throw Error('This installation belongs to another creator. Refresh the widget details and add it as a separate widget. Your saved data is kept.');
+      if (['42501', 'P0001'].includes(error.code) && ['widget_release_unavailable', 'widget_commerce_release_unavailable'].includes(reason)) throw Error('This widget version is no longer available. Refresh its details to check for another version.');
+      throw Error('Could not save the widget to your account. Check your connection and try again.');
+    }
     const row = Array.isArray(data) ? data[0] : data;
     if (!row?.id) throw Error('Could not save the widget to your account.');
     generation++;

@@ -38,3 +38,11 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 ## Legal Pages Deploy Note
 
 TODO before Stripe live details: These pages must be deployed to production before adding their URLs to Stripe live public details.
+
+## Microsoft Clarity on the public website
+
+Set `NEXT_PUBLIC_CLARITY_PROJECT_ID` to the **Project ID** shown in the Clarity project's **Settings → Overview**. The ALTARA public website project's ID is `ytmkaellrg`; it is a public identifier, not an API key. It is set in the ignored local `.env.local`. Configure the same value in the build environment before deployment and rebuild the site. The integration is disabled if the value is absent or invalid.
+
+The script loads only after the visitor accepts analytics, on `altaraapp.com` or `www.altaraapp.com`, and only on the explicit public marketing page list in `app/lib/marketing-analytics-scope.ts`. It is never included in the ALTARA app or developer portal. The loader does not start on URLs with query strings or fragments, to reduce the chance of forwarding sensitive values to Clarity. If adding a new marketing route, review its content for personal data before adding it to the list.
+
+In the Clarity project, keep **Settings → Setup → Cookies** off by default (Consent Mode) and set **Settings → Masking** to **Strict**. The site also masks the FAQ search and consent panel in its markup. Verify these dashboard settings and the consent behavior in a production browser before relying on recordings. The site sends Consent API V2 with analytics granted and advertising denied only after acceptance. Rejection does not load the script; withdrawing consent sends a denied signal and reloads the page. The privacy policy describes the tool and the footer offers a permanent preference control.

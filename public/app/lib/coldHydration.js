@@ -11,19 +11,24 @@ export function classifyColdPresenceSnapshot(meta = {}) {
 
 export function createColdHydration({ getOwner = () => '', now = () => performance.now() } = {}) {
   let owner = null, epoch = 0, sequence = 0;
-  const resources = new Map(), events = [];
+  const resources = new Map(), events = [], sharedReads = new Map();
   function bind() {
     const next = String(getOwner() || '');
-    if (next !== owner) { owner = next; epoch++; resources.clear(); events.length = 0; }
+    if (next !== owner) { owner = next; epoch++; resources.clear(); sharedReads.clear(); events.length = 0; }
   }
   function mark(stage) {
     bind(); events.push({ stage, at: now() });
     if (events.length > 120) events.shift();
   }
   function read(key) { bind(); return resources.get(key) || { phase: 'unknown', sequence: 0 }; }
-  function begin(key) {
-    bind(); const ticket = Object.freeze({ key, epoch, sequence: ++sequence });
-    resources.set(key, { phase: 'loading', sequence: ticket.sequence }); mark(`${key}:loading`);
+  function begin(key, { preserveReady = false } = {}) {
+    bind();
+    // Same-account background reads retain confirmed UI data while the new
+    // ticket still supersedes older requests. Cold loads and failures stay explicit.
+    const phase = preserveReady && resources.get(key)?.phase === 'ready' ? 'ready' : 'loading';
+    const ticket = Object.freeze({ key, epoch, sequence: ++sequence });
+    resources.set(key, { phase, sequence: ticket.sequence });
+    mark(`${key}:${phase === 'ready' ? 'refreshing' : 'loading'}`);
     return ticket;
   }
   function current(ticket) {
@@ -38,5 +43,17 @@ export function createColdHydration({ getOwner = () => '', now = () => performan
     if (states.includes('error')) return 'error';
     return states.every(value => value === 'ready') ? 'ready' : 'loading';
   }
-  return { read, begin, current, finish, phase, mark, snapshot: () => { bind(); return events.map(e => ({ ...e })); } };
+  function share(key, operation, { force = false } = {}) {
+    bind();
+    const existing = sharedReads.get(key);
+    if (!force && existing && existing.epoch === epoch && existing.sequence === read(key).sequence) return existing.promise;
+    // Only explicitly shared, in-flight reads coalesce. A new begin() after a
+    // relationship change invalidates this entry; completed results are not cached.
+    const promise = Promise.resolve(operation());
+    const entry = { epoch, sequence: read(key).sequence, promise: null };
+    entry.promise = promise.finally(() => { if (sharedReads.get(key) === entry) sharedReads.delete(key); });
+    sharedReads.set(key, entry);
+    return entry.promise;
+  }
+  return { read, begin, current, finish, phase, mark, share, snapshot: () => { bind(); return events.map(e => ({ ...e })); } };
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { HomeNav } from "../../components/home-nav";
 
 import {
   ALTARA_GITHUB_RELEASES_URL,
@@ -13,7 +14,6 @@ import {
   LINUX_PORTABLE_DOWNLOAD_URL,
   LINUX_README_URL,
   SiteFooter,
-  SiteNav,
 } from "../../components/site-chrome";
 
 export const metadata: Metadata = {
@@ -27,10 +27,23 @@ export const metadata: Metadata = {
     type: "website",
     url: "/download/linux",
     title: "ALTARA Linux x64 Downloads and Setup",
-    description: "Get the ALTARA AppImage, DEB or portable Linux x64 package and read setup and verification guidance.",
-    images: [{ url: "/altara-dashboard-hero.png", width: 1917, height: 1020, alt: "ALTARA dashboard" }],
+    description:
+      "Get the ALTARA AppImage, DEB or portable Linux x64 package and read setup and verification guidance.",
+    images: [
+      {
+        url: "/altara-appearance-real-2026.webp",
+        width: 1100,
+        height: 800,
+        alt: "ALTARA appearance settings with built-in themes and custom colors",
+      },
+    ],
   },
-  twitter: { card: "summary_large_image", title: "ALTARA Linux x64 Downloads", description: "AppImage, DEB, portable package and setup guidance.", images: ["/altara-dashboard-hero.png"] },
+  twitter: {
+    card: "summary_large_image",
+    title: "ALTARA Linux x64 Downloads",
+    description: "AppImage, DEB, portable package and setup guidance.",
+    images: ["/altara-appearance-real-2026.webp"],
+  },
 };
 
 type LinuxHelpPageProps = {
@@ -58,31 +71,34 @@ function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps) {
+export default async function LinuxHelpPage({
+  searchParams,
+}: LinuxHelpPageProps) {
   const [params, release] = await Promise.all([
-    searchParams, fetchLatestLinuxRelease().catch(() => null),
+    searchParams,
+    fetchLatestLinuxRelease().catch(() => null),
   ]);
   const status = firstValue(params.status);
   const statusMessage = status ? statusMessages[status] : undefined;
 
   return (
     <div
+      className="hp editorial ed-support ed-linux"
       data-build-marker={`${ALTARA_SITE_LINUX_DOWNLOAD_MARKER} ${ALTARA_SITE_LINUX_INSTALLERS_MARKER}`}
     >
-      <SiteNav />
+      <HomeNav active={null} skipToContent />
 
-      <main>
-        <section className="page-hero linux-download-hero">
-          <div className="blob blob-1" />
-          <div className="blob blob-2" />
-          <div className="container">
-            <span className="eyebrow">
-              <span className="dot" /> Linux x64 · {release?.version ?? "Latest stable release"}
+      <main id="main-content" tabIndex={-1}>
+        <section className="ed-page-hero linux-download-hero">
+          <div className="hp-container">
+            <span className="ed-eyebrow">
+              <span className="dot" /> Linux x64 ·{" "}
+              {release?.version ?? "Latest stable release"}
             </span>
             <h1>
               Choose the Linux package
               <br />
-              <span className="gradient-text">that fits your system.</span>
+              <span className="ed-warm-text">that fits your system.</span>
             </h1>
             <p>
               Install with a DEB on Ubuntu, Debian, or Mint; use one AppImage on
@@ -112,7 +128,7 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
         </section>
 
         <section className="linux-help-section">
-          <div className="container">
+          <div className="hp-container">
             {statusMessage ? (
               <div className="linux-download-alert" role="status">
                 <strong>Linux download temporarily unavailable.</strong>
@@ -122,24 +138,28 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
 
             <div className="linux-installer-grid">
               <article className="linux-help-card linux-help-card-primary">
-                <span className="eyebrow">
+                <span className="ed-eyebrow">
                   <span className="dot" /> Recommended for Debian family
                 </span>
                 <h2>Install for Ubuntu / Debian</h2>
                 <p>.deb package · Recommended for Ubuntu, Debian and Mint</p>
                 <ol className="linux-help-steps">
                   <li>Download the DEB.</li>
-                  <li>Double-click the <code>.deb</code> file.</li>
+                  <li>
+                    Double-click the <code>.deb</code> file.
+                  </li>
                   <li>Open it with the software installer or App Center.</li>
-                  <li>Install, then launch ALTARA from the applications menu.</li>
+                  <li>
+                    Install, then launch ALTARA from the applications menu.
+                  </li>
                 </ol>
                 <p>Terminal fallback:</p>
                 <pre>
                   <code>{"sudo apt install ./<filename>.deb"}</code>
                 </pre>
                 <p className="linux-help-note">
-                  Install the DEB through the normal system authorization
-                  and package-manager flow. It is not a silent update.
+                  Install the DEB through the normal system authorization and
+                  package-manager flow. It is not a silent update.
                 </p>
                 <a href={LINUX_DEB_DOWNLOAD_URL} className="btn btn-primary">
                   Download DEB
@@ -147,7 +167,7 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
               </article>
 
               <article className="linux-help-card">
-                <span className="eyebrow">
+                <span className="ed-eyebrow">
                   <span className="dot" /> Generic Linux x64
                 </span>
                 <h2>Download AppImage</h2>
@@ -162,17 +182,19 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
 ./<filename>.AppImage`}</code>
                 </pre>
                 <p className="linux-help-note">
-                  Make the AppImage executable before its first launch.
-                  Desktop menu integration is not claimed
-                  or installed automatically.
+                  Make the AppImage executable before its first launch. Desktop
+                  menu integration is not claimed or installed automatically.
                 </p>
-                <a href={LINUX_APPIMAGE_DOWNLOAD_URL} className="btn btn-secondary">
+                <a
+                  href={LINUX_APPIMAGE_DOWNLOAD_URL}
+                  className="btn btn-secondary"
+                >
                   Download AppImage
                 </a>
               </article>
 
               <article className="linux-help-card linux-portable-fallback-card">
-                <span className="eyebrow">
+                <span className="ed-eyebrow">
                   <span className="dot" /> Technical fallback
                 </span>
                 <h2>Portable tar.gz</h2>
@@ -180,7 +202,9 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
                 <ol className="linux-help-steps">
                   <li>Download and extract the Linux x64 tar.gz.</li>
                   <li>Open a terminal inside the extracted folder.</li>
-                  <li>Make the launcher and sandbox executable, then run ALTARA:</li>
+                  <li>
+                    Make the launcher and sandbox executable, then run ALTARA:
+                  </li>
                 </ol>
                 <pre>
                   <code>{`chmod +x altara-desktop chrome-sandbox
@@ -189,7 +213,10 @@ export default async function LinuxHelpPage({ searchParams }: LinuxHelpPageProps
                 <p className="linux-help-warning">
                   Manual updates are required for the portable tar.gz.
                 </p>
-                <a href={LINUX_PORTABLE_DOWNLOAD_URL} className="btn btn-secondary">
+                <a
+                  href={LINUX_PORTABLE_DOWNLOAD_URL}
+                  className="btn btn-secondary"
+                >
                   Download portable tar.gz
                 </a>
               </article>
@@ -227,12 +254,13 @@ sudo apt install -y libnss3 libnspr4 libasound2`}</code>
 
             <div className="linux-help-layout">
               <article className="linux-help-card">
-                <span className="eyebrow">
+                <span className="ed-eyebrow">
                   <span className="dot" /> Release files
                 </span>
                 <h2>Verify the same release.</h2>
                 <p>
-                  These packages are unsigned. Checksums verify file integrity, not publisher identity. Full instructions are included in{" "}
+                  These packages are unsigned. Checksums verify file integrity,
+                  not publisher identity. Full instructions are included in{" "}
                   <code>{"README-LINUX-<version>.txt"}</code>. The README and
                   checksum links resolve from the same latest stable release as
                   the application packages.

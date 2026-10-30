@@ -1,0 +1,142 @@
+{
+  "format": "altara-theme-site-assets",
+  "version": 1,
+  "widgetMarketplaceSha256": "11d91f6cfe1fd7d0bcabf815510a3a9a093412b1c8d23443c4a02781b07753b9",
+  "files": [
+    {
+      "path": "lib/communityThemePackages.js",
+      "sha256": "1ba751f501f41ea621ae8326ce410b345d9b0fc7907d144a5c4155afaaa72486",
+      "bytes": 40806
+    },
+    {
+      "path": "lib/communityThemeRuntime.js",
+      "sha256": "c460698386f485d31966ff1004ac3b530f46e0847751e928bcb8c4d4ec0b247a",
+      "bytes": 12967
+    },
+    {
+      "path": "lib/communityThemesUi.js",
+      "sha256": "243b389e9248afe4f3af7aa7c9d6b2c2bc3e3da4fa973ee1d7ae587d22082f27",
+      "bytes": 65757
+    },
+    {
+      "path": "lib/communityThemeLayout.js",
+      "sha256": "72c7dda1b4832216e702cd5e17d973acc2662432124901a442fd94da29666eed",
+      "bytes": 25678
+    },
+    {
+      "path": "lib/communityThemeLayoutBridge.js",
+      "sha256": "24903d3555e6ee6201c58d71becc96f3cca8569a6dc8ac3ac8a367f51c6d66cb",
+      "bytes": 18831
+    },
+    {
+      "path": "lib/communityThemeGlass.js",
+      "sha256": "6767fd85ed4ce2352c61156712056a9148ee2e4fa8f18544efe6bd6e76450889",
+      "bytes": 4256
+    },
+    {
+      "path": "lib/communityThemeEditor.js",
+      "sha256": "010121f933b3e26c288d44bffb454c0896ddd8d19456b756509fd82692296d04",
+      "bytes": 9481
+    },
+    {
+      "path": "lib/communityThemeMarketplace.js",
+      "sha256": "08e2544df429db4834d0533e9cd62bcee7895bdc5add628fbf4f66476599aef6",
+      "bytes": 52583
+    },
+    {
+      "path": "lib/communityThemeAccount.js",
+      "sha256": "377f74e7186987b66f2b9a4263db110426931b343bdf2ebd82ce32c4bd71c522",
+      "bytes": 13931
+    },
+    {
+      "path": "lib/themeCanonical.js",
+      "sha256": "9d5e69db3ca100c1352d9fdbaeaf9fc633284f60838419556a14d85b06ddfd77",
+      "bytes": 492
+    },
+    {
+      "path": "lib/themeCommerce.js",
+      "sha256": "1916d7354da5eba8059874800425e5ad525bb4a432b0037ae3e2b0608c55757d",
+      "bytes": 2603
+    },
+    {
+      "path": "lib/widgetCommerce.js",
+      "sha256": "76a9c494d805a6379f1cf9cd6a41dc897ba6544a8839bd5926774deff81d4f29",
+      "bytes": 30922
+    },
+    {
+      "path": "lib/widgetRefunds.js",
+      "sha256": "ee61e97cc84ed8418172f05e1d91e1f0f295dc92ab12453079ae7683541a164c",
+      "bytes": 39098
+    },
+    {
+      "path": "lib/widgetAppearance.js",
+      "sha256": "91046fcd2be9aa0091c93a51749279c2b49df3215942f1402c36604c388904d4",
+      "bytes": 27499
+    },
+    {
+      "path": "lib/themeHomePresenter.js",
+      "sha256": "2df4acb58749ac152ff5364cb62613b42346885128c25540ffd3e6b6c61b0c3d",
+      "bytes": 58380
+    },
+    {
+      "path": "lib/communityThemes.css",
+      "sha256": "fbbb590473222bf5025549dd77c7d88b618acc8fa65e480ffcf51565b2f4fdf6",
+      "bytes": 13037
+    },
+    {
+      "path": "lib/vendor/css-tree/csstree.esm.js",
+      "sha256": "a34589878a06f95e4e144c27748db5e6d81ba19619d3f36036027098e16c3522",
+      "bytes": 202536
+    },
+    {
+      "path": "lib/vendor/css-tree/LICENSE",
+      "sha256": "719a251ceca49c057ea90a1152af6546b767ec88e6d573bb6324454267b32c22",
+      "bytes": 1065
+    },
+    {
+      "path": "lib/vendor/css-tree/NOTICE.txt",
+      "sha256": "a4c90309bab9add20d856ef91fff2547298277ed223d833f2600052aba5ee2c6",
+      "bytes": 278
+    },
+    {
+      "path": "theme/communityThemeStarter.js",
+      "sha256": "bcefb0e3485ba1aece2319bb693dd5c3d728f55ad969fa278e04f3fd4e96531d",
+      "bytes": 6623
+    },
+    {
+      "path": "theme/altaraGlassTheme.js",
+      "sha256": "fa8d346d906abe7b2fd04f283018436d65758b23fb70e190250614dcda84fd64",
+      "bytes": 73339
+    },
+    {
+      "path": "theme/altaraGlassAssets.js",
+      "sha256": "4128f80dd0d7bdaee2093f95f5e80b89bbc3744c0e7bc052c91ab693b2f7a4fb",
+      "bytes": 276371
+    },
+    {
+      "path": "theme/community-theme-starter.altara-theme.json",
+      "sha256": "330bdfa4a44c19436d20b1703b48687eaaaf648d6b0f6af775dd59dda7723750",
+      "bytes": 2488
+    },
+    {
+      "path": "theme/community-theme-starter-kit.zip",
+      "sha256": "3e8e1178430b6e2f05bef8999e09cc356fe7c047b06edf4de87fdfd229da3c7c",
+      "bytes": 102819
+    },
+    {
+      "path": "theme/assets/altara-glass-room.webp",
+      "sha256": "d79e8c25d09bd9949586fd77cc190879fa234f7b1eaa405f0b15702184821b33",
+      "bytes": 207194
+    },
+    {
+      "path": "docs/COMMUNITY_THEMES_V1.md",
+      "sha256": "4893cb924a73ef7fd524c72a2a5e3507b1e6a3bc8f79b05a1bb33c52c8bcbfe0",
+      "bytes": 36163
+    },
+    {
+      "path": "docs/ALTARA_GLASS_THEME.md",
+      "sha256": "e556db1faa3c2f26c44e9285e565506a361d52a2fded84e51fa8596bbdf33d99",
+      "bytes": 7854
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+ALTARA local message translation: third-party notices
+
+Transformers.js 3.8.1
+Copyright Hugging Face, Inc. Apache License 2.0.
+Source: https://github.com/huggingface/transformers.js
+Exact npm archive: https://registry.npmjs.org/@huggingface/transformers/-/transformers-3.8.1.tgz
+Files are copied unchanged from its browser dist. TRANSFORMERS-LICENSE.txt applies.
+Bundled Hugging Face Jinja dependency: MIT, JINJA-LICENSE.txt.
+ONNX Runtime 1.22.0-dev.20250409-89f8206ba4: Microsoft, MIT; ONNX-RUNTIME-LICENSE.txt.
+
+fasttext.wasm 1.0.1
+Copyright DreamOfIce. MIT license in fasttext/LICENSE.txt.
+Source: https://github.com/DreamOfIce/fasttext.wasm
+Exact npm archive: https://registry.npmjs.org/fasttext.wasm/-/fasttext.wasm-1.0.1.tgz
+Unmodified package browser ESM wrapper, compiled WASM and assets.
+Underlying fastText: Copyright Facebook, Inc.; MIT in fasttext/FASTTEXT-LICENSE.txt.
+Source: https://github.com/facebookresearch/fastText
+
+fastText lid.176.ftz language-identification model
+Copyright Facebook, Inc. Distributed unchanged under Creative Commons
+Attribution-ShareAlike 3.0 Unported; fasttext/LID176-CC-BY-SA-3.0.txt.
+Official attribution/model page: https://fasttext.cc/docs/en/language-identification.html
+Original model: https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz
+License: https://creativecommons.org/licenses/by-sa/3.0/
+Trained on Wikipedia, Tatoeba and SETimes data.
+References: Armand Joulin, Edouard Grave, Piotr Bojanowski, Tomas Mikolov,
+Bag of Tricks for Efficient Text Classification (2016), https://arxiv.org/abs/1607.01759;
+Armand Joulin, Edouard Grave, Piotr Bojanowski, Matthijs Douze, Herve Jegou,
+Tomas Mikolov, FastText.zip: Compressing text classification models (2016),
+https://arxiv.org/abs/1612.03651.
+The model remains a separately licensed, unmodified asset. No endorsement implied.
+
+M2M100 418M model (downloaded on first explicit use; not bundled)
+Copyright Facebook, Inc. MIT license in M2M100-LICENSE.txt.
+Original: https://huggingface.co/facebook/m2m100_418M
+ONNX conversion: https://huggingface.co/Xenova/m2m100_418M
+Pinned model revision: 9c374f0b7aca709787cea97b047bfbbd1559d177
+Reference: Angela Fan et al., Beyond English-Centric Multilingual Machine Translation,
+https://arxiv.org/abs/2010.11125.
+
+OPUS-MT Romance-to-English specialist (downloaded on explicit use; not bundled)
+Upstream model: Helsinki-NLP/opus-mt-ROMANCE-en, Helsinki-NLP Research Group.
+Apache License 2.0; exact text in OPUS-MT-ROMANCE-LICENSE.txt.
+Original: https://huggingface.co/Helsinki-NLP/opus-mt-ROMANCE-en
+ONNX conversion: https://huggingface.co/Xenova/opus-mt-ROMANCE-en
+Pinned model revision: f60feaabe8bb435a5871e7702b25f53a01e770f8
+The upstream model was converted and quantized by the ONNX provider.
+ALTARA downloads the fixed converted files unchanged.
+
+OPUS-MT tc-big English-to-Portuguese specialist (downloaded on explicit use; not bundled)
+Upstream model: Helsinki-NLP/opus-mt-tc-big-en-pt, Helsinki-NLP Research Group.
+Creative Commons Attribution 4.0 International (CC BY 4.0);
+exact legal text in OPUS-MT-TC-BIG-LICENSE.txt.
+Original: https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-pt
+ONNX conversion: https://huggingface.co/Douglasrambo/opus-mt-tc-big-en-pt-onnx
+Pinned model revision: 738ee4cce801ce7c519954e4b78d02d5057b6740
+The upstream model was converted and quantized by the ONNX provider.
+ALTARA downloads the fixed converted files unchanged. No endorsement implied.
+License: https://creativecommons.org/licenses/by/4.0/
+
+OPUS-MT references:
+Jorg Tiedemann and Santhosh Thottingal, OPUS-MT - Building open translation
+services for the World (2020), https://aclanthology.org/2020.eamt-1.61/;
+Jorg Tiedemann, The Tatoeba Translation Challenge - Realistic Data Sets for
+Low Resource and Multilingual MT (2020), https://aclanthology.org/2020.wmt-1.139/.
+Models trained with OPUS data and Marian NMT; source project:
+https://github.com/Helsinki-NLP/OPUS-MT
+
+Vendor SHA-256 hashes, converted model hashes and exact revisions are recorded in manifest.json.

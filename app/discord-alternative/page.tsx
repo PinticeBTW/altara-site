@@ -3,8 +3,11 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { HomeNav } from "../components/home-nav";
-import { Reveal } from "../components/reveal";
-import { DOWNLOADS_URL, SiteFooter, TRY_IN_BROWSER_URL } from "../components/site-chrome";
+import {
+  DOWNLOADS_URL,
+  SiteFooter,
+  TRY_IN_BROWSER_URL,
+} from "../components/site-chrome";
 
 const description =
   "Explore ALTARA as a Discord alternative: servers, channels, roles, voice with Spatial Audio, DMs, screen sharing, and a personal dashboard. See the full feature list.";
@@ -18,18 +21,20 @@ export const metadata: Metadata = {
     url: "/discord-alternative",
     title: "ALTARA: A Discord Alternative for Your Community",
     description,
-    images: [{
-      url: "/altara-server-channel.png",
-      width: 1719,
-      height: 765,
-      alt: "ALTARA server with text channels, roles, and a conversation",
-    }],
+    images: [
+      {
+        url: "/altara-dashboard-demo-20261020.webp",
+        width: 1658,
+        height: 949,
+        alt: "Anonymised dashboard demonstration based on an ALTARA app capture",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "ALTARA: A Discord Alternative for Your Community",
     description,
-    images: ["/altara-server-channel.png"],
+    images: ["/altara-dashboard-demo-20261020.webp"],
   },
 };
 
@@ -78,136 +83,147 @@ const featureGroups = [
       "Windows desktop app",
       "Linux x64 desktop packages",
       "macOS downloads for Apple Silicon and Intel",
-      "Free core app with optional ALTARA+ limits and extras",
+      "Free core app with optional ALTARA+ server and upload capacity",
     ],
   },
 ];
 
 export default function DiscordAlternativePage() {
   return (
-    <div className="hp da">
-      <HomeNav active="discord-alternative" />
-      <main>
+    <div className="hp editorial ed-support da">
+      <HomeNav active="discord-alternative" skipToContent />
+      <main id="main-content" tabIndex={-1}>
         <section className="da-hero">
           <div className="hp-container da-hero-grid">
-            <Reveal className="da-hero-copy">
-              <p className="da-eyebrow">ALTARA / DISCORD ALTERNATIVE</p>
-              <h1>A Discord alternative with the essentials your group uses.</h1>
+            <div className="da-hero-copy">
+              <p className="ed-eyebrow">ALTARA / DISCORD ALTERNATIVE</p>
+              <h1>A Discord alternative, with room for you.</h1>
               <p className="da-hero-lead">
-                Servers, channels, voice, DMs and a dashboard built around your people.
-                ALTARA brings the conversations and everyday tools your group uses into one place.
+                Keep familiar servers, voice channels and DMs. Add a personal
+                dashboard, themes you can tune and Spatial Audio for server
+                voice conversations.
               </p>
               <div className="da-hero-actions">
-                <a href={TRY_IN_BROWSER_URL} className="hp-btn hp-btn-primary">Try ALTARA in browser</a>
-                <a href="#all-features" className="hp-btn hp-btn-secondary">Explore every feature</a>
+                <a href={TRY_IN_BROWSER_URL} className="hp-btn hp-btn-primary">
+                  Try ALTARA in browser
+                </a>
+                <a href="#all-features" className="hp-btn hp-btn-secondary">
+                  Explore every feature
+                </a>
               </div>
-              <p className="da-hero-footnote">Free core app · Open beta · Windows, Linux x64, macOS and web</p>
-            </Reveal>
-            <Reveal className="da-hero-visual">
+              <p className="da-hero-footnote">
+                Free core app · Open beta · Windows, Linux x64, macOS and web
+              </p>
+            </div>
+            <div className="da-hero-visual">
               <div className="da-image-frame da-image-frame--hero">
                 <Image
-                  src="/altara-dashboard-hero.png"
-                  alt="ALTARA dashboard with friends, unread messages, calendar, notes, checklist and Study Mode widgets"
-                  width={1917}
-                  height={1020}
+                  src="/altara-dashboard-demo-20261020.webp"
+                  alt="Anonymised dashboard demonstration based on a real ALTARA app capture, with calendar, notes, checklist and Study Mode"
+                  width={1658}
+                  height={949}
                   sizes="(max-width: 900px) 100vw, 55vw"
-                  priority
+                  preload
                 />
               </div>
-              <span className="da-visual-caption">THE ALTARA HOME SCREEN</span>
-            </Reveal>
+              <span className="da-visual-caption">
+                DASHBOARD DEMO · PERSONAL DETAILS HIDDEN
+              </span>
+            </div>
           </div>
         </section>
 
         <section id="highlights" className="da-highlights">
           <div className="hp-container">
-            <Reveal className="da-section-heading">
-              <p className="da-eyebrow">THE FEATURES THAT MATTER</p>
-              <h2>Made for conversations that last.</h2>
-              <p>Four reasons to bring your friends, gaming group or small community to ALTARA.</p>
-            </Reveal>
+            <div className="da-section-heading">
+              <p className="ed-eyebrow">THE FEATURES THAT MATTER</p>
+              <h2>Start with what your group actually uses.</h2>
+              <p>
+                Set up a server, try a call and see how the everyday details
+                fit.
+              </p>
+            </div>
 
             <div className="da-highlight-grid">
-              <Reveal className="da-highlight-card da-highlight-card--wide">
+              <div className="da-highlight-card da-highlight-card--text">
                 <div className="da-highlight-copy">
                   <span className="da-card-index">01 / COMMUNITY</span>
                   <h3>Give your group its own place.</h3>
-                  <p>Build a server with text and voice channels, categories, roles and permissions. Keep the game plan, everyday chat and the people who run it together.</p>
-                  <span className="da-card-tags">SERVERS · CHANNELS · ROLES</span>
+                  <p>
+                    Build a server with text and voice channels, categories,
+                    roles and permissions. Keep the game plan, everyday chat and
+                    the people who run it together.
+                  </p>
+                  <span className="da-card-tags">
+                    SERVERS · CHANNELS · ROLES
+                  </span>
                 </div>
-                <div className="da-card-visual da-card-visual--channels">
-                  <Image
-                    src="/altara-channels-live-2026.webp"
-                    alt="Real ALTARA server sidebar showing text and voice channels"
-                    width={298}
-                    height={462}
-                    sizes="(max-width: 700px) 80vw, 300px"
-                  />
-                </div>
-              </Reveal>
+              </div>
 
-              <Reveal className="da-highlight-card">
+              <div className="da-highlight-card da-highlight-card--text">
                 <span className="da-card-index">02 / VOICE</span>
                 <h3>Talk while you play.</h3>
-                <p>Jump into voice channels, use Spatial Audio and share your screen when the group needs to see the same thing.</p>
-                <div className="da-card-visual da-card-visual--small">
-                  <Image
-                    src="/altara-voice-real-2026.webp"
-                    alt="ALTARA voice room with two participant tiles and call controls"
-                    width={1210}
-                    height={535}
-                    sizes="(max-width: 700px) 100vw, 40vw"
-                  />
-                </div>
-              </Reveal>
+                <p>
+                  Jump into voice channels, use Spatial Audio and share your
+                  screen when the group needs to see the same thing.
+                </p>
+                <span className="da-card-tags">
+                  VOICE CHANNELS · SPATIAL AUDIO · SCREEN SHARING
+                </span>
+              </div>
 
-              <Reveal className="da-highlight-card">
+              <div className="da-highlight-card da-highlight-card--text">
                 <span className="da-card-index">03 / MESSAGES</span>
                 <h3>Keep the smaller conversations close.</h3>
-                <p>Send one-to-one or group DMs, react to messages, share GIFs and files. Your channels stay organized while side conversations have room to breathe.</p>
-                <div className="da-type-visual" aria-hidden="true">
-                  <span>DIRECT MESSAGES</span>
-                  <strong>1:1 + GROUP</strong>
-                  <span>REACTIONS / GIFS / FILES</span>
-                </div>
-              </Reveal>
+                <p>
+                  Send one-to-one or group DMs, react to messages, share GIFs
+                  and files. Your channels stay organized while side
+                  conversations have room to breathe.
+                </p>
+                <span className="da-card-tags">
+                  DIRECT MESSAGES · REACTIONS · FILES
+                </span>
+              </div>
 
-              <Reveal className="da-highlight-card da-highlight-card--wide da-highlight-card--dashboard">
+              <div className="da-highlight-card da-highlight-card--text">
                 <div className="da-highlight-copy">
                   <span className="da-card-index">04 / YOUR SPACE</span>
                   <h3>Make the space feel like yours.</h3>
-                  <p>Choose a theme and tune the look of ALTARA. Your home screen brings friends, calls and unread DMs together with calendar, checklist, notepad and Study Mode widgets.</p>
+                  <p>
+                    Choose a theme and tune the look of ALTARA. Your home screen
+                    brings friends, calls and unread DMs together with calendar,
+                    checklist, notepad and Study Mode widgets.
+                  </p>
                   <span className="da-card-tags">THEMES · WIDGETS · FOCUS</span>
                 </div>
-                <div className="da-card-visual">
-                  <Image
-                    src="/altara-appearance-real-2026.webp"
-                    alt="Real ALTARA appearance settings with theme choices and custom color preview"
-                    width={1100}
-                    height={800}
-                    sizes="(max-width: 700px) 100vw, 50vw"
-                  />
-                </div>
-              </Reveal>
+              </div>
             </div>
           </div>
         </section>
 
         <section id="all-features" className="da-all-features">
           <div className="hp-container">
-            <Reveal className="da-section-heading">
-              <p className="da-eyebrow">AT A GLANCE</p>
+            <div className="da-section-heading">
+              <p className="ed-eyebrow">AT A GLANCE</p>
               <h2>Everything ALTARA brings to the table.</h2>
-              <p>Here is the current feature set, grouped by what you need to do. <Link href="/features">Explore features in more detail</Link>.</p>
-            </Reveal>
+              <p>
+                Here is the current feature set, grouped by what you need to do.{" "}
+                <Link href="/features">Explore features in more detail</Link>.
+              </p>
+            </div>
             <div className="da-feature-groups">
               {featureGroups.map((group) => (
-                <Reveal className="da-feature-group" key={group.title}>
-                  <div className="da-group-head"><span>{group.number}</span><h3>{group.title}</h3></div>
+                <div className="da-feature-group" key={group.title}>
+                  <div className="da-group-head">
+                    <span>{group.number}</span>
+                    <h3>{group.title}</h3>
+                  </div>
                   <ul>
-                    {group.features.map((feature) => <li key={feature}>{feature}</li>)}
+                    {group.features.map((feature) => (
+                      <li key={feature}>{feature}</li>
+                    ))}
                   </ul>
-                </Reveal>
+                </div>
               ))}
             </div>
           </div>
@@ -215,42 +231,81 @@ export default function DiscordAlternativePage() {
 
         <section className="da-fit">
           <div className="hp-container da-fit-grid">
-            <Reveal>
-              <p className="da-eyebrow">BEFORE YOU MOVE</p>
+            <div>
+              <p className="ed-eyebrow">BEFORE YOU MOVE</p>
               <h2>See if ALTARA fits your group.</h2>
-            </Reveal>
-            <Reveal className="da-fit-copy">
-              <p>ALTARA is in open beta. The core app is free to use; ALTARA+ adds higher limits and optional extras. Start in your browser, or choose a desktop download for a supported computer.</p>
-              <p>Want the details first? Check the <Link href="/faq">FAQ and platform answers</Link>, or read the <Link href="/privacy">privacy policy</Link> before bringing your group over.</p>
-            </Reveal>
+            </div>
+            <div className="da-fit-copy">
+              <p>
+                ALTARA is in open beta. Messages, calls, Best Friends pins,
+                Focus profiles, basic Spatial Audio in server voice channels and
+                DM privacy locks are included in Free. Core and Nova add
+                saved-profile and saved-layout capacity, server capacity, bigger
+                uploads, higher-quality screen sharing and supporter badges.
+                These optional plans help cover infrastructure for screen
+                sharing, file transfers and higher usage. Our aim is to keep
+                features free whenever we can offer them without extra running
+                costs for ALTARA.
+              </p>
+              <p>
+                Want the details first? Check the{" "}
+                <Link href="/faq">FAQ and platform answers</Link>, or read the{" "}
+                <Link href="/privacy">privacy policy</Link> before bringing your
+                group over.
+              </p>
+            </div>
           </div>
         </section>
 
         <section className="da-fit" aria-labelledby="da-moving-heading">
           <div className="hp-container da-fit-grid">
-            <Reveal>
-              <p className="da-eyebrow">MOVING YOUR GROUP</p>
+            <div>
+              <p className="ed-eyebrow">MOVING YOUR GROUP</p>
               <h2 id="da-moving-heading">Try a smaller move first.</h2>
-            </Reveal>
-            <Reveal className="da-fit-copy">
-              <p>Start with the friends who regularly talk together. Create a server, add a few text and voice channels, then invite everyone to test a real conversation or game night. That tells you more than a feature checklist.</p>
-              <p>If your community relies on a particular bot, workflow or moderation setup, check those needs before moving everyone. ALTARA is still in open beta, and the <Link href="/features">current features</Link> and <Link href="/faq">platform answers</Link> are the best place to confirm what is ready.</p>
-              <p>For a gaming group, test voice and screen sharing together. For a community, set up roles and permissions before inviting members. You can start in a browser and choose a desktop app later.</p>
-            </Reveal>
+            </div>
+            <div className="da-fit-copy">
+              <p>
+                Start with the friends who regularly talk together. Create a
+                server, add a few text and voice channels, then invite everyone
+                to test a real conversation or game night. That tells you more
+                than a feature checklist.
+              </p>
+              <p>
+                If your community relies on a particular bot, workflow or
+                moderation setup, check those needs before moving everyone.
+                ALTARA is still in open beta, and the{" "}
+                <Link href="/features">current features</Link> and{" "}
+                <Link href="/faq">platform answers</Link> are the best place to
+                confirm what is ready.
+              </p>
+              <p>
+                For a gaming group, test voice and screen sharing together. For
+                a community, set up roles and permissions before inviting
+                members. You can start in a browser and choose a desktop app
+                later.
+              </p>
+            </div>
           </div>
         </section>
 
         <section className="da-final">
           <div className="hp-container">
-            <Reveal className="da-final-panel">
-              <p className="da-eyebrow">YOUR PEOPLE ARE THE POINT</p>
+            <div className="da-final-panel">
+              <p className="ed-eyebrow">YOUR PEOPLE ARE THE POINT</p>
               <h2>Make room for your group on ALTARA.</h2>
-              <p>Try the browser app now, or choose a desktop download for Windows, Linux x64 or macOS.</p>
+              <p>
+                Try the browser app now, or choose a desktop download for
+                Windows, Linux x64 or macOS.
+              </p>
               <div className="da-hero-actions">
-                <a href={TRY_IN_BROWSER_URL} className="hp-btn hp-btn-primary">Try in browser</a>
-                <Link href={DOWNLOADS_URL} className="hp-btn hp-btn-secondary">See downloads</Link>
+                <a href={TRY_IN_BROWSER_URL} className="hp-btn hp-btn-primary">
+                  Try in browser
+                </a>
+                <Link href={DOWNLOADS_URL} className="hp-btn hp-btn-secondary">
+                  See downloads
+                </Link>
               </div>
-            </Reveal>
+            </div>
           </div>
         </section>
       </main>

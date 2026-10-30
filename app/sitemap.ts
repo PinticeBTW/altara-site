@@ -5,6 +5,9 @@ const siteUrl = "https://www.altaraapp.com";
 const routes = [
   { path: "/", changeFrequency: "weekly", priority: 1 },
   { path: "/marketplace", changeFrequency: "weekly", priority: 0.8 },
+  { path: "/themes", changeFrequency: "weekly", priority: 0.8 },
+  { path: "/developers/themes/guide", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/theme-refunds", changeFrequency: "monthly", priority: 0.6 },
   { path: "/features", changeFrequency: "monthly", priority: 0.8 },
   { path: "/discord-alternative", changeFrequency: "monthly", priority: 0.9 },
   { path: "/faq", changeFrequency: "monthly", priority: 0.7 },
@@ -13,6 +16,8 @@ const routes = [
   { path: "/download/linux", changeFrequency: "weekly", priority: 0.8 },
   { path: "/terms", changeFrequency: "monthly", priority: 0.6 },
   { path: "/privacy", changeFrequency: "monthly", priority: 0.6 },
+  { path: "/delete-account", changeFrequency: "monthly", priority: 0.6 },
+  { path: "/privacy-requests", changeFrequency: "monthly", priority: 0.6 },
 ] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {

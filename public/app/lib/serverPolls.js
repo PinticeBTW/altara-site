@@ -3,14 +3,23 @@ import { readAltaraLocalePreference } from './locale.js';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uuid = value => /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(String(value || ''));
 export const POLL_DURATIONS = [1,6,24,72,168];
-export function validatePollDraft({question,options,durationHours}) {
+export function validatePollDraft({question,options,durationHours,multiSelect,maxChoices}) {
   const clean = {question:String(question || '').trim(),options:(Array.isArray(options)?options:[]).map(x=>String(x).trim()),durationHours:Number(durationHours)};
   if (!clean.question || clean.question.length>200) throw Error('invalid_poll_question');
   if (clean.options.length<2 || clean.options.length>10 || clean.options.some(x=>!x || x.length>100)
     || new Set(clean.options.map(x=>x.toLocaleLowerCase())).size!==clean.options.length) throw Error('invalid_poll_options');
   if (!POLL_DURATIONS.includes(clean.durationHours)) throw Error('invalid_poll_duration');
+  if (multiSelect!==undefined || maxChoices!==undefined) {
+    const multiple=multiSelect===undefined?false:multiSelect;
+    const limit=maxChoices===undefined?(multiple?clean.options.length:1):maxChoices;
+    if(typeof multiple!=='boolean'||!Number.isInteger(limit)||(multiple?limit<2||limit>clean.options.length:limit!==1))throw Error('invalid_poll_choices');
+    clean.multiSelect=multiple;clean.maxChoices=limit;
+  }
   return clean;
 }
+const ownChoices=p=>p.multi_select===true
+  ? (Array.isArray(p.own_options)?[...new Set(p.own_options.filter(i=>Number.isInteger(i)&&i>=0&&i<p.options.length))]:[])
+  : (Number.isInteger(p.own)?[p.own]:[]);
 export function pollMessageQuestion(message) {
   if (!uuid(message?.id)) return '';
   try { const p=JSON.parse(message.content);return p?.type==='altara_poll_v1' && typeof p.question==='string' ? p.question.slice(0,200) : ''; } catch { return ''; }
@@ -22,14 +31,18 @@ export const pollText = (en,pt) => readAltaraLocalePreference().startsWith('pt')
 export function renderPollCard(p,{text=pollText,busy=false,error='',widget=false,now=Date.now()}={}) {
   const closed=!!p.closed_at || Date.parse(p.expires_at)<=now;
   const counts=p.options.map((_,i)=>Math.max(0,Number(p.counts?.[i])||0));
-  const total=counts.reduce((a,b)=>a+b,0),own=Number.isInteger(p.own)?p.own:null;
+  const total=counts.reduce((a,b)=>a+b,0),multiple=p.multi_select===true,own=ownChoices(p);
+  const voters=Number.isInteger(p.voter_count)&&p.voter_count>=0?p.voter_count:null;
+  const denominator=multiple?voters:total,limit=multiple?p.max_choices:1;
+  const choicesValid=!multiple||(Number.isInteger(limit)&&limit>=2&&limit<=p.options.length);
   const endedAt=p.closed_at || p.expires_at;
   const end=new Intl.DateTimeFormat(readAltaraLocalePreference().startsWith('pt')?'pt-PT':'en',{dateStyle:'short',timeStyle:'short'}).format(new Date(endedAt));
   return `<section class="serverPollCard${widget?' is-widget':''}" data-poll-card="${esc(p.message_id)}" aria-label="${esc(p.question)}" aria-busy="${busy}">
     <div class="serverPollEyebrow"><span>${text('POLL','VOTAÇÃO')}${widget?' · #'+esc(p.channel_name):''}</span><span>${closed?text('Closed','Encerrada'):text('Open','Aberta')}</span></div>
-    <h3>${esc(p.question)}</h3><div class="serverPollOptions" role="group" aria-label="${text('Choose one option','Escolhe uma opção')}">
-    ${p.options.map((option,i)=>{const pct=total?Math.round(counts[i]*100/total):0;return `<button type="button" class="serverPollOption${own===i?' is-selected':''}" data-poll-vote="${esc(p.message_id)}" data-option="${i}" aria-pressed="${own===i}" ${closed||busy||!p.can_vote?'disabled':''}><span class="serverPollBar" style="width:${pct}%" aria-hidden="true"></span><span class="serverPollOptionText">${own===i?'<span aria-hidden="true">✓ </span>':''}${esc(option)}</span><span class="serverPollCount">${counts[i]} · ${pct}%</span></button>`;}).join('')}
-    </div><div class="serverPollFooter"><span>${total} ${text(total===1?'vote':'votes',total===1?'voto':'votos')} · ${text('One choice','Uma opção')}</span><time datetime="${esc(endedAt)}">${closed?text('Ended','Terminou'):text('Ends','Termina')} ${esc(end)}</time></div>
+    <h3>${esc(p.question)}</h3><div class="serverPollOptions" role="group" aria-label="${multiple?text('Choose up to','Escolhe até')+' '+esc(limit)+' '+text('options','opções'):text('Choose one option','Escolhe uma opção')}">
+    ${p.options.map((option,i)=>{const selected=own.includes(i),pct=denominator?Math.min(100,Math.round(counts[i]*100/denominator)):0;return `<button type="button" class="serverPollOption${selected?' is-selected':''}" data-poll-vote="${esc(p.message_id)}" data-option="${i}" aria-pressed="${selected}" ${closed||busy||!p.can_vote||!choicesValid||(multiple&&!selected&&own.length>=limit)?'disabled':''}><span class="serverPollBar" style="width:${pct}%" aria-hidden="true"></span><span class="serverPollOptionText">${selected?'<span aria-hidden="true">✓ </span>':''}${esc(option)}</span><span class="serverPollCount">${counts[i]} · ${denominator===null?'—':pct+'%'}</span></button>`;}).join('')}
+    </div><div class="serverPollFooter"><span>${multiple?(voters===null?text('Results unavailable','Resultados indisponíveis'):voters+' '+text(voters===1?'person':'people',voters===1?'pessoa':'pessoas'))+' · '+total+' '+text(total===1?'choice':'choices',total===1?'escolha':'escolhas')+' · '+text('Up to','Até')+' '+esc(limit):total+' '+text(total===1?'vote':'votes',total===1?'voto':'votos')+' · '+text('One choice','Uma opção')}</span><time datetime="${esc(endedAt)}">${closed?text('Ended','Terminou'):text('Ends','Termina')} ${esc(end)}</time></div>
+    ${multiple?`<p class="serverPollChoiceHint">${text('Percentages count people; each person may choose several options. Click a selected option to remove it.','As percentagens contam pessoas; cada pessoa pode escolher várias opções. Clica numa opção selecionada para a retirar.')}</p>`:''}
     ${error?`<p class="serverPollError" role="alert">${esc(error)}</p>`:''}
     <div class="serverPollActions">${widget?`<button class="btn ghost" type="button" data-poll-open="${esc(p.conversation_id)}">${text('Open chat','Abrir chat')}</button>`:''}${!closed&&p.can_close?`<button class="btn ghost" type="button" data-poll-close="${esc(p.message_id)}" ${busy?'disabled':''}>${text('End poll','Encerrar votação')}</button>`:''}</div>
   </section>`;
@@ -41,8 +54,9 @@ export function createPollStore(client) {
   return {
     channels: serverId=>rpc('altara_get_server_poll_channels_v1',{p_server_id:serverId}),
     read: (serverId,ids=null)=>rpc('altara_get_server_polls_v1',{p_server_id:serverId,p_message_ids:ids}),
-    create: (conversationId,draft,requestId)=>{const d=validatePollDraft(draft);return rpc('altara_create_server_poll_v1',{p_message_id:requestId,p_conversation_id:conversationId,p_question:d.question,p_options:d.options,p_duration_hours:d.durationHours});},
+    create: (conversationId,draft,requestId)=>{const d=validatePollDraft(draft);return rpc(d.multiSelect?'altara_create_server_poll_v2':'altara_create_server_poll_v1',{p_message_id:requestId,p_conversation_id:conversationId,p_question:d.question,p_options:d.options,p_duration_hours:d.durationHours,...(d.multiSelect?{p_multi_select:true,p_max_choices:d.maxChoices}:{})});},
     vote: (id,option)=>rpc('altara_vote_server_poll_v1',{p_message_id:id,p_option:option}),
+    voteChoices: (id,options)=>rpc('altara_vote_server_poll_v2',{p_message_id:id,p_options:options}),
     close: id=>rpc('altara_close_server_poll_v1',{p_message_id:id}),
   };
 }
@@ -148,12 +162,22 @@ export function createServerPolls({client,context,channels,canCreate,openChannel
     let requestId=crypto.randomUUID(),lastPayload='',busy=false;
     dialog=document.createElement('dialog');const formDialog=dialog;dialog.className='serverPollDialog';dialog.setAttribute('aria-labelledby','serverPollDialogTitle');
     const selected=fromChat?ctx.conversationId:available[0].conversationId;
-    dialog.innerHTML=`<form><header><h2 id="serverPollDialogTitle">${text('Create a poll','Criar votação')}</h2><button class="btn ghost" type="button" data-poll-cancel aria-label="${text('Cancel','Cancelar')}">×</button></header><label>${text('Channel','Canal')}<select name="channel" ${fromChat?'disabled':''}>${available.map(c=>`<option value="${esc(c.conversationId)}" ${c.conversationId===selected?'selected':''}># ${esc(c.name)}</option>`).join('')}</select></label><label>${text('Question','Pergunta')}<input name="question" maxlength="200" required placeholder="${text('What are we playing tonight?','O que vamos jogar hoje?')}"></label><div data-poll-draft-options></div><button type="button" class="btn ghost" data-poll-add-option>${text('+ Add option','+ Adicionar opção')}</button><label>${text('Duration','Duração')}<select name="duration">${POLL_DURATIONS.map(h=>`<option value="${h}" ${h===24?'selected':''}>${h<24?h+' '+text('hours','horas'):(h/24)+' '+text(h===24?'day':'days',h===24?'dia':'dias')}</option>`).join('')}</select></label><p class="serverPollMuted">${text('One vote per person. Click your choice again to remove your vote.','Um voto por pessoa. Clica novamente na tua opção para retirar o voto.')}</p><p data-poll-form-error class="serverPollError" role="alert"></p><footer><button type="button" class="btn ghost" data-poll-cancel>${text('Cancel','Cancelar')}</button><button type="submit" class="btn primary">${text('Publish poll','Publicar votação')}</button></footer></form>`;
+    dialog.innerHTML=`<form><header><h2 id="serverPollDialogTitle">${text('Create a poll','Criar votação')}</h2><button class="btn ghost" type="button" data-poll-cancel aria-label="${text('Cancel','Cancelar')}">×</button></header><label>${text('Channel','Canal')}<select name="channel" ${fromChat?'disabled':''}>${available.map(c=>`<option value="${esc(c.conversationId)}" ${c.conversationId===selected?'selected':''}># ${esc(c.name)}</option>`).join('')}</select></label><label>${text('Question','Pergunta')}<input name="question" maxlength="200" required placeholder="${text('What are we playing tonight?','O que vamos jogar hoje?')}"></label><div data-poll-draft-options></div><button type="button" class="btn ghost" data-poll-add-option>${text('+ Add option','+ Adicionar opção')}</button><label>${text('Duration','Duração')}<select name="duration">${POLL_DURATIONS.map(h=>`<option value="${h}" ${h===24?'selected':''}>${h<24?h+' '+text('hours','horas'):(h/24)+' '+text(h===24?'day':'days',h===24?'dia':'dias')}</option>`).join('')}</select></label><label class="serverPollMultiChoice"><input type="checkbox" name="multiSelect">${text('Allow several choices','Permitir várias escolhas')}</label><label data-poll-choice-limit hidden>${text('Maximum choices per person','Máximo de escolhas por pessoa')}<select name="maxChoices"></select></label><p class="serverPollMuted" data-poll-choice-help>${text('One vote per person. Click your choice again to remove your vote.','Um voto por pessoa. Clica novamente na tua opção para retirar o voto.')}</p><p data-poll-form-error class="serverPollError" role="alert"></p><footer><button type="button" class="btn ghost" data-poll-cancel>${text('Cancel','Cancelar')}</button><button type="submit" class="btn primary">${text('Publish poll','Publicar votação')}</button></footer></form>`;
     function updateOptions() {
       const rows=[...dialog.querySelectorAll('[data-poll-draft-option]')];
       rows.forEach((row,i)=>{row.querySelector('span').textContent=text('Option','Opção')+' '+(i+1);row.querySelector('button').disabled=rows.length<=2;});
       dialog.querySelector('[data-poll-add-option]').disabled=rows.length>=10;
+      const select=dialog.querySelector('[name=maxChoices]'),previous=Number(select.value)||rows.length;
+      select.innerHTML=Array.from({length:rows.length-1},(_,i)=>i+2).map(n=>`<option value="${n}" ${n===Math.min(previous,rows.length)?'selected':''}>${n}</option>`).join('');
+      updateChoices();
     }
+    function updateChoices() {
+      const multiple=dialog.querySelector('[name=multiSelect]').checked;
+      dialog.querySelector('[data-poll-choice-limit]').hidden=!multiple;
+      dialog.querySelector('[name=maxChoices]').disabled=!multiple||busy;
+      dialog.querySelector('[data-poll-choice-help]').textContent=multiple?text('Choose several options, up to the limit. Click a selected option to remove it.','Escolhe várias opções, até ao limite. Clica numa opção selecionada para a retirar.'):text('One vote per person. Click your choice again to remove your vote.','Um voto por pessoa. Clica novamente na tua opção para retirar o voto.');
+    }
+    dialog.addEventListener('change',event=>{if(event.target.name==='multiSelect')updateChoices();});
     function addOption() {const row=document.createElement('label');row.dataset.pollDraftOption='';row.innerHTML=`<span></span><div><input name="option" maxlength="100" required><button type="button" class="btn ghost" data-poll-remove-option aria-label="${text('Remove option','Remover opção')}">×</button></div>`;dialog.querySelector('[data-poll-draft-options]').append(row);updateOptions();return row;}
     addOption();addOption();
     dialog.addEventListener('click',event=>{if(busy)return;const target=event.target.closest('button');if(target?.hasAttribute('data-poll-cancel'))dialog.close();if(target?.hasAttribute('data-poll-add-option')&&dialog.querySelectorAll('[name=option]').length<10)addOption().querySelector('input').focus();if(target?.hasAttribute('data-poll-remove-option')&&dialog.querySelectorAll('[name=option]').length>2){target.closest('label').remove();updateOptions();}});
@@ -163,7 +187,7 @@ export function createServerPolls({client,context,channels,canCreate,openChannel
       event.preventDefault();if(busy)return;
       const form=event.target,notice=form.querySelector('[data-poll-form-error]');
       try {
-        const d=validatePollDraft({question:form.elements.question.value,options:[...form.querySelectorAll('[name=option]')].map(x=>x.value),durationHours:form.elements.duration.value});
+        const d=validatePollDraft({question:form.elements.question.value,options:[...form.querySelectorAll('[name=option]')].map(x=>x.value),durationHours:form.elements.duration.value,multiSelect:form.elements.multiSelect.checked,maxChoices:form.elements.multiSelect.checked?Number(form.elements.maxChoices.value):1});
         const conversationId=form.elements.channel.value;
         if(scopeAtOpen!==scope||!eligibleChannels().some(c=>c.conversationId===conversationId))throw Error('poll_forbidden');
         const payload=JSON.stringify([conversationId,d]);if(lastPayload&&lastPayload!==payload)requestId=crypto.randomUUID();lastPayload=payload;
@@ -186,7 +210,15 @@ export function createServerPolls({client,context,channels,canCreate,openChannel
     const id=button.dataset.pollVote||button.dataset.pollClose,p=rows.get(id),token=generation;
     if(!p||pending.has(id)||p.server_id!==context().serverId)return;
     pending.add(id);errors.delete(id);paint();
-    try {if(button.dataset.pollClose)await store.close(id);else await store.vote(id,p.own===Number(button.dataset.option)?null:Number(button.dataset.option));}
+    try {
+      if(button.dataset.pollClose)await store.close(id);
+      else if(p.multi_select===true) {
+        const option=Number(button.dataset.option),selected=ownChoices(p);
+        const next=selected.includes(option)?selected.filter(i=>i!==option):[...selected,option];
+        if(!Number.isInteger(p.max_choices)||next.length>p.max_choices)throw Error('invalid_poll_choices');
+        await store.voteChoices(id,next.sort((a,b)=>a-b));
+      } else await store.vote(id,p.own===Number(button.dataset.option)?null:Number(button.dataset.option));
+    }
     catch(error){if(token===generation)errors.set(id,friendly(error));}
     finally{pending.delete(id);if(token===generation){await refresh();paint();}}
   }

@@ -137,6 +137,17 @@ export function normalizeReleaseVersion(tagName: unknown): string | null {
   return match ? `${match[1]}.${match[2]}.${match[3]}` : null;
 }
 
+function compareReleaseVersions(left: string, right: string): number {
+  const leftParts = left.split(".");
+  const rightParts = right.split(".");
+  for (let index = 0; index < 3; index += 1) {
+    const difference = leftParts[index].length - rightParts[index].length
+      || (leftParts[index] > rightParts[index] ? 1 : leftParts[index] < rightParts[index] ? -1 : 0);
+    if (difference) return difference;
+  }
+  return 0;
+}
+
 function parseReleaseAsset(value: unknown): GitHubReleaseAsset | null {
   if (!isRecord(value)) {
     return null;
@@ -286,7 +297,20 @@ function selectReleaseAsset(
 
 function resolveLinuxReleaseData(payload: unknown, manual: boolean): LinuxReleaseArtifacts {
   const release = parseRelease(payload, manual);
-  const { assets: validAssets, publishedAt, tagName, version } = release;
+  const { assets: validAssets, publishedAt, tagName, version: releaseVersion } = release;
+  let version = releaseVersion;
+  if (!manual) {
+    // A Windows-only release can retain an older Linux build. Select one Linux
+    // version for every format and checksum, while keeping URLs on this release.
+    const versions = validAssets
+      .filter((asset) => asset.state === "uploaded")
+      .map((asset) => /^(?:Altara-(\d+\.\d+\.\d+)-x86_64\.AppImage|Altara\.(\d+\.\d+\.\d+)\.tar\.gz)$/.exec(asset.name))
+      .map((match) => normalizeReleaseVersion(match?.[1] || match?.[2]))
+      .filter((candidate): candidate is string => candidate !== null
+        && compareReleaseVersions(candidate, releaseVersion) <= 0)
+      .sort((left, right) => compareReleaseVersions(right, left));
+    version = versions[0] ?? releaseVersion;
+  }
   const appImage = selectReleaseAsset(
     validAssets,
     `Altara-${version}-x86_64.AppImage`,
