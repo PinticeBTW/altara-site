@@ -7,24 +7,7 @@ const COPY = {
   'pt-BR': { loading: 'Carregando preços…', unavailable: 'Os preços estão indisponíveis. Tente novamente.', brl_offer_unavailable: 'Os preços para o Brasil ainda não estão disponíveis.', catalog_stale: 'Os preços mudaram. Confira a oferta atual e tente novamente.', auth: 'Entre na sua conta novamente para continuar.', failed: 'Não foi possível abrir o pagamento. Tente novamente.', portal: 'Não foi possível abrir o gerenciamento da assinatura. Tente novamente.', retry: 'Recarregar preços', monthly: 'Cobrança mensal', yearly: 'Cobrança anual', saving: 'Economize {percent} em relação ao mensal', success: 'Checkout concluído. Sua assinatura está sendo confirmada.', cancelled: 'Checkout cancelado.', updated: 'Atualizando o status da sua assinatura…', market: 'Moeda de cobrança', subscription_exists_use_portal: 'Você já tem uma assinatura. Gerencie pelo portal de cobrança.' },
 };
 
-export function billingText(locale, key) {
-  const canonical = normalizeAltaraLocale(locale), copy = COPY[canonical];
-  if (key === 'billing_country_required') return ({ en: 'Confirm your billing country before continuing.',
-    'pt-PT': 'Confirma o país de faturação antes de continuar.', 'pt-BR': 'Confirme o país de cobrança antes de continuar.' })[canonical];
-  if (key === 'altara_plus_billing_disabled_outside_production') return ({
-    en: 'Billing management is not enabled in this local session.',
-    'pt-PT': 'A gestão de faturação não está ativada nesta sessão local.',
-    'pt-BR': 'O gerenciamento de cobrança não está ativado nesta sessão local.' })[canonical];
-  if (key === 'stripe_client_environment_mismatch') return ({
-    en: 'The server does not allow billing management in this session.',
-    'pt-PT': 'O servidor não permite a gestão de faturação nesta sessão.',
-    'pt-BR': 'O servidor não permite o gerenciamento de cobrança nesta sessão.' })[canonical];
-  if (key === 'altara_plus_local_checkout_disabled') return ({
-    en: 'Purchases are disabled in local sessions.',
-    'pt-PT': 'As compras estão desativadas em sessões locais.',
-    'pt-BR': 'As compras estão desativadas em sessões locais.' })[canonical];
-  return Object.hasOwn(copy, key) ? copy[key] : copy.unavailable;
-}
+export function billingText(locale, key) { const copy = COPY[normalizeAltaraLocale(locale)]; return Object.hasOwn(copy, key) ? copy[key] : copy.unavailable; }
 
 export function validatePublicBillingCatalog(value) {
   if (!value || value.schema !== 1 || !['BR', 'DEFAULT'].includes(value.market)
@@ -36,12 +19,6 @@ export function validatePublicBillingCatalog(value) {
       || e.currency !== (value.market === 'BR' ? 'brl' : 'eur') || !Number.isSafeInteger(e.unit_amount)
       || e.unit_amount <= 0 || e.status !== 'active') throw new Error('catalog_unavailable');
     seen.add(key);
-  }
-  if (value.billing_country != null) {
-    const country = value.billing_country;
-    if (country.required !== true || !Number.isSafeInteger(country.revision) || country.revision < 0
-      || (country.country !== null && (typeof country.country !== 'string' || !/^[A-Z]{2}$/.test(country.country)
-        || (country.country === 'BR' ? 'BR' : 'DEFAULT') !== value.market))) throw new Error('catalog_unavailable');
   }
   return value;
 }

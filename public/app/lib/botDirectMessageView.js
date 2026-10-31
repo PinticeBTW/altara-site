@@ -2,7 +2,7 @@ import {renderDirectMessageFrame} from './directMessagePresentation.js';
 
 // Bot conversations share the main chat layout, while keeping their actor API
 // and composer separate from encrypted human DMs and human message actions.
-export function createBotDirectMessageView({host, template, onSend, onConsent, onRetry, onRefresh, onLoadOlder, onProfile, onOptions,
+export function createBotDirectMessageView({host, template, onSend, onConsent, onRetry, onRefresh, onProfile, onOptions,
   getProfile, onFullProfile, onProfileRender, onPrivacy, getPrivacyState, onEmoji, onGif, onAttach, onFiles, onEdit, onPins, onMore, onFormat, onMessageAction, onSenderProfile, getCapabilities, getMessageActions, getQuickReactions, getReactions, getPinnedMessages, getMessagePreview, canStack,
   renderAvatar, renderProfileBanner, renderText, renderMessageBody, renderEmbeds, renderAttachments, renderNameAttrs, renderComposerPreview,
   formatTimestamp, getDayKey, renderDayDivider, getOwnProfile} = {}) {
@@ -84,10 +84,6 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
   const thread = skeleton('.dmThread', 'div', 'dmThread');
   const timeline = skeleton('.dmMessages', 'div', 'dmMessages botDmMessages');
   timeline.setAttribute('role', 'log'); timeline.setAttribute('aria-label', 'Mensagens com o bot');
-  const olderControl=node('div','hint botDmHistoryControl');olderControl.hidden=true;
-  const olderNotice=node('span');olderNotice.setAttribute('role','status');olderNotice.setAttribute('aria-live','polite');
-  const olderButton=button('Carregar mensagens anteriores',()=>loadOlderPage(),'btn ghost');
-  olderControl.append(olderNotice,olderButton);
   const jump = tool('#btnDmJumpLatest', '↓ Jump to latest', () => {
     timeline.scrollTop = timeline.scrollHeight; syncJump();
   }, 'dmJumpLatest');
@@ -155,7 +151,6 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
   }
   root.append(header, consentBar, status, mainBody, replyBar, pendingAttachments, composer, formatToolbar); host.append(root);
   let snapshot = null, sending = null, ownerUserId = '', notice = null, attachmentUploadBusy = false;
-  let olderFlight=null,olderIntent=false,olderLocalError='';
   const drafts = new Map(), composeModes = new Map(), attachmentDrafts = new Map(), retryDrafts = new Map();
   const rowNodes = new Map(), dividerNodes = new Map(), pinnedNodes = new Map();
   const avatarSignatures = new WeakMap();
@@ -177,29 +172,6 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
     jump.hidden = !visible;
     jump.classList.toggle('is-visible', visible);
     jump.setAttribute('aria-hidden', String(!visible));
-  }
-  function syncOlderControl() {
-    const available=!!onLoadOlder && snapshot?.historyPagination === true;
-    olderControl.hidden=!available || !(snapshot.hasMoreBefore || snapshot.loadingOlder || snapshot.olderError || olderLocalError);
-    const loading=!!snapshot?.loadingOlder || !!olderFlight;
-    olderNotice.textContent=snapshot?.olderError || olderLocalError;
-    olderNotice.hidden=!olderNotice.textContent;
-    olderButton.textContent=loading?'A carregar mensagens anteriores…':snapshot?.olderError || olderLocalError?'Tentar carregar mensagens anteriores':'Carregar mensagens anteriores';
-    olderButton.disabled=!available || !snapshot?.hasMoreBefore || loading;
-    // Keep the control's height stable while the promise settles, so replacing
-    // loading feedback cannot displace an already restored scroll anchor.
-    olderButton.hidden=false;olderControl.setAttribute('aria-busy',String(loading));
-  }
-  async function loadOlderPage() {
-    const owner=snapshot;
-    if(!owner || root.hidden || !onLoadOlder || !owner.historyPagination || !owner.hasMoreBefore || owner.loadingOlder || olderFlight)return;
-    const flight={key:owner.key,userId:owner.userId};olderFlight=flight;olderIntent=false;olderLocalError='';syncOlderControl();
-    try{await onLoadOlder(owner);}
-    catch(_){if(snapshot?.key===flight.key&&snapshot?.userId===flight.userId)olderLocalError='Não foi possível carregar as mensagens anteriores.';}
-    finally{if(olderFlight===flight){olderFlight=null;olderIntent=false;syncOlderControl();}}
-  }
-  function maybeLoadOlder() {
-    if(olderIntent && timeline.scrollTop<=110 && !snapshot?.olderError && !olderLocalError)void loadOlderPage();
   }
   function syncTools() {
     const caps = snapshot ? capabilities(snapshot) : {};
@@ -237,10 +209,9 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
     if(onProfileRender)invokeAction(()=>onProfileRender(profilePanel,snapshot),snapshot);
   }
   function toggleProfile(open=profilePanel.hidden) {
-    const restoreFocus=!open && profilePanel.contains(doc.activeElement);
     profilePanel.hidden=!snapshot || !open;profilePanel.classList.toggle('hidden',profilePanel.hidden);profilePanel.setAttribute('aria-hidden',String(profilePanel.hidden));
     if(!profilePanel.hidden){togglePins(false);renderProfile();}else {releaseMedia(profilePanel);avatarSignatures.delete(profileAvatar);profileBanner._botBannerHtml=null;}
-    syncSidePanels();if(restoreFocus && snapshot && !root.hidden)profile.focus({preventScroll:true});return !profilePanel.hidden;
+    syncSidePanels();return !profilePanel.hidden;
   }
   function syncPrivacy() {
     if(!getPrivacyState && !onPrivacy)return;
@@ -426,11 +397,10 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
     for (const key of pinnedNodes.keys()) if (!liveRows.has(key)) pinnedNodes.delete(key);
   }
   function togglePins(open = pinsPanel.hidden) {
-    const restoreFocus=!open && pinsPanel.contains(doc.activeElement);
     const available = snapshot && capabilities(snapshot).pins === true && !!getPinnedMessages;
     pinsPanel.hidden = !available || !open; pinsPanel.classList.toggle('hidden',pinsPanel.hidden);
     pinsPanel.setAttribute('aria-hidden',String(pinsPanel.hidden));
-    if (pinsPanel.hidden) clearPins(); else {toggleProfile(false);renderPins();}syncSidePanels();if(restoreFocus && snapshot && !root.hidden && !pins.hidden && !pins.disabled)pins.focus({preventScroll:true});return !pinsPanel.hidden;
+    if (pinsPanel.hidden) clearPins(); else {toggleProfile(false);renderPins();}syncSidePanels();return !pinsPanel.hidden;
   }
   function insertText(value, owner = {}) {
     const current = getComposerContext();
@@ -535,11 +505,7 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
     }
   });
   root.addEventListener('pointerdown',event=>{if(event.target !== input && !formatToolbar.contains(event.target))formatToolbar.hidden=true;});
-  timeline.addEventListener('scroll', () => {syncJump();maybeLoadOlder();}, {passive:true});
-  timeline.addEventListener('wheel',event=>{if(event.deltaY<0 && !olderFlight && !snapshot?.loadingOlder){olderIntent=true;maybeLoadOlder();}}, {passive:true});
-  timeline.addEventListener('pointerdown',event=>{if(event.target===timeline && !olderFlight && !snapshot?.loadingOlder)olderIntent=true;}, {passive:true});
-  timeline.addEventListener('keydown',event=>{if(['ArrowUp','PageUp','Home'].includes(event.key) && !olderFlight && !snapshot?.loadingOlder){olderIntent=true;maybeLoadOlder();}});
-  timeline.tabIndex=0;
+  timeline.addEventListener('scroll', syncJump, {passive:true});
   function createActionStrip(row, owner, availableActions, moreAvailable) {
     const strip=node('div','msg__actions'),base=node('div','msg__actionsRow msg__actionsRow--base'),shift=node('div','msg__actionsRow msg__actionsRow--shift');
     for(const emoji of owner.quickReactions || []) {
@@ -622,12 +588,6 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
   }
   function update(next) {
     if (!next) { close(); return; }
-    const sameConversation=snapshot?.key===next.key && snapshot?.userId===next.userId;
-    const previousFirst=sameConversation && snapshot.messages?.find(row=>!isDeleted(row))?.id;
-    const oldScrollTop=timeline.scrollTop,oldScrollHeight=timeline.scrollHeight;
-    const timelineTop=timeline.getBoundingClientRect().top;
-    const anchor=sameConversation ? [...timeline.querySelectorAll('[data-bot-dm-message-id]')].find(node=>node.getBoundingClientRect().bottom>timelineTop) : null;
-    const anchorId=anchor?.dataset.botDmMessageId,anchorOffset=anchor?anchor.getBoundingClientRect().top-timelineTop:0;
     if (ownerUserId !== next.userId) { close(); drafts.clear(); composeModes.clear(); attachmentDrafts.clear(); retryDrafts.clear(); ownerUserId = next.userId; }
     if (snapshot?.key !== next.key) {
       if (snapshot) drafts.set(snapshot.key, input.value);
@@ -635,7 +595,6 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
       clearTimeline();
     }
     snapshot = next;
-    if(!sameConversation){olderFlight=null;olderIntent=false;olderLocalError='';}
     const mode=composeModes.get(next.key);
     if(mode && next.messages?.some(row=>row.id === mode.row.id && isDeleted(row))) {
       // A deleted target ends reply/edit mode, while text being composed remains
@@ -651,14 +610,13 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
     consent.disabled = !!next.busy || !!next.loading;
     const locked = !next.enabled || !!next.pending || !!next.loading || (!!next.error && !next.retryable);
     input.disabled = locked; send.disabled = locked || sending || attachmentUploadBusy;
-    syncTools();syncPrivacy();syncComposeMode();syncAttachments();renderPins();renderProfile();syncInputSize();syncFormatToolbar();syncOlderControl();
+    syncTools();syncPrivacy();syncComposeMode();syncAttachments();renderPins();renderProfile();syncInputSize();syncFormatToolbar();
     statusText.textContent = next.error || notice?.text || (next.loading && !next.messages?.length ? 'A carregar mensagens…' : '');
     retry.hidden = !next.retryable && !(next.error && !next.pending && onRefresh); retry.disabled = !!next.loading;
     status.hidden = !statusText.textContent && retry.hidden;
     const originalRows=Array.isArray(next.messages) ? next.messages : [];
     const originals = new Map(originalRows.map(row=>[row.id,row]));
     const messages = originalRows.filter(row=>!isDeleted(row));
-    const prepend=!!previousFirst && messages.findIndex(row=>row.id===previousFirst)>0;
     const ownProfile = getOwnProfile?.() || {name:'Tu'};
     const dates = messages.map(row => {
       const date = new Date(row.created_at);
@@ -673,7 +631,6 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
     const messageReactions = messages.map(row => getReactions?.(row,next) || []);
     const stickToBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 80 || !timeline.children.length;
     const desiredNodes=[], liveRows=new Set(), liveDividers=new Set(), dayOccurrences=new Map();
-    if(!olderControl.hidden)desiredNodes.push(olderControl);
     let previousDay;
     for (const [index,row] of messages.entries()) {
       const date = dates[index];
@@ -693,8 +650,7 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
       const nameAttrs=renderNameAttrs?.(profile,row);
       const preview=row.reply_preview;
       const original=row.reply_to_id ? originals.get(row.reply_to_id)
-        || (preview?.id === row.reply_to_id && ['user','bot'].includes(preview.sender) && typeof preview.content === 'string'
-          ? {...preview,deleted_at:preview.deleted===true?'unavailable':null} : null) : null;
+        || (preview?.id === row.reply_to_id && ['user','bot'].includes(preview.sender) && typeof preview.content === 'string' ? preview : null) : null;
       const originalPreview=original ? messagePreview(original,next,160) : '';
       const rendered=renderMessageBody?.(row,next);
       const textHtml=renderMessageBody ? typeof rendered === 'object' && rendered ? rendered.html || '' : rendered || '' : renderText?.(row.content || '');
@@ -782,18 +738,13 @@ export function createBotDirectMessageView({host, template, onSend, onConsent, o
     }
     for (const key of rowNodes.keys()) if (!liveRows.has(key)) rowNodes.delete(key);
     for (const key of dividerNodes.keys()) if (!liveDividers.has(key)) dividerNodes.delete(key);
-    if (stickToBottom && !prepend) timeline.scrollTop = timeline.scrollHeight;
-    else if(anchorId){
-      const retained=[...timeline.querySelectorAll('[data-bot-dm-message-id]')].find(node=>node.dataset.botDmMessageId===anchorId);
-      if(retained)timeline.scrollTop+=retained.getBoundingClientRect().top-timeline.getBoundingClientRect().top-anchorOffset;
-      else if(prepend)timeline.scrollTop=oldScrollTop+timeline.scrollHeight-oldScrollHeight;
-    }
+    if (stickToBottom) timeline.scrollTop = timeline.scrollHeight;
     syncJump();
   }
   function close() {
     if (snapshot) drafts.set(snapshot.key, input.value);
-    snapshot = null; sending = null; notice = null; attachmentUploadBusy=false;olderFlight=null;olderIntent=false;olderLocalError=''; root.hidden = true; input.value = '';
-    clearTimeline();syncTools();syncJump();syncOlderControl();syncComposeMode();syncAttachments();togglePins(false);toggleProfile(false);syncFormatToolbar();
+    snapshot = null; sending = null; notice = null; attachmentUploadBusy=false; root.hidden = true; input.value = '';
+    clearTimeline();syncTools();syncJump();syncComposeMode();syncAttachments();togglePins(false);toggleProfile(false);syncFormatToolbar();
   }
   return {root, update, close, getComposerContext, insertText, beginReply, setReply:beginReply, beginEdit, cancelComposeMode, setAttachments, setAttachmentUploadBusy, togglePins, toggleProfile, showNotice,
     focus:() => input.focus(), reset:() => { close(); drafts.clear(); composeModes.clear(); attachmentDrafts.clear(); retryDrafts.clear(); ownerUserId = ''; }};

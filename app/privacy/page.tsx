@@ -363,40 +363,6 @@ export default function PrivacyPage() {
                 </p>
               </section>
 
-              <section
-                id="community-themes"
-                style={{ scrollMarginTop: "100px" }}
-              >
-                <h2>Community themes</h2>
-                <p>
-                  ALTARA stores private creator drafts, public theme metadata,
-                  validated images, immutable release packages and account
-                  installation records. Drafts are available to their creator.
-                  Public listings show the creator profile associated with the
-                  authenticated publishing account. Editable author text inside
-                  a package does not establish the publisher&apos;s identity.
-                </p>
-                <p>
-                  Themes contain validated CSS, embedded static images and
-                  supported native layout options. They do not run creator
-                  JavaScript, load arbitrary remote resources or receive your
-                  messages, credentials or desktop APIs. Preview content is
-                  fictional and isolated. Installing a theme adds a chosen
-                  version to your account library; activation is a separate
-                  choice inside ALTARA and updates require your approval. Theme
-                  storage is separate from conversations and widget data.
-                </p>
-                <p>
-                  Appearance can still affect how you read and use the
-                  interface. The independent disable control and
-                  Ctrl+Alt+Shift+T restore ALTARA&apos;s base appearance.
-                  Removing a listing can preserve existing installations;
-                  revoking an unsafe release disables it when a connected app
-                  checks its account library. Use Report in the theme page to
-                  send the release and your description to ALTARA moderation.
-                </p>
-              </section>
-
               <section>
                 <h2>Security</h2>
                 <p>

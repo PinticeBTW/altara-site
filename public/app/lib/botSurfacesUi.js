@@ -18,7 +18,7 @@ const messageFor = error => {
     || 'Não foi possível confirmar a ação. Tenta novamente.';
 };
 
-export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderComponents, renderAttachments, createForumPost, canOpenThreads=()=>true, onHistoryChange=()=>{}, onClose=()=>{}} = {}) {
+export function createBotSurfacesUi({supabase, getContext, renderEmbeds} = {}) {
   if (!supabase?.rpc || typeof getContext !== 'function') throw new TypeError('invalid_surface_client');
   let current = null;
   const doc = globalThis.document;
@@ -36,7 +36,6 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
   };
   const valid = session => {
     if (current !== session) return false;
-    if (session.kind === 'threads' && !canOpenThreads()) { close(); return false; }
     if (key(getContext()) !== session.contextKey) { close(); return false; }
     return true;
   };
@@ -48,10 +47,8 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
     session.subscription?.unsubscribe?.();
     for (const controller of session.controllers) controller.abort();
     for (const cleanup of session.embedCleanups) cleanup();
-    session.drafts.clear();
     session.dialog.close?.();
     session.dialog.remove();
-    onClose();
     // Never put keyboard focus back into the previous account's UI.
     if (key(getContext()) === session.contextKey && session.focus?.isConnected) session.focus.focus();
   }
@@ -63,7 +60,7 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
       || (kind === 'dm' ? !UUID.test(seed.botId || '') : !UUID.test(seed.channelId || '') || context.channelId !== seed.channelId)) {
       throw new Error('invalid_surface_context');
     }
-    const session = {kind, seed, context, contextKey:key(context), focus:doc.activeElement, controllers:new Set(), embedCleanups:[], drafts:new Map(), pending:null, busy:false, enabled:false, unavailable:false, thread:null, readGeneration:0};
+    const session = {kind, seed, context, contextKey:key(context), focus:doc.activeElement, controllers:new Set(), embedCleanups:[], pending:null, busy:false, enabled:false, unavailable:false, thread:null, readGeneration:0};
     const dialog = el('dialog', undefined, {width:'min(620px, calc(100vw - 32px))', maxHeight:'calc(100dvh - 32px)', padding:'0', border:'1px solid #45433e', borderRadius:'14px', background:'#191a18', color:'#eee', font:'14px system-ui, sans-serif', boxSizing:'border-box', boxShadow:'0 20px 70px #0009'});
     dialog.setAttribute('aria-label', kind === 'dm' ? `Mensagens privadas · ${safeText(seed.name, 80) || 'Bot'}` : 'Conversas do canal');
     dialog.setAttribute('aria-modal', 'true');
@@ -106,7 +103,7 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
     if (!valid(session)) return null;
     const controller = new AbortController(); session.controllers.add(controller);
     try {
-      let query = name==='forum_post_create'&&typeof createForumPost==='function'?createForumPost(args):supabase.rpc(name, args);
+      let query = supabase.rpc(name, args);
       if (query?.abortSignal) query = query.abortSignal(controller.signal);
       const {data, error} = await query;
       if (!valid(session) || controller.signal.aborted) return null;
@@ -120,25 +117,6 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
     : {p_action:action, p_server_id:session.seed.serverId, p_channel_id:session.seed.channelId, p_thread_id:session.thread?.id || null, ...extra};
   const rpcFor = session => session.kind === 'dm' ? 'bots_dm_actor_v1' : 'bots_thread_actor_v1';
   const status = (session, text) => { if (valid(session)) session.status.textContent = text; };
-  function saveThreadDraft(session) {
-    const id = session.thread?.id;
-    if (session.kind === 'threads' && UUID.test(id || '') && session.composer) session.drafts.set(id, session.composer.value);
-  }
-  function selectThread(session, thread) {
-    const previousId = session.thread?.id;
-    saveThreadDraft(session);
-    session.thread = thread;
-    if (session.composer && previousId !== thread?.id) session.composer.value = session.drafts.get(thread?.id) || '';
-  }
-  function consumeSubmittedThreadDraft(session, operation) {
-    const draft = operation.draft;
-    if (!draft || draft.contextKey !== session.contextKey || draft.threadId !== operation.args.p_thread_id) return;
-    saveThreadDraft(session);
-    // A late success consumes only the submitted text, never a newer draft or
-    // text belonging to another thread. Drafts live only in this open session.
-    if (session.drafts.get(draft.threadId) === draft.value) session.drafts.delete(draft.threadId);
-    if (session.thread?.id === draft.threadId && session.composer.value === draft.value) session.composer.value = '';
-  }
   function updateControls(session) {
     if (!valid(session)) return;
     const locked = session.busy || !!session.pending;
@@ -153,7 +131,6 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
     for (const control of session.navigation || []) control.disabled = locked;
     if (session.consent) { session.consent.disabled = locked; session.consentSave.disabled = locked; }
     if (session.createTitle) { session.createTitle.disabled = locked || session.unavailable; session.create.disabled = locked || session.unavailable; }
-    if(session.createContent)session.createContent.disabled=locked||session.unavailable;
     if (session.archive) session.archive.disabled = locked || !session.thread || session.thread.archived;
   }
   function makeComposer(session) {
@@ -167,10 +144,8 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
       const content = input.value.trim();
       if (!content) { input.focus(); return; }
       const requestId = globalThis.crypto.randomUUID();
-      const draft = session.kind === 'threads' ? {contextKey:session.contextKey, threadId:session.thread.id, value:input.value} : null;
-      void mutate(session, {name:rpcFor(session), args:argsFor(session, 'send', {p_content:content, p_request_id:requestId}), action:'send', draft});
+      void mutate(session, {name:rpcFor(session), args:argsFor(session, 'send', {p_content:content, p_request_id:requestId}), action:'send'});
     });
-    input.addEventListener('input', () => { if (valid(session)) saveThreadDraft(session); });
     form.append(input, send);
     Object.assign(session, {composer:input, send});
     return form;
@@ -214,16 +189,9 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
         }
         article.append(cards);
       }
-      const scoped={userId:session.context.userId,sourceKind:session.kind==='threads'?'thread':'dm',originServerId:session.seed.serverId,
-        serverId:session.kind==='threads'?session.seed.serverId:null,channelId:null,parentChannelId:session.seed.channelId||null,
-        threadId:session.thread?.id||null,botId:row.bot_id,conversationId:session.thread?.id||session.seed.botId,navigation:session.contextKey};
-      if(fromBot&&renderComponents){const components=el('div');components.innerHTML=renderComponents(row,scoped)||'';article.append(components);}
-      if(renderAttachments){const files=renderAttachments(row,scoped);if(files?.nodeType)article.append(files);}
       session.history.append(article);
     }
     session.history.scrollTop = session.history.scrollHeight;
-    session.messages=messages;
-    onHistoryChange();
   }
   function buildDm(session) {
     session.body.append(el('p', 'Só tu e este bot podem ler esta conversa. Podes retirar a autorização quando quiseres.', {margin:'0', color:'#bbb'}));
@@ -242,20 +210,16 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
     const input = el('input', undefined, {flex:'1', minWidth:'0', padding:'10px', background:'#11120f', color:'inherit', border:'1px solid #484740', borderRadius:'8px', font:'inherit'});
     input.type = 'text'; input.maxLength = 100; input.setAttribute('aria-label', 'Título da nova conversa'); input.placeholder = 'Nova conversa';
     const create = button('Criar', () => {}); create.type = 'submit';
-    const content=session.seed.forum?el('textarea'):null;
-    if(content){content.rows=3;content.maxLength=2000;content.placeholder='Escreve a publicação';content.setAttribute('aria-label','Conteúdo da publicação');form.style.flexWrap='wrap';content.style.width='100%';}
     form.addEventListener('submit', event => {
       event.preventDefault(); if (!valid(session) || session.busy || session.pending || input.disabled) return;
       const title = input.value.trim(); if (!title) { input.focus(); return; }
-      if(content){if(!content.value.trim()){content.focus();return;}void mutate(session,{name:'forum_post_create',args:{server_id:session.seed.serverId,channel_id:session.seed.channelId,action:'forum_post_create',payload:{channel_id:session.seed.channelId,title,content:content.value.trim()},request_id:globalThis.crypto.randomUUID()},action:'create'});}
-      else void mutate(session, {name:rpcFor(session), args:argsFor(session, 'create', {p_title:title, p_request_id:globalThis.crypto.randomUUID()}), action:'create'});
+      void mutate(session, {name:rpcFor(session), args:argsFor(session, 'create', {p_title:title, p_request_id:globalThis.crypto.randomUUID()}), action:'create'});
     });
     form.append(input, create);
-    if(content)form.append(content);
     const list = el('div', undefined, {display:'grid', gap:'6px', maxHeight:'180px', overflow:'auto'}); list.setAttribute('aria-label', 'Conversas');
     const heading = el('h3', 'Escolhe uma conversa', {fontSize:'15px', margin:'5px 0', overflowWrap:'anywhere'});
     const archive = button('Arquivar conversa', () => { if (valid(session) && session.thread && !session.thread.archived && !session.busy && !session.pending) void mutate(session, {name:rpcFor(session), args:argsFor(session, 'archive'), action:'archive'}); });
-    Object.assign(session, {createTitle:input,createContent:content, create, list, threadHeading:heading, archive, navigation:[]});
+    Object.assign(session, {createTitle:input, create, list, threadHeading:heading, archive, navigation:[]});
     session.body.append(el('p', 'As conversas usam as permissões deste canal.', {margin:'0', color:'#bbb'}), form, list, heading, archive, makeHistory(session), makeComposer(session));
     updateControls(session);
   }
@@ -267,7 +231,7 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
       if (!UUID.test(thread?.id || '')) continue;
       const pick = button(`${safeText(thread.title, 100)}${thread.archived ? ' · Arquivada' : ''}${thread.bot_id ? ' · Bot' : ''}`, () => {
         if (!valid(session) || session.busy || session.pending) return;
-        selectThread(session, thread); session.history.replaceChildren(); updateControls(session); void load(session);
+        session.thread = thread; session.history.replaceChildren(); updateControls(session); void load(session);
       });
       pick.setAttribute('aria-pressed', String(session.thread?.id === thread.id));
       Object.assign(pick.style, {textAlign:'left', overflowWrap:'anywhere'});
@@ -288,7 +252,7 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
         const data = await invoke(session, rpcFor(session), argsFor(session, 'history'));
         if (!data || generation !== session.readGeneration) return;
         if (session.kind === 'dm') { session.enabled = data.enabled === true; session.consent.checked = session.enabled; }
-        else { selectThread(session, data.thread); session.threadHeading.textContent = `${safeText(data.thread?.title, 100)}${data.thread?.archived ? ' · Arquivada' : ''}`; }
+        else { session.thread = data.thread; session.threadHeading.textContent = `${safeText(data.thread?.title, 100)}${data.thread?.archived ? ' · Arquivada' : ''}`; }
         renderHistory(session, data.messages);
       }
       session.unavailable = false; status(session, '');
@@ -307,12 +271,9 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
       const data = await invoke(session, operation.name, operation.args);
       if (!data) return;
       session.pending = null; session.unavailable = false;
-      if (operation.action === 'send') {
-        if (session.kind === 'threads') consumeSubmittedThreadDraft(session, operation);
-        else session.composer.value = '';
-      }
+      if (operation.action === 'send') session.composer.value = '';
       if (operation.action === 'consent') { session.enabled = data.enabled === true; session.consent.checked = session.enabled; }
-      if (operation.action === 'create') { selectThread(session, data.thread); session.createTitle.value = '';if(session.createContent)session.createContent.value=''; }
+      if (operation.action === 'create') { session.thread = data.thread; session.createTitle.value = ''; }
       if (operation.action === 'archive') session.thread = {...session.thread, archived:true};
       status(session, operation.action === 'consent' ? session.enabled ? 'Autorização guardada.' : 'Autorização retirada.' : 'Guardado.');
     } catch (error) {
@@ -331,23 +292,7 @@ export function createBotSurfacesUi({supabase, getContext, renderEmbeds, renderC
   }
   return {
     async openDirectMessage(seed) { const session = open('dm', seed); buildDm(session); await load(session); },
-    async openThreads(seed) {
-      if (!canOpenThreads()) {
-        if (current?.kind === 'threads') close();
-        return false;
-      }
-      const session = open('threads', seed); buildThreads(session); await load(session);
-    },
+    async openThreads(seed) { const session = open('threads', seed); buildThreads(session); await load(session); },
     close,
-    getComponentContext(messageId) {
-      if(!current||!valid(current)||current.kind!=='threads'||!current.thread)return null;
-      const row=messageId?current.messages?.find(row=>row.id===messageId):current.messages?.find(row=>row.bot_id===current.componentBotId)||current.messages?.find(row=>row.bot_id);
-      if(messageId&&!row)return null;
-      if(row?.bot_id)current.componentBotId=row.bot_id;
-      return {userId:current.context.userId,sourceKind:'thread',originServerId:current.seed.serverId,serverId:current.seed.serverId,channelId:null,
-        parentChannelId:current.seed.channelId,threadId:current.thread.id,botId:row?.bot_id||'',conversationId:current.thread.id,navigation:current.contextKey};
-    },
-    getComponentAnchor(){return current&&valid(current)&&current.kind==='threads'?current.history:null;},
-    getComponentMessage(id){return current&&valid(current)?current.messages?.find(row=>row.id===id)||null:null;},
   };
 }

@@ -70,8 +70,8 @@
     },
     {
       "path": "lib/widgetAppearance.js",
-      "sha256": "91046fcd2be9aa0091c93a51749279c2b49df3215942f1402c36604c388904d4",
-      "bytes": 27499
+      "sha256": "f1e842b6c7795c9f28ed9d85cfa0fe283110ae1c2dfb9c43d4c6916cd081d131",
+      "bytes": 24195
     },
     {
       "path": "lib/themeHomePresenter.js",
@@ -80,8 +80,8 @@
     },
     {
       "path": "lib/communityThemes.css",
-      "sha256": "fbbb590473222bf5025549dd77c7d88b618acc8fa65e480ffcf51565b2f4fdf6",
-      "bytes": 13037
+      "sha256": "08e21e16d2b21c55a16fe76cbb2e00f5fc9346848d83cb602add8a453a15eb16",
+      "bytes": 11815
     },
     {
       "path": "lib/vendor/css-tree/csstree.esm.js",
@@ -120,8 +120,8 @@
     },
     {
       "path": "theme/community-theme-starter-kit.zip",
-      "sha256": "3e8e1178430b6e2f05bef8999e09cc356fe7c047b06edf4de87fdfd229da3c7c",
-      "bytes": 102819
+      "sha256": "a43665cd1264516947103e3aa83b630813a2048602fd1d256d369b69ecfe22d7",
+      "bytes": 104382
     },
     {
       "path": "theme/assets/altara-glass-room.webp",

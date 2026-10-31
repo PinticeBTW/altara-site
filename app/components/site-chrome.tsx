@@ -87,7 +87,7 @@ export function WindowsDownloadOption({ version }: { version?: string } = {}) {
 
 export function MacDownloadOption() {
   return (
-    <a
+    <Link
       href={MAC_DOWNLOAD_URL}
       className="platform-btn"
     >
@@ -100,7 +100,7 @@ export function MacDownloadOption() {
         <span className="platform-name">Download for macOS</span>
         <span className="platform-detail">Apple Silicon · Intel</span>
       </span>
-    </a>
+    </Link>
   );
 }
 
@@ -212,7 +212,7 @@ function isExternalLink(href: string) {
 }
 
 function FooterLinkItem({ link }: { link: FooterLink }) {
-  if (link.href === "/developers" || link.href === TRY_IN_BROWSER_URL || link.href.startsWith("/downloads?")) {
+  if (link.href === TRY_IN_BROWSER_URL || link.href.startsWith("/downloads?")) {
     return <a href={link.href}>{link.label}</a>;
   }
   if (isExternalLink(link.href)) {

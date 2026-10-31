@@ -7,7 +7,7 @@ export function createBotAudioConsentUi({bridge,getContext,document:doc=globalTh
  function update(entries=bridge.snapshot()) {
   badge?.remove();badge=null;
   if(!entries.length)return;
-  badge=el('div');badge.setAttribute('role','status');badge.dataset.communityThemesTrusted='true';badge.dataset.themeSensitive='true';styleBox(badge);
+  badge=el('div');badge.setAttribute('role','status');styleBox(badge);
   Object.assign(badge.style,{position:'fixed',bottom:'90px',right:'20px',zIndex:10050,padding:'12px',boxShadow:'0 8px 24px #0008'});
   badge.append(el('p',entries.some(e=>e.active)?(entries.some(e=>e.recording)?'Microfone partilhado com um bot para gravação.':'Microfone partilhado com um bot.'):'A ligar partilha de microfone…'),button('Parar partilha',async()=>{await Promise.all(entries.map(e=>bridge.revoke(e.captureId)));update();}));doc.body.append(badge);
  }

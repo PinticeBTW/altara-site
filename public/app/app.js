@@ -1,40 +1,8 @@
 import { createWidgetMarketplace } from "./lib/widgetMarketplace.js";
-import { createPersonalNotesDesktop, personalNotesDesktopCopy } from "./lib/personalNotesDesktop.js";
-import { createServerRailPreferenceSync, normalizeServerRailPreferences } from "./lib/serverRailPreferences.js";
-import { createServerCategoryPreferenceSync, normalizeServerCategoryPreferences } from "./lib/serverCategoryPreferences.js";
-import { createServerPreferenceInvalidationQueue, parseServerPreferenceInvalidation } from "./lib/serverPreferenceInvalidation.js";
-import { saveProfileThemePreservingServerRail } from "./lib/profileThemeRailGuard.js";
 import { isCommunityThemeLayoutActive, getCommunityThemeResizeGeometry, setCommunityThemeRegionSize, resetCommunityThemeRegionSize, getCommunityThemeLeftInset, getCommunityThemeVoiceInset } from "./lib/communityThemeLayoutBridge.js";
-import { createMessageTranslationController, renderMessageTranslationHtml, messageTranslationSourceChoices, normalizeMessageTranslationSourceLanguage } from "./lib/messageTranslation.js";
-import { createConversationTranslationController } from "./lib/conversationTranslation.js";
-let conversationTranslationController = null;
-let messageTranslationTargetLocale = '';
-let messageTranslationSourceLanguage = '';
-let messageTranslationSettings = null;
-let conversationTranslationUiBound = false;
-let conversationTranslationSyncFrame = 0;
-let conversationTranslationNeedsObservation = false;
-let conversationTranslationObserver = null;
-let conversationTranslationObservedTimeline = null;
-const conversationTranslationObservedRows = new Set();
-const conversationTranslationVisibleRows = new Set();
-import { createLocalMessageTranslator } from "./lib/localMessageTranslator.js";
 import { botMessageEmbeds, renderBotEmbeds, bindBotEmbedMedia, botMentionTokenPositions, renderBotMentionTokenHtml } from "./lib/botEmbeds.js";
-import { createComposerMentionController } from "./lib/composerMentions.js";
-import { createBotServerSettingsController, buildBotServerSettingsHtml } from "./lib/botServerSettings.js";
-import { createServerResourceDialog } from "./lib/serverBotResources.js";
-import { createChannelModeDialog, STAGE_RELEASE_ENABLED, CHANNEL_THREADS_AND_MODES_ENABLED, isServerChannelReleaseVisible } from "./lib/botChannelModesUi.js";
-import { createForumComposerMode } from "./lib/botForumComposer.js";
-import { createServerExpressionView, renderServerExpressionTokens, expressionToken, SERVER_EXPRESSIONS_UI_ENABLED } from "./lib/serverExpressions.js";
-import { normalizeServerReactionEmoji, isServerCustomReaction, serverReactionPickerRows, renderServerReactionEmoji } from "./lib/serverReactionEmoji.js";
 import { createParticipantVolumePreferences } from "./lib/participantVolumePreferences.js";
-import { botMessageComponents, renderBotComponents, renderBotSurfaceComponents, bindBotComponents } from "./lib/botComponents.js";
-import { createBotSurfaceInteractions } from "./lib/botSurfaceInteractions.js";
-import { createBotCommandDelivery } from "./lib/botCommandDelivery.js";
-import { botCommandType, readAdvancedCommandInput, buildAdvancedCommandOptions, advancedBotOptionMarkers, decodeAdvancedBotOptionValue, createBotAutocompleteController } from "./lib/botAdvancedCommands.js";
-import { createAuthIdentityTransition } from "./lib/authIdentityTransition.js";
-import { createPrivateInteractionAttachments } from "./lib/botPrivateAttachments.js";
-import { privateInteractionAttachmentItems } from "./lib/botComponents.js";
+import { botMessageComponents, renderBotComponents, bindBotComponents } from "./lib/botComponents.js";
 import { renderCalendarConnectionCard, openCalendarConnections } from "./lib/calendarConnections.js";
 import { createServerCalendar, calendarDateKey } from "./lib/serverCalendar.js";
 import { createServerHome } from "./lib/serverHome.js";
@@ -42,57 +10,7 @@ import { createServerPolls, pollMessageQuestion, pollText } from "./lib/serverPo
 // Coordinated channel-media cutover; admission stays closed until the server gate opens.
 globalThis.__ALTARA_SERVER_VOICE_MEDIA_V1__ = true;
 bindBotEmbedMedia(document);
-const botComponentUi = bindBotComponents(document, {
-  rpc: (name, args) => supabase.rpc(name, args), getActor: () => state.user?.id || "",
-  invoke: async (name, body) => {
-    const { data, error } = await supabase.functions.invoke(name, { body, signal: AbortSignal.timeout(20000) });
-    if (error || data?.ok !== true) {
-      let code = String(data?.error || "");
-      if (!code && error?.context?.clone) {
-        try { code = String((await error.context.clone().json())?.error || ""); } catch (_) {}
-      }
-      throw Error(/^[a-z][a-z0-9_]{0,79}$/.test(code) ? code : "component_delivery_uncertain");
-    }
-    return data;
-  },
-  getContext: (messageId) => getBotComponentPrivateContext(messageId), getResponseAnchor: () => document.getElementById("dmMessages"),
-  resultsVersion: 2,
-  subscribeResults: ({ actor, onChange, onReady }) => {
-    const channel = supabase.channel(`bot-interaction-results:${actor}`, { config: { private: true } })
-      .on("broadcast", { event: "bot_interaction_results_changed" }, ({ payload }) => onChange(payload))
-      .subscribe((status) => { if (status === "SUBSCRIBED") onReady(); });
-    return () => { void supabase.removeChannel(channel); };
-  },
-  renderPrivateFiles: (response, context) => getBotPrivateResponseMedia().render({ ...response, id: response.response_id }, { ...context, key: `bot-private-result:${response.response_id}` }),
-  clearPrivateFiles: () => botPrivateResponseMedia?.reset(),
-  renderScopedMedia: (uploadId, { response, context, userId }) => {
-    const item = privateInteractionAttachmentItems(response).find(value => value.uploadId === uploadId);
-    if (!item || userId !== state.user?.id) return null;
-    return getBotPrivateResponseMedia().render({ ...response, id: response.response_id, attachments: [item] }, { ...context, key: `bot-private-result:${response.response_id}` });
-  },
-  openMedia: (uploadId, snapshot) => openBotPublicComponentMedia(uploadId, snapshot),
-  refreshPrivateFiles: () => botPrivateResponseMedia?.refresh(),
-  getLanguage: () => document.documentElement.lang || "en",
-  renderAvatar: (profile) => buildAvatarMediaHtml(profile.avatarUrl || "", { userId: profile.botId || "", alt: profile.name || "Bot", loading: "lazy", deferAnimatedStorage: true }),
-  onPrivateResult: (eventId, _response, context) => {
-    if (context?.navigation === dmOpenIntentSeq && isBotConnectionModeContextActive(context)) completeBotInteractionWithoutPublicResponse(eventId, { render: true });
-  },
-  onPrivateReset: () => resetBotPrivateInteractionCompletions(),
-});
-const botNativeComponentUi = createBotSurfaceInteractions(document, {
-  rpc:(name,args)=>supabase.rpc(name,args),getActor:()=>state.user?.id||'',getContext:getBotNativeComponentContext,
-  invoke:async(name,body)=>{const {data,error}=await supabase.functions.invoke(name,{body,signal:AbortSignal.timeout(20000)});if(error||data?.ok!==true)throw Error('component_delivery_uncertain');return data;},
-  getResponseAnchor:()=>botPlatformSurfacesUi?.getComponentAnchor()||botDirectMessageView?.root.querySelector('.dmMessages'),
-  getLanguage:()=>document.documentElement.lang||'en',
-  renderAvatar:profile=>buildAvatarMediaHtml(profile.avatarUrl||'',{userId:profile.botId||'',alt:profile.name||'Bot',loading:'lazy'}),
-  renderPrivateFiles:(response,context)=>getBotNativePrivateResponseMedia().render({...response,id:response.response_id},{...context,key:`native-private-result:${response.response_id}`}),
-  renderScopedMedia:(uploadId,{response,context,userId})=>{
-    const item=privateInteractionAttachmentItems(response).find(value=>value.uploadId===uploadId);
-    if(!item||userId!==state.user?.id)return null;
-    return getBotNativePrivateResponseMedia().render({...response,id:response.response_id,attachments:[item]},{...context,key:`native-private-result:${response.response_id}`});
-  },
-  clearPrivateFiles:()=>botNativePrivateResponseMedia?.reset(),refreshPrivateFiles:()=>botNativePrivateResponseMedia?.refresh(),
-});
+const botComponentUi = bindBotComponents(document, { rpc: (name, args) => supabase.rpc(name, args), getActor: () => state.user?.id || "" });
 import { setAccountSwitchCleanup, openDesktopAccountSwitcher, rememberDesktopAccount, getDesktopAccountsBridge, desktopAccountText } from "./lib/desktopAccounts.js";
 import { bindProfileActivityStacks, buildProfileActivityStackHtml } from "./lib/profileActivityStack.js";
 import { buildRecentGameActivityHtml } from "./lib/profileRecentActivity.js";
@@ -132,7 +50,6 @@ import {
 import { createColdHydration, classifyColdPresenceSnapshot } from "./lib/coldHydration.js";
 import { PT_BR_APP_LABELS } from "./lib/ptBrTranslations.js";
 import { billingText, renderBillingPrices, createBillingCatalogState } from "./lib/billingPresentation.js";
-import { createBillingCountryUi, billingCountryText } from "./lib/billingCountryUi.js";
 import { createReferralClient } from "./lib/referralClient.js";
 import { createFoundingCreatorsAdmin } from "./lib/foundingCreatorsAdmin.js";
 import { foundingCreatorReferral } from "./lib/foundingCreatorReferral.js";
@@ -145,7 +62,7 @@ import {
 } from "./lib/telemetryRuntime.js";
 ﻿(function installAltaraRuntimeProof() {
   const root = typeof window !== "undefined" ? window : globalThis;
-  const assetVersion = "server-read-message-history-ux-v3-bot-platform-v2-20261003-native-inbox-controls-v10-human-mentions-v3-thread-drafts-v1-bot-dm-history-v1-bot-dm-retention-mandatory-v1-private-interactions-ui-v5-https-command-route-v1";
+const assetVersion = "server-read-message-history-ux-v3-bot-platform-v2-20261003-native-inbox-controls-v10";
   const offlineReconnectMarker = "offline-auth-reconnect-v1";
   const reactionEventsRealtimeMarker = "server-reaction-events-realtime-v1";
   const embedLinksPermissionsMarker = "server-embed-links-permissions-batch6a-v1";
@@ -507,6 +424,7 @@ import {
 import { invokeVaultMedia, uploadVaultAttachment, downloadVaultAttachment } from "./lib/vaultMediaClient.js";
 import { createVaultMediaViewer } from "./lib/vaultMediaViewer.js";
 import { requestDmLockUnlock } from "./lib/dmLockUnlockClient.js";
+
 import {
   THEME_DEFAULT_PRESET_ID as THEME_ENGINE_DEFAULT_PRESET_ID,
   THEME_PRESET_LIBRARY,
@@ -1480,7 +1398,11 @@ function createCommunityThemeGlassHomeActions(owns, owner) {
     onOpenNotes: () => { if (!personalOwner()) return; communityThemeNativeWidgetsOwner = owner; renderWidgets(); sync(); document.querySelector("[data-widget-notes-input]")?.focus(); },
     onSaveNotes: text => {
       if (!personalOwner()) return;
-      return saveWidgetNotesText(text, owner);
+      ensureWidgetNotesState();
+      const value = String(text || "").slice(0, WIDGET_NOTE_MAX_CHARS);
+      // Commit storage first so quota/storage failures preserve the previous draft.
+      localStorage.setItem(widgetNotesStorageKey, value); widgetNotesTextCache = value;
+      return value;
     },
     onFocusAction: action => {
       if (!personalOwner() || !["timer-start", "timer-pause", "timer-reset", "timer-skip", "timer-open-settings"].includes(action)) return false;
@@ -1942,17 +1864,7 @@ function persistAltaraOfflineComposerDraft(conversationId = "", value = "") {
     && input.dataset.dmDraftConversationId === normId(conversationId || "")) return false;
   const key = getAltaraOfflineDraftStorageKey(conversationId);
   if (!key) return false;
-  const mentionSnapshot = dmComposerMentionNavigationDraft;
-  const draftValue = mentionSnapshot && input === mentionSnapshot.input
-    && mentionSnapshot.userId === normId(state.user?.id || "")
-    && mentionSnapshot.conversationId === normId(conversationId || "")
-    && String(value || "") === mentionSnapshot.visibleText
-    ? mentionSnapshot.canonicalText : input && input.value === String(value || "")
-    && input.dataset.dmDraftUserId === normId(state.user?.id || "")
-    && input.dataset.dmDraftConversationId === normId(conversationId || "")
-    && normId(activeDmId || "") === normId(conversationId || "")
-    ? (dmComposerMentionController?.canonicalText(input) ?? value) : value;
-  const text = sanitizeComposerDraft(draftValue);
+  const text = sanitizeComposerDraft(value);
   try {
     if (text) localStorage.setItem(key, text);
     else localStorage.removeItem(key);
@@ -4905,7 +4817,6 @@ function resumeAltaraRealtimeSubscriptionsAfterPresenceReady(presenceGeneration 
   try { startGlobalDmPrivacyEventListener({ reason: "presence-generation-ready" }); } catch (_) {}
 
   try { startGlobalDmMessageListener(); } catch (_) {}
-  try { botDirectMessagesController?.startRealtime(); } catch (_) {}
   try { startGlobalProfileListener(); } catch (_) {}
   try { subscribeTypingInboxForCurrentUser("presence-generation-ready"); } catch (_) {}
   try { syncServerMemberRemovalBroadcastSubscriptions(); } catch (_) {}
@@ -4941,8 +4852,6 @@ function resetAltaraRealtimeSubscriptionsForRecovery(
   try { unsubscribeTypingInboxForCurrentUser({ reason, clearState: false, clearOutbound: true }); } catch (_) {}
   try { stopActiveDmPrivacyListener(); } catch (_) {}
   try { stopGlobalDmPrivacyEventListener(); } catch (_) {}
-  // Retire transport while keeping the bot DM timeline and pending composer.
-  try { botDirectMessagesController?.stopRealtime(); } catch (_) {}
   try { stopActiveServerBotInstallRealtime(); } catch (_) {}
   try { stopServerMembershipEventsRealtime(); } catch (_) {}
   try { stopServerVoiceModerationStateRealtime(); } catch (_) {}
@@ -5505,23 +5414,23 @@ const ALTARA_PLUS_CHECKOUT_OPTION_LIST = Object.freeze([
 ]);
 const ALTARA_PLUS_FEATURE_TIERS = Object.freeze({
   focus_profiles: "free",
-  focus_schedules: "free",
-  focus_auto_apps: "free",
-  focus_auto_calls: "free",
-  focus_auto_screenshare: "free",
-  focus_analytics: "free",
-  focus_auto_replies: "free",
+  focus_schedules: "core",
+  focus_auto_apps: "nova",
+  focus_auto_calls: "nova",
+  focus_auto_screenshare: "nova",
+  focus_analytics: "nova",
+  focus_auto_replies: "nova",
   spatial_audio_basic: "free",
-  spatial_audio_more_participants: "free",
-  spatial_audio_saved_layouts: "free",
-  spatial_audio_personal_presets: "free",
-  spatial_audio_personal_tuning: "free",
-  spatial_audio_layout_sync: "free",
-  spatial_audio_hd: "free",
-  spatial_audio_auto_arrange: "free",
-  spatial_audio_advanced_presets: "free",
-  spatial_audio_context_profiles: "free",
-  spatial_audio_layout_import_export: "free",
+  spatial_audio_more_participants: "core",
+  spatial_audio_saved_layouts: "core",
+  spatial_audio_personal_presets: "core",
+  spatial_audio_personal_tuning: "core",
+  spatial_audio_layout_sync: "core",
+  spatial_audio_hd: "nova",
+  spatial_audio_auto_arrange: "nova",
+  spatial_audio_advanced_presets: "nova",
+  spatial_audio_context_profiles: "nova",
+  spatial_audio_layout_import_export: "nova",
 });
 const ALTARA_PLUS_LIMIT_UPLOAD_MB = 1024 * 1024;
 const ALTARA_PLUS_UPLOAD_FREE_BYTES = 25 * ALTARA_PLUS_LIMIT_UPLOAD_MB;
@@ -5530,21 +5439,21 @@ const ALTARA_PLUS_UPLOAD_NOVA_BYTES = 1024 * ALTARA_PLUS_LIMIT_UPLOAD_MB;
 const ALTARA_PLUS_LIMITS_BY_TIER = Object.freeze({
   free: Object.freeze({
     servers_joined: 100,
-    best_friends: Number.POSITIVE_INFINITY,
+    best_friends: 10,
     saved_focus_profiles: 3,
-    saved_spatial_layouts: 1,
+    saved_spatial_layouts: 0,
     upload_file_size_bytes: ALTARA_PLUS_UPLOAD_FREE_BYTES,
   }),
   core: Object.freeze({
     servers_joined: 150,
-    best_friends: Number.POSITIVE_INFINITY,
+    best_friends: 15,
     saved_focus_profiles: 10,
     saved_spatial_layouts: 5,
     upload_file_size_bytes: ALTARA_PLUS_UPLOAD_CORE_BYTES,
   }),
   nova: Object.freeze({
     servers_joined: 200,
-    best_friends: Number.POSITIVE_INFINITY,
+    best_friends: 25,
     saved_focus_profiles: 25,
     saved_spatial_layouts: 15,
     upload_file_size_bytes: ALTARA_PLUS_UPLOAD_NOVA_BYTES,
@@ -5763,24 +5672,24 @@ function getAltaraPlusLimitNoticeCopy(limitKey = "", tierInput = getAltaraPlusCu
       nova: "You've reached the highest server limit available on ALTARA+ Nova.",
     },
     best_friends: {
-      free: "Best Friends could not be saved. Please try again.",
-      core: "Best Friends could not be saved. Please try again.",
-      nova: "Best Friends could not be saved. Please try again.",
+      free: "Free users can keep up to 10 Best Friends. ALTARA+ Core unlocks 15, and Nova unlocks 25.",
+      core: "ALTARA+ Core lets you keep up to 15 Best Friends. Nova unlocks 25.",
+      nova: "You've reached the highest Best Friends limit available on ALTARA+ Nova.",
     },
     saved_focus_profiles: {
-      free: "Free includes 3 saved Focus profiles. Core raises this to 10, and Nova to 25. Remove an unused profile or choose a plan with more capacity.",
-      core: "Core includes 10 saved Focus profiles. Nova raises this to 25. Remove an unused profile or choose Nova for more capacity.",
-      nova: "You can save up to 25 Focus profiles on Nova. Remove an unused profile and try again.",
+      free: "Free users can save up to 3 Focus Profiles. ALTARA+ Core unlocks 10, and Nova unlocks 25.",
+      core: "ALTARA+ Core lets you save up to 10 Focus Profiles. Nova unlocks 25.",
+      nova: "You've reached the highest Focus Profile limit available on ALTARA+ Nova.",
     },
     saved_spatial_layouts_required: {
-      free: "Saved Spatial Audio layouts are available to everyone.",
-      core: "Saved Spatial Audio layouts are available to everyone.",
-      nova: "Saved Spatial Audio layouts are available to everyone.",
+      free: "Saving Spatial Audio layouts is available with ALTARA+ Core and Nova.",
+      core: "ALTARA+ Core lets you save personal Spatial Audio layouts.",
+      nova: "ALTARA+ Nova already includes saved personal Spatial Audio layouts.",
     },
     saved_spatial_layouts: {
-      free: "Free includes 1 saved Spatial Audio layout. Core raises this to 5, and Nova to 15. Remove an unused layout or choose a plan with more capacity.",
-      core: "Core includes 5 saved Spatial Audio layouts. Nova raises this to 15. Remove an unused layout or choose Nova for more capacity.",
-      nova: "You can save up to 15 Spatial Audio layouts on Nova. Remove an unused layout and try again.",
+      free: "Saving Spatial Audio layouts is available with ALTARA+ Core and Nova.",
+      core: "ALTARA+ Core lets you save up to 5 Spatial layouts. Nova unlocks up to 15.",
+      nova: "You've reached the highest Spatial layout limit available on ALTARA+ Nova.",
     },
     upload_file_size_mb: {
       free: "Free users can upload files up to " + uploadFreeLabel + ". ALTARA+ Core unlocks " + uploadCoreLabel + ", and Nova unlocks " + uploadNovaLabel + ".",
@@ -5837,8 +5746,7 @@ function showAltaraPlusServerLimitReached() {
 function showAltaraPlusBestFriendsLimitReached() {
   showAltaraPlusLimitNotice(
     "Best Friends limit reached",
-    getAltaraPlusLimitNoticeCopy("best_friends"),
-    { okText: "OK" }
+    getAltaraPlusLimitNoticeCopy("best_friends")
   );
 }
 
@@ -5852,9 +5760,8 @@ function showAltaraPlusFocusProfileLimitReached() {
 
 function showAltaraPlusSavedSpatialLayoutsRequired() {
   showAltaraPlusLimitNotice(
-    "Saved layouts unavailable",
-    getAltaraPlusLimitNoticeCopy("saved_spatial_layouts_required"),
-    { okText: "OK" }
+    "Saved layouts require ALTARA+",
+    getAltaraPlusLimitNoticeCopy("saved_spatial_layouts_required")
   );
 }
 
@@ -6122,130 +6029,12 @@ function exposeAltaraPlusLimitsDebugHelper() {
 exposeAltaraPlusLimitsDebugHelper();
 let altaraPlusStatusRefreshInFlight = null;
 const altaraPlusCatalogState = createBillingCatalogState();
-let altaraBillingCountryUi = null;
-let altaraBillingDetailsPortalContext = null;
-let altaraPlusBillingPortalContext = null;
-
-async function requestAltaraBillingCountry(body, { userId: expectedUserId } = {}) {
-  const userId = normId(expectedUserId || state.user?.id || "");
-  if (!userId || normId(state.user?.id || "") !== userId) throw new Error("auth");
-  const clientEnvironment = assertAltaraLiveBillingClientAllowed("details");
-  const edgeFunctionName = "manage-billing-details";
-  const ready = await ensureSupabaseFunctionInvokeAuthReady({
-    edgeFunctionName,
-    functionPath: "/functions/v1/" + edgeFunctionName,
-    requireUser: true,
-    logPrefix: "[billing country auth]",
-    logEvent: "billing_country.auth_state",
-    logChannel: "altara-plus",
-    failEvent: "billing_country.auth_missing",
-  });
-  if (!ready.ok || normId(ready.authState?.currentUserId || "") !== userId || normId(state.user?.id || "") !== userId) throw new Error("auth");
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  const session = sessionData?.session;
-  if (sessionError || normId(session?.user?.id || "") !== userId || !session?.access_token || normId(state.user?.id || "") !== userId) throw new Error("auth");
-  const { data, error } = await supabase.functions.invoke(edgeFunctionName, {
-    body: { ...body, client_environment: clientEnvironment, locale: appLanguage },
-    headers: { Authorization: "Bearer " + session.access_token },
-  });
-  const { data: currentSessionData, error: currentSessionError } = await supabase.auth.getSession();
-  if (currentSessionError || normId(currentSessionData?.session?.user?.id || "") !== userId || normId(state.user?.id || "") !== userId) throw new Error("auth");
-  if (error) throw new Error(await altaraPlusBillingErrorCode(error));
-  if (!data || data.error) throw new Error(data?.error || "billing_country_unavailable");
-  return data;
-}
-
-function closeAltaraBillingDetailsPortalForOwner(previousOwner, nextOwner = "") {
-  const context = altaraBillingDetailsPortalContext;
-  if (!context || context.userId !== previousOwner || context.userId === nextOwner) return;
-  altaraBillingDetailsPortalContext = null;
-  const bridge = getDesktopBridge();
-  if (typeof bridge?.closeAltaraBillingWindow === "function") {
-    void Promise.resolve(bridge.closeAltaraBillingWindow(context.contextId)).catch(() => {});
-  }
-}
-
-function handleAltaraBillingDetailsAuthChange(authUserId) {
-  const context = altaraBillingDetailsPortalContext;
-  if (context && context.userId !== authUserId) closeAltaraBillingDetailsPortalForOwner(context.userId, authUserId);
-  if (!authUserId || authUserId !== normId(state.user?.id || "")) altaraBillingCountryUi?.suspend();
-}
-
-async function openAltaraBillingDetailsPortal(url, { userId, isCurrent, isPortalCurrent } = {}) {
-  if (!userId || normId(state.user?.id || "") !== userId || !isCurrent?.()) throw new Error("auth");
-  const bridge = getDesktopBridge();
-  if (typeof bridge?.openAltaraBillingWindow === "function" && typeof bridge.closeAltaraBillingWindow !== "function") {
-    throw new Error("billing_details_portal_unavailable");
-  }
-  const { data, error } = await supabase.auth.getSession();
-  if (error || normId(data?.session?.user?.id || "") !== userId || normId(state.user?.id || "") !== userId || !isCurrent?.()) throw new Error("auth");
-  const context = { userId, contextId: crypto.randomUUID() };
-  closeAltaraBillingDetailsPortalForOwner(altaraBillingDetailsPortalContext?.userId || "");
-  altaraBillingDetailsPortalContext = context;
-  try {
-    await openAltaraBillingUrl(url, "portal", context.contextId);
-    if (normId(state.user?.id || "") !== userId || !isPortalCurrent?.()) throw new Error("auth");
-  } catch (cause) {
-    if (altaraBillingDetailsPortalContext === context) closeAltaraBillingDetailsPortalForOwner(userId);
-    throw cause;
-  }
-}
-
-function handleAltaraBillingDetailsPortalEvent(payload) {
-  const context = altaraBillingDetailsPortalContext;
-  if (!context || payload?.contextId !== context.contextId || payload?.returnType !== "portal"
-    || !["return", "closed"].includes(payload?.type)) return false;
-  altaraBillingDetailsPortalContext = null;
-  if (normId(state.user?.id || "") === context.userId) altaraBillingCountryUi?.portalReturned({ userId: context.userId });
-  return true;
-}
-
-function closeAltaraPlusBillingPortalContext(context) {
-  if (!context) return;
-  if (altaraPlusBillingPortalContext === context) altaraPlusBillingPortalContext = null;
-  const bridge = getDesktopBridge();
-  if (typeof bridge?.closeAltaraBillingWindow === "function") {
-    void Promise.resolve(bridge.closeAltaraBillingWindow(context.contextId)).catch(() => {});
-  }
-}
-
-function handleAltaraPlusBillingPortalAuthChange(authUserId) {
-  const context = altaraPlusBillingPortalContext;
-  if (context && context.userId !== authUserId) closeAltaraPlusBillingPortalContext(context);
-}
-
-function handleAltaraPlusBillingPortalEvent(payload) {
-  const context = altaraPlusBillingPortalContext;
-  if (!context || payload?.contextId !== context.contextId || payload?.returnType !== "portal"
-    || !["return", "closed"].includes(payload?.type)) return false;
-  altaraPlusBillingPortalContext = null;
-  if (normId(state.user?.id || "") !== context.userId) return true;
-  if (payload.type === "return") void handleAltaraPlusPortalReturnSignal({ state: "return", userId: context.userId });
-  else showAltaraPlusCheckoutToast("Billing window closed.", "warn");
-  return true;
-}
-
-function renderBillingCountrySettings() {
-  const root = document.getElementById("settingsBillingCountry");
-  if (!root) return;
-  if (!altaraBillingCountryUi) altaraBillingCountryUi = createBillingCountryUi({
-    root,
-    getUserId: () => normId(state.user?.id || ""),
-    getLocale: () => appLanguage,
-    request: requestAltaraBillingCountry,
-    openPortal: openAltaraBillingDetailsPortal,
-    onOwnerChanged: closeAltaraBillingDetailsPortalForOwner,
-    onPortalCancelled: (userId) => closeAltaraBillingDetailsPortalForOwner(userId),
-    onConfirmed: () => loadAltaraPlusCatalog(true),
-  });
-  altaraBillingCountryUi.sync({ active: settingsActiveTab === "altara-plus" && isProfileOverlayOpen() });
-}
 
 async function loadAltaraPlusCatalog(force = false) {
   const userId = state.user?.id || "";
   if (!userId) return null;
   const result = await altaraPlusCatalogState.load(userId, async () => {
-    const clientEnvironment = assertAltaraLiveBillingClientAllowed("catalog");
+    const clientEnvironment = assertAltaraLiveBillingClientAllowed();
     const { data, error } = await supabase.functions.invoke(ALTARA_PLUS_CHECKOUT_FUNCTION_NAME, {
       body: { action: "catalog", client_environment: clientEnvironment, locale: appLanguage },
     });
@@ -6287,6 +6076,7 @@ const DM_LOCK_CLOUD_SYNC_FRESH_MS = 12_000;
 const DM_LOCK_CREATE_FUNCTION_NAME = "create-dm-lock";
 const dmUnlockedSessionConversationIds = new Set();
 const dmLockUnlockProofs = new Map();
+
 let dmLockStorageCacheUserId = "";
 let dmLockStorageCacheLoaded = false;
 let dmLockStorageCacheMap = new Map();
@@ -6746,37 +6536,8 @@ function getAltaraBillingClientEnvironment() {
   }
 }
 
-function isAltaraLocalBillingManagementEnabled() {
-  const bridge = getDesktopBridge();
-  if (bridge?.isDesktopApp === true) {
-    return bridge.isDev === true && bridge.localBillingManagementEnabled === true;
-  }
-  try {
-    const url = new URL(window.location.href);
-    const allowedOrigins = ["http://localhost:4101", "http://127.0.0.1:4101", "http://localhost:5500", "http://127.0.0.1:5500"];
-    if (!allowedOrigins.includes(url.origin)) return false;
-    const requested = url.searchParams.get("localBillingManagement");
-    if (requested !== null) {
-      try {
-        if (requested === "1") window.sessionStorage.setItem("altara.localBillingManagement", "1");
-        else window.sessionStorage.removeItem("altara.localBillingManagement");
-      } catch (_) {}
-      return requested === "1";
-    }
-    return window.sessionStorage.getItem("altara.localBillingManagement") === "1";
-  } catch (_) {
-    return false;
-  }
-}
-
-function assertAltaraLiveBillingClientAllowed(operation = "checkout") {
+function assertAltaraLiveBillingClientAllowed() {
   const clientEnvironment = getAltaraBillingClientEnvironment();
-  if (clientEnvironment === "development" && isAltaraLocalBillingManagementEnabled()) {
-    if (["catalog", "details", "portal"].includes(operation)) return clientEnvironment;
-    const error = new Error("altara_plus_local_checkout_disabled");
-    error.code = "altara_plus_local_checkout_disabled";
-    throw error;
-  }
   if (clientEnvironment !== "production") {
     const error = new Error("altara_plus_billing_disabled_outside_production");
     error.code = "altara_plus_billing_disabled_outside_production";
@@ -6818,7 +6579,7 @@ function parseAltaraPlusPortalReturnSignalFromLocation() {
     const url = new URL(window.location.href);
     const state = resolveAltaraPlusPortalReturnStateFromValue(url.searchParams.get("altaraPlusPortal"));
     if (!state) return null;
-    return { state, billingDetails: url.searchParams.get("altaraBillingDetails") === "return" };
+    return { state };
   } catch (_) {
     return null;
   }
@@ -6854,7 +6615,6 @@ function consumeAltaraPlusPortalReturnSignalFromLocation() {
     const url = new URL(window.location.href);
     if (url.searchParams.has("altaraPlusPortal")) {
       url.searchParams.delete("altaraPlusPortal");
-      url.searchParams.delete("altaraBillingDetails");
       const nextHref = url.pathname + url.search + url.hash;
       history.replaceState(history.state, "", nextHref);
     }
@@ -6874,14 +6634,14 @@ function normalizeAltaraBillingReturnType(value) {
   return "";
 }
 
-async function openAltaraBillingUrl(url, returnType = "checkout", contextId = "") {
+async function openAltaraBillingUrl(url, returnType = "checkout") {
   const targetUrl = String(url || "").trim();
   if (!/^https?:\/\//i.test(targetUrl)) throw new Error("altara_plus_billing_url_invalid");
 
   const normalizedReturnType = normalizeAltaraBillingReturnType(returnType) || "checkout";
   const bridge = getDesktopBridge();
   if (bridge && typeof bridge.openAltaraBillingWindow === "function") {
-    const result = await bridge.openAltaraBillingWindow(targetUrl, normalizedReturnType, contextId);
+    const result = await bridge.openAltaraBillingWindow(targetUrl, normalizedReturnType);
     if (result && result.ok === false) {
       throw new Error(String(result.reason || "altara_plus_billing_window_open_failed"));
     }
@@ -6915,21 +6675,13 @@ async function handleAltaraPlusCheckoutReturnSignal(signal) {
 }
 
 async function handleAltaraPlusPortalReturnSignal(signal) {
-  const returnState = resolveAltaraPlusPortalReturnStateFromValue(signal?.state);
-  if (!returnState) return false;
+  const state = resolveAltaraPlusPortalReturnStateFromValue(signal?.state);
+  if (!state) return false;
 
-  if (signal?.billingDetails === true) {
-    altaraBillingCountryUi?.refresh();
-    return true;
-  }
-
-  const userId = normId(signal?.userId || state.user?.id || "");
-  if (!userId || normId(state.user?.id || "") !== userId) return false;
   showAltaraPlusCheckoutToast(billingText(appLanguage, "updated"), "info");
   await new Promise((resolve) => setTimeout(resolve, 1200));
-  if (normId(state.user?.id || "") !== userId) return false;
   await refreshCurrentUserAltaraPlusStatus({ reason: "portal_return", force: true }).catch(() => null);
-  return normId(state.user?.id || "") === userId;
+  return true;
 }
 
 function bindAltaraPlusDesktopBillingEventsOnce() {
@@ -6941,10 +6693,6 @@ function bindAltaraPlusDesktopBillingEventsOnce() {
 
   try {
     bridge.onAltaraBillingEvent((payload) => {
-      if (payload?.contextId) {
-        if (!handleAltaraBillingDetailsPortalEvent(payload)) handleAltaraPlusBillingPortalEvent(payload);
-        return;
-      }
       const eventType = String(payload?.type || "").trim().toLowerCase();
       if (eventType === "closed") {
         showAltaraPlusCheckoutToast("Billing window closed.", "warn");
@@ -7035,14 +6783,8 @@ function getAltaraPlusCheckoutActionState(option, status) {
   }
 
   if (!currentStatus.hasAltaraPlus) {
-    if (getAltaraBillingClientEnvironment() !== "production") {
-      return { enabled: false, label: billingText(appLanguage, "altara_plus_local_checkout_disabled"), target: "none", isCurrent: false, isUpgradePath: false };
-    }
     const catalog = altaraPlusCatalogState.read(state.user?.id || "").catalog;
     if (!catalog) return { enabled: false, label: t("settings.altara_plus.action.unavailable", "Unavailable"), target: "none", isCurrent: false, isUpgradePath: false };
-    if (catalog.billing_country?.required === true && !/^[A-Z]{2}$/.test(String(catalog.billing_country.country || ""))) {
-      return { enabled: false, label: billingCountryText(appLanguage, "purchase_country_required"), target: "none", isCurrent: false, isUpgradePath: false };
-    }
     return {
       enabled: true,
       label: getAltaraPlusIntervalCtaLabel(option),
@@ -7158,7 +6900,6 @@ function renderSettingsIdentityProfilePreviewAltaraPlusBadge() {
   badgeEl.innerHTML = badgeHtml || "";
 }
 function renderSettingsAltaraPlusPanel() {
-  if (typeof renderBillingCountrySettings === "function") renderBillingCountrySettings();
   if (settingsActiveTab === "altara-plus" && state.user?.id) {
     const view = altaraPlusCatalogState.read(state.user.id);
     if (!view.catalog && !view.error && !view.loading) void loadAltaraPlusCatalog();
@@ -7201,18 +6942,18 @@ function renderSettingsAltaraPlusPanel() {
 
   if (topHintEl) {
     if (!hasAltaraPlus) {
-      topHintEl.textContent = t("settings.altara_plus.hint.free", "ALTARA+ adds higher server, upload and saved profile/layout limits, advanced screen sharing and supporter recognition. Focus, Spatial Audio, Best Friends and DM locks are free.");
+      topHintEl.textContent = t("settings.altara_plus.hint.free", "ALTARA+ unlocks higher usage limits, personal Focus tools, personal Spatial Audio upgrades, better screen sharing, and supporter recognition.");
     } else {
-      topHintEl.textContent = t("settings.altara_plus.hint.active", "Thank you for supporting ALTARA. Your higher server, upload and saved profile/layout limits, advanced screen sharing and supporter badge are active.");
+      topHintEl.textContent = t("settings.altara_plus.hint.active", "Thank you for supporting ALTARA. Your ALTARA+ personal features and profile badge are active.");
     }
   }
 
   const descriptionEl = document.getElementById("settingsAltaraPlusStatusDescription");
   if (descriptionEl) {
     if (!hasAltaraPlus) {
-      descriptionEl.textContent = t("settings.altara_plus.description.free", "Free includes messages, calls, widgets, Focus with 3 saved profiles, Spatial Audio with 1 saved layout, Best Friends and DM locks.");
+      descriptionEl.textContent = t("settings.altara_plus.description.free", "Free includes basic ALTARA, basic Focus, basic personal Spatial Audio, and standard calls, messages, and widgets.");
     } else {
-      descriptionEl.textContent = t("settings.altara_plus.description.active", "Focus and Spatial Audio remain free to use. Core saves 10 Focus profiles and 5 Spatial layouts; Nova saves 25 and 15. Best Friends and DM locks stay free.");
+      descriptionEl.textContent = t("settings.altara_plus.description.active", "Your ALTARA+ features are active. Thank you for supporting ALTARA.");
     }
   }
 
@@ -7254,7 +6995,7 @@ function renderSettingsAltaraPlusPanel() {
     } else if (altaraPlusBillingPortalInFlight) {
       hintEl.textContent = t("settings.altara_plus.opening_stripe_portal", "Opening Stripe Billing Portal...");
     } else {
-      hintEl.textContent = t("settings.altara_plus.payment_hint", "Payments are handled securely by Stripe. You can manage or cancel your subscription through the billing portal. Core supports larger uploads and more servers; Nova includes Core with the highest server and upload limits.");
+      hintEl.textContent = t("settings.altara_plus.payment_hint", "Payments are handled securely by Stripe. You can manage or cancel your subscription through the billing portal. Core raises key limits and unlocks advanced personal tools; Nova includes Core plus the highest limits, automation, and HD Spatial Audio.");
     }
   }
 }
@@ -7344,11 +7085,8 @@ async function createAltaraPlusCheckoutSessionUrl({ plan = "", interval = "" } =
   return url;
 }
 
-async function createAltaraPlusBillingPortalSessionUrl({ userId: expectedUserId, isCurrent } = {}) {
-  const userId = normId(expectedUserId || state.user?.id || "");
-  const ownerCurrent = () => !!userId && normId(state.user?.id || "") === userId && (!isCurrent || isCurrent());
-  if (!ownerCurrent()) throw new Error("auth");
-  const clientEnvironment = assertAltaraLiveBillingClientAllowed("portal");
+async function createAltaraPlusBillingPortalSessionUrl() {
+  const clientEnvironment = assertAltaraLiveBillingClientAllowed();
   const edgeFunctionName = ALTARA_PLUS_BILLING_PORTAL_FUNCTION_NAME;
   const functionPath = "/functions/v1/" + edgeFunctionName;
   const authReady = await ensureSupabaseFunctionInvokeAuthReady({
@@ -7360,25 +7098,12 @@ async function createAltaraPlusBillingPortalSessionUrl({ userId: expectedUserId,
     logChannel: "altara-plus",
     failEvent: "altara_plus_portal.auth_missing",
   });
-  if (!ownerCurrent() || normId(authReady.authState?.currentUserId || "") !== userId) throw new Error("auth");
   if (!authReady.ok) throw authReady.error || new Error("altara_plus_portal_auth_missing");
 
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  const session = sessionData?.session;
-  if (!ownerCurrent() || sessionError || normId(session?.user?.id || "") !== userId || !session?.access_token) throw new Error("auth");
   const { data, error } = await supabase.functions.invoke(edgeFunctionName, {
     body: { client_environment: clientEnvironment, locale: appLanguage },
-    headers: { Authorization: "Bearer " + session.access_token },
   });
-  if (!ownerCurrent()) throw new Error("auth");
-  const { data: currentSessionData, error: currentSessionError } = await supabase.auth.getSession();
-  if (!ownerCurrent() || currentSessionError || normId(currentSessionData?.session?.user?.id || "") !== userId) throw new Error("auth");
-  if (error) {
-    const code = await altaraPlusBillingErrorCode(error);
-    if (!ownerCurrent()) throw new Error("auth");
-    throw new Error(code);
-  }
-  if (data?.error) throw new Error(data.error);
+  if (error) throw error;
   if (!data || typeof data !== "object") throw new Error("altara_plus_portal_response_invalid");
 
   const url = String(data?.url || "").trim();
@@ -7387,38 +7112,19 @@ async function createAltaraPlusBillingPortalSessionUrl({ userId: expectedUserId,
 }
 
 async function openAltaraPlusBillingPortalFromSettings({ source = "manage" } = {}) {
-  const userId = normId(state.user?.id || "");
-  if (!userId) return;
+  if (!state.user?.id) return;
   const status = getCurrentUserAltaraPlusStatus();
   if (!status.hasAltaraPlus) return;
   if (altaraPlusCheckoutInFlight || altaraPlusBillingPortalInFlight) return;
 
-  const context = { userId, contextId: crypto.randomUUID() };
-  const ownerCurrent = () => altaraPlusBillingPortalContext === context && normId(state.user?.id || "") === userId;
-  closeAltaraPlusBillingPortalContext(altaraPlusBillingPortalContext);
-  altaraPlusBillingPortalContext = context;
   altaraPlusBillingPortalInFlight = true;
   renderSettingsAltaraPlusPanel();
   try {
-    const bridge = getDesktopBridge();
-    if (typeof bridge?.openAltaraBillingWindow === "function" && typeof bridge.closeAltaraBillingWindow !== "function") {
-      throw new Error("altara_plus_portal_window_unavailable");
-    }
-    const portalUrl = await createAltaraPlusBillingPortalSessionUrl({ userId, isCurrent: ownerCurrent });
-    if (!ownerCurrent()) throw new Error("auth");
-    await openAltaraBillingUrl(portalUrl, "portal", context.contextId);
-    if (!ownerCurrent()) throw new Error("auth");
+    const portalUrl = await createAltaraPlusBillingPortalSessionUrl();
+    await openAltaraBillingUrl(portalUrl, "portal");
   } catch (error) {
-    const stillOwner = ownerCurrent();
-    // A delayed native open can finish after logout closed its pending context.
-    // Closing the captured ID again cannot destroy another owner's newer window.
-    closeAltaraPlusBillingPortalContext(context);
-    if (!stillOwner || error?.message === "auth") return;
     console.warn("altara+ billing portal open failed (" + String(source || "manage") + ")", error?.message || error);
-    const code = await altaraPlusBillingErrorCode(error);
-    if (normId(state.user?.id || "") !== userId) return;
-    const messageKey = ["altara_plus_billing_disabled_outside_production", "stripe_client_environment_mismatch"].includes(code) ? code : "portal";
-    showAltaraPlusCheckoutToast(billingText(appLanguage, messageKey), "warn");
+    showAltaraPlusCheckoutToast(billingText(appLanguage, "portal"), "warn");
   } finally {
     altaraPlusBillingPortalInFlight = false;
     renderSettingsAltaraPlusPanel();
@@ -11199,6 +10905,15 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.security.dm_backup.recovery_key.saved_check": "I saved my Recovery Key somewhere safe.",
     "settings.local_data.vault_clear_warning": "Clearing local data removes this device's Vault key. You will need your Vault Recovery Password or Recovery Key to restore Vault messages here again.",
     "dm.e2ee.unavailable_subtext": "Restore Vault messages with your Recovery Password or Recovery Key. You only need to restore on this device if Vault is not set up here or local data was cleared.",
+    "dm.e2ee.setting_up": "Setting up encrypted messages on this device...",
+    "dm.e2ee.checking": "Checking this device's encryption keys...",
+    "dm.e2ee.missing_local_private": "This account already has a Vault identity, but the private key is not on this device. Restore access with your saved Vault Recovery Password or Recovery Key.",
+    "dm.e2ee.migration_requires_recovery": "This device has a legacy Vault identity. Set up a recovery password to protect it while preserving the existing identity.",
+    "dm.e2ee.not_initialized": "Encrypted messages are not set up on this account yet. Set up Vault and save your recovery password before sending encrypted messages.",
+    "dm.e2ee.unavailable": "Could not verify this device's keys. Try again or check your recovery methods in Security Settings.",
+    "dm.e2ee.checking_title": "Checking encryption",
+    "dm.e2ee.recovery.refresh_failed": "Could not refresh encrypted messages. Try again.",
+    "dm.e2ee.recovery.reopen": "Could not refresh encrypted messages. Reopen this conversation.",
     "dm.e2ee.loading_title": "Vault loading",
     "dm.e2ee.failed_title": "Vault unavailable",
     "dm.e2ee.recovering": "Recovering your Vault key on this device...",
@@ -11219,15 +10934,6 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.e2ee.setup.key_check_failed": "Could not verify this device's Vault keys.",
     "dm.e2ee.setup.required": "Setup required",
     "dm.e2ee.recovery.required": "Recovery required",
-    "dm.e2ee.checking_title": "Checking encryption",
-    "dm.e2ee.checking": "Checking this device's encryption keys...",
-    "dm.e2ee.setting_up": "Setting up encrypted messages on this device...",
-    "dm.e2ee.missing_local_private": "This account already has a Vault identity, but the private key is not on this device. Restore access with your saved Vault Recovery Password or Recovery Key.",
-    "dm.e2ee.migration_requires_recovery": "This device has a legacy Vault identity. Set up a recovery password to protect it while preserving the existing identity.",
-    "dm.e2ee.not_initialized": "Encrypted messages are not set up on this account yet. Set up Vault and save your recovery password before sending encrypted messages.",
-    "dm.e2ee.unavailable": "Could not verify this device's keys. Try again or check your recovery methods in Security Settings.",
-    "dm.e2ee.recovery.refresh_failed": "Could not refresh encrypted messages. Try again.",
-    "dm.e2ee.recovery.reopen": "Could not refresh encrypted messages. Reopen this conversation.",
     "dm.e2ee.recovery.device_title": "Restore access on this device",
     "dm.e2ee.local_key_invalid": "Invalid local key",
     "dm.e2ee.encryption_unavailable": "Encryption unavailable",
@@ -11382,7 +11088,6 @@ const APP_LANG_LABELS = Object.freeze({
     "widgets.add.title": "Add widget",
     "widgets.add.empty": "All widgets are already active.",
     "widgets.todo.name_required": "Type a task name.",
-    "widgets.todo.sync_pending": "Changes remain in this open app. Keep it open and try syncing again.",
     "widgets.todo.limit_toast": "Checklist limit reached ({max}).",
     "widgets.todo.edit_prompt": "Edit task:",
     "widgets.todo.complete.1": "Great! Checklist completed. Keep it up.",
@@ -11686,7 +11391,6 @@ const APP_LANG_LABELS = Object.freeze({
     "call.share.audio_on": "with audio",
     "call.share.audio_off": "no audio",
     "call.share.audio_state_on": "On",
-    "call.share.audio_unavailable": "Unavailable",
     "call.share.audio_state_off": "Off",
     "call.share.started": "Sharing \u2022 {quality}",
     "call.share.started_no_audio": "Sharing started without audio (browser limitation).",
@@ -12598,22 +12302,18 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.altara_plus.current_plan": "Plano atual",
     "settings.altara_plus.status.label": "Estado",
     "settings.altara_plus.billing_interval": "Período de faturação",
-    "settings.altara_plus.core.subtitle": "Mais capacidade para ficheiros, servidores e perfis ou disposições guardados.",
+    "settings.altara_plus.core.subtitle": "O principal plano pago, com funcionalidades pessoais avançadas e benefícios para apoiantes.",
     "settings.altara_plus.core.badge": "Distintivo Core no perfil",
     "settings.altara_plus.feature.focus_profiles": "Perfis de Foco",
-    "settings.altara_plus.core.focus_capacity": "Guarda até 10 perfis de Foco",
-    "settings.altara_plus.core.spatial_capacity": "Guarda até 5 disposições espaciais",
-    "settings.altara_plus.nova.focus_capacity": "Guarda até 25 perfis de Foco",
-    "settings.altara_plus.nova.spatial_capacity": "Guarda até 15 disposições espaciais",
     "settings.altara_plus.feature.schedule_focus": "Foco agendado",
     "settings.altara_plus.feature.saved_spatial": "Disposições de Áudio Espacial guardadas",
     "settings.altara_plus.feature.more_spatial": "Mais participantes no Áudio Espacial",
-    "settings.altara_plus.core.higher_limits": "Adere a até 150 servidores",
+    "settings.altara_plus.core.higher_limits": "Limites superiores para servidores, Melhores Amigos e predefinições guardadas",
     "settings.altara_plus.core.uploads": "Envios de ficheiros até 50 MB",
     "settings.altara_plus.feature.advanced_share": "Qualidade avançada na partilha de ecrã",
     "settings.altara_plus.feature.fund_updates": "Ajuda a financiar futuras atualizações",
-    "settings.altara_plus.core.note": "Foco e Áudio Espacial funcionam em todos os planos. Core permite guardar 10 perfis de Foco e 5 disposições espaciais.",
-    "settings.altara_plus.nova.subtitle": "Os maiores limites de ficheiros, servidores e perfis ou disposições guardados.",
+    "settings.altara_plus.core.note": "Core desbloqueia ferramentas pessoais avançadas sem alterar as funcionalidades básicas disponíveis para todos.",
+    "settings.altara_plus.nova.subtitle": "O plano premium para automação, áudio avançado e maior reconhecimento dos apoiantes.",
     "settings.altara_plus.nova.badge": "Distintivo Nova no perfil",
     "settings.altara_plus.nova.everything_core": "Tudo do Core",
     "settings.altara_plus.feature.auto_focus": "Foco automático",
@@ -12621,10 +12321,10 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.altara_plus.feature.spatial_hd": "Áudio Espacial HD",
     "settings.altara_plus.feature.auto_spatial": "Organização automática do Áudio Espacial",
     "settings.altara_plus.feature.advanced_spatial": "Predefinições avançadas de Áudio Espacial",
-    "settings.altara_plus.nova.highest_limits": "Adere a até 200 servidores",
+    "settings.altara_plus.nova.highest_limits": "Os maiores limites para servidores, Melhores Amigos e predefinições guardadas",
     "settings.altara_plus.nova.uploads": "Envios de ficheiros até 1 GB",
     "settings.altara_plus.feature.extra_recognition": "Reconhecimento adicional de apoiante",
-    "settings.altara_plus.nova.note": "Nova permite guardar 25 perfis de Foco e 15 disposições espaciais.",
+    "settings.altara_plus.nova.note": "Nova inclui Core e desbloqueia as funcionalidades mais avançadas da ALTARA.",
     "settings.altara_plus.compare.title": "Comparar planos",
     "settings.altara_plus.compare.feature": "Funcionalidade",
     "settings.altara_plus.plan.free": "Grátis",
@@ -12635,13 +12335,13 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.altara_plus.compare.core_badge": "Distintivo Core",
     "settings.altara_plus.compare.nova_badge": "Distintivo Nova",
     "settings.altara_plus.compare.servers": "Servidores aderidos",
-    "settings.altara_plus.compare.basic_focus": "Foco",
+    "settings.altara_plus.compare.basic_focus": "Foco básico",
     "settings.altara_plus.compare.basic": "Básico",
     "settings.altara_plus.compare.saved_focus": "Perfis de Foco guardados",
-    "settings.altara_plus.compare.basic_spatial": "Áudio Espacial",
+    "settings.altara_plus.compare.basic_spatial": "Áudio Espacial básico",
     "settings.altara_plus.compare.spatial_speakers": "Participantes no Áudio Espacial",
     "settings.altara_plus.compare.basic_limit": "Limite básico",
-    "settings.altara_plus.compare.highest_all": "Todos",
+    "settings.altara_plus.compare.highest_all": "Máximo / Todos",
     "settings.altara_plus.compare.saved_spatial": "Disposições de Áudio Espacial guardadas",
     "settings.altara_plus.compare.upload_size": "Tamanho dos ficheiros enviados",
     "settings.altara_plus.compare.server_folders": "Pastas de servidores",
@@ -12655,10 +12355,10 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.altara_plus.status.inactive": "Inativo",
     "settings.altara_plus.renewal": "Renovação",
     "settings.altara_plus.test_environment": "Ambiente de teste",
-    "settings.altara_plus.hint.free": "ALTARA+ aumenta os limites de servidores, ficheiros e perfis ou disposições guardados, melhora a partilha de ecrã e reconhece os apoiantes. Foco, Áudio Espacial, Melhores Amigos e locks de DMs são gratuitos.",
-    "settings.altara_plus.hint.active": "Obrigado por apoiares a ALTARA. Os teus limites superiores de servidores, ficheiros e perfis ou disposições guardados, a partilha de ecrã avançada e o distintivo de apoiante estão ativos.",
-    "settings.altara_plus.description.free": "O plano Grátis inclui mensagens, chamadas, widgets, Foco com 3 perfis guardados, Áudio Espacial com 1 disposição guardada, Melhores Amigos e locks de DMs.",
-    "settings.altara_plus.description.active": "Usar Foco e Áudio Espacial continua gratuito. Core permite guardar 10 perfis de Foco e 5 disposições espaciais; Nova, 25 e 15. Melhores Amigos e locks de DMs continuam gratuitos.",
+    "settings.altara_plus.hint.free": "ALTARA+ desbloqueia limites superiores, ferramentas pessoais de Foco, melhorias de Áudio Espacial, melhor partilha de ecrã e reconhecimento dos apoiantes.",
+    "settings.altara_plus.hint.active": "Obrigado por apoiares a ALTARA. As tuas funcionalidades pessoais e o teu distintivo ALTARA+ estão ativos.",
+    "settings.altara_plus.description.free": "O plano Grátis inclui a experiência básica da ALTARA, Foco e Áudio Espacial básicos, além de chamadas, mensagens e widgets padrão.",
+    "settings.altara_plus.description.active": "As tuas funcionalidades ALTARA+ estão ativas. Obrigado por apoiares a ALTARA.",
     "settings.altara_plus.current_period_end": "o fim do período atual",
     "settings.altara_plus.cancellation_notice": "A tua subscrição está agendada para terminar em {date}. Manténs ALTARA+ até lá.",
     "settings.altara_plus.opening_portal": "A abrir o portal de faturação...",
@@ -12666,7 +12366,7 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.altara_plus.manage_subscription": "Gerir subscrição",
     "settings.altara_plus.opening_stripe_checkout": "A abrir o pagamento da Stripe...",
     "settings.altara_plus.opening_stripe_portal": "A abrir o portal de faturação da Stripe...",
-    "settings.altara_plus.payment_hint": "Os pagamentos são processados de forma segura pela Stripe. Podes gerir ou cancelar a tua subscrição no portal de faturação. Core permite ficheiros maiores e mais servidores; Nova inclui Core com os maiores limites de servidores e ficheiros.",
+    "settings.altara_plus.payment_hint": "Os pagamentos são processados de forma segura pela Stripe. Podes gerir ou cancelar a tua subscrição no portal de faturação. Core aumenta limites importantes e desbloqueia ferramentas pessoais avançadas; Nova inclui Core, os maiores limites, automação e Áudio Espacial HD.",
     "settings.altara_plus.interval.monthly": "Mensal",
     "settings.altara_plus.interval.yearly": "Anual",
     "settings.altara_plus.action.upgrade": "Mudar de plano",
@@ -13108,6 +12808,15 @@ const APP_LANG_LABELS = Object.freeze({
     "settings.security.dm_backup.recovery_key.saved_check": "Guardei a minha Chave de Recuperação num local seguro.",
     "settings.local_data.vault_clear_warning": "Limpar dados locais remove a chave Vault deste dispositivo. Vais precisar da Password de Recuperação Vault ou da Chave de Recuperação para restaurar mensagens Vault aqui novamente.",
     "dm.e2ee.unavailable_subtext": "Restaura mensagens Vault com a Password de Recuperação ou Chave de Recuperação. Só precisas de restaurar neste dispositivo se o Vault não estiver configurado aqui ou se os dados locais tiverem sido limpos.",
+    "dm.e2ee.setting_up": "A configurar as mensagens encriptadas neste dispositivo...",
+    "dm.e2ee.checking": "A verificar as chaves de encriptação deste dispositivo...",
+    "dm.e2ee.missing_local_private": "Esta conta já tem uma identidade Vault, mas a chave privada não está neste dispositivo. Recupera o acesso com a palavra-passe do Vault ou a chave de recuperação guardada.",
+    "dm.e2ee.migration_requires_recovery": "Este dispositivo tem uma identidade Vault antiga. Configura uma palavra-passe de recuperação para a proteger, preservando a identidade existente.",
+    "dm.e2ee.not_initialized": "As mensagens encriptadas ainda não estão configuradas nesta conta. Configura o Vault e guarda a palavra-passe de recuperação antes de enviar mensagens encriptadas.",
+    "dm.e2ee.unavailable": "Não foi possível verificar as chaves deste dispositivo. Tenta novamente ou consulta os métodos de recuperação nas definições de segurança.",
+    "dm.e2ee.checking_title": "A verificar a encriptação",
+    "dm.e2ee.recovery.refresh_failed": "Não foi possível actualizar as mensagens encriptadas. Tenta novamente.",
+    "dm.e2ee.recovery.reopen": "Não foi possível actualizar as mensagens encriptadas. Volta a abrir esta conversa.",
     "dm.e2ee.loading_title": "Vault a carregar",
     "dm.e2ee.failed_title": "Vault indisponível",
     "dm.e2ee.recovering": "A recuperar a tua chave Vault neste dispositivo...",
@@ -13128,15 +12837,6 @@ const APP_LANG_LABELS = Object.freeze({
     "dm.e2ee.setup.key_check_failed": "Não foi possível verificar as chaves Vault deste dispositivo.",
     "dm.e2ee.setup.required": "Configuração necessária",
     "dm.e2ee.recovery.required": "Recuperação necessária",
-    "dm.e2ee.checking_title": "A verificar a encriptação",
-    "dm.e2ee.checking": "A verificar as chaves de encriptação deste dispositivo...",
-    "dm.e2ee.setting_up": "A configurar as mensagens encriptadas neste dispositivo...",
-    "dm.e2ee.missing_local_private": "Esta conta já tem uma identidade Vault, mas a chave privada não está neste dispositivo. Recupera o acesso com a palavra-passe do Vault ou a chave de recuperação guardada.",
-    "dm.e2ee.migration_requires_recovery": "Este dispositivo tem uma identidade Vault antiga. Configura uma palavra-passe de recuperação para a proteger, preservando a identidade existente.",
-    "dm.e2ee.not_initialized": "As mensagens encriptadas ainda não estão configuradas nesta conta. Configura o Vault e guarda a palavra-passe de recuperação antes de enviar mensagens encriptadas.",
-    "dm.e2ee.unavailable": "Não foi possível verificar as chaves deste dispositivo. Tenta novamente ou consulta os métodos de recuperação nas definições de segurança.",
-    "dm.e2ee.recovery.refresh_failed": "Não foi possível actualizar as mensagens encriptadas. Tenta novamente.",
-    "dm.e2ee.recovery.reopen": "Não foi possível actualizar as mensagens encriptadas. Volta a abrir esta conversa.",
     "dm.e2ee.recovery.device_title": "Recuperar acesso neste dispositivo",
     "dm.e2ee.local_key_invalid": "Chave local inválida",
     "dm.e2ee.encryption_unavailable": "Encriptação indisponível",
@@ -13291,7 +12991,6 @@ const APP_LANG_LABELS = Object.freeze({
     "widgets.add.title": "Adicionar widget",
     "widgets.add.empty": "Já tens todos os widgets ativos.",
     "widgets.todo.name_required": "Mete um nome para a tarefa.",
-    "widgets.todo.sync_pending": "As alterações mantêm-se nesta app aberta. Mantém-na aberta e tenta sincronizar novamente.",
     "widgets.todo.limit_toast": "Checklist no limite ({max}).",
     "widgets.todo.edit_prompt": "Editar tarefa:",
     "widgets.todo.complete.1": "Parabéns! Checklist concluída. Continua assim.",
@@ -13618,7 +13317,6 @@ const APP_LANG_LABELS = Object.freeze({
     "call.share.audio_on": "com som",
     "call.share.audio_off": "sem som",
     "call.share.audio_state_on": "Ativo",
-    "call.share.audio_unavailable": "Indisponível",
     "call.share.audio_state_off": "Inativo",
     "call.share.started": "Partilha ligada \u2022 {quality}",
     "call.share.started_no_audio": "Partilha iniciada sem som (browser não suportou áudio nesta janela).",
@@ -17146,10 +16844,6 @@ function normalizeThemeSettings(raw) {
   normalized.background_unified = true;
   if (normalizedBannerCrop) normalized.banner_crop = normalizedBannerCrop;
   if (normalizedAvatarCrop) normalized.avatar_crop = normalizedAvatarCrop;
-  const serverRail = normalizeServerRailPreferences(source.server_rail);
-  if (serverRail) normalized.server_rail = serverRail;
-  const serverCategories = normalizeServerCategoryPreferences(source.server_categories);
-  if (serverCategories) normalized.server_categories = serverCategories;
 
   return normalized;
 }
@@ -18351,7 +18045,7 @@ function buildFocusScheduleListHtml(focus = getFocusNotificationSettings()) {
 function buildFocusSchedulePanelHtml(focus = getFocusNotificationSettings()) {
   const available = canUseAltaraPlusFeature("focus_schedules");
   if (!available) {
-    return '<section id="settingsFocusSchedulesPanel" class="settingsFocusPlusPanel"><div class="settingsFocusPlusPanel__head"><div><div class="settingsFocusPlusPanel__title">Schedule Focus</div><div class="settingsHint">Turn Focus on automatically at certain times.</div></div><span class="settingsFocusPlusLock">Unavailable</span></div></section>';
+    return '<section id="settingsFocusSchedulesPanel" class="settingsFocusPlusPanel"><div class="settingsFocusPlusPanel__head"><div><div class="settingsFocusPlusPanel__title">Schedule Focus</div><div class="settingsHint">Turn Focus on automatically at certain times.</div></div><span class="settingsFocusPlusLock">Requires ALTARA+ Core</span></div></section>';
   }
   const dayChecks = FOCUS_PLUS_DAY_LABELS.map((label, day) => {
     const checked = day >= 1 && day <= 5 ? "checked" : "";
@@ -18381,8 +18075,8 @@ function buildFocusAutoPanelHtml(focus = getFocusNotificationSettings()) {
   const autoUnlocked = callsUnlocked || shareUnlocked;
   const auto = focus.auto_focus || normalizeFocusAutoFocusSettings();
   const badgeHtml = autoUnlocked
-    ? '<span class="settingsFocusPlusBadge" data-focus-plus-badge="auto">Free</span>'
-    : '<span class="settingsFocusPlusLock" data-focus-plus-badge="auto">Unavailable</span>';
+    ? '<span class="settingsFocusPlusBadge" data-focus-plus-badge="auto">ALTARA+ Nova</span>'
+    : '<span class="settingsFocusPlusLock" data-focus-plus-badge="auto">Requires ALTARA+ Nova</span>';
   return `
     <section id="settingsFocusAutoPanel" class="settingsFocusPlusPanel" data-focus-plus-panel="auto">
       <div class="settingsFocusPlusPanel__head"><div><div class="settingsFocusPlusPanel__title">Auto Focus</div><div class="settingsHint">Automatically enter Focus during calls or screen share.</div></div>${badgeHtml}</div>
@@ -19432,8 +19126,8 @@ function buildFocusAppsPanelHtml(focus = getFocusNotificationSettings()) {
   const available = canUseAltaraPlusFeature("focus_auto_apps");
   const auto = focus.auto_focus || normalizeFocusAutoFocusSettings();
   const badgeHtml = available
-    ? '<span class="settingsFocusPlusBadge" data-focus-plus-badge="apps">Free</span>'
-    : '<span class="settingsFocusPlusLock" data-focus-plus-badge="apps">Unavailable</span>';
+    ? '<span class="settingsFocusPlusBadge" data-focus-plus-badge="apps">ALTARA+ Nova</span>'
+    : '<span class="settingsFocusPlusLock" data-focus-plus-badge="apps">Requires ALTARA+ Nova</span>';
   return `
     <section id="settingsFocusAppsPanel" class="settingsFocusPlusPanel" data-focus-plus-panel="apps">
       <div class="settingsFocusPlusPanel__head"><div><div class="settingsFocusPlusPanel__title">App-based Focus</div><div class="settingsHint">Automatically enter Focus when selected apps or games are open.</div></div>${badgeHtml}</div>
@@ -19445,7 +19139,7 @@ function buildFocusAppsPanelHtml(focus = getFocusNotificationSettings()) {
         </div>
         ${buildFocusSelectedAppsCompactHtml(focus)}
         ${buildFocusAppLocalPrivacyHtml(focus)}
-      ` : '<div class="settingsFocusEmpty"><b>App-based Focus is unavailable.</b><span>Please try again later.</span></div>'}
+      ` : '<div class="settingsFocusEmpty"><b>App-based Focus is locked.</b><span>ALTARA+ Nova will unlock automatic Focus when selected apps or games are open.</span></div>'}
     </section>
   `;
 }
@@ -19735,7 +19429,8 @@ function renderFocusAdvancedSettingsUi(settingsInput = null) {
   const badge = document.getElementById("settingsFocusPlusPlanBadge");
   if (!root) return;
   const focus = normalizeFocusSettings(settingsInput ?? getFocusNotificationSettings());
-  if (badge) badge.textContent = "Free";
+  const planLabel = getAltaraPlusPlanDisplayLabel(getCurrentUserAltaraPlusStatus());
+  if (badge) badge.textContent = planLabel;
   const activeProfile = getActiveFocusProfile(focus);
   const manualStatus = normalizeManualPresenceStatus(resolveMyPresenceStatus(state.me));
   const activeLine = activeProfile
@@ -20634,7 +20329,7 @@ async function setDndNotificationMutePreference(enabled, { persist = true } = {}
   state.me.theme_settings = nextTheme;
   syncNotificationBehaviorSettingsUi(nextTheme);
   if (!persist) return true;
-  return persistThemeSettings(nextTheme, { showSuccess: false, showError: false, allowDndNotificationMuteChange: true });
+  return persistThemeSettings(nextTheme, { showSuccess: false, showError: false });
 }
 
 function normalizeFocusSettingPatch(patch = {}) {
@@ -24010,26 +23705,16 @@ function applySidebarWidth(widthInput, { syncForm = true } = {}) {
   return width;
 }
 
-async function saveOwnedProfileThemePatch(userId, patch, isCurrent = () => true, { allowPresenceStatusChange = false, allowDndNotificationMuteChange = false, allowReduceMotionChange = false } = {}) {
-  const uid = normId(userId);
-  return saveProfileThemePreservingServerRail({ client: supabase, ownerId: uid, patch, allowPresenceStatusChange, allowDndNotificationMuteChange, allowReduceMotionChange,
-    assertOwner: async () => {
-      const check = () => { if (!uid || normId(state.user?.id) !== uid || !isCurrent()) throw new Error("A conta mudou. Volta a tentar."); };
-      check(); const { data, error } = await supabase.auth.getSession(); check();
-      if (error || normId(data.session?.user?.id) !== uid) throw new Error("A sessão mudou. Volta a tentar.");
-    },
-  });
-}
-
-async function persistThemeSettings(themeInput, { showSuccess = false, showError = true, allowDndNotificationMuteChange = false, allowReduceMotionChange = false } = {}) {
+async function persistThemeSettings(themeInput, { showSuccess = false, showError = true } = {}) {
   if (!state.user) return false;
-  let theme = stripFocusServerAppRulesFromTheme({
+  const theme = stripFocusServerAppRulesFromTheme({
     ...(state.me?.theme_settings || {}),
     ...(themeInput || {}),
   });
-  const saved = await saveOwnedProfileThemePatch(state.user.id, { theme_settings: theme }, undefined, { allowDndNotificationMuteChange, allowReduceMotionChange });
-  const { error } = saved;
-  if (!error) theme = saved.theme;
+  const { error } = await supabase
+    .from("profiles")
+    .update({ theme_settings: theme })
+    .eq("id", state.user.id);
 
   setProfileDebug({ update_theme: { error, theme } });
 
@@ -24979,9 +24664,7 @@ function refreshRightSidebarOverlayState() {
 function setRightSidebarCollapsed(next, { persist = true } = {}) {
   const shell = getSidebarShellEl();
   if (!shell) return;
-  const requestedCollapsed = !!next;
-  // Call/sidebar restoration must not reserve the unrelated right column in a bot DM.
-  const collapsed = requestedCollapsed || !!shell.querySelector(".panel.mid.is-bot-dm-conversation-open");
+  const collapsed = !!next;
   shell.classList.toggle("right-collapsed", collapsed);
   rightSidebarPeekHover = false;
   rightSidebarPanelHover = false;
@@ -24996,7 +24679,7 @@ function setRightSidebarCollapsed(next, { persist = true } = {}) {
   const peek = document.getElementById("rightSidebarPeekZone");
   if (peek) peek.setAttribute("aria-hidden", "true");
 
-  if (persist) writeRightSidebarCollapsedPreference(requestedCollapsed);
+  if (persist) writeRightSidebarCollapsedPreference(collapsed);
 
   try {
     window.dispatchEvent(new Event("resize"));
@@ -28343,10 +28026,6 @@ const ALTARA_BOT_PERMISSION_REGISTRY = Object.freeze([
   { key: "bot:read_own_messages", label: "Read Own Bot Messages", description: "Legacy supported permission for bot-authored message reads.", category: "Core Bot Permissions", risk: "normal", implemented: true, defaultEnabled: false, hidden: true, discordBit: "" },
   { key: "bot:embed_links", label: "Embed Links", description: "Allows the bot to show ALTARA link previews in its messages.", category: "Messaging", risk: "normal", implemented: true },
   { key: "bot:attach_files", label: "Attach Files", description: "Upload private files through the bot attachment authority; downloads require channel access.", category: "Messaging", risk: "elevated", implemented: true },
-  { key: "bot:create_polls", label: "Create Polls", description: "Create single-choice polls in channels the bot can access.", category: "Messaging", risk: "normal", implemented: true },
-  { key: "bot:view_audit_log", label: "View Audit Log", description: "Read a capped audit log with private content removed.", category: "Moderation", risk: "elevated", implemented: true },
-  { key: "bot:manage_automod", label: "Manage AutoMod", description: "Manage the server's keyword blocking rules.", category: "Moderation", risk: "dangerous", implemented: true },
-  { key: "bot:manage_expressions", label: "Manage Emojis and Stickers", description: "Manage private server emoji and sticker assets.", category: "Advanced", risk: "elevated", implemented: true },
   { key: "bot:send_direct_messages", label: "Consenting Direct Messages", description: "Exchange private bot messages only after each member explicitly agrees.", category: "Messaging", risk: "elevated", implemented: true },
   { key: "bot:create_threads", label: "Create and Reply in Threads", description: "Create and reply to threads within permitted text channels.", category: "Messaging", risk: "elevated", implemented: true },
   { key: "bot:manage_threads", label: "Manage Threads", description: "Archive threads within permitted text channels.", category: "Moderation", risk: "elevated", implemented: true },
@@ -28365,10 +28044,6 @@ const ALTARA_BOT_PERMISSION_REGISTRY = Object.freeze([
   { key: "bot:moderate_messages", label: "Moderate Member Messages", description: "Remove permitted lower-ranked member messages without erasing retention history.", category: "Moderation", risk: "dangerous", implemented: true },
   { key: "bot:manage_channels", label: "Manage Channels", description: "Create, rename and archive channels without discarding message history.", category: "Moderation", risk: "dangerous", implemented: true },
   { key: "bot:manage_server", label: "Manage Server", description: "Update the server name with an explicit installation grant.", category: "Moderation", risk: "dangerous", implemented: true },
-  { key: "bot:view_audit_log", label: "View Audit Log", description: "Read a redacted server audit history with an explicit installation grant.", category: "Moderation", risk: "normal", implemented: true },
-  { key: "bot:create_polls", label: "Create Polls", description: "Create native server polls. Individual votes remain private.", category: "Messaging", risk: "normal", implemented: true },
-  { key: "bot:manage_automod", label: "Manage AutoMod", description: "Manage bounded server keyword rules with an explicit installation grant.", category: "Moderation", risk: "high", implemented: true },
-  { key: "bot:manage_expressions", label: "Manage Emojis and Stickers", description: "Manage private server emoji and sticker assets with an explicit installation grant.", category: "Server Management", risk: "normal", implemented: true },
   { key: "bot:manage_events", label: "Manage Server Events", description: "Create, update and remove scheduled server events.", category: "Moderation", risk: "elevated", implemented: true },
   { key: "bot:manage_messages", label: "Manage Bot Messages", description: "Allows the bot to edit or delete its own bot-channel messages.", category: "Moderation", risk: "elevated", implemented: true },
   { key: "bot:pin_messages", label: "Pin Messages", description: "Allows the bot to pin and unpin bot-channel messages.", category: "Moderation", risk: "elevated", implemented: true },
@@ -28434,8 +28109,6 @@ const localBotCommandResponseIds = new Set();
 const botConnectionPendingMessageIdsByEventId = new Map();
 const botConnectionPendingTimeoutsByEventId = new Map();
 const botConnectionResponsePollsByEventId = new Map();
-const botConnectionPrivateCompletedByEventId = new Map();
-let botConnectionPrivateCompletionOwner = "";
 const botLiveInteractionStateByEventId = new Map();
 const botLiveEventHistory = [];
 const BOT_LIVE_EVENT_HISTORY_LIMIT = 20;
@@ -29637,18 +29310,6 @@ async function loadBotProfileCommands(profile = {}) {
   }
 }
 
-function resolveBotProfileDirectMessageServerId(seed = {}, anchorEl = null) {
-  const explicit = normId(seed?.serverId || seed?.server_id || anchorEl?.getAttribute?.("data-bot-menu-server-id") || anchorEl?.getAttribute?.("data-bot-dm-server") || "");
-  if (explicit) return explicit;
-  const botId = normId(seed?.botId || seed?.bot_id || ""), userId = normId(state.user?.id || "");
-  if (botId && state.activeDm?.kind === "bot_dm" && normId(state.activeDm.botId) === botId
-    && normId(state.activeDm.botDmUserId) === userId && normId(state.activeDm.botServerId || "")) return normId(state.activeDm.botServerId);
-  const snapshot = botDirectMessageSnapshot;
-  if (botId && snapshot && normId(snapshot.botId) === botId && normId(snapshot.userId) === userId
-    && getActiveBotDirectMessageKey() === snapshot.key) return normId(snapshot.serverId || "");
-  const serverId = normId(getActiveServerContext?.()?.serverId || state.activeDm?.serverId || "");
-  return serverId && findServerInstalledBot(serverId, seed) ? serverId : "";
-}
 function botProfileCardHtml(profile = {}, { loading = false, status = "", commands = null, commandsLoading = false, commandsStatus = "" } = {}) {
   const appId = normId(profile?.appId || "");
   const installedHere = profile?.installed === true;
@@ -29666,8 +29327,6 @@ function botProfileCardHtml(profile = {}, { loading = false, status = "", comman
     : (canInstallFromProfile
       ? `<button class="btn primary" type="button" data-bot-profile-install="${escAttr(inviteUrl)}">Add to Server</button><button class="btn ghost" type="button" data-bot-profile-copy-invite="${escAttr(inviteUrl)}">Copy Invite Link</button>`
       : `<button class="btn ghost" type="button" disabled>${profile?.isPublic ? "Install unavailable" : "This bot is private"}</button>`);
-  const messageActionHtml = profile?.botId && botProfileCardSession?.userId && botProfileCardSession?.serverId
-    ? '<button class="btn primary botProfileCard__message" type="button" data-bot-profile-message>' + esc(t("surface.message", "Message")) + '</button>' : "";
   const presenceStatus = normalizeBotPresenceStatus(profile?.presenceStatus || profile?.effectiveStatus || "offline");
   const voiceStatus = String(profile?.voiceStatus || "").trim();
   const hasVoiceStatus = !!voiceStatus;
@@ -29710,7 +29369,6 @@ function botProfileCardHtml(profile = {}, { loading = false, status = "", comman
         </dl>
         </details>
         <div class="botProfileCard__actions serverMiniCompact__actions">
-          ${messageActionHtml}
           <button class="btn ghost" type="button" data-bot-profile-view-commands>View Commands</button>
           <button class="btn ghost" type="button" data-bot-profile-copy-id="${escAttr(profile?.publicId || profile?.botId || "")}"${(profile?.publicId || profile?.botId) ? "" : " disabled"}>Copy Bot ID</button>
           ${installActionHtml}
@@ -29725,8 +29383,6 @@ function botProfileCardHtml(profile = {}, { loading = false, status = "", comman
 
 function renderBotProfileCard(profile = {}, options = {}) {
   const session = botProfileCardSession || (botProfileCardSession = { userId: normId(state.user?.id || ""), anchorEl: document.activeElement, anchorRect: document.activeElement?.getBoundingClientRect?.() });
-  if (!Object.prototype.hasOwnProperty.call(session, "serverId")) session.serverId = resolveBotProfileDirectMessageServerId(profile, session.anchorEl);
-  if (!Object.prototype.hasOwnProperty.call(session, "navigationVersion")) session.navigationVersion = dmOpenIntentSeq;
   session.controller?.abort();
   session.controller = new AbortController();
   const hadCard = !!document.querySelector("[data-bot-profile-modal]");
@@ -29766,16 +29422,6 @@ function renderBotProfileCard(profile = {}, options = {}) {
     if (!target) return;
     if (target === modal || target.closest("[data-bot-profile-close]")) {
       close();
-      return;
-    }
-    const message = target.closest("[data-bot-profile-message]");
-    if (message) {
-      event.preventDefault();
-      if (message.disabled || !card?.isConnected || botProfileCardSession !== session || normId(state.user?.id || "") !== session.userId
-        || session.navigationVersion !== dmOpenIntentSeq || !session.serverId || !normId(profile?.botId || "")) return;
-      const serverId = session.serverId;
-      close();
-      void openBotDirectMessage(profile, serverId);
       return;
     }
     const install = target.closest("[data-bot-profile-install]");
@@ -30177,34 +29823,6 @@ function isCurrentBotDmMedia(snapshot,row) {
   return !!current && !current.deleted_at && current.sender === row.sender
     && current.content === row.content && JSON.stringify(current.attachments) === JSON.stringify(row.attachments);
 }
-let botPrivateResponseMedia = null;
-function isCurrentBotPrivateResponseMedia(snapshot, response) {
-  const context = getBotComponentPrivateContext();
-  return !!context && state.user?.id === snapshot.userId
-    && context.serverId === snapshot.serverId && context.channelId === snapshot.channelId
-    && context.conversationId === snapshot.conversationId && context.navigation === snapshot.navigation
-    && Date.parse(response.expires_at) > Date.now() && botComponentUi.isPrivateResponseCurrent(response.response_id);
-}
-function getBotPrivateResponseMedia() {
-  if (botPrivateResponseMedia) return botPrivateResponseMedia;
-  const resolve = createPrivateInteractionAttachments({
-    invoke: async (name, body) => {
-      const { data, error } = await supabase.functions.invoke(name, { body });
-      if (error || data?.ok !== true) throw Error("private_attachment_unavailable");
-      return data;
-    },
-    getActor: () => state.user?.id || "", getContext: () => getBotComponentPrivateContext(),
-    isCurrent: isCurrentBotPrivateResponseMedia, supabaseOrigin: supabase.supabaseUrl,
-  });
-  return botPrivateResponseMedia = createBotDirectMessageMediaView({
-    document, host: document.querySelector(".panel.mid"), items: privateInteractionAttachmentItems,
-    resolve, isCurrent: isCurrentBotPrivateResponseMedia,
-    getName: item => formatAttachmentDisplayName(item.name, item.mime.split("/")[0]),
-    metaLabel: item => attachmentMetaLabel({ name: item.name, mime: item.mime, size: item.size, kind: item.mime.split("/")[0] }),
-    sizeLabel: item => formatBytesLabel(item.size),
-    bindPlayers: container => { bindDmVideoPlayerUi(container, { lightboxLabels: mediaLightboxLabels(typeof appLanguage === "string" ? appLanguage : "en") }); bindDmAudioPlayerUi(container); },
-  });
-}
 function getBotDmMediaView() {
   return botDmMediaView ||= createBotDirectMessageMediaView({
     document,host:document.querySelector('.panel.mid'),
@@ -30281,82 +29899,8 @@ function openBotDmMediaLightbox({item,row,snapshot,grant}) {
   if(!opened)botDmInitialMediaLease=null;
   return opened;
 }
-function getBotNativeComponentContext(messageId) {
-  const thread=botPlatformSurfacesUi?.getComponentContext(messageId);
-  if(thread)return thread;
-  const snapshot=botDirectMessageSnapshot;
-  if(!snapshot?.enabled||!isActiveBotDirectMessageOwner(snapshot)||botDirectMessageView?.root.hidden)return null;
-  const row=messageId?snapshot.messages.find(value=>value.id===messageId):null;
-  if(messageId&&!row)return null;
-  return {userId:snapshot.userId,sourceKind:'dm',serverId:null,channelId:null,originServerId:snapshot.serverId,botId:snapshot.botId,
-    conversationId:snapshot.key,navigation:dmOpenIntentSeq,botName:snapshot.name,botAvatarUrl:snapshot.avatarUrl};
-}
-let botNativePrivateResponseMedia=null;
-function isCurrentBotNativePrivateMedia(snapshot,response) {
-  const context=getBotNativeComponentContext();
-  return !!context&&state.user?.id===snapshot.userId&&context.sourceKind===snapshot.sourceKind
-    &&context.originServerId===snapshot.originServerId&&context.botId===snapshot.botId&&context.conversationId===snapshot.conversationId
-    &&context.navigation===snapshot.navigation&&Date.parse(response.expires_at)>Date.now()&&botNativeComponentUi.isPrivateResponseCurrent(response.response_id);
-}
-function getBotNativePrivateResponseMedia() {
-  if(botNativePrivateResponseMedia)return botNativePrivateResponseMedia;
-  const resolve=createPrivateInteractionAttachments({invoke:async(name,body)=>{
-    const {data,error}=await supabase.functions.invoke(name,{body,signal:AbortSignal.timeout(20000)});
-    if(error||data?.ok!==true)throw Error('private_attachment_unavailable');return data;
-  },readerFunction:'altara-bot-surface-attachments',getActor:()=>state.user?.id||'',getContext:getBotNativeComponentContext,
-    isCurrent:isCurrentBotNativePrivateMedia,supabaseOrigin:supabase.supabaseUrl});
-  return botNativePrivateResponseMedia=createBotDirectMessageMediaView({document,host:document.querySelector('.panel.mid'),items:privateInteractionAttachmentItems,
-    resolve,isCurrent:isCurrentBotNativePrivateMedia,getName:item=>formatAttachmentDisplayName(item.name,item.mime.split('/')[0]),
-    metaLabel:item=>attachmentMetaLabel({name:item.name,mime:item.mime,size:item.size,kind:item.mime.split('/')[0]}),sizeLabel:item=>formatBytesLabel(item.size),
-    bindPlayers:container=>{bindDmVideoPlayerUi(container);bindDmAudioPlayerUi(container);}});
-}
-let botThreadMediaView=null,botDmComponentMediaView=null;
-function getBotDmComponentMediaView() {
-  return botDmComponentMediaView ||= createBotDirectMessageMediaView({document,host:document.querySelector('.panel.mid'),isCurrent:isCurrentBotDmMedia,
-    items:row=>botDirectMessageAttachmentItems(row).filter(item=>item.uploadId===row.componentMediaUploadId),
-    resolve:(item,row,snapshot,{download})=>getBotDirectMessageAttachments().resolve({snapshot,message:row,attachment:item,download}),
-    getName:item=>formatAttachmentDisplayName(item.name,item.mime.split('/')[0]),metaLabel:item=>attachmentMetaLabel({name:item.name,mime:item.mime,size:item.size,kind:item.mime.split('/')[0]}),sizeLabel:item=>formatBytesLabel(item.size)});
-}
-function isCurrentBotThreadMedia(snapshot,row) {
-  const current=botPlatformSurfacesUi?.getComponentContext(),message=botPlatformSurfacesUi?.getComponentMessage(row.id);
-  return !!current&&state.user?.id===snapshot.userId&&current.threadId===snapshot.threadId&&current.parentChannelId===snapshot.parentChannelId
-    &&current.navigation===snapshot.navigation&&message?.bot_id===row.bot_id&&!message.deleted_at
-    &&JSON.stringify(message.attachments)===JSON.stringify(row.attachments);
-}
-function getBotThreadMediaView() {
-  return botThreadMediaView ||= createBotDirectMessageMediaView({document,host:document.body,isCurrent:isCurrentBotThreadMedia,
-    items:row=>botDirectMessageAttachmentItems(row).filter(item=>!row.componentMediaUploadId||item.uploadId===row.componentMediaUploadId),
-    resolve:async(item,row,snapshot)=>{
-      if(!isCurrentBotThreadMedia(snapshot,row))throw Error('attachment_context_changed');
-      const original={...row,content:JSON.stringify({attachments:row.attachments})};
-      const [hydrated]=await hydrateTrustedAttachmentRows({supabase,rows:[original]});
-      if(!isCurrentBotThreadMedia(snapshot,row))throw Error('attachment_context_changed');
-      const canonical=JSON.parse(hydrated.content).attachments.find(value=>(value.uploadId||value.upload_id)===item.uploadId);
-      const url=canonical&&resolveTrustedAttachmentDeliveryUrl(hydrated,canonical);
-      if(!url)throw Error('attachment_unavailable');return {url,expiresIn:60};
-    },getName:item=>formatAttachmentDisplayName(item.name,item.mime.split('/')[0]),
-    metaLabel:item=>attachmentMetaLabel({name:item.name,mime:item.mime,size:item.size,kind:item.mime.split('/')[0]}),
-    sizeLabel:item=>formatBytesLabel(item.size),bindPlayers:container=>{bindDmVideoPlayerUi(container);bindDmAudioPlayerUi(container);}});
-}
-function hydrateBotNativeComponentMedia(host) {
-  if(!host)return;
-  for(const box of host.querySelectorAll('[data-bot-source-kind][data-bot-message-id]')) {
-    const messageId=box.dataset.botMessageId,kind=box.dataset.botSourceKind;
-    const row=kind==='dm'?botDirectMessageSnapshot?.messages.find(row=>row.id===messageId):botPlatformSurfacesUi?.getComponentMessage(messageId);
-    const snapshot=kind==='dm'?botDirectMessageSnapshot:botPlatformSurfacesUi?.getComponentContext(messageId);
-    if(!row||!snapshot||row.deleted_at)continue;
-    for(const slot of box.querySelectorAll('[data-bot-component-media-upload]')) {
-      if(slot.dataset.nativeMediaMounted==='true')continue;
-      const item=botDirectMessageAttachmentItems(row).find(item=>item.uploadId===slot.dataset.botComponentMediaUpload);
-      if(!item)continue;
-      slot.dataset.nativeMediaMounted='true';
-      slot.replaceChildren((kind==='dm'?getBotDmComponentMediaView():getBotThreadMediaView()).render({...row,componentMediaUploadId:item.uploadId},snapshot));
-    }
-  }
-}
 function renderBotDirectMessageBody(row) {
   if (row.deleted_at) return {html:esc(t("message.deleted", "Message deleted")),className:"msg__text msg__text--plain hint"};
-  const components=row.sender==='bot'?renderBotSurfaceComponents({...row,source_kind:'dm'}):'';
   // Only the existing catalogue envelope can become media. Arbitrary JSON and
   // bot-supplied attachment URLs remain plain text, never upload authority.
   try {
@@ -30364,20 +29908,16 @@ function renderBotDirectMessageBody(row) {
     const canonical = value?.delivery === "public-gif-provider-v1" && publicGifMessageContent(value?.attachment?.gifProvider);
     if (canonical) {
       const safe = JSON.parse(canonical);
-      if (safe.url === value.url) return {html:deferredGifMessageBodyHtml(safe.attachment.gifProvider,safe.url)+components,className:"msg__text msg__text--gif"};
+      if (safe.url === value.url) return {html:deferredGifMessageBodyHtml(safe.attachment.gifProvider,safe.url),className:"msg__text msg__text--gif"};
     }
   } catch (_) {}
   const count = getEmojiOnlyMessageCount(row.content);
   const html=replaceRegionalFlagEmojiWithImagesInHtml(renderMessageTextHtml(row.content || "", {allowRichEmbeds:false}));
-  const translation = messageTranslationSlotHtml(getMessageTranslationInput(row,botDirectMessageSnapshot));
-  return {html:`<span>${html}</span>${components}${translation}`,className:`msg__text msg__text--plain${count&&!components ? ` msg__text--emojiOnly msg__text--emojiOnly-${Math.min(count,4)}` : ""}`};
+  return {html:`<span>${html}</span>`,className:`msg__text msg__text--plain${count ? ` msg__text--emojiOnly msg__text--emojiOnly-${Math.min(count,4)}` : ""}`};
 }
 async function handleBotDirectMessageAction(action,row,snapshot,anchor,payload={}) {
   if (!isActiveBotDirectMessageOwner(snapshot) || row.deleted_at) return;
   const view = getBotDirectMessageView();
-  if (action === "translate") return translateVisibleMessage(row.id);
-  if (action === "translate_conversation" || action === "translation_settings") return openMessageTranslationSettings(action === "translation_settings" ? row.id : '',{automatic:action === "translate_conversation",returnFocus:anchor});
-  if (action === "translate_stop") return stopConversationTranslation();
   if (action === "reply") return view?.beginReply(row,snapshot);
   if (action === "edit") return view?.beginEdit(row,snapshot);
   if (action === "react") return openEmojiPicker({mode:"bot_dm",anchorEl:anchor,botContext:{key:snapshot.key,userId:snapshot.userId,messageId:row.id}});
@@ -30392,7 +29932,7 @@ async function handleBotDirectMessageAction(action,row,snapshot,anchor,payload={
 function getBotDirectMessageActions(row,snapshot) {
   if (!snapshot.enabled || row.deleted_at) return [];
   const caps=snapshot.capabilities || {};
-  return [...conversationTranslationMenuActions(getMessageTranslationInput(row,snapshot)),caps.reaction && {action:"react",label:"Escolher emoji",icon:"🙂"},caps.reply && {action:"reply",label:"Reply",icon:"↩"},
+  return [caps.reaction && {action:"react",label:"Escolher emoji",icon:"🙂"},caps.reply && {action:"reply",label:"Reply",icon:"↩"},
     row.sender === "user" && caps.edit && {action:"edit",label:"Editar",icon:"✎"},
     caps.pin && {action:"pin",label:row.is_pinned?"Unpin":"Pin",icon:"📌"},
     row.sender === "user" && caps.delete && {action:"delete",label:"Delete Message",icon:"🗑",danger:true}].filter(Boolean);
@@ -30413,8 +29953,6 @@ function getBotDirectMessageView() {
   if (botDirectMessageView) return botDirectMessageView;
   const host = document.getElementById("dmMain")?.parentElement;
   if (!host) return null;
-  bindMessageTranslationActionsOnce();
-  bindConversationTranslationControlsOnce();
   botDirectMessageView = createBotDirectMessageView({
     host,
     template: document.getElementById("dmMain"),
@@ -30434,7 +29972,7 @@ function getBotDirectMessageView() {
       return row.sender === "bot" ? openBotProfileCard(snapshot,{anchorEl}) : openUserCardModal(snapshot.userId,{anchorEl});
     },
     getCapabilities: snapshot => ({emoji:true,gif:true,attach:snapshot.capabilities?.attachments === true,messageActions:true,pins:snapshot.capabilities?.pin === true}),
-    getMessageActions: (row, snapshot) => getBotDirectMessageActions(row, snapshot).filter(item => !["translate","translate_conversation","translate_stop","translation_settings"].includes(item.action)),
+    getMessageActions: getBotDirectMessageActions,
     getQuickReactions: () => QUICK_REACTIONS,
     getReactions: row => row.reactions.map(item => ({...item,enabled:item.me})),
     getMessagePreview: content => normalizeMessagePreviewText(content),
@@ -30450,12 +29988,11 @@ function getBotDirectMessageView() {
     onConsent: enabled => getBotDirectMessagesController().saveConsent(enabled),
     onRetry: () => getBotDirectMessagesController().retry(),
     onRefresh: () => refreshActiveBotDirectMessage(),
-    onLoadOlder: snapshot => isActiveBotDirectMessageOwner(snapshot) && getBotDirectMessagesController().loadOlder(),
     onProfile: (snapshot, anchorEl) => {
       if (snapshot.userId !== normId(state.user?.id || "") || snapshot.key !== getActiveBotDirectMessageKey()) return;
       return openBotProfileCard({...snapshot, serverId: snapshot.serverId}, {anchorEl});
     },
-    onOptions: (snapshot, anchorEl, point) => openBotContextMenuAt(snapshot, {anchorEl, point, directMessageSnapshot:snapshot}),
+    onOptions: (snapshot, anchorEl) => openBotContextMenuAt(snapshot, {anchorEl, directMessageSnapshot:snapshot}),
     getProfile: snapshot => ({...snapshot,status:getServerBotPresence(snapshot.serverId,snapshot.botId)?.effectiveStatus || snapshot.presenceStatus || "offline"}),
     onFullProfile: (profile,snapshot,anchorEl) => isActiveBotDirectMessageOwner(snapshot) && openBotProfileCard(profile,{anchorEl}),
     renderAvatar: profile => buildAvatarMediaHtml(profile.avatarUrl || "", { alt: profile.name || "Avatar", loading: "lazy" }),
@@ -30500,14 +30037,11 @@ function getBotDirectMessagesController() {
         description:profile.description,publicId:profile.publicId,appId:profile.appId,isPublic:profile.isPublic,presenceStatus:profile.presenceStatus };
     },
     onActiveChange: snapshot => {
-      if (!snapshot) { if (getActiveBotDirectMessageKey()) stopConversationTranslation();botDirectMessageSnapshot=null;botDirectMessageUpload=null;botDmAttachmentActionsMenu?.close();botDmAttachmentMenuOwner=null;
-        botDmMediaLightbox?.close();botDmInitialMediaLease=null;botDmMediaView?.reset();botDmComponentMediaView?.reset();botDirectMessageView?.close();botNativeComponentUi.syncContext();syncBotDirectMessageSidebarHighlight();return; }
+      if (!snapshot) { botDirectMessageSnapshot=null;botDirectMessageUpload=null;botDmAttachmentActionsMenu?.close();botDmAttachmentMenuOwner=null;
+        botDmMediaLightbox?.close();botDmInitialMediaLease=null;botDmMediaView?.reset();botDirectMessageView?.close();syncBotDirectMessageSidebarHighlight();return; }
       if (snapshot.userId !== normId(state.user?.id || "") || snapshot.key !== getActiveBotDirectMessageKey()) return;
       botDirectMessageSnapshot=snapshot;
       getBotDirectMessageView()?.update(snapshot);
-      scheduleConversationTranslationSync();
-      botNativeComponentUi.syncContext();
-      hydrateBotNativeComponentMedia(botDirectMessageView?.root);
       botDmMediaView?.hydrate(botDirectMessageView.root);
       if(!snapshot.enabled){botDmMediaLightbox?.close();botDmInitialMediaLease=null;botDmAttachmentActionsMenu?.close();}
       bindLazyMediaImages(botDirectMessageView.root);
@@ -30524,12 +30058,9 @@ function getBotDirectMessagesController() {
   return botDirectMessagesController;
 }
 function resetBotDirectMessages() {
-  closeBotServerSettingsModal({ force: true, restoreFocus: false });
   botDirectMessagesInboxOwner = "";
   botDirectMessagesController?.reset();
   botDirectMessageView?.reset();
-  botDmComponentMediaView?.reset();
-  botNativeComponentUi.reset();
   if (state.activeDm?.kind === "bot_dm") { state.activeDm = null; setMidMode("friends"); }
 }
 function syncBotDirectMessageSidebarHighlight() {
@@ -30546,115 +30077,34 @@ async function refreshActiveBotDirectMessage() {
   return getBotDirectMessagesController().open({botId: active.botId, serverId: active.botServerId, name: active.displayName, avatarUrl: active.avatarUrl});
 }
 async function openBotDirectMessage(profile, serverId) {
-  const botId = normId(profile?.botId || ""), sid = normId(serverId || ""), userId = normId(state.user?.id || "");
-  if (!botId || !sid || !userId) return false;
+  const botId = normId(profile?.botId || ""), sid = normId(serverId || "");
+  if (!botId || !sid || !state.user?.id) return false;
   const controller = getBotDirectMessagesController();
   leaveActiveDmView({ captureHistory: false });
   const intent = beginMainContentNavigationIntent({ reason: "open-bot-direct-message" });
   activeDmId = null;
-  state.activeDm = {kind: "bot_dm", botDmKey: `bot-dm:${sid}:${botId}`, botId, botServerId: sid, botDmUserId: userId, displayName: profile.name || "Bot", avatarUrl: profile.avatarUrl || ""};
+  state.activeDm = {kind: "bot_dm", botDmKey: `bot-dm:${sid}:${botId}`, botId, botServerId: sid, displayName: profile.name || "Bot", avatarUrl: profile.avatarUrl || ""};
   setMidMode("bot_dm", {skipServerConversationRefresh:true});
-  captureCurrentMainNavigationRoute();
-  await controller.open({botId, serverId:sid, name:profile.name || "Bot", avatarUrl:profile.avatarUrl || "", serverName:profile.serverName || getServerRowById(sid)?.name || ""});
-  if (userId !== normId(state.user?.id || "") || !isMainContentNavigationIntentCurrent(intent) || getActiveBotDirectMessageKey() !== `bot-dm:${sid}:${botId}`) return false;
+  const result = await controller.open({botId, serverId:sid, name:profile.name || "Bot", avatarUrl:profile.avatarUrl || "", serverName:profile.serverName || getServerRowById(sid)?.name || ""});
+  if (!isMainContentNavigationIntentCurrent(intent) || getActiveBotDirectMessageKey() !== `bot-dm:${sid}:${botId}`) return false;
   controller.markRead();
   queueLightweightDmListRenderFromState();
   getBotDirectMessageView()?.focus();
-  // The owned view is mounted even when its authoritative read shows an error.
-  return true;
+  return !!result;
 }
 function renderBotDirectMessageSidebarRow(row, allRows) {
   const count = Math.max(0, Number(row.unreadCount) || 0);
   const duplicate = allRows.some(other => other.botId === row.botId && other.key !== row.key);
-  return `<div class="dm-item is-clickable${count ? " is-unread" : ""}" role="button" tabindex="0" data-bot-dm-key="${escAttr(row.key)}" data-bot-dm-id="${escAttr(row.botId)}" data-bot-dm-server="${escAttr(row.serverId)}" data-bot-dm-owner="${escAttr(normId(state.user?.id || ""))}">
+  return `<div class="dm-item is-clickable${count ? " is-unread" : ""}" role="button" tabindex="0" data-bot-dm-key="${escAttr(row.key)}" data-bot-dm-id="${escAttr(row.botId)}" data-bot-dm-server="${escAttr(row.serverId)}">
     <div class="avatar">${buildAvatarMediaHtml(row.avatarUrl || "", {alt: row.name || "Bot", loading:"lazy", deferAnimatedStorage:true})}</div>
     <div class="dm-text"><div class="dm-name botDmInboxName"><span>${esc(row.name || "Bot")}</span><span class="msg__botBadge">BOT</span></div>${duplicate ? `<div class="dm-handle">${esc(row.serverName || "Conversa no servidor")}</div>` : ""}</div>
     ${count ? `<span class="botDmUnreadBadge" aria-label="${count} mensagens por ler">${count > 99 ? "99+" : count}</span>` : ""}
-    <button class="dm-item-remove" type="button" data-bot-dm-hide="${escAttr(row.key)}" title="${escAttr(appLanguage === "en" ? "Close DM" : "Fechar conversa")}" aria-label="${escAttr((appLanguage === "en" ? "Close DM with " : "Fechar conversa com ") + (row.name || "Bot"))}"><span class="dm-item-remove__icon" aria-hidden="true">&times;</span></button>
   </div>`;
-}
-function closeBotDirectMessageFromInbox(key, ownerId) {
-  if (!ownerId || ownerId !== normId(state.user?.id || "")) return false;
-  const controller = getBotDirectMessagesController();
-  if (!controller.getVisibleRows().some(row => row.key === key)) return false;
-  const closingActive = getActiveBotDirectMessageKey() === key;
-  const focused = document.activeElement;
-  const focusedKey = focused?.closest?.("[data-bot-dm-key]")?.getAttribute("data-bot-dm-key")
-    || focused?.closest?.("[data-bot-inbox-key]")?.getAttribute("data-bot-inbox-key");
-  const result = controller.hideFromInbox(key);
-  if (result) {
-    if (closingActive || (altaraContextMenuDebugState.targetKind === "bot_dm_inbox" && altaraContextMenuDebugState.targetId === key)) {
-      closeBotContextMenu("route_change");
-    }
-    // The Home route invalidates pending opens and saves the bot composer draft.
-    if (closingActive) navigateToHomeView({ captureHistory: true });
-    if (focusedKey === key && (document.activeElement === focused || document.activeElement === document.body)) {
-      document.getElementById("friendSearch")?.focus({preventScroll:true});
-    }
-    queueLightweightDmListRenderFromState();
-  }
-  return result;
-}
-function bindBotDirectMessageSidebarRow(item, controller) {
-  const ownerId = item.getAttribute("data-bot-dm-owner"), key = item.getAttribute("data-bot-dm-key");
-  const currentRow = () => ownerId === normId(state.user?.id || "") && item.isConnected
-    ? controller.getVisibleRows().find(row => row.key === key) : null;
-  const open = () => { const row = currentRow(); if (row) void openBotDirectMessage(row, row.serverId); };
-  item.addEventListener("click", event => {
-    const target = eventTargetElement(event);
-    if (target?.closest?.("[data-bot-dm-hide]")) {
-      event.preventDefault(); event.stopPropagation();
-      if (currentRow()) closeBotDirectMessageFromInbox(key, ownerId);
-      return;
-    }
-    if (target?.closest?.("button,a,input,select,textarea")) return;
-    open();
-  });
-  const menu = point => { const row = currentRow(); if (row) openBotDirectMessageSidebarMenu(row, { point, anchorEl:item, ownerId }); };
-  item.addEventListener("contextmenu", event => { event.preventDefault(); event.stopPropagation(); menu(event); });
-  item.addEventListener("keydown", event => {
-    if (event.key === "ContextMenu" || event.key === "F10" && event.shiftKey) {
-      event.preventDefault(); event.stopPropagation(); menu(null);
-    } else if (event.target === item && (event.key === "Enter" || event.key === " ")) {
-      event.preventDefault(); open();
-    }
-  });
-}
-function openBotDirectMessageSidebarMenu(row, { point = null, anchorEl = null, ownerId = normId(state.user?.id || "") } = {}) {
-  if (!ownerId || ownerId !== normId(state.user?.id || "") || !anchorEl?.isConnected) return;
-  const current = getBotDirectMessagesController().getVisibleRows().find(item => item.key === row?.key
-    && item.botId === row?.botId && item.serverId === row?.serverId);
-  if (!current || anchorEl.getAttribute("data-bot-dm-owner") !== ownerId) return;
-  const profile = normalizeBotProfileSeed(current), attrs = getBotContextProfileAttrs(profile, current.serverId, "");
-  const menu = ensureBotContextMenu(), pt = appLanguage !== "en";
-  closeBotServerRoleMenu(); closeActivePopover(); closeMessageMenu("open_other_menu");
-  closeGroupMemberMenu("open_other_menu"); closeGroupDmListMenu("open_other_menu"); closeDmUserListMenu("open_other_menu");
-  closeDmMuteDurationMenu("open_other_menu"); closeDmUserRoleMenu("open_other_menu");
-  closeServerVoiceMemberMenu({force:true,reason:"open_other_menu"});
-  const owned = 'data-bot-inbox-owner="' + escAttr(ownerId) + '" data-bot-inbox-key="' + escAttr(current.key) + '" data-bot-inbox-navigation="' + escAttr(String(dmOpenIntentSeq)) + '"';
-  const item = (action, label) => '<button class="msgMenu__item" type="button" data-bot-menu-act="' + action + '" ' + attrs + ' ' + owned + '><span class="msgMenu__itemMain"><span>' + esc(label) + '</span></span></button>';
-  const divider = '<div class="msgMenu__divider"></div>';
-  menu.innerHTML = [item("inbox_profile", pt ? "Perfil" : "Profile"), item("inbox_message", pt ? "Mensagem" : "Message"),
-    item("inbox_close", pt ? "Fechar conversa" : "Close DM"), divider,
-    item("inbox_copy_bot_id", pt ? "Copiar ID do bot" : "Copy Bot ID"),
-    item("inbox_copy_channel_id", pt ? "Copiar ID da conversa" : "Copy Conversation ID")].join("");
-  menu.classList.add("is-open");
-  setAltaraContextMenuOpen({type:"bot",targetId:current.key,targetKind:"bot_dm_inbox",menuId:"botContextMenu",anchorEl,point,reason:point?"contextmenu":"trigger"});
-  if (!point || !openContextMenuAtCursor(point, menu, {width:286,minHeight:180,margin:8,offset:6})) {
-    positionContextMenuByAnchor(menu, anchorEl, {width:286,minHeight:180,margin:8,gap:8});
-  }
-  if (!point) menu.querySelector("[data-bot-menu-act]")?.focus({preventScroll:true});
 }
 let botPlatformAudioBridge = null;
 let botPlatformAudioUi = null;
 function getBotPlatformSurfacesUi() {
-  if(!botPlatformSurfacesUi)botPlatformSurfacesUi=createBotSurfacesUi({supabase,canOpenThreads:()=>CHANNEL_THREADS_AND_MODES_ENABLED,getContext:()=>({userId:normId(state.user?.id||''),serverId:normId(state.activeDm?.serverId||getActiveServerContext?.()?.serverId||''),channelId:normId(state.activeDm?.channelId||'') }),
-    renderComponents:row=>renderBotSurfaceComponents({...row,source_kind:'thread'}),
-    renderEmbeds:(row,container)=>{container.innerHTML=renderBotEmbeds(row);},
-    renderAttachments:(row,context)=>getBotThreadMediaView().render(row,context),
-    createForumPost:async body=>{const {data,error}=await supabase.functions.invoke('altara-channel-modes',{body,signal:AbortSignal.timeout(20000)});return {data,error};},
-    onHistoryChange:()=>{botNativeComponentUi.syncContext();hydrateBotNativeComponentMedia(botPlatformSurfacesUi?.getComponentAnchor());},
-    onClose:()=>{botNativeComponentUi.syncContext();botThreadMediaView?.reset();}});
+  if(!botPlatformSurfacesUi)botPlatformSurfacesUi=createBotSurfacesUi({supabase,getContext:()=>({userId:normId(state.user?.id||''),serverId:normId(state.activeDm?.serverId||getActiveServerContext?.()?.serverId||''),channelId:normId(state.activeDm?.channelId||'')})});
   return botPlatformSurfacesUi;
 }
 function getBotAudioConsentContext() {
@@ -30717,23 +30167,6 @@ function ensureBotContextMenu() {
     event.preventDefault();
     event.stopPropagation();
     const action = String(actionBtn.getAttribute("data-bot-menu-act") || "").trim();
-    const inboxKey = actionBtn.getAttribute("data-bot-inbox-key");
-    if (inboxKey) {
-      const ownerId = actionBtn.getAttribute("data-bot-inbox-owner");
-      const navigationId = actionBtn.getAttribute("data-bot-inbox-navigation");
-      if (ownerId !== normId(state.user?.id || "") || navigationId !== String(dmOpenIntentSeq)) { closeBotContextMenu("action"); return; }
-      const row = getBotDirectMessagesController().getVisibleRows().find(item => item.key === inboxKey);
-      if (!row) { closeBotContextMenu("action"); return; }
-      const anchor = altaraContextMenuDebugState.anchorEl;
-      const anchorRect = anchor?.getBoundingClientRect?.() || null;
-      closeBotContextMenu("action");
-      if (action === "inbox_close") closeBotDirectMessageFromInbox(row.key, ownerId);
-      else if (action === "inbox_message") await openBotDirectMessage(row, row.serverId);
-      else if (action === "inbox_profile") await openBotProfileCard(row, {anchorEl:anchor,anchorRect});
-      else if (action === "inbox_copy_bot_id") await copyTextWithPromptFallback(row.botId, "Bot ID");
-      else if (action === "inbox_copy_channel_id") await copyTextWithPromptFallback(row.key, "Conversation ID");
-      return;
-    }
     const profile = getBotProfileSeedFromElement(actionBtn);
     const serverId = normId(actionBtn.getAttribute("data-bot-menu-server-id") || getActiveServerContext?.()?.serverId || state.activeDm?.serverId || "");
     const timelineMessageId = String(actionBtn.getAttribute("data-bot-menu-message-id") || "").trim();
@@ -30804,14 +30237,10 @@ function ensureBotContextMenu() {
 }
 
 function insertBotMentionIntoComposer(profile = {}) {
-  return insertDmComposerMentionIdentity(profile.botId || profile.bot_id || profile.id || "");
-}
-
-function insertDmComposerMentionIdentity(userId = "") {
   const input = document.getElementById("dmInput");
-  const id = normId(userId);
-  if (!getDmComposerMentionContext(input) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) return false;
-  const mention = `<@${id}>`;
+  if (!input) return false;
+  const label = String(profile?.name || "Bot").trim().replace(/\s+/g, " ") || "Bot";
+  const mention = `@${label}`;
   const value = String(input.value || "");
   const start = Number.isFinite(input.selectionStart) ? input.selectionStart : value.length;
   const end = Number.isFinite(input.selectionEnd) ? input.selectionEnd : start;
@@ -31073,18 +30502,17 @@ function openBotContextMenuAt(seed = {}, { point = null, anchorEl = null, direct
 async function openBotProfileCard(seed = {}, { anchorEl = null, anchorRect = null } = {}) {
   closeActivePopover();
   closeBotProfileCard();
-  const session = { userId: normId(state.user?.id || ""), anchorEl, anchorRect: anchorRect || anchorEl?.getBoundingClientRect?.() || null,
-    serverId: resolveBotProfileDirectMessageServerId(seed, anchorEl), navigationVersion: dmOpenIntentSeq };
+  const session = { userId: normId(state.user?.id || ""), anchorEl, anchorRect: anchorRect || anchorEl?.getBoundingClientRect?.() || null };
   botProfileCardSession = session;
   const initial = normalizeBotProfileSeed(seed);
   if (!initial.botId && !initial.publicId) { closeBotProfileCard(); return; }
   renderBotProfileCard(initial, { loading: true });
   await ensureActiveServerBotListLoaded({ force: true });
   if (botProfileCardSession !== session) return;
-  if (normId(state.user?.id || "") !== session.userId || session.navigationVersion !== dmOpenIntentSeq) { closeBotProfileCard(); return; }
+  if (normId(state.user?.id || "") !== session.userId) { closeBotProfileCard(); return; }
   const full = normalizeBotProfileSeed(await fetchSafeBotProfile(normalizeBotProfileSeed(initial)));
   if (botProfileCardSession !== session) return;
-  if (normId(state.user?.id || "") !== session.userId || session.navigationVersion !== dmOpenIntentSeq) { closeBotProfileCard(); return; }
+  if (normId(state.user?.id || "") !== session.userId) { closeBotProfileCard(); return; }
   renderBotProfileCard(full, { loading: false });
 }
 function getDeveloperAppById(appId = "") {
@@ -32906,247 +32334,6 @@ async function handleServerSettingsBotReviewPermissions(botId = "") {
   }
 }
 
-function getBotServerSettingsController() {
-  if (!getBotServerSettingsController.current) {
-    getBotServerSettingsController.current = createBotServerSettingsController({
-      supabase,
-      getCurrentUserId: () => normId(state.user?.id || ""),
-      onChange: (snapshot) => renderBotServerSettingsModal(snapshot),
-    });
-  }
-  return getBotServerSettingsController.current;
-}
-
-let serverBotResourceDialog = null;
-let serverExpressionView = null;
-function getServerExpressionScope() {
-  const conversationId = normId(activeDmId || state.activeDm?.conversationId || "");
-  const context = resolveServerChannelTimelineContext({conversationId});
-  return { actor: state.user?.id || "", serverId: context?.serverId || "", channelId: context?.channelId || "", navigation: dmOpenIntentSeq,
-    allowed: !!context?.serverId && canCurrentUserRenderServerChannelConversation(conversationId) };
-}
-
-function getServerExpressionView() {
-  if (!serverExpressionView) {
-    serverExpressionView = createServerExpressionView({document, rpc:(name,args)=>supabase.rpc(name,args),getScope:getServerExpressionScope,
-      loadMedia:(assetId,serverId)=>callServerExpressionMedia({assetId,serverId}),
-      onList:()=>{ const picker=document.getElementById("emojiPicker");if(picker&&!picker.classList.contains("hidden"))renderEmojiPickerGrid(); } });
-    supabase.auth.onAuthStateChange((_event,session)=>{if(!session||session.user?.id!==state.user?.id)serverExpressionView?.reset();});
-  }
-  return serverExpressionView;
-}
-
-async function renderServerExpressionPicker(grid,query="") {
-  if(!SERVER_EXPRESSIONS_UI_ENABLED){grid?.querySelector(".serverExpressionPicker")?.remove();return;}
-  const mode=emojiPickerContext.mode,messageId=emojiPickerContext.messageId;
-  if (!["composer","reaction"].includes(mode) || !getServerExpressionScope().allowed) return;
-  if (mode==="reaction" && !dmMessagesCache.some(row=>String(row?.id || "")===messageId && !row.deleted_at)) return;
-  const scope=getServerExpressionScope(),key=[scope.actor,scope.serverId,scope.channelId,scope.navigation].join(":"),rows=await getServerExpressionView().list();
-  const current=getServerExpressionScope();
-  if(!SERVER_EXPRESSIONS_UI_ENABLED || !current.allowed || emojiPickerContext.mode!==mode || emojiPickerContext.messageId!==messageId || document.getElementById("emojiPicker")?.classList.contains("hidden") || !grid.isConnected || grid!==document.getElementById("emojiPickerGrid") || key!==[current.actor,current.serverId,current.channelId,current.navigation].join(":"))return;
-  const filtered=mode==="reaction"?serverReactionPickerRows(rows,query):rows.filter(row=>!query||row.name.toLowerCase().includes(query)).slice(0,100);
-  if(!filtered.length)return;
-  const block=document.createElement("div");block.className="serverExpressionPicker";
-  block.innerHTML=`<div class="emojiSectionTitle">Este servidor</div>${filtered.map(row=>`<button type="button" class="emojiBtn" data-emoji-pick="${escAttr(mode==="reaction"?normalizeServerReactionEmoji(expressionToken(row)):expressionToken(row))}" title="${escAttr(row.name)}">${renderServerExpressionTokens(esc(expressionToken(row)))}</button>`).join("")}`;
-  grid.querySelector(".serverExpressionPicker")?.remove();grid.prepend(block);void getServerExpressionView().refresh();
-}
-function getServerBotResourceContext() {
-  const serverId = normId(serverSettingsServerId || "");
-  const modal = document.getElementById("serverSettingsModal");
-  return { actor: state.user?.id || "", serverId, expressionsEnabled: SERVER_EXPRESSIONS_UI_ENABLED, canManage: !!serverId && !!modal && !modal.classList.contains("hidden") && currentUserCanManageServer(serverId) };
-}
-
-async function callServerExpressionMedia({ assetId = "", file = null, kind = "", serverId = "", requestId = "" } = {}) {
-  const actor = state.user?.id || "", sid = normId(serverId || serverSettingsServerId || "");
-  const current = () => !!actor && actor === state.user?.id && sid === normId(serverId || serverSettingsServerId || "");
-  if (!actor || !sid || !current()) throw Error("surface_access_denied");
-  const { data, error } = await supabase.auth.getSession();
-  if (error || !data?.session?.access_token || data.session.user?.id !== actor || !current()) throw Error("not_authenticated");
-  const endpoint = new URL(`${String(SUPABASE_URL).replace(/\/+$/, "")}/functions/v1/altara-server-expression-media`);
-  if (!file) endpoint.searchParams.set("asset_id", assetId);
-  const response = await fetch(endpoint, {
-    method: file ? "POST" : "GET", signal: AbortSignal.timeout(15000), credentials: "omit", redirect: "error",
-    headers: { Authorization: `Bearer ${data.session.access_token}`, apikey: SUPABASE_ANON_KEY,
-      ...(file ? { "Content-Type": file.type, "x-altara-server-id": sid, "x-altara-request-id": requestId || crypto.randomUUID(), "x-altara-expression-kind": kind } : {}) },
-    ...(file ? { body: file } : {}),
-  });
-  if (!current()) throw Error("surface_access_denied");
-  if (!response.ok) throw Error(response.status === 401 || response.status === 403 ? "surface_access_denied" : "expression_media_unavailable");
-  if (file) {
-    const result = await response.json();
-    if (!current() || result?.ok !== true || !isValidAltaraUuid(result.asset?.asset_id)) throw Error("invalid_expression_media_response");
-    return result.asset;
-  }
-  const blob = await response.blob();
-  if (!current() || blob.size > 512 * 1024 || !/^image\/(png|jpeg|gif|webp)$/.test(blob.type)) throw Error("invalid_expression_media_response");
-  return blob;
-}
-
-function getServerBotResourceDialog() {
-  if (!serverBotResourceDialog) {
-    serverBotResourceDialog = createServerResourceDialog({ document, rpc: (name,args) => supabase.rpc(name,args), getContext: getServerBotResourceContext,
-      uploadMedia: (file,kind,requestId) => callServerExpressionMedia({file,kind,requestId}), loadMedia: assetId => callServerExpressionMedia({assetId}) });
-    supabase.auth.onAuthStateChange((_event,session)=>{if(!session||session.user?.id!==state.user?.id)serverBotResourceDialog?.close();});
-  }
-  return serverBotResourceDialog;
-}
-
-function renderServerBotResourceButtons() {
-  const modal = document.getElementById("serverSettingsModal");
-  if (!modal) return;
-  for (const [panelName,kind,label] of [["profile","expressions","Emojis e stickers"],["moderation","automod","Proteção automática"]]) {
-    if (kind === "expressions" && !SERVER_EXPRESSIONS_UI_ENABLED) {
-      modal.querySelector(`[data-server-resource="${kind}"]`)?.remove();
-      continue;
-    }
-    const panel = modal.querySelector(`[data-server-settings-panel="${panelName}"]`);
-    if (!panel) continue;
-    const sidebarAnchor = kind === "expressions" ? modal.querySelector('[data-server-settings-nav="profile"]') : null;
-    if (kind === "expressions" && !sidebarAnchor) continue;
-    let button = modal.querySelector(`[data-server-resource="${kind}"]`);
-    if (!button) {
-      button = document.createElement("button"); button.type = "button";
-      button.dataset.serverResource = kind; button.textContent = label;
-      button.setAttribute("aria-haspopup", "dialog");
-      button.addEventListener("click", () => { if ((kind !== "expressions" || SERVER_EXPRESSIONS_UI_ENABLED) && getServerBotResourceContext().canManage) void getServerBotResourceDialog().open(kind); });
-    }
-    button.className = sidebarAnchor ? "serverSettingsNavItem" : "btn ghost";
-    if (sidebarAnchor) {
-      if (button.previousElementSibling !== sidebarAnchor) sidebarAnchor.after(button);
-    } else if (button.parentElement !== panel) panel.prepend(button);
-    button.hidden = !getServerBotResourceContext().canManage;
-  }
-  serverBotResourceDialog?.sync();
-}
-
-function closeBotServerSettingsModal({ force = false, restoreFocus = true, openingIntent = null } = {}) {
-  const controller = getBotServerSettingsController.current;
-  if (!force && controller?.snapshot()?.saving) return;
-  // Retiring an old form during an accepted opening must retain that opening;
-  // every other accepted close also retires any permission lookup still pending.
-  if (openingIntent !== getBotServerSettingsController.openingIntent) {
-    getBotServerSettingsController.openingIntent = (getBotServerSettingsController.openingIntent || 0) + 1;
-  }
-  const modal = document.getElementById("botServerSettingsModal");
-  const returnFocus = modal?.botSettingsReturnFocus;
-  modal?.remove();
-  controller?.close();
-  if (restoreFocus && returnFocus?.isConnected) {
-    requestAnimationFrame(() => returnFocus.focus?.({ preventScroll: true }));
-  }
-}
-
-function renderBotServerSettingsModal(snapshot) {
-  const modal = document.getElementById("botServerSettingsModal");
-  if (!modal) return;
-  if (!snapshot?.serverId || snapshot.userId !== normId(state.user?.id || "")
-    || snapshot.serverId !== normId(serverSettingsServerId || "")
-    || snapshot.botId !== modal.dataset.botId) {
-    closeBotServerSettingsModal({ force: true, restoreFocus: false });
-    return;
-  }
-  const focused = modal.contains(document.activeElement) ? document.activeElement : null;
-  const focusName = focused?.getAttribute?.("name") || "";
-  const focusAction = ["close", "save", "reload"].find(action => focused?.hasAttribute?.(`data-bot-server-settings-${action}`));
-  modal.innerHTML = buildBotServerSettingsHtml(snapshot, {
-    botName: modal.botSettingsName,
-    serverName: modal.botSettingsServerName,
-  });
-  modal.querySelector(".modalCard")?.classList.add("serverChannelCreateCard");
-  const focusTarget = ["welcome_enabled", "welcome_channel_id", "dm_commands_enabled"].includes(focusName)
-    ? modal.querySelector(`[name="${focusName}"]:not(:disabled)`)
-    : (focusAction ? modal.querySelector(`[data-bot-server-settings-${focusAction}]:not(:disabled)`) : null);
-  if (focusTarget) focusTarget.focus({ preventScroll: true });
-  else if (!snapshot.saving && !modal.contains(document.activeElement)) {
-    modal.querySelector("input:not(:disabled), select:not(:disabled), button:not(:disabled)")?.focus?.({ preventScroll: true });
-  }
-}
-
-async function saveBotServerSettingsModal() {
-  const controller = getBotServerSettingsController.current;
-  const modal = document.getElementById("botServerSettingsModal");
-  const snapshot = controller?.snapshot();
-  if (!modal || !snapshot?.canSave || snapshot.saving) return;
-  if (!currentUserCanManageApps(snapshot.serverId)) {
-    await ensureCurrentUserCanManageAppsUi(snapshot.serverId);
-    return;
-  }
-  if (!modal.isConnected || snapshot.userId !== normId(state.user?.id || "")
-    || snapshot.serverId !== normId(serverSettingsServerId || "")) return;
-  const saved = await controller.save();
-  if (saved && modal.isConnected && modal === document.getElementById("botServerSettingsModal")) {
-    closeBotServerSettingsModal();
-  }
-}
-
-async function openBotServerSettingsModal(botId = "", { returnFocus: requestedReturnFocus = null } = {}) {
-  const sid = normId(serverSettingsServerId || "");
-  const bid = normId(botId);
-  const owner = normId(state.user?.id || "");
-  const openingIntent = (getBotServerSettingsController.openingIntent || 0) + 1;
-  getBotServerSettingsController.openingIntent = openingIntent;
-  if (!sid || !bid || !owner || getServerSettingsActivePanelName() !== "bots") return false;
-  if (!await ensureCurrentUserCanManageAppsUi(sid)) return false;
-  if (openingIntent !== getBotServerSettingsController.openingIntent
-    || owner !== normId(state.user?.id || "") || sid !== normId(serverSettingsServerId || "")
-    || getServerSettingsActivePanelName() !== "bots") return false;
-  const controller = getBotServerSettingsController();
-  if (controller.snapshot()?.saving) return false;
-  const bots = serverBotManagementInstallListByServerId.get(sid) || serverBotInstallListByServerId.get(sid) || [];
-  const bot = bots.find(row => normId(row?.botId) === bid);
-  if (!bot || String(bot.installStatus || bot.status || "active").toLowerCase() !== "active") return false;
-  const returnFocus = requestedReturnFocus?.isConnected ? requestedReturnFocus : document.activeElement;
-  closeBotServerSettingsModal({ restoreFocus: false, openingIntent });
-  const modal = document.createElement("div");
-  modal.id = "botServerSettingsModal";
-  modal.className = "modal";
-  modal.setAttribute("aria-hidden", "false");
-  modal.dataset.botId = bid;
-  modal.botSettingsName = bot.displayName || "Bot";
-  const server = getServerRowById(sid) || {};
-  modal.botSettingsServerName = server.name || server.serverName || t("surface.server", "Server");
-  modal.botSettingsReturnFocus = returnFocus;
-  modal.addEventListener("click", event => {
-    const target = eventTargetElement(event);
-    if (event.target === modal || target?.closest?.("[data-bot-server-settings-close]")) {
-      event.preventDefault();
-      closeBotServerSettingsModal();
-    } else if (target?.closest?.("[data-bot-server-settings-save]")) {
-      event.preventDefault();
-      void saveBotServerSettingsModal();
-    } else if (target?.closest?.("[data-bot-server-settings-reload]")) {
-      event.preventDefault();
-      void controller.reload();
-    }
-  });
-  modal.addEventListener("change", event => {
-    const field = eventTargetElement(event);
-    if (!["welcome_enabled", "welcome_channel_id", "dm_commands_enabled"].includes(field?.name)) return;
-    controller.updateDraft({ [field.name]: field.type === "checkbox" ? field.checked : field.value || null });
-  });
-  modal.addEventListener("submit", event => {
-    event.preventDefault();
-    void saveBotServerSettingsModal();
-  });
-  modal.addEventListener("keydown", event => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      closeBotServerSettingsModal();
-    } else if (event.key === "Tab") {
-      const controls = [...modal.querySelectorAll("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex='0']")]
-        .filter(element => element.getClientRects().length > 0);
-      const boundary = event.shiftKey ? controls[0] : controls[controls.length - 1];
-      if (controls.length && document.activeElement === boundary) {
-        event.preventDefault();
-        (event.shiftKey ? controls[controls.length - 1] : controls[0]).focus();
-      }
-    }
-  });
-  document.body.appendChild(modal);
-  return controller.open({ serverId: sid, botId: bid });
-}
-
 async function handleServerSettingsInstallApp() {
   const sid = normId(serverSettingsServerId || "");
   if (!sid || !await ensureCurrentUserCanManageAppsUi(sid)) return;
@@ -33191,7 +32378,7 @@ function buildServerSettingsBotsPanelHtml(serverId = "", bots = [], bannedBots =
       : "";
     const installedAt = bot.createdAt || bot.created_at || "";
     const configureAction = isActive
-      ? `<button class="btn ghost" type="button" data-server-bot-configure="${escAttr(bot.botId || "")}">${esc(t("surface.configure", "Configure"))}</button><button class="btn ghost" type="button" data-server-bot-review-permissions="${escAttr(bot.botId || "")}">${update.hasSavedDefaults && update.changed ? t("surface.review_update", "Review update") : t("surface.permissions", "Permissions")}</button>`
+      ? `<button class="btn ghost" type="button" data-server-bot-review-permissions="${escAttr(bot.botId || "")}">${update.hasSavedDefaults && update.changed ? t("surface.review_update", "Review update") : t("surface.configure", "Configure")}</button>`
       : "";
     const actions = canManageApps
       ? `<div class="serverSettingsBotRow__actions">${configureAction}<button class="btn ghost" type="button" data-server-bot-toggle="${escAttr(bot.botId || "")}" data-server-bot-enable="${isActive ? "false" : "true"}">${isActive ? t("surface.disable", "Disable") : t("surface.enable", "Enable")}</button><button class="btn ghost danger" type="button" data-server-bot-remove="${escAttr(bot.botId || "")}">${esc(t("surface.remove", "Remove"))}</button><button class="btn ghost danger" type="button" data-server-bot-ban="${escAttr(bot.botId || "")}">${esc(t("surface.ban", "Ban"))}</button></div>`
@@ -33746,10 +32933,6 @@ function makeBotSlashStructuredMultiUserOptions(option = {}, users = []) {
 }
 
 async function buildBotConnectionModeStructuredOptions(parsed = {}, command = {}, context = {}) {
-  if (usesAdvancedBotCommandComposer(command)) {
-    const built = buildAdvancedCommandOptions(command, parsed.rawText || `/${parsed.name} ${parsed.args || ""}`, getAdvancedBotCommandSelections(command, context));
-    return { options: built.options, metadataOptions: {}, resolved: {}, cleanRawText: parsed.rawText || "", missingRequiredOptions: [], advanced: true };
-  }
   const commandName = String(command?.name || parsed?.name || "").trim().toLowerCase();
   const schema = normalizeBotSlashCommandOptionsForComposer(command);
   const rawParsedOptions = parseBotSlashOptionValues(parsed?.args || "", schema);
@@ -33920,107 +33103,7 @@ async function buildBotConnectionModeStructuredOptions(parsed = {}, command = {}
   return preview;
 }
 
-let advancedBotCommandSelection = { key: "", values: {} };
-let advancedBotAutocomplete = null;
-function usesAdvancedBotCommandComposer(command = {}) {
-  return (command.options || []).some(option => [1, 2, "SUB_COMMAND", "SUB_COMMAND_GROUP"].includes(option?.type) || option?.autocomplete === true);
-}
-function advancedBotCommandSelectionKey(command, context) {
-  const input = readAdvancedCommandInput(command, document.getElementById("dmInput")?.value || "");
-  return [normId(state.user?.id || ""), context?.serverId, context?.channelId, dmOpenIntentSeq, command.commandId, ...(input?.path || [])].join(":");
-}
-function getAdvancedBotCommandSelections(command, context) {
-  const key = advancedBotCommandSelectionKey(command, context);
-  if (advancedBotCommandSelection.key !== key) advancedBotCommandSelection = { key, values: {} };
-  return advancedBotCommandSelection.values;
-}
-function getAdvancedBotAutocomplete() {
-  advancedBotAutocomplete ||= createBotAutocompleteController({
-    rpc: settingsDeveloperRpc,
-    getActor: () => normId(state.user?.id || ""),
-    getContext: () => ({ ...getBotSlashPickerContext(), navigation: dmOpenIntentSeq }),
-    invoke: async (name, body) => {
-      const { data, error } = await supabase.functions.invoke(name, { body, signal: AbortSignal.timeout(10000) });
-      if (error || data?.ok !== true) throw Error("autocomplete_unavailable");
-      return data;
-    },
-  });
-  return advancedBotAutocomplete;
-}
-async function renderAdvancedBotCommandPicker(input, command, context, token) {
-  const raw = String(input.value || ""), actor = normId(state.user?.id || ""), navigation = dmOpenIntentSeq;
-  const current = () => token === botSlashCommandPickerToken && input.isConnected && raw === input.value && actor === normId(state.user?.id || "") && navigation === dmOpenIntentSeq && isBotConnectionModeContextActive(context);
-  const parsed = readAdvancedCommandInput(command, raw);
-  if (!parsed) return;
-  let results = [], option = null;
-  const selections = getAdvancedBotCommandSelections(command, context);
-  if (parsed.branches.length) results = parsed.branches.map(branch => ({ advancedKind: "path", label: branch.path.join(" "), path: branch.path, value: branch.path.join(" "), sublabel: branch.description || "" }));
-  else {
-    const typed = advancedBotOptionMarkers(parsed.args);
-    const last = typed.at(-1);
-    const lastValue = last ? decodeAdvancedBotOptionValue(parsed.args.slice(last.valueStart), true) : "";
-    const completedSelection = !!last && raw.endsWith(" ") && selections[last.name]?.label === lastValue;
-    option = last ? parsed.schema.find(item => item.name === last.name) : parsed.schema.find(item => item.required) || parsed.schema[0];
-    if (!option) { hideBotSlashCommandPicker(); return; }
-    const query = last ? lastValue : (parsed.schema.length === 1 ? parsed.args.trim() : "");
-    if (completedSelection || !last && parsed.schema.length > 1) results = parsed.schema.filter(item => !typed.some(match => match.name === item.name)).map(item => ({ advancedKind: "option-name", label: item.name, value: item.name, option: item, sublabel: item.description || "" }));
-    else if (option.autocomplete === true) {
-      try {
-        const built = buildAdvancedCommandOptions(command, raw, selections, option.name);
-        const choices = await getAdvancedBotAutocomplete().query({ command, context: { ...context, navigation }, options: built.options, optionType: normalizeBotSlashOptionType(option.type) });
-        if (!current()) return;
-        results = choices.map(choice => ({ advancedKind: "option-value", label: choice.name, value: choice.value, sublabel: String(choice.value), option }));
-      } catch (_) { if (current()) hideBotSlashCommandPicker(); return; }
-    } else if (Array.isArray(option.choices) && option.choices.length) results = option.choices.filter(choice => String(choice.name).toLowerCase().includes(query.toLowerCase())).map(choice => ({ advancedKind: "option-value", label: choice.name, value: choice.value, option }));
-    else if (["USER", "CHANNEL", "ROLE"].includes(normalizeBotSlashOptionType(option.type))) {
-      const entities = await getBotSlashAutocompleteResults(context, { ...option, type: normalizeBotSlashOptionType(option.type) }, query);
-      if (!current()) return;
-      results = entities.map(item => ({ ...item, advancedKind: "option-value", value: item.id, option }));
-    }
-  }
-  if (!current()) return;
-  hideBotSlashCommandPicker({ preserveQuery: true });
-  results = results.slice(0, 25);
-  if (!results.length) return;
-  botSlashCommandPickerMode = "options";
-  botSlashCommandPickerOptionState = { advanced: true, command, context, parsed, option };
-  botSlashCommandPickerFilteredCommands = results;
-  botSlashCommandPickerHighlightedIndex = 0;
-  const picker = document.createElement("div");
-  picker.id = "botSlashCommandPicker";
-  picker.className = "botSlashCommandPicker botSlashCommandPicker--options";
-  picker.setAttribute("role", "listbox");
-  picker.setAttribute("aria-label", "Bot command options");
-  picker.innerHTML = `<div class="botSlashCommandPicker__title">/${esc(command.name)} ${esc(parsed.path.join(" "))}</div><div class="botSlashCommandPicker__list">${results.map((item, index) => `<button type="button" class="botSlashCommandPicker__item botSlashCommandPicker__item--advanced${index === 0 ? " is-active" : ""}" role="option" aria-selected="${index === 0}" data-bot-slash-index="${index}" data-bot-slash-option-pick="${escAttr(option?.name || "path")}"><span class="botSlashCommandPicker__body"><span class="botSlashCommandPicker__command"><b>${esc(item.label)}</b></span><span class="botSlashCommandPicker__desc">${esc(item.sublabel || "")}</span></span></button>`).join("")}</div>`;
-  document.body.appendChild(picker);
-  positionBotSlashCommandPicker(input, picker);
-  bindBotSlashCommandPickerOnce();
-}
-function insertAdvancedBotCommandSelection(input, item = null) {
-  const picker = botSlashCommandPickerOptionState, selected = item || botSlashCommandPickerFilteredCommands[botSlashCommandPickerHighlightedIndex];
-  if (!picker?.advanced || !selected || !input) return false;
-  const prefix = `/${picker.command.name}${picker.parsed.path.length ? " " + picker.parsed.path.join(" ") : ""}`;
-  if (selected.advancedKind === "path") input.value = `/${picker.command.name} ${selected.path.join(" ")} `;
-  else if (selected.advancedKind === "option-name") input.value = `${prefix} ${picker.parsed.args}${picker.parsed.args ? " " : ""}${selected.option.name}:`;
-  else {
-    const option = selected.option || picker.option;
-    const selections = getAdvancedBotCommandSelections(picker.command, picker.context);
-    selections[option.name] = { label: String(selected.label), value: selected.value };
-    const matches = advancedBotOptionMarkers(picker.parsed.args);
-    const matchIndex = matches.findIndex(match => match.name === option.name);
-    const match = matches[matchIndex];
-    const label = JSON.stringify(String(selected.label));
-    const args = match ? picker.parsed.args.slice(0, match.index) + `${option.name}:${label}` + picker.parsed.args.slice(matches[matchIndex + 1]?.index ?? picker.parsed.args.length) : `${option.name}:${label}`;
-    input.value = `${prefix} ${args} `;
-  }
-  try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
-  hideBotSlashCommandPicker(); input.focus(); input.dispatchEvent(new Event("input", { bubbles: true }));
-  return true;
-}
-
 function normalizeBotSlashOptionType(value = "") {
-  const numeric = { 1: "SUB_COMMAND", 2: "SUB_COMMAND_GROUP", 3: "STRING", 4: "INTEGER", 5: "BOOLEAN", 6: "USER", 7: "CHANNEL", 8: "ROLE", 9: "MENTIONABLE", 10: "NUMBER", 11: "ATTACHMENT" };
-  if (numeric[value]) return numeric[value];
   const raw = String(value || "STRING").trim().toUpperCase();
   if (["STRING", "INTEGER", "BOOLEAN", "NUMBER", "USER", "USER_MULTI", "CHANNEL", "ROLE", "ATTACHMENT"].includes(raw)) return raw;
   const lower = raw.toLowerCase();
@@ -34063,18 +33146,16 @@ function normalizeBotSlashCommandOptionsForComposer(command = {}) {
 }
 
 function normalizeBotSlashCommandForComposer(row = {}) {
-  const commandType = botCommandType(row?.command_type || row?.commandType || "CHAT_INPUT");
   const command = {
     commandId: normId(row?.command_id || row?.commandId || ""),
     botId: normId(row?.bot_id || row?.botId || ""),
     botName: String(row?.bot_name || row?.botName || "Bot").trim() || "Bot",
     botAvatarUrl: String(row?.bot_avatar_url || row?.botAvatarUrl || "").trim(),
-    name: commandType === "CHAT_INPUT" ? String(row?.name || "").trim().toLowerCase() : String(row?.name || "").trim(),
-    commandType,
+    name: String(row?.name || "").trim().toLowerCase(),
     description: String(row?.description || "").trim(),
     options: Array.isArray(row?.options) ? row.options : [],
   };
-  if (commandType === "CHAT_INPUT" && !usesAdvancedBotCommandComposer(command)) command.options = normalizeBotSlashCommandOptionsForComposer(command);
+  command.options = normalizeBotSlashCommandOptionsForComposer(command);
   return command;
 }
 
@@ -34188,12 +33269,7 @@ async function fetchServerSlashCommandsForComposer(serverId = "", { force = fals
   botSlashCommandFetchVersionByServerId.set(sid, requestVersion);
   updateAltaraSlashPickerDebug({ currentServerId: sid });
   try {
-    let rows;
-    try { rows = await settingsDeveloperRpc("bots_list_server_application_commands_v1", { p_server_id: sid }); }
-    catch (error) {
-      if (!isDeveloperPortalMissingSqlError(error)) throw error;
-      rows = await settingsDeveloperRpc("bots_list_server_slash_commands", { p_server_id: sid });
-    }
+    const rows = await settingsDeveloperRpc("bots_list_server_slash_commands", { p_server_id: sid });
     const commands = (Array.isArray(rows) ? rows : []).map(normalizeBotSlashCommandForComposer).filter((row) => row.name);
     if (
       botSlashCommandFetchVersionByServerId.get(sid) !== requestVersion
@@ -34231,7 +33307,6 @@ function getBotSlashPickerContext(input = document.getElementById("dmInput")) {
 }
 
 function hideBotSlashCommandPicker({ preserveQuery = false } = {}) {
-  advancedBotAutocomplete?.cancel();
   const el = document.getElementById("botSlashCommandPicker");
   if (el) el.remove();
   botSlashCommandPickerFilteredCommands = [];
@@ -34309,7 +33384,6 @@ function renderBotSlashCommandPicker(input, commands = [], query = "") {
   const allCommands = Array.isArray(commands) ? commands : [];
   const q = String(query || "").toLowerCase();
   const matches = allCommands.filter((cmd) => {
-    if (cmd.commandType && cmd.commandType !== "CHAT_INPUT") return false;
     const name = String(cmd?.name || "").trim().toLowerCase();
     return name && (!q || name.startsWith(q));
   }).slice(0, 8);
@@ -34413,7 +33487,6 @@ async function renderBotSlashOptionPicker(input, command = {}, context = {}, par
 
 function insertBotSlashOptionPickerSelection(input, item = null) {
   const state = botSlashCommandPickerOptionState || {};
-  if (state.advanced) return insertAdvancedBotCommandSelection(input, item);
   const option = state.option || null;
   const command = state.command || null;
   const selected = item || botSlashCommandPickerFilteredCommands[botSlashCommandPickerHighlightedIndex] || botSlashCommandPickerFilteredCommands[0] || null;
@@ -34453,10 +33526,6 @@ async function updateBotSlashCommandPicker(input = document.getElementById("dmIn
   if (token !== botSlashCommandPickerToken) return;
   const exactCommand = parsedParts?.commandName ? commands.find((cmd) => String(cmd?.name || "").trim().toLowerCase() === parsedParts.commandName) : null;
   if (exactCommand?.options?.length && (raw.endsWith(" ") || parsedParts.args || query === exactCommand.name)) {
-    if (usesAdvancedBotCommandComposer(exactCommand)) {
-      await renderAdvancedBotCommandPicker(input, exactCommand, ctx, token);
-      return;
-    }
     const rendered = await renderBotSlashOptionPicker(input, exactCommand, ctx, parsedParts);
     if (token !== botSlashCommandPickerToken) return;
     if (rendered) return;
@@ -37748,7 +36817,7 @@ function applyLanguageToStaticUi() {
   const secAltaraPlus = document.getElementById("settingsSectionAltaraPlus");
   if (secAltaraPlus) secAltaraPlus.textContent = t("settings.section.altara_plus", "ALTARA+");
   const altaraPlusHint = document.getElementById("settingsAltaraPlusHint");
-  if (altaraPlusHint) altaraPlusHint.textContent = t("settings.altara_plus.hint.free", "ALTARA+ adds higher server, upload and saved profile/layout limits, advanced screen sharing and supporter recognition. Focus, Spatial Audio, Best Friends and DM locks are free.");
+  if (altaraPlusHint) altaraPlusHint.textContent = t("settings.altara_plus.hint.free", "ALTARA+ unlocks higher usage limits, personal Focus tools, personal Spatial Audio upgrades, better screen sharing, and supporter recognition.");
   const altaraPlusRefreshBtn = document.getElementById("btnSettingsAltaraPlusRefresh");
   if (altaraPlusRefreshBtn) altaraPlusRefreshBtn.textContent = t("settings.altara_plus.refresh", "Refresh status");
   renderSettingsAltaraPlusPanel();
@@ -38319,9 +37388,6 @@ function setAppLanguage(lang, { persist = true, rerender = true, syncForm = true
   // Locale hydration and later language changes share the snapshot render path,
   // independently of hidden Widgets/Friends or the optional full UI rerender.
   schedulePresenceRender("locale");
-  refreshMessageTranslationUi();
-  conversationTranslationController?.sync();
-  scheduleConversationTranslationSync();
   if (rerender) {
     renderWidgets();
     renderFriends();
@@ -38982,7 +38048,6 @@ function closeProfileOverlay() {
   settingsSecurityRemoveVerificationPending = false;
   clearSecurityCodeInputs();
   clearDmE2eeBackupInputs({ clearRestore: true });
-  if (typeof altaraBillingCountryUi !== "undefined") altaraBillingCountryUi?.sync({ active: false });
   p.classList.add("hidden");
   p.setAttribute("aria-hidden", "true");
   p.classList.remove("settingsOverlay--appearance-live");
@@ -40567,10 +39632,7 @@ function getAvailableWidgetIds() {
 }
 
 function replaceWidgetGridCards(grid, html) {
-  const notesInput = grid.querySelector('[data-widget-notes-input][data-widget-notes-owner]');
-  const preserveNotes = !serverWidgetsScope && !widgetsEditMode && notesInput && document.activeElement === notesInput
-    && notesInput.dataset.widgetNotesOwner === normId(state.user?.id || "");
-  if (!grid.querySelector('[data-community-widget]') && !preserveNotes) { grid.innerHTML = html; return; }
+  if (!grid.querySelector('[data-community-widget]')) { grid.innerHTML = html; return; }
   const template = document.createElement('template');
   template.innerHTML = html;
   const wanted = [...template.content.children];
@@ -40579,20 +39641,11 @@ function replaceWidgetGridCards(grid, html) {
     const id = next.dataset.widgetId;
     const existing = [...grid.children].find(card => card.dataset.widgetId === id);
     let card = next;
-    const nextNotesInput = id === "notes" && preserveNotes ? next.querySelector('[data-widget-notes-input][data-widget-notes-owner]') : null;
-    const keepNotes = nextNotesInput && nextNotesInput.dataset.widgetNotesOwner === notesInput.dataset.widgetNotesOwner;
-    if ((id?.startsWith('custom-') || keepNotes) && existing) {
+    if (id?.startsWith('custom-') && existing) {
       card = existing;
       card.className = next.className;
       card.querySelectorAll('.widgetCard__tools,.widgetResizeHandle').forEach(el => el.remove());
       next.querySelectorAll('.widgetCard__tools,.widgetResizeHandle').forEach(el => card.prepend(el));
-      if (keepNotes) {
-        notesInput.placeholder = nextNotesInput.placeholder;
-        for (const selector of ['.widgetCard__label', '[data-widget-note-clear]']) {
-          const previousLabel = card.querySelector(selector), nextLabel = next.querySelector(selector);
-          if (previousLabel && nextLabel) previousLabel.textContent = nextLabel.textContent;
-        }
-      }
     }
     keep.add(card);
     const at = grid.children[index];
@@ -40644,7 +39697,6 @@ const WIDGET_ALLOWED_SIZES = Object.freeze({
 
 const WIDGET_NOTE_MAX_CHARS = 4000;
 const WIDGET_TODO_MAX_ITEMS = 24;
-const WIDGET_TODO_READ_MAX_ITEMS = 256;
 const WIDGET_TODO_MAX_CHARS = 120;
 const WIDGET_TODO_REMINDER_PRESETS = Object.freeze(["", "day_start", "at_time", "15m", "1h", "1d"]);
 const WIDGET_TODO_PRIORITY_PRESETS = Object.freeze(["", "low", "medium", "high"]);
@@ -40665,8 +39717,6 @@ let widgetsDropTargetId = "";
 let widgetsDropPosition = "before";
 let widgetNotesStorageKey = "";
 let widgetNotesTextCache = "";
-let widgetPersonalNotesDesktop = null;
-let widgetPersonalNotesLifecycleBound = false;
 let widgetTodoStorageKey = "";
 let widgetTodoItemsCache = [];
 let widgetTodoDraftState = { text: "", dueDate: "", dueTime: "", reminderPreset: "", priority: "" };
@@ -40701,7 +39751,6 @@ let widgetTodoCloudAvailable = null;
 let widgetTodoCloudLastSyncAt = 0;
 let widgetTodoCloudSyncInFlight = null;
 let widgetTodoCloudWriteQueue = Promise.resolve();
-let widgetTodoCloudJournal = null;
 
 function getWidgetsLayoutStorageKey() {
   if (serverWidgetsScope) return `altara_server_widgets_layout_${state.user.id}_${serverWidgetsScope.id}`;
@@ -40711,33 +39760,6 @@ function getWidgetsLayoutStorageKey() {
 function getWidgetsDataStorageKey(kind) {
   if (serverWidgetsScope) return `altara_server_widgets_${kind}_${state.user.id}_${serverWidgetsScope.id}`;
   return `altara_widgets_${String(kind || "data").trim()}_${normId(state?.user?.id || "guest")}`;
-}
-
-function getWidgetPersonalNotesDesktop() {
-  if (!widgetPersonalNotesDesktop) widgetPersonalNotesDesktop = createPersonalNotesDesktop({
-    client: supabase, getOwner: () => state.user?.id || "", storage: localStorage, document,
-    enabled: () => !serverWidgetsScope,
-    getCopy: () => Object.fromEntries(Object.entries(personalNotesDesktopCopy(appLanguage)).map(([key, fallback]) => [key, t("widget.notes.sync." + key, fallback)])),
-    onChange: snapshot => {
-      if (serverWidgetsScope || normId(state.user?.id || "") !== snapshot.ownerId) return;
-      widgetNotesTextCache = typeof snapshot.text === "string" ? snapshot.text : "";
-      communityThemesController?.home?.sync();
-    },
-  });
-  return widgetPersonalNotesDesktop;
-}
-
-function bindWidgetPersonalNotesSyncOnce() {
-  if (widgetPersonalNotesLifecycleBound) return;
-  widgetPersonalNotesLifecycleBound = true;
-  const resume = () => {
-    if (document.hidden) return;
-    void getWidgetPersonalNotesDesktop().activate({ refresh: true });
-  };
-  window.addEventListener("focus", resume);
-  window.addEventListener("online", resume);
-  document.addEventListener("visibilitychange", resume);
-  window.addEventListener("beforeunload", () => widgetPersonalNotesDesktop?.deactivate());
 }
 
 function ensureWidgetNotesState() {
@@ -40753,18 +39775,12 @@ function ensureWidgetNotesState() {
 
 function getWidgetNotesText() {
   ensureWidgetNotesState();
-  if (!serverWidgetsScope) return getWidgetPersonalNotesDesktop().snapshot()?.text ?? "";
   return widgetNotesTextCache;
 }
 
-function saveWidgetNotesText(text, expectedOwner = normId(state.user?.id || "")) {
+function saveWidgetNotesText(text) {
   ensureWidgetNotesState();
   const next = String(text || "").slice(0, WIDGET_NOTE_MAX_CHARS);
-  if (!serverWidgetsScope) {
-    const accepted = getWidgetPersonalNotesDesktop().edit(next, expectedOwner);
-    if (typeof accepted === "string") widgetNotesTextCache = accepted;
-    return typeof accepted === "string" ? accepted : getWidgetNotesText();
-  }
   widgetNotesTextCache = next;
   try { localStorage.setItem(widgetNotesStorageKey, next); } catch (_) {}
   return next;
@@ -41012,7 +40028,7 @@ function normalizeWidgetTodoItems(rawItems) {
       completedAt,
       notifiedAt,
     });
-    if (out.length >= WIDGET_TODO_READ_MAX_ITEMS) break;
+    if (out.length >= WIDGET_TODO_MAX_ITEMS) break;
   }
   return out;
 }
@@ -41033,7 +40049,6 @@ function ensureWidgetTodoState() {
   const key = getWidgetsDataStorageKey("todo");
   if (widgetTodoStorageKey === key) return;
   widgetTodoStorageKey = key;
-  widgetTodoCloudJournal = readWidgetTodoCloudJournal(key);
   resetWidgetTodoDraftState();
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || "[]");
@@ -41124,299 +40139,190 @@ function mergeWidgetTodoCollections(localItems = [], remoteItems = []) {
     (positions.get(a.id) ?? order.length) - (positions.get(b.id) ?? order.length)));
 }
 
-// Only explicit local edits are journalled. A cached snapshot is never a delete list.
-function widgetTodoCloudFields(item, index) {
-  return { sort_order: index, text: item.text, is_done: !!item.done,
-    due_date: item.dueDate || null, due_time: item.dueTime ? `${item.dueTime}:00` : null,
-    reminder_preset: item.reminderPreset || null, completed_at: item.completedAt || null,
-    notified_at: item.notifiedAt || null };
-}
+async function writeWidgetTodoSnapshotToCloud(itemsSnapshot = getWidgetTodoItems(), { remoteIds = null } = {}) {
+  const meId = normId(state?.user?.id || "");
+  if (!meId) return false;
+  if (widgetTodoCloudAvailable === false) return false;
 
-function validWidgetTodoCloudPatch(patch) {
-  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return false;
-  return Object.entries(patch).every(([key, value]) => {
-    if (key === "sort_order") return Number.isInteger(value) && value >= 0 && value <= 255;
-    if (key === "text") return typeof value === "string" && value.length > 0 && value.length <= WIDGET_TODO_MAX_CHARS;
-    if (key === "is_done") return typeof value === "boolean";
-    if (key === "due_date") return value === null || (typeof value === "string" && normalizeWidgetTodoDate(value) === value);
-    if (key === "due_time") return value === null || (typeof value === "string" && /^\d{2}:\d{2}:00$/.test(value) && !!normalizeWidgetTodoTime(value));
-    if (key === "reminder_preset") return value === null || WIDGET_TODO_REMINDER_PRESETS.includes(value);
-    if (key === "completed_at" || key === "notified_at") return value === null || (typeof value === "string" && !!normalizeWidgetTodoIso(value));
-    return false;
-  });
-}
+  const snapshot = normalizeWidgetTodoItems(itemsSnapshot);
+  let remoteIdList = Array.isArray(remoteIds)
+    ? remoteIds.map((value) => String(value || "").trim()).filter(Boolean)
+    : null;
 
-function sameWidgetTodoCloudValue(key, first, second) {
-  return first === second || ((key === "completed_at" || key === "notified_at") && first && second
-    && normalizeWidgetTodoIso(first) === normalizeWidgetTodoIso(second));
-}
-
-function readWidgetTodoCloudJournal(storage) {
-  const scope = { storage, owner: normId(state?.user?.id || ""), ready: false, entries: new Map(), known: new Map(), invalid: false };
-  if (serverWidgetsScope || !scope.owner) return scope;
-  try {
-    const raw = localStorage.getItem(`${storage}_cloud_intents_v1`);
-    if (!raw) return scope;
-    const saved = JSON.parse(raw);
-    if (saved?.version !== 1 || saved.owner !== scope.owner || typeof saved.ready !== "boolean"
-      || !Array.isArray(saved.entries) || saved.entries.length > 512 || !Array.isArray(saved.known) || saved.known.length > 512) throw Error();
-    for (const entry of saved.entries) {
-      if (!entry || typeof entry.id !== "string" || !entry.id || entry.id.length > 96 || scope.entries.has(entry.id)
-        || typeof entry.remove !== "boolean" || typeof entry.attempted !== "boolean" || !validWidgetTodoCloudPatch(entry.patch)
-        || (entry.attempt != null && (!validWidgetTodoCloudPatch(entry.attempt.patch)
-          || typeof entry.attempt.remove !== "boolean" || typeof entry.attempt.create !== "boolean"
-          || (entry.attempt.version !== null && (typeof entry.attempt.version !== "string" || !normalizeWidgetTodoIso(entry.attempt.version)))))
-        || (entry.create !== null && (!validWidgetTodoCloudPatch(entry.create?.fields)
-          || Object.keys(entry.create.fields).length !== 8 || typeof entry.create.createdAt !== "string" || !normalizeWidgetTodoIso(entry.create.createdAt)))) throw Error();
-      scope.entries.set(entry.id, entry);
-    }
-    for (const pair of saved.known) {
-      if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== "string" || !pair[0] || pair[0].length > 96
-        || (pair[1] !== null && (typeof pair[1] !== "string" || !normalizeWidgetTodoIso(pair[1])))) throw Error();
-      scope.known.set(pair[0], pair[1]);
-    }
-    scope.ready = saved.ready;
-  } catch (_) { scope.invalid = true; }
-  return scope;
-}
-
-function currentWidgetTodoCloudScope(scope) {
-  return !!scope && !scope.invalid && !serverWidgetsScope && scope === widgetTodoCloudJournal
-    && scope.owner === normId(state?.user?.id || "") && !!scope.owner && scope.storage === getWidgetsDataStorageKey("todo");
-}
-
-function persistWidgetTodoCloudJournal(scope) {
-  try {
-    localStorage.setItem(`${scope.storage}_cloud_intents_v1`, JSON.stringify({ version: 1, owner: scope.owner,
-      ready: scope.ready, entries: [...scope.entries.values()], known: [...scope.known].slice(-512) }));
-    return true;
-  } catch (_) { console.warn("widget planner: pending changes could not be saved"); return false; }
-}
-
-function reportWidgetTodoCloudPending(scope) {
-  if (!scope || scope.warned || scope.owner !== normId(state?.user?.id || "")
-    || scope.storage !== getWidgetsDataStorageKey("todo")) return;
-  scope.warned = true;
-  showWidgetChecklistToast(t("widgets.todo.sync_pending", "Changes remain in this open app. Keep it open and try syncing again."), "warn");
-}
-
-function rememberWidgetTodoCloudIntent(previous, desired, scope) {
-  if (!currentWidgetTodoCloudScope(scope)) return false;
-  const entries = new Map(scope.entries);
-  const before = new Map(previous.map((item, index) => [item.id, widgetTodoCloudFields(item, index)]));
-  desired.forEach((item, index) => {
-    const old = before.get(item.id), fields = widgetTodoCloudFields(item, index), pending = entries.get(item.id);
-    before.delete(item.id);
-    const patch = Object.fromEntries(Object.entries(fields).filter(([key, value]) => old && value !== old[key]));
-    if (!old) entries.set(item.id, { id: item.id, create: { fields, createdAt: item.createdAt }, patch: {}, remove: false, attempted: false });
-    else if (Object.keys(patch).length) {
-      const renewed = pending?.attempt && !pending.create && Object.keys(pending.patch).every(key => Object.hasOwn(patch, key));
-      entries.set(item.id, { id: item.id, create: pending?.create || null,
-        patch: { ...pending?.patch, ...patch }, remove: false, attempted: !renewed && !!pending?.attempted,
-        attempt: renewed ? null : pending?.attempt || null });
-    }
-  });
-  before.forEach((_fields, id) => {
-    const pending = entries.get(id);
-    if (pending?.create && !pending.attempted) entries.delete(id);
-    else entries.set(id, { id, create: null, patch: {}, remove: true, attempted: !!pending?.attempted, attempt: pending?.attempt || null });
-  });
-  if (entries.size > 512) { console.warn("widget planner: pending changes limit reached"); return false; }
-  scope.entries = entries;
-  if (!persistWidgetTodoCloudJournal(scope)) reportWidgetTodoCloudPending(scope);
-  return true;
-}
-
-function acknowledgeWidgetTodoCloudIntent(scope, entry, version) {
-  const pending = scope.entries.get(entry.id);
-  if (pending === entry) scope.entries.delete(entry.id);
-  else if (pending?.remove) {
-    if (entry.remove) scope.entries.delete(entry.id);
-    else scope.entries.set(entry.id, { ...pending, attempt: null, attempted: false });
-  }
-  else if (pending && !pending.remove) {
-    // An edit made during the request keeps only its still-unacknowledged fields.
-    const patch = Object.fromEntries(Object.entries(pending.patch).filter(([key, value]) => value !== entry.patch[key]));
-    const create = pending.create === entry.create ? null : pending.create;
-    if (create || Object.keys(patch).length) scope.entries.set(entry.id, { ...pending, create, patch, attempt: null, attempted: false });
-    else scope.entries.delete(entry.id);
-  }
-  scope.known.delete(entry.id);
-  scope.known.set(entry.id, version);
-  persistWidgetTodoCloudJournal(scope);
-}
-
-async function writeWidgetTodoSnapshotToCloud(_itemsSnapshot, { scope = widgetTodoCloudJournal } = {}) {
-  if (!currentWidgetTodoCloudScope(scope) || widgetTodoCloudAvailable === false) return false;
-  const columns = "task_id, sort_order, text, is_done, due_date, due_time, reminder_preset, completed_at, notified_at, created_at, updated_at";
-  try {
-    for (const entry of [...scope.entries.values()]) {
-      if (!currentWidgetTodoCloudScope(scope)) return false;
-      const { data, error } = await supabase.from(WIDGET_TODO_CLOUD_TABLE).select(columns).eq("user_id", scope.owner).eq("task_id", entry.id);
-      if (!currentWidgetTodoCloudScope(scope)) return false;
-      if (error || !Array.isArray(data) || data.length > 1) {
-        if (isMissingWidgetTodoCloudTableError(error)) widgetTodoCloudAvailable = false;
+  if (!remoteIdList) {
+    const { data: remoteRows, error: remoteErr } = await supabase
+      .from(WIDGET_TODO_CLOUD_TABLE)
+      .select("task_id")
+      .eq("user_id", meId);
+    if (remoteErr) {
+      if (isMissingWidgetTodoCloudTableError(remoteErr)) {
+        widgetTodoCloudAvailable = false;
         return false;
       }
-      const row = data[0];
-      if (row && (row.task_id !== entry.id || typeof row.updated_at !== "string" || !normalizeWidgetTodoIso(row.updated_at))) return false;
-      if (scope.entries.get(entry.id) !== entry) continue;
-      if (entry.attempt) {
-        const attempt = entry.attempt;
-        if (attempt.create) {
-          if (!row || normalizeWidgetTodoIso(row.created_at) !== (attempt.createdAt || entry.create?.createdAt)) return false;
-          acknowledgeWidgetTodoCloudIntent(scope, { ...entry, patch: attempt.patch, remove: false }, row.updated_at);
-          continue;
-        }
-        if (!row && attempt.remove) { acknowledgeWidgetTodoCloudIntent(scope, entry, null); continue; }
-        if (!row) return false;
-        if (row.updated_at !== attempt.version) {
-          const matches = !attempt.remove && Object.entries(attempt.patch).every(([key, value]) =>
-            key === "completed_at" && attempt.patch.is_done === row.is_done ? true : sameWidgetTodoCloudValue(key, row[key], value));
-          if (!matches) return false;
-          acknowledgeWidgetTodoCloudIntent(scope, { ...entry, patch: attempt.patch }, row.updated_at);
-          continue;
-        }
-      }
-      if (!row && !entry.create) {
-        // Keep conflicting offline edits local; neither resurrect nor silently discard them.
-        if (!entry.remove) return false;
-        acknowledgeWidgetTodoCloudIntent(scope, entry, null);
-        continue;
-      }
-      let query, dispatchedPatch;
-      if (!row) {
-        dispatchedPatch = { ...entry.patch };
-        query = supabase.from(WIDGET_TODO_CLOUD_TABLE).insert({ user_id: scope.owner, task_id: entry.id,
-          ...entry.create.fields, ...entry.patch, created_at: entry.create.createdAt, updated_at: new Date().toISOString() });
-      } else {
-        if (entry.create && normalizeWidgetTodoIso(row.created_at) !== entry.create.createdAt) return false;
-        const patch = Object.fromEntries(Object.entries(entry.patch).filter(([key, value]) => !sameWidgetTodoCloudValue(key, row[key], value)));
-        // Reconciliation after a lost acknowledgement must not replace a newer completion time.
-        if (entry.patch.is_done === row.is_done) delete patch.completed_at;
-        if (!entry.remove && !Object.keys(patch).length) {
-          acknowledgeWidgetTodoCloudIntent(scope, entry, row.updated_at);
-          continue;
-        }
-        dispatchedPatch = patch;
-        query = entry.remove ? supabase.from(WIDGET_TODO_CLOUD_TABLE).delete()
-          : supabase.from(WIDGET_TODO_CLOUD_TABLE).update({ ...patch, updated_at: new Date().toISOString() });
-        // Keep the exact server version, including microseconds, for compare-and-swap.
-        query = query.eq("user_id", scope.owner).eq("task_id", entry.id).eq("updated_at", row.updated_at);
-      }
-      query = query.select("task_id, updated_at");
-      if (typeof query.retry === "function") query = query.retry(false);
-      if (!currentWidgetTodoCloudScope(scope)) return false;
-      const previousAttempt = entry.attempt, previouslyAttempted = entry.attempted;
-      entry.attempted = true;
-      entry.attempt = { version: row?.updated_at || null, patch: dispatchedPatch, remove: entry.remove, create: !row,
-        ...(!row ? { createdAt: entry.create.createdAt } : {}) };
-      if (!persistWidgetTodoCloudJournal(scope)) { entry.attempt = previousAttempt; entry.attempted = previouslyAttempted; return false; }
-      const result = await query;
-      if (!currentWidgetTodoCloudScope(scope)) return false;
-      if (result.error || !Array.isArray(result.data) || result.data.length !== 1 || result.data[0]?.task_id !== entry.id
-        || (!entry.remove && (typeof result.data[0]?.updated_at !== "string" || !normalizeWidgetTodoIso(result.data[0].updated_at)))) return false;
-      acknowledgeWidgetTodoCloudIntent(scope, entry, entry.remove ? null : result.data[0].updated_at);
+      console.warn("widget planner: cloud ids read failed", remoteErr);
+      return false;
     }
-    widgetTodoCloudAvailable = true;
-    widgetTodoCloudLastSyncAt = Date.now();
-    if (!scope.entries.size) scope.warned = false;
-    return true;
-  } catch (_) { console.warn("widget planner: cloud changes remain pending"); return false; }
+    remoteIdList = (Array.isArray(remoteRows) ? remoteRows : [])
+      .map((row) => String(row?.task_id || "").trim())
+      .filter(Boolean);
+  }
+
+  const localIdSet = new Set(snapshot.map((item) => item.id));
+  const rows = snapshot.map((item, index) => ({
+    user_id: meId,
+    task_id: item.id,
+    sort_order: clampInt(index, 0, 255, index),
+    text: item.text,
+    is_done: !!item.done,
+    due_date: item.dueDate || null,
+    due_time: item.dueTime ? `${item.dueTime}:00` : null,
+    reminder_preset: item.reminderPreset || null,
+    completed_at: item.completedAt || null,
+    notified_at: item.notifiedAt || null,
+    created_at: item.createdAt || null,
+    updated_at: item.updatedAt || null,
+  }));
+
+  if (rows.length) {
+    const { error: upsertErr } = await supabase
+      .from(WIDGET_TODO_CLOUD_TABLE)
+      .upsert(rows, { onConflict: "user_id,task_id" });
+    if (upsertErr) {
+      if (isMissingWidgetTodoCloudTableError(upsertErr)) {
+        widgetTodoCloudAvailable = false;
+        return false;
+      }
+      console.warn("widget planner: cloud upsert failed", upsertErr);
+      return false;
+    }
+  }
+
+  const idsToDelete = remoteIdList.filter((id) => !localIdSet.has(id));
+  if (idsToDelete.length) {
+    const { error: deleteErr } = await supabase
+      .from(WIDGET_TODO_CLOUD_TABLE)
+      .delete()
+      .eq("user_id", meId)
+      .in("task_id", idsToDelete);
+    if (deleteErr) {
+      if (isMissingWidgetTodoCloudTableError(deleteErr)) {
+        widgetTodoCloudAvailable = false;
+        return false;
+      }
+      console.warn("widget planner: cloud delete failed", deleteErr);
+      return false;
+    }
+  }
+
+  widgetTodoCloudAvailable = true;
+  widgetTodoCloudLastSyncAt = Date.now();
+  return true;
 }
 
 async function syncWidgetTodoFromCloud({ force = false } = {}) {
   if (serverWidgetsScope) return false;
-  const localItems = getWidgetTodoItems(), scope = widgetTodoCloudJournal;
-  if (!currentWidgetTodoCloudScope(scope)) return false;
+  const storageScopeAtStart = getWidgetsDataStorageKey("todo");
+  const meId = normId(state?.user?.id || "");
+  if (!meId) return false;
   if (widgetTodoCloudSyncInFlight) return widgetTodoCloudSyncInFlight;
-  if (!force && (Date.now() - Number(widgetTodoCloudLastSyncAt || 0)) < WIDGET_TODO_CLOUD_SYNC_COOLDOWN_MS) return false;
+  const nowMs = Date.now();
+  if (!force && (nowMs - Number(widgetTodoCloudLastSyncAt || 0)) < WIDGET_TODO_CLOUD_SYNC_COOLDOWN_MS) return false;
+
+  const localItems = getWidgetTodoItems();
   const localFp = getWidgetTodoItemsFingerprint(localItems);
-  const current = () => currentWidgetTodoCloudScope(scope) && localFp === getWidgetTodoItemsFingerprint(getWidgetTodoItems());
+
   const run = (async () => {
+    // Read after queued saves, and serialize any merged write through that queue too.
     await widgetTodoCloudWriteQueue;
-    if (!current()) return false;
-    if (scope.entries.size) {
-      await queueWidgetTodoCloudSnapshotSync(localItems, { scope });
-      if (!current() || scope.entries.size) return false;
-    }
-    const { data, error } = await supabase.from(WIDGET_TODO_CLOUD_TABLE)
+    if (storageScopeAtStart !== getWidgetsDataStorageKey("todo") || meId !== normId(state?.user?.id || "")
+      || localFp !== getWidgetTodoItemsFingerprint(getWidgetTodoItems())) return false;
+    const { data, error } = await supabase
+      .from(WIDGET_TODO_CLOUD_TABLE)
       .select("task_id, sort_order, text, is_done, due_date, due_time, reminder_preset, completed_at, notified_at, created_at, updated_at")
-      .eq("user_id", scope.owner).order("sort_order", { ascending: true }).order("updated_at", { ascending: true });
-    if (!current()) return false;
-    if (error || !Array.isArray(data)) {
-      if (isMissingWidgetTodoCloudTableError(error)) widgetTodoCloudAvailable = false;
-      console.warn("widget planner: cloud sync unavailable"); return false;
+      .eq("user_id", meId)
+      .order("sort_order", { ascending: true })
+      .order("updated_at", { ascending: true });
+
+    if (error) {
+      if (isMissingWidgetTodoCloudTableError(error)) {
+        widgetTodoCloudAvailable = false;
+        widgetTodoCloudLastSyncAt = Date.now();
+        return false;
+      }
+      console.warn("widget planner: cloud sync read failed", error);
+      return false;
     }
-    const ids = new Set();
-    for (const row of data) {
-      if (!row || typeof row.task_id !== "string" || ids.has(row.task_id) || typeof row.updated_at !== "string" || !normalizeWidgetTodoIso(row.updated_at)) return false;
-      ids.add(row.task_id);
-      const known = scope.known.get(row.task_id);
-      if (known && Date.parse(row.updated_at) < Date.parse(known)) return false;
-    }
-    const remote = normalizeWidgetTodoItems(data);
-    if (remote.length !== data.length) return false;
-    const localById = new Map(localItems.map((item, index) => [item.id, { item, index }]));
-    // Legacy cache has no field-level intent. Freeze ambiguous conflicts instead of guessing which device wins.
-    if (remote.some((item, index) => {
-      const local = localById.get(item.id);
-      const known = scope.known.get(item.id);
-      const ambiguous = !scope.ready && !scope.known.has(item.id);
-      const unjournalled = known && Date.parse(local?.item.updatedAt || "") > Date.parse(known);
-      return local && (ambiguous || unjournalled)
-        && Date.parse(local.item.updatedAt) >= Date.parse(item.updatedAt)
-        && JSON.stringify(widgetTodoCloudFields(local.item, local.index)) !== JSON.stringify(widgetTodoCloudFields(item, index));
-    })) { reportWidgetTodoCloudPending(scope); return false; }
-    const localOnly = localItems.filter(item => !ids.has(item.id) && !scope.known.has(item.id));
-    if (remote.length + localOnly.length > WIDGET_TODO_READ_MAX_ITEMS) return false;
-    const merged = remote.map(item => ({ ...item, priority: localById.get(item.id)?.item.priority || item.priority }));
-    // Import only genuinely local legacy rows; known remote deletions stay deleted.
-    if (localOnly.length && !rememberWidgetTodoCloudIntent([], localOnly, scope)) return false;
-    if (localOnly.length) {
-      localOnly.forEach((item, index) => {
-        const pending = scope.entries.get(item.id);
-        if (pending?.create) pending.create.fields.sort_order = remote.length + index;
-      });
-      if (!persistWidgetTodoCloudJournal(scope)) return false;
-      await queueWidgetTodoCloudSnapshotSync(localOnly, { scope });
-      if (!current() || scope.entries.size) return false;
-      merged.push(...localOnly);
-    }
-    scope.ready = true;
-    data.forEach(row => { scope.known.delete(row.task_id); scope.known.set(row.task_id, row.updated_at); });
-    if (!persistWidgetTodoCloudJournal(scope)) return false;
+
+    // Do not apply a read that started before a local edit/reorder or account switch.
+    if (storageScopeAtStart !== getWidgetsDataStorageKey("todo") || meId !== normId(state?.user?.id || "")
+      || localFp !== getWidgetTodoItemsFingerprint(getWidgetTodoItems())) return false;
+
     widgetTodoCloudAvailable = true;
+    const remoteItems = normalizeWidgetTodoItems(
+      (Array.isArray(data) ? data : []).map((row) => ({
+        id: row?.task_id,
+        text: row?.text,
+        done: row?.is_done,
+        dueDate: row?.due_date,
+        dueTime: row?.due_time,
+        reminderPreset: row?.reminder_preset,
+        completedAt: row?.completed_at,
+        notifiedAt: row?.notified_at,
+        createdAt: row?.created_at,
+        updatedAt: row?.updated_at,
+      }))
+    );
+
+    const remoteFp = getWidgetTodoItemsFingerprint(remoteItems);
+    const merged = mergeWidgetTodoCollections(localItems, remoteItems);
+    const mergedFp = getWidgetTodoItemsFingerprint(merged);
+    const localChanged = mergedFp !== localFp;
+    const remoteChanged = mergedFp !== remoteFp;
+
+    if (localChanged) saveWidgetTodoItems(merged, { syncCloud: false });
     widgetTodoCloudLastSyncAt = Date.now();
-    const changed = getWidgetTodoItemsFingerprint(merged) !== localFp;
-    if (changed) { saveWidgetTodoItems(merged, { syncCloud: false }); try { renderWidgets(); } catch (_) {} }
-    return changed || localOnly.length > 0;
-  })().catch(() => { console.warn("widget planner: cloud sync unavailable"); return false; });
+
+    if (remoteChanged) {
+      await queueWidgetTodoCloudSnapshotSync(merged);
+    }
+
+    if (localChanged) {
+      try { renderWidgets(); } catch (_) {}
+    }
+    return localChanged || remoteChanged;
+  })();
+
   widgetTodoCloudSyncInFlight = run;
-  try { return await run; } finally { if (widgetTodoCloudSyncInFlight === run) widgetTodoCloudSyncInFlight = null; }
+  try {
+    return await run;
+  } finally {
+    if (widgetTodoCloudSyncInFlight === run) widgetTodoCloudSyncInFlight = null;
+  }
 }
 
-function queueWidgetTodoCloudSnapshotSync(itemsSnapshot = widgetTodoItemsCache, { scope = widgetTodoCloudJournal } = {}) {
-  if (!currentWidgetTodoCloudScope(scope)) return Promise.resolve(false);
-  // Capture the original owner/storage before the queued operation can run.
-  widgetTodoCloudWriteQueue = widgetTodoCloudWriteQueue.catch(() => false)
-    .then(() => writeWidgetTodoSnapshotToCloud(itemsSnapshot, { scope }))
-    .then(success => { if (!success) reportWidgetTodoCloudPending(scope); return success; })
-    .catch(() => { console.warn("widget planner: cloud changes remain pending"); return false; });
+function queueWidgetTodoCloudSnapshotSync(itemsSnapshot = widgetTodoItemsCache) {
+  if (serverWidgetsScope) return Promise.resolve(false);
+  const snapshot = normalizeWidgetTodoItems(itemsSnapshot);
+  widgetTodoCloudWriteQueue = widgetTodoCloudWriteQueue
+    .catch(() => {})
+    .then(() => writeWidgetTodoSnapshotToCloud(snapshot))
+    .catch((err) => {
+      console.warn("widget planner: cloud write queue failed", err);
+    });
   return widgetTodoCloudWriteQueue;
 }
 
 function saveWidgetTodoItems(items, { syncCloud = true } = {}) {
   ensureWidgetTodoState();
-  const previous = widgetTodoItemsCache.slice(), previousFp = getWidgetTodoItemsFingerprint(previous);
-  const next = normalizeWidgetTodoItems(items), nextFp = getWidgetTodoItemsFingerprint(next);
-  const journalled = !syncCloud || serverWidgetsScope || nextFp === previousFp
-    || rememberWidgetTodoCloudIntent(previous, next, widgetTodoCloudJournal);
-  if (!journalled) reportWidgetTodoCloudPending(widgetTodoCloudJournal);
+  const previousFp = getWidgetTodoItemsFingerprint(widgetTodoItemsCache);
+  const next = normalizeWidgetTodoItems(items);
+  const nextFp = getWidgetTodoItemsFingerprint(next);
   widgetTodoItemsCache = next;
   reconcileWidgetTodoDraftAgainstItems(next);
-  try { localStorage.setItem(widgetTodoStorageKey, JSON.stringify(widgetTodoItemsCache)); } catch (_) {}
-  if (syncCloud && journalled && nextFp !== previousFp) queueWidgetTodoCloudSnapshotSync(next);
+  try {
+    localStorage.setItem(widgetTodoStorageKey, JSON.stringify(widgetTodoItemsCache));
+  } catch (_) {}
+  if (syncCloud && nextFp !== previousFp) queueWidgetTodoCloudSnapshotSync(next);
   if (nextFp !== previousFp) scheduleCommunityThemeGlassHomeSync();
   return widgetTodoItemsCache.slice();
 }
@@ -44374,14 +43280,12 @@ function widgetCardHtml(widgetId, stats) {
         <textarea
           class="widgetNotesInput profileNotepadTextarea"
           data-widget-notes-input="1"
-          ${serverWidgetsScope ? "" : `data-widget-notes-owner="${escAttr(normId(state.user?.id || ""))}" readonly`}
           maxlength="${WIDGET_NOTE_MAX_CHARS}"
           placeholder="${escAttr(t("widget.notes.placeholder", "Write quick notes here..."))}"
         >${esc(noteText)}</textarea>
-        <div class="widgetCard__row profileNotepadFooter" data-widget-notes-footer="1"${serverWidgetsScope ? "" : ' style="flex-wrap:wrap"'}>
+        <div class="widgetCard__row profileNotepadFooter" data-widget-notes-footer="1">
           <div class="widgetCard__meta" data-widget-notes-count>${noteCount}/${WIDGET_NOTE_MAX_CHARS}</div>
-          <button class="btn ghost widgetCard__miniBtn" type="button" data-widget-note-clear="1"${serverWidgetsScope ? "" : ' data-widget-notes-personal-clear="1"'}>${esc(t("widget.notes.clear", "Clear"))}</button>
-          ${serverWidgetsScope ? "" : '<div style="flex-basis:100%;min-width:0"><div class="widgetCard__meta" data-widget-notes-sync role="status" aria-live="polite"></div><pre class="widgetCard__meta" data-widget-notes-remote style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:88px;overflow:auto" hidden></pre><div class="widgetCard__row" data-widget-notes-sync-actions style="flex-wrap:wrap;gap:6px"></div></div>'}
+          <button class="btn ghost widgetCard__miniBtn" type="button" data-widget-note-clear="1">${esc(t("widget.notes.clear", "Clear"))}</button>
         </div>
       </article>
     `;
@@ -44742,7 +43646,6 @@ function bindWidgetsUiOnce() {
     const clearNoteBtn = target.closest("[data-widget-note-clear]");
     if (clearNoteBtn) {
       e.preventDefault();
-      if (clearNoteBtn.hasAttribute("data-widget-notes-personal-clear")) return;
       saveWidgetNotesText("");
       renderWidgets();
       return;
@@ -45047,7 +43950,7 @@ function bindWidgetsUiOnce() {
     if (!target) return;
     const notesInput = target.closest("[data-widget-notes-input]");
     if (notesInput) {
-      const nextText = saveWidgetNotesText(notesInput.value, notesInput.dataset.widgetNotesOwner);
+      const nextText = saveWidgetNotesText(notesInput.value);
       if (notesInput.value !== nextText) notesInput.value = nextText;
       const countEl = notesInput.closest(".widgetCard")?.querySelector?.("[data-widget-notes-count]");
       if (countEl) countEl.textContent = `${nextText.length}/${WIDGET_NOTE_MAX_CHARS}`;
@@ -45315,11 +44218,6 @@ const MAIN_NAV_COMMAND_DEDUPE_MS = 180;
 
 function cloneMainNavRoute(route) {
   if (!route || typeof route !== "object") return null;
-  if (route.mode === "bot_dm") {
-    const botId = normId(route.botId || ""), serverId = normId(route.serverId || ""), userId = normId(route.userId || "");
-    if (!botId || !serverId || !userId) return null;
-    return { mode: "bot_dm", botId, serverId, userId };
-  }
   if (route.mode === "dm") {
     const conversationId = normId(route.conversationId || "");
     if (!conversationId) return null;
@@ -45338,7 +44236,6 @@ function cloneMainNavRoute(route) {
 function getMainNavRouteKey(route) {
   const r = cloneMainNavRoute(route);
   if (!r) return "";
-  if (r.mode === "bot_dm") return `bot-dm:${r.userId}:${r.serverId}:${r.botId}`;
   return r.mode === "dm"
     ? `dm:${r.conversationId}`
     : r.mode === "server"
@@ -45347,9 +44244,6 @@ function getMainNavRouteKey(route) {
 }
 
 function getCurrentMainNavigationRoute() {
-  if (state.activeDm?.kind === "bot_dm") {
-    return cloneMainNavRoute({ mode: "bot_dm", botId: state.activeDm.botId, serverId: state.activeDm.botServerId, userId: state.activeDm.botDmUserId });
-  }
   const dmMain = document.getElementById("dmMain");
   const dmVisible = !!dmMain && dmMain.style.display !== "none";
   const conversationId = normId(activeDmId || state.activeDm?.conversationId || "");
@@ -45418,13 +44312,6 @@ async function applyMainNavigationRoute(route) {
   });
   mainNavHistoryApplying = true;
   try {
-    if (targetRoute.mode === "bot_dm") {
-      // History identifies a conversation; the current inbox and open path still enforce access.
-      if (targetRoute.userId !== normId(state.user?.id || "") || !isMainContentNavigationIntentCurrent(navigationIntent)) return false;
-      const row = getBotDirectMessagesController().getRows().find(entry => normId(entry.botId) === targetRoute.botId && normId(entry.serverId) === targetRoute.serverId);
-      if (!row) return false;
-      return await openBotDirectMessage(row, targetRoute.serverId);
-    }
     if (targetRoute.mode === "dm") {
       if (!isMainContentNavigationIntentCurrent(navigationIntent)) return false;
       await showDm(targetRoute.conversationId, { autoAnswerIfPending: true });
@@ -45582,7 +44469,7 @@ function activateMainTab(tabId, { ensureFriendsMode = true } = {}) {
 
   if (tab !== "widgets") cleanupWidgetsView();
 
-  if (ensureFriendsMode && (state.activeDm?.kind === "bot_dm" || document.getElementById("dmMain")?.style.display !== "none")) {
+  if (ensureFriendsMode && document.getElementById("dmMain")?.style.display !== "none") {
     // Se vieres de uma DM, volta para o modo normal do painel central.
     setMidMode("friends");
   }
@@ -45871,10 +44758,6 @@ function dockStageIntoDm(yes, { barInSidebar = false } = {}) {
 }
 
 function setMidMode(mode, options = {}) {
-  if (mode !== "dm" && mode !== "bot_dm") {
-    stopConversationTranslation();closeMessageTranslationSettings({restoreFocus:false});
-    messageTranslationTargetLocale='';messageTranslationSourceLanguage='';
-  }
   if (mode !== "bot_dm") {
     botDirectMessagesController?.close();
     botDirectMessageView?.close();
@@ -45911,7 +44794,7 @@ function setMidMode(mode, options = {}) {
     appShell?.classList.add("dm-focus");
     ["tabWidgets", "tabFriends", "tabPending", "tabAdd"].forEach(id => { const tab = $(id); if (tab) tab.style.display = "none"; });
     setDmJumpLatestVisible(false);
-    setRightSidebarInteractionModeForConversation({ serverMode:false, forceHidden:true, applyCollapsed:true });
+    setRightSidebarInteractionModeForConversation({ serverMode:false, applyCollapsed:true });
   } else if (mode === "dm") {
     cleanupWidgetsView();
     midPanel?.classList.add("is-dm-conversation-open");
@@ -51097,7 +49980,6 @@ function getVisibleServerVoiceChannelIds(serverId = "") {
   const sid = normId(serverId || "");
   return new Set(
     (serverChannelListByServerId.get(sid) || [])
-      .filter((channel) => isServerChannelReleaseVisible(sid, channel?.id || channel?.channelId || channel?.channel_id))
       .filter((channel) => normalizeConversationChannelType(channel?.channelType || "") === "voice")
       .map((channel) => normId(channel?.id || channel?.channelId || channel?.channel_id || ""))
       .filter(Boolean)
@@ -51905,7 +50787,7 @@ function bindServerVoiceOccupancyLifecycleRefresh() {
       });
     }
   };
-  window.addEventListener("focus", () => { botComponentUi.syncContext(); botNativeComponentUi.syncContext(); refreshIfStale("window_focus"); });
+  window.addEventListener("focus", () => refreshIfStale("window_focus"));
   window.addEventListener("online", () => refreshIfStale("network_online"));
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") refreshIfStale("visibility_return");
@@ -54693,31 +53575,9 @@ function buildServerRailIncomingOrbHtml({
 }
 
 function beginMainContentNavigationIntent({ reason = "main-navigation", serverId = "", conversationId = "" } = {}) {
-  stopConversationTranslation();
-  closeMessageTranslationSettings({restoreFocus:false});
-  messageTranslationTargetLocale=''; messageTranslationSourceLanguage='';
-  botComponentUi.reset({ preserveAvailability: true });
-  botNativeComponentUi.reset({ preserveAvailability: true });
-  botForumComposerMode?.reset();
-  const mentionInput = document.getElementById("dmInput");
-  if (mentionInput && dmComposerMentionController
-    && mentionInput.dataset.dmDraftUserId === normId(state.user?.id || "")
-    && mentionInput.dataset.dmDraftConversationId === normId(activeDmId || "")) {
-    dmComposerMentionNavigationDraft = {
-      input: mentionInput,
-      userId: normId(state.user?.id || ""),
-      conversationId: normId(activeDmId || ""),
-      visibleText: mentionInput.value,
-      canonicalText: dmComposerMentionController.canonicalText(mentionInput),
-    };
-    persistAltaraOfflineComposerDraft(activeDmId || "", mentionInput.value);
-    dmComposerMentionController.close();
-  }
-  else dmComposerMentionController?.close();
   dmAttachmentActionsMenu?.close();
   closeGifModal();
   dmOpenIntentSeq += 1;
-  messageTranslationController?.syncContext();
   dmShowRequestSeq += 1;
   const navigationVersion = markServerChannelUserNavigation({
     reason,
@@ -56628,37 +55488,6 @@ function isCurrentUserBotNotificationMention(row = {}) {
   return !!userId && getBotNotificationMentionUserIds(row).includes(userId);
 }
 
-function getHumanNotificationMentionUserIds(row = {}, context = null) {
-  if (!row || row.deleted_at || row._local || row._optimistic || isBotMessageRow(row)
-    || String(row.source || "messages") !== "messages") return [];
-  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  const conversationId = normId(row.conversation_id || "");
-  if (![row.id, row.user_id, conversationId].every(value => typeof value === "string" && uuid.test(value))) return [];
-  const serverContext = context || getServerPermissionContextForConversation(conversationId);
-  const serverId = normId(serverContext?.serverId || "");
-  const channelId = normId(serverContext?.channelId || "");
-  if (!serverId || !channelId || normId(serverContext?.conversationId || "") !== conversationId
-    || !canCurrentUserViewServerChannelSync(serverId, channelId)) return [];
-  const parsed = getAuthoritativeMessageContent(row);
-  if (parsed?.type !== "text" || parsed.trustedTextKind === "vault_v1"
-    || isSystemChipMessage(parsed, row)) return [];
-  // Human targets live in the explicit authored text. The existing RLS INSERT
-  // owns author identity and channel access; no client metadata grants a ping.
-  const text = String(parsed.text || "");
-  const positions = botMentionTokenPositions(text);
-  const users = new Set();
-  for (const match of text.matchAll(/<@!?([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})>/gi)) {
-    if (positions.has(match.index)) users.add(match[1].toLowerCase());
-    if (users.size > 10) return [];
-  }
-  return [...users];
-}
-
-function isCurrentUserHumanNotificationMention(row = {}, context = null) {
-  const userId = normId(state.user?.id || "").toLowerCase();
-  return !!userId && getHumanNotificationMentionUserIds(row, context).includes(userId);
-}
-
 function claimIncomingBotChannelMessageNotification(row = {}, context = {}) {
   const userId = normId(state.user?.id || '');
   const messageId = normId(row?.id || '');
@@ -56679,12 +55508,9 @@ function playServerMessageNotificationCue(context = {}, senderUserId = "", sourc
   const channelId = normId(context.channelId || context.channel_id || context.conversationId || "");
   const skipReason = getServerNotificationSoundSkipReason(context);
   if (skipReason) return { played: false, skippedReason: skipReason };
-  const isBot = sourceTable === "bot_channel_messages";
-  const isMentioned = () => isBot
-    ? getBotNotificationMentionUserIds(context.botMessageRow).includes(normId(state.user?.id || '').toLowerCase())
-    : isCurrentUserHumanNotificationMention(context.messageRow, context);
-  if (getServerNotificationMode(sid) === 'mentions' && !isMentioned()) {
-    return {played:false, skippedReason:isBot ? 'bot_not_mentioned' : 'human_not_mentioned'};
+  if (sourceTable === 'bot_channel_messages' && getServerNotificationMode(sid) === 'mentions'
+    && !getBotNotificationMentionUserIds(context.botMessageRow).includes(normId(state.user?.id || '').toLowerCase())) {
+    return {played:false, skippedReason:'bot_not_mentioned'};
   }
   const key = `${sid || "server"}:${channelId || "channel"}`;
   const now = Date.now();
@@ -56694,19 +55520,17 @@ function playServerMessageNotificationCue(context = {}, senderUserId = "", sourc
   if (!shouldNotifyInFocus(notificationMeta)) return { played: false, skippedReason: "focus_suppressed" };
   if (shouldSuppressNotificationSoundForStatus("ui", "message_received", notificationMeta)) return { played: false, skippedReason: "status_suppressed" };
   serverUnreadSoundLastPlayedByKey.set(key, now);
+  const isBot = sourceTable === "bot_channel_messages";
   const accountId = normId(state.user?.id || '');
-  const syncGeneration = globalDmMessageSyncGeneration;
   const playbackCurrent = () => normId(state.user?.id || '') === accountId
-    && !globalDmMessageAuthSuspended && globalDmMessageSyncGeneration === syncGeneration
     && canCurrentUserViewServerChannelSync(sid, normId(context.channelId || ''))
     && !getServerNotificationSoundSkipReason(context) && shouldNotifyInFocus(notificationMeta)
-    && (getServerNotificationMode(sid) !== 'mentions' || isMentioned())
     && !shouldSuppressNotificationSoundForStatus("ui", "message_received", notificationMeta);
   const result = { played: !isBot, skippedReason: isBot ? "sound_pending" : "" };
   const playback = playUiCue("message_received", { ...notificationMeta, ownerType: "messages", reason: "incoming_server_message",
-    isPlaybackCurrent:playbackCurrent });
+    ...(isBot ? {isPlaybackCurrent:playbackCurrent} : {}) });
   result.completion = Promise.resolve(playback).then(outcome => {
-    result.played = !!outcome?.played && playbackCurrent();
+    result.played = !!outcome?.played && (!isBot || playbackCurrent());
     result.skippedReason = result.played ? "" : (outcome?.failureCategory || "sound_failed");
     return {played:result.played, skippedReason:result.skippedReason};
   }).catch(() => {
@@ -57010,10 +55834,8 @@ function applyIncomingServerChannelUnread(context = {}, {
   const isOwnMessage = context.isOwnMessage === true || !!(senderUserId && senderUserId === normId(state.user?.id || ""));
   if (activeMatch || isOwnMessage) {
     if (activeMatch) clearServerChannelUnread({ serverId, channelId, conversationId });
-    const ownMention = sourceTable === "bot_channel_messages" ? isCurrentUserBotNotificationMention(row)
-      : isCurrentUserHumanNotificationMention(row, {serverId,channelId,conversationId});
-    const sound = activeMatch && !isOwnMessage && !suppressSound && ownMention
-      ? playServerMessageNotificationCue({serverId,channelId,conversationId,botMessageRow:sourceTable === "bot_channel_messages" ? row : undefined,messageRow:sourceTable === "messages" ? row : undefined}, senderUserId, sourceTable)
+    const sound = activeMatch && !isOwnMessage && !suppressSound && sourceTable === "bot_channel_messages" && isCurrentUserBotNotificationMention(row)
+      ? playServerMessageNotificationCue({serverId,channelId,conversationId,botMessageRow:row}, senderUserId, sourceTable)
       : {played:false, skippedReason:activeMatch ? "active_channel" : "own_message"};
     const result = {unreadApplied:false,soundPlayed:sound.played,skippedReason:sound.skippedReason};
     const log = () => logNotificationDebug("incoming_server_message", { sourceTable, messageId: row?.id, context: context.type || "server_channel", classificationReason: context.classificationReason || "server_channel_mapping", serverId, channelId, conversationId, senderUserId, isOwnMessage, skippedOwn: isOwnMessage, activeMatch, unreadApplied: false, appliedServerUnread: false, appliedDmUnread: false, soundPlayed: result.soundPlayed, skippedReason: result.skippedReason, ...cleanup });
@@ -57033,13 +55855,13 @@ function applyIncomingServerChannelUnread(context = {}, {
   }
   const sound = suppressSound
     ? { played: false, skippedReason: "snapshot_reconciliation" }
-    : playServerMessageNotificationCue({ serverId, channelId, conversationId, botMessageRow: sourceTable === 'bot_channel_messages' ? row : undefined, messageRow: sourceTable === 'messages' ? row : undefined }, senderUserId, sourceTable);
+    : playServerMessageNotificationCue({ serverId, channelId, conversationId, botMessageRow: sourceTable === 'bot_channel_messages' ? row : undefined }, senderUserId, sourceTable);
   applyServerOrbNotificationDecorations();
   applyServerChannelUnreadDecorations();
   scheduleDmChromeRender({ decorations: true, groupsRail: true, widgets: true });
   const result = {unreadApplied:true,soundPlayed:sound.played,skippedReason:sound.skippedReason};
   const log = () => logNotificationDebug("incoming_server_message", { sourceTable, messageId: row?.id, context: context.type || "server_channel", classificationReason: context.classificationReason || "server_channel_mapping", serverId, channelId, conversationId, senderUserId, isOwnMessage, skippedOwn: isOwnMessage, activeMatch, unreadApplied: true, appliedServerUnread: true, appliedDmUnread: false, soundPlayed: result.soundPlayed, skippedReason: result.skippedReason, ...cleanup });
-  if (sound.completion) result.completion = sound.completion.then(completed => {result.soundPlayed=completed.played;result.skippedReason=completed.skippedReason;log();return result;});
+  if (sourceTable === "bot_channel_messages" && sound.completion) result.completion = sound.completion.then(completed => {result.soundPlayed=completed.played;result.skippedReason=completed.skippedReason;log();return result;});
   else log();
   return result;
 }
@@ -57899,70 +56721,12 @@ function buildServerChannelItemMenuHtml(target = null) {
   return [
     `<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="settings"${canManage ? "" : " disabled"}>${esc(label)}</button>`,
     isChannel ? `<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="edit"${canManage ? "" : " disabled"}>${esc(editLabel)}</button>` : "",
-    CHANNEL_THREADS_AND_MODES_ENABLED && isChannel && String(target?.channelType||'text')==='text' ? '<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="threads">Threads</button>' : '',
-    CHANNEL_THREADS_AND_MODES_ENABLED&&isChannel&&(STAGE_RELEASE_ENABLED||target?.channelType==='text')?'<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="mode">Modo do canal</button>':'',
+    isChannel && String(target?.channelType||'text')==='text' ? '<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="threads">Threads</button>' : '',
     `${!isChannel ? `<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="create_channel"${canManage ? "" : " disabled"}>${esc(t("server.menu.create_channel", "Create Channel"))}</button>` : ""}`,
     `<button class="msgMenu__item" type="button" role="menuitem" data-server-channel-menu-act="copy_id">${esc(idLabel)}</button>`,
     `<div class="msgMenu__divider"></div>`,
     `<button class="msgMenu__item msgMenu__item--danger" type="button" role="menuitem" data-server-channel-menu-act="delete"${canManage ? "" : " disabled"}>${esc(deleteLabel)}</button>`,
   ].join("");
-}
-let botChannelModeDialog=null,botChannelModeTarget=null,botChannelModeUiRevision='';
-function getBotChannelModeContext() {
-  const target=botChannelModeTarget,actor=normId(state.user?.id||'');
-  if(!CHANNEL_THREADS_AND_MODES_ENABLED||(target&&((!STAGE_RELEASE_ENABLED&&target.channelType==='voice')||!isServerChannelReleaseVisible(target.serverId,target.channelId)))){botChannelModeDialog?.close();botChannelModeTarget=null;return null;}
-  if(!target||actor!==target.actor||normId(getActiveServerIdForSidebar())!==target.serverId)return null;
-  const sid=target.serverId,cid=target.channelId;
-  const effective=getMyEffectiveServerChannelPermission(sid,cid);
-  const resolved=resolveEffectiveChannelPermissionsForUser({serverId:sid,channelId:cid,userId:actor,reason:'channel-mode-ui'});
-  const permissions=resolved?.permissions||{};
-  const member=getCurrentUserServerVoiceV2Member();
-  const connected=!!member&&member.serverId===sid&&member.channelId===cid&&serverVoiceTransportController?.getSnapshot?.()?.connected===true;
-  const participants=getServerVoiceV2Participants().filter(row=>row.serverId===sid&&row.channelId===cid).map(row=>({kind:'user',id:row.userId}));
-  const channel=findServerChannelContextByChannelId(cid,sid)?.channel;
-  const connectedSubjects=participants;
-  for(const bot of getServerVoiceStageParticipants(channel?.conversationId||'')||[]){
-    const bid=normId(getBotIdFromVoiceParticipantIdentity(bot?.userId||bot?.id||''));
-    if(bid&&!connectedSubjects.some(row=>row.kind==='bot'&&row.id===bid))connectedSubjects.push({kind:'bot',id:bid});
-  }
-  return {actor,serverId:sid,channelId:cid,channelType:target.channelType,canView:canCurrentUserViewServerChannelSync(sid,cid),
-    canManageChannels:currentUserCanManageChannels(sid,cid),canModerateStage:resolved?.isOwner===true||effective?.voiceModerationCapabilities?.mute_members===true,
-    canConnect:resolved?.isOwner===true||permissions.connect===true,connected,connectedSubjects,
-    canCreatePosts:resolved?.isOwner===true||permissions.create_threads===true};
-}
-async function openBotChannelModeDialog(target) {
-  if(!CHANNEL_THREADS_AND_MODES_ENABLED||(!STAGE_RELEASE_ENABLED&&target?.channelType==='voice')||!isServerChannelReleaseVisible(target?.serverId,target?.channelId)){botChannelModeDialog?.close();botChannelModeTarget=null;return;}
-  const actor=normId(state.user?.id||''),sid=normId(target?.serverId||''),cid=normId(target?.channelId||'');
-  if(!actor||!sid||!cid||normId(getActiveServerIdForSidebar())!==sid||!canCurrentUserViewServerChannelSync(sid,cid))return;
-  const nextTarget={actor,serverId:sid,channelId:cid,channelType:target.channelType==='voice'?'voice':'text'};
-  botChannelModeDialog?.close();
-  botChannelModeTarget=nextTarget;
-  const permission=await ensureMyEffectiveServerChannelPermission(sid,cid);
-  if(botChannelModeTarget!==nextTarget||normId(state.user?.id||'')!==actor||normId(getActiveServerIdForSidebar())!==sid)return;
-  if(!permission?.ok||!canCurrentUserViewServerChannelSync(sid,cid)){
-    showDmComposerNotice('Não foi possível confirmar as permissões deste canal. Tenta novamente.',{title:'Modo do canal'});
-    return;
-  }
-  botChannelModeDialog ||= createChannelModeDialog({document,rpc:(name,args)=>supabase.rpc(name,args),getContext:getBotChannelModeContext,
-    callAction:async body=>{const {data,error}=await supabase.functions.invoke('altara-channel-modes',{body,signal:AbortSignal.timeout(20000)});return {data,error};},
-    onChange:snapshot=>{
-      const data=snapshot?.data;if(!data)return;
-      const revision=[snapshot.actor,snapshot.serverId,snapshot.channelId,data.revision,data.mode,data.state].join(':');
-      if(revision!==botChannelModeUiRevision){botChannelModeUiRevision=revision;void botForumComposerMode?.read({force:true});}
-    },
-    resolveParticipant:(kind,id)=>{
-      if(kind==='bot'){const bot=(serverBotInstallListByServerId.get(botChannelModeTarget?.serverId)||[]).find(row=>row.botId===id);return {name:bot?.name||'Bot'};}
-      const user=getCachedServerMemberForUser(botChannelModeTarget?.serverId,id);return {name:user?.displayName||user?.username||'Membro'};
-    },
-    onOpenThreads:async seed=>{
-      if(!CHANNEL_THREADS_AND_MODES_ENABLED)return;
-      if(normId(state.activeDm?.serverId||'')!==seed.serverId||normId(state.activeDm?.channelId||'')!==seed.channelId){
-        const channel=findServerChannelContextByChannelId(seed.channelId,seed.serverId)?.channel;
-        if(!channel||!await openVisibleServerChannelAfterPermissionChange(seed.serverId,channel,'forum_open'))return;
-      }
-      await getBotPlatformSurfacesUi().openThreads(seed);
-    }});
-  await botChannelModeDialog.open();
 }
 
 async function runServerChannelItemMenuAction(action = "", target = null) {
@@ -57970,8 +56734,6 @@ async function runServerChannelItemMenuAction(action = "", target = null) {
   const itemType = String(target?.itemType || "channel").trim().toLowerCase();
   const sid = normId(target?.serverId || "");
   if (!act || !sid) return;
-  if(!CHANNEL_THREADS_AND_MODES_ENABLED&&(act==='mode'||act==='threads'))return;
-  if(act==='mode'&&itemType==='channel'){await openBotChannelModeDialog(target);return;}
 
   if(act==='threads' && itemType==='channel') {
     const channelId = normId(target?.channelId || '');
@@ -60126,7 +58888,6 @@ function submitServerChannelCreateModal({ source = "programmatic", clickRecorded
 }
 
 async function runServerChannelCreateModalSave({ nonce = 0, privateAccessSnapshot = null, editContext = null } = {}) {
-  const actorAtStart = normId(state.user?.id || "");
   const isEdit = serverChannelCreateMode === "edit";
   const capturedEditContext = isEdit ? (editContext || serverChannelEditModalContext) : null;
   const sid = normId(capturedEditContext?.serverId || serverChannelCreateServerId || "");
@@ -60367,13 +59128,6 @@ async function runServerChannelCreateModalSave({ nonce = 0, privateAccessSnapsho
     normalizedChannel.isPrivate = privateAccessResult.isPrivate;
   }
   if (!isEdit) {
-    if (!isCategory && mutation.canonicalChannelId) {
-      const stillCurrent = () => normId(state.user?.id || "") === actorAtStart && serverChannelCreateMutationState === mutation && normId(serverChannelCreateServerId || "") === sid;
-      if (!stillCurrent()) return;
-      const permission = await ensureMyEffectiveServerChannelPermission(sid, mutation.canonicalChannelId, { force: true });
-      if (!stillCurrent()) return;
-      if (!permission?.ok) console.warn("[channel-permissions] created channel capabilities not verified", { serverId: sid, channelId: mutation.canonicalChannelId });
-    }
     await emitServerChannelsChangedBroadcast(sid, {
       reason: isCategory ? "category_created" : "channel_created",
       channel: !isCategory ? row : undefined,
@@ -66185,8 +64939,23 @@ function ensureServerVoiceMemberMenuElement() {
   return menu;
 }
 
-function insertVoiceMemberMentionIntoComposer(userId = "") {
-  return insertDmComposerMentionIdentity(getBotIdFromVoiceParticipantIdentity(userId) || userId);
+function insertVoiceMemberMentionIntoComposer(label = "") {
+  const input = document.getElementById("dmInput");
+  if (!input) return false;
+  const name = String(label || "member").trim().replace(/\s+/g, " ") || "member";
+  const mention = `@${name}`;
+  const value = String(input.value || "");
+  const start = Number.isFinite(input.selectionStart) ? input.selectionStart : value.length;
+  const end = Number.isFinite(input.selectionEnd) ? input.selectionEnd : start;
+  const needsLeadingSpace = start > 0 && !/\s/.test(value.charAt(start - 1));
+  const needsTrailingSpace = end < value.length && !/\s/.test(value.charAt(end));
+  const insert = `${needsLeadingSpace ? " " : ""}${mention}${needsTrailingSpace ? " " : ""}`;
+  if (typeof input.setRangeText === "function") input.setRangeText(insert, start, end, "end");
+  else input.value = `${value.slice(0, start)}${insert}${value.slice(end)}`;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  try { input.focus({ preventScroll: true }); } catch (_) { try { input.focus(); } catch (_) {} }
+  if (typeof updateDmComposerPreview === "function") updateDmComposerPreview();
+  return true;
 }
 
 // Screen-share roster state travels on the existing server-wide control channel.
@@ -66633,7 +65402,7 @@ function bindServerVoiceMemberMenuOnce(menu) {
         return;
       }
       if (action === "mention") {
-        insertVoiceMemberMentionIntoComposer(context.targetUserId);
+        insertVoiceMemberMentionIntoComposer(context.targetDisplayName);
         closeDmListMenus("voice_mention");
         return;
       }
@@ -69625,7 +68394,7 @@ function getWantedServerProfileSubscriptionIds() {
 // Broadcasts can be missed while another client is offline. Reconcile persisted
 // server identity on navigation/reconnect without blocking the cached sidebar.
 var serverProfileReadRequests;
-async function refreshPersistedServerProfile(serverId, { force = false, retryAfterRowReplacement = true } = {}) {
+async function refreshPersistedServerProfile(serverId, { force = false } = {}) {
   const sid = normId(serverId);
   const uid = normId(state.user?.id);
   const row = getServerRowById(sid);
@@ -69635,20 +68404,11 @@ async function refreshPersistedServerProfile(serverId, { force = false, retryAft
   const key = `${uid}:${sid}`;
   if (serverProfileReadRequests.has(key)) return serverProfileReadRequests.get(key);
   const revision = lastServerProfileUpdateAtByServerId.get(sid);
-  let retryForCurrentRow = false;
-  let completion;
   const request = (async () => {
     try {
       const { data, error } = await supabase.from("servers")
         .select("id,name,icon_url,banner_url").eq("id", sid).maybeSingle();
-      if (error || !data || normId(state.user?.id) !== uid) return false;
-      if (getServerRowById(sid) !== row) {
-        // Collection hydration may replace the row while this read is pending.
-        // Discard its response and read the current row once after releasing the flight.
-        retryForCurrentRow = !!getServerRowById(sid)
-          && lastServerProfileUpdateAtByServerId.get(sid) === revision;
-        return false;
-      }
+      if (error || !data || normId(state.user?.id) !== uid || getServerRowById(sid) !== row) return false;
       // A newer local save or broadcast wins over an already-running read.
       if (lastServerProfileUpdateAtByServerId.get(sid) !== revision) return false;
       row.profileVerifiedAt = Date.now();
@@ -69660,18 +68420,10 @@ async function refreshPersistedServerProfile(serverId, { force = false, retryAft
       applyServerProfileUpdate(sid, { name, iconUrl: icon, bannerUrl: banner }, { source: "persisted", repreview: false });
       return true;
     } catch (_) { return false; }
+    finally { serverProfileReadRequests.delete(key); }
   })();
-  completion = request.then((result) => {
-    if (serverProfileReadRequests.get(key) === completion) serverProfileReadRequests.delete(key);
-    if (retryForCurrentRow && retryAfterRowReplacement
-      && normId(state.user?.id) === uid && getServerRowById(sid)
-      && lastServerProfileUpdateAtByServerId.get(sid) === revision) {
-      return refreshPersistedServerProfile(sid, { force: true, retryAfterRowReplacement: false });
-    }
-    return result;
-  });
-  serverProfileReadRequests.set(key, completion);
-  return completion;
+  serverProfileReadRequests.set(key, request);
+  return request;
 }
 
 function syncServerProfileBroadcastSubscriptions() {
@@ -71467,32 +70219,6 @@ async function loadMyEffectiveServerChannelPermissionsBatch(serverId = "", { for
   return request;
 }
 
-async function ensureMyEffectiveServerChannelPermission(serverId = "", channelId = "", { force = false } = {}) {
-  const sid = normId(serverId), cid = normId(channelId), uid = normId(state.user?.id || "");
-  if (!sid || !cid || !uid) return { ok: false, row: null };
-  const sameActor = () => normId(state.user?.id || "") === uid;
-  const existing = getMyEffectiveServerChannelPermission(sid, cid);
-  if (!force && existing) return { ok: true, row: existing };
-  try {
-    // Missing targets and creations must await earlier snapshots; force joins them.
-    const pending = myEffectiveServerChannelPermissionsInFlightByServerId.get(`${sid}:${uid}`);
-    if (pending) await pending;
-    if (!sameActor()) return { ok: false, row: null, stale: true };
-    let result = await loadMyEffectiveServerChannelPermissionsBatch(sid, { force });
-    if (!sameActor()) return { ok: false, row: null, stale: true };
-    let row = getMyEffectiveServerChannelPermission(sid, cid);
-    // A warm server snapshot may predate this channel. Re-read once, self-bound.
-    if (!force && result?.ok && !row) {
-      result = await loadMyEffectiveServerChannelPermissionsBatch(sid, { force: true });
-      if (!sameActor()) return { ok: false, row: null, stale: true };
-      row = getMyEffectiveServerChannelPermission(sid, cid);
-    }
-    return { ok: result?.ok === true && !!row, row: result?.ok === true ? row : null };
-  } catch (_) {
-    return { ok: false, row: null };
-  }
-}
-
 async function loadServerPermissionOverridesBatch7a(serverId = "", scopeType = "", scopeId = "", { force = false } = {}) {
   const sid = normId(serverId || "");
   const type = String(scopeType || "").trim().toLowerCase();
@@ -71833,7 +70559,6 @@ function resolveEffectiveChannelPermissionsForUser({
 function canCurrentUserViewServerChannelSync(serverId = "", channelId = "") {
   const sid = normId(serverId || "");
   const cid = normId(channelId || "");
-  if (!isServerChannelReleaseVisible(sid, cid)) return false;
   if (!sid || !cid || !normId(state.user?.id || "")) return false;
   if (serverChannelVisibilityFailedClosedByServerId.has(sid)) return false;
   if (serverChannelVisibilityAuthorityResolvingByServerId.has(sid)) return false;
@@ -78694,12 +77419,6 @@ async function assertCurrentUserCanJoinServerVoice(serverId = "", {
   conversationId = "",
   forceCheck = false,
 } = {}) {
-  const releaseContext = getServerVoicePermissionContext({ serverId, channelId, conversationId });
-  const releaseAlias = conversationId ? findServerChannelContextByConversationId(conversationId) : null;
-  if (!isServerChannelReleaseVisible(releaseContext.serverId, releaseContext.channelId)
-      || !isServerChannelReleaseVisible(releaseAlias?.serverId, releaseAlias?.channel?.id)) {
-    throw Object.assign(new Error("This channel is currently unavailable."), { code: "server_channel_unavailable" });
-  }
   const timeout = await ensureCurrentUserServerVoiceTimeout(serverId, { force: forceCheck });
   if (timeout) {
     if (isServerTimeoutDebugEnabled()) {
@@ -81752,7 +80471,6 @@ function renderServerSettingsModerationPanel({ force = false } = {}) {
       </section>` : ""}
     </div>
   `;
-  renderServerBotResourceButtons();
 }
 
 function getServerNicknameSafeError(error = null) {
@@ -85167,7 +83885,6 @@ function setServerSettingsActivePanel(panelName = "profile") {
   }
   if (resolved === "moderation") renderServerSettingsModerationPanel({ force: true });
   if (resolved === "access") renderServerSettingsAccessPanel({ force: true });
-  renderServerBotResourceButtons();
 }
 
 let serverSettingsSaveFeedbackTimer = null;
@@ -85708,8 +84425,6 @@ function renderServerSettingsBannerPreview() {
 }
 
 function closeServerSettingsModal() {
-  serverBotResourceDialog?.close();
-  closeBotServerSettingsModal({ force: true, restoreFocus: false });
   if (typeof closeBotServerRoleMenu === "function") closeBotServerRoleMenu({ restoreFocus: false });
   const modal = document.getElementById("serverSettingsModal");
   if (!modal || modal.classList.contains("hidden")) return;
@@ -86581,16 +85296,6 @@ function bindServerSettingsModalOnce() {
     if (deleteChannelItemBtn) {
       e.preventDefault();
       void deleteSelectedServerSettingsChannelItem();
-      return;
-    }
-    const configureBotBtn = target?.closest?.("[data-server-bot-configure]");
-    if (configureBotBtn) {
-      e.preventDefault();
-      e.stopPropagation?.();
-      if (configureBotBtn.disabled) return;
-      configureBotBtn.disabled = true;
-      Promise.resolve(openBotServerSettingsModal(configureBotBtn.getAttribute("data-server-bot-configure") || "", { returnFocus: configureBotBtn }))
-        .finally(() => { configureBotBtn.disabled = false; });
       return;
     }
     const reviewBotBtn = target?.closest?.("[data-server-bot-review-permissions]");
@@ -87745,8 +86450,6 @@ function getKnownServerChannelsForSidebar(serverId, { activeConversationId = "" 
     });
     const convId = normId(normalized?.conversationId || "");
     const channelId = normId(normalized?.id || "");
-    const releaseChannelId = channelId || normId(findServerChannelContextByConversationId(convId)?.channel?.id || "");
-    if (!isServerChannelReleaseVisible(sid, releaseChannelId)) return;
     if (backendVisibleIds instanceof Set && (!channelId || !backendVisibleIds.has(channelId))) return;
     if (!convId || seen.has(convId)) return;
     seen.add(convId);
@@ -88171,10 +86874,7 @@ function fetchServerChannelsForSidebarResult(serverId, options = {}) {
   // network read) can never silently inherit a force:false caller's in-flight
   // promise, which might resolve from cache without hitting the network at
   // all -- the two are not interchangeable requests.
-  // Reads begun for an earlier actor or authority epoch are not interchangeable.
-  const requestUserId = normId(state.user?.id || "");
-  const requestAuthorityEpoch = Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0);
-  const key = `${sid}:${requestUserId}:${requestAuthorityEpoch}:${commit ? "commit" : "no-commit"}:${force ? "force" : "cache-ok"}`;
+  const key = `${sid}:${commit ? "commit" : "no-commit"}:${force ? "force" : "cache-ok"}`;
   const existing = serverChannelsSidebarResultInFlightByKey.get(key);
   if (existing) return existing;
   const request = fetchServerChannelsForSidebarResultInner(serverId, options).finally(() => {
@@ -94235,8 +92935,6 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
   const body = document.querySelector("#dmMain .dmMainBody");
   if (!panel || !body) return;
 
-  const categoryPreferenceOwner = normId(state.user?.id || "");
-  getServerCategoryAccountSync();
   const sid = normId(serverCtx?.serverId || "");
   const previousPanelServerId = normId(panel.getAttribute("data-server-panel-server-id") || "");
   if (previousPanelServerId && previousPanelServerId !== sid) {
@@ -94833,9 +93531,14 @@ function renderServerChannelsPanel(serverCtx, channels = [], members = [], categ
     btn.addEventListener("click", () => {
       if (panel.dataset.serverCategoryDragging === "1") return;
       const catId = normId(btn.getAttribute("data-server-category-toggle") || "");
-      if (!catId || !categoryPreferenceOwner || normId(state.user?.id || "") !== categoryPreferenceOwner
-        || normId(panel.getAttribute("data-server-panel-server-id") || "") !== sid) return;
-      getServerCategoryAccountSync()?.set(sid, catId, !serverChannelCategoryCollapsedByServerId.get(sid)?.has(catId));
+      if (!catId) return;
+      const set = serverChannelCategoryCollapsedByServerId.get(sid) || new Set();
+      if (set.has(catId)) set.delete(catId);
+      else set.add(catId);
+      serverChannelCategoryCollapsedByServerId.set(sid, set);
+      renderServerChannelsPanel(serverCtx, allChannels, members, categoryRows);
+      applyServerChannelUnreadDecorations();
+      refreshServerVoiceChannelBadges();
     });
   });
 
@@ -98340,7 +97043,6 @@ function renderWidgets() {
   if (checklistList) checklistList.scrollTop = checklistScrollTop;
   renderDesktopInboxPanel();
   queueWidgetNotesTextareaResize();
-  if (!serverWidgetsScope) getWidgetPersonalNotesDesktop().paint();
   syncWidgetTimerScheduler();
   } finally {
     relationshipTracePhaseEnd(trace, traceLabel);
@@ -98516,13 +97218,7 @@ async function applyFriendCollectionsData({
     ...(state.friends || []).map((f) => normId(f?.other_user_id || f?.id)).filter(Boolean),
     ...(Array.isArray(messageContactsRows) ? (state.dmContacts || []).map((row) => normId(row?.other_user_id || row?.id)).filter(Boolean) : []),
   ]);
-  pruneDmClientState(relationIds, {
-    authoritativeFriends: !!hydrationTicket
-      && hydrationTicket.key === "friends"
-      && coldHydration.current(hydrationTicket)
-      && coldHydration.read("friends").phase === "ready",
-    friendPreferenceIds: new Set((state.friends || []).map((f) => normId(f?.other_user_id || f?.id)).filter(Boolean)),
-  });
+  pruneDmClientState(relationIds);
   if (syncDmLocks) {
     await relationshipTraceMeasureAsync(trace, "applyFriendCollectionsData:dm_locks_sync", () => (
       awaitWithTimeout(
@@ -101982,7 +100678,6 @@ async function upsertDmLockViaEdgeFunction({
   return responsePayload;
 }
 
-
 async function createDmLock(currentUserId = state?.user?.id, dmId = "", codeInput = "", {
   peerUserId = "",
   peerUsername = "",
@@ -102171,6 +100866,8 @@ async function requestDmUnlockCode({
   }
 }
 
+
+
 async function unlockLockedDmWithPrompt(currentUserId = state?.user?.id, dmId = "") {
   const uid = normId(currentUserId || "");
   if (!uid || normId(state?.user?.id || "") !== uid) return false;
@@ -102249,143 +100946,6 @@ async function removeDmLockWithPrompt({
     });
   }
   return removed;
-}
-
-function captureLegacyServerRailPreferences(userId) {
-  if (serverRailLegacySeeds.has(userId)) return;
-  let layout = null;
-  try {
-    const saved = JSON.parse(localStorage.getItem(getServerOrbOrderStorageKey()) || "null");
-    const storedFolders = JSON.parse(localStorage.getItem(getServerOrbFoldersStorageKey()) || "[]");
-    const folders = Array.isArray(storedFolders) ? storedFolders : storedFolders && typeof storedFolders === "object"
-      ? Object.entries(storedFolders).map(([id, value]) => ({ id, ...(value && typeof value === "object" ? value : {}) })) : [];
-    if (Array.isArray(saved) && saved.length) layout = normalizeServerRailPreferences({ version: 1,
-      order: saved.map(value => { const parsed = parseServerOrbOrderEntry(value); return parsed ? makeServerOrbOrderEntry(parsed.kind, parsed.id) : ""; }),
-      folders: folders.map(normalizeServerFolderRecord).filter(Boolean),
-    });
-  } catch (_) {}
-  // Capture before reconciliation first persists a default RPC order. That
-  // generated order must never seed or overwrite this account's saved layout.
-  serverRailLegacySeeds.set(userId, layout);
-}
-
-function getServerRailAccountSync() {
-  const ownerId = normId(state.user?.id || "");
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ownerId)) return null;
-  if (serverRailAccountSyncOwner !== ownerId) {
-    serverRailAccountSync?.dispose(); serverRailAccountSync = null; serverRailAccountSyncOwner = ownerId;
-  }
-  if (!serverRailAccountSync) serverRailAccountSync = createServerRailPreferenceSync({
-    client: supabase, getOwner: () => state.user?.id || "",
-    pendingStorage: {
-      read: id => JSON.parse(localStorage.getItem(`altara_server_rail_pending_${id}`) || "null"),
-      write: (id, value) => localStorage.setItem(`altara_server_rail_pending_${id}`, JSON.stringify(value)),
-      clear: (id, expected) => { const key = `altara_server_rail_pending_${id}`; const value = JSON.parse(localStorage.getItem(key) || "null"); if (value?.ownerId === id && value?.id === expected) localStorage.removeItem(key); },
-    },
-    onTheme: (theme, id) => { if (normId(state.user?.id || "") !== id) return; const current = { ...(state.me?.theme_settings || {}) }; if (Object.prototype.hasOwnProperty.call(theme, "server_rail")) current.server_rail = theme.server_rail; else delete current.server_rail; state.me = { ...(state.me || {}), theme_settings: current }; },
-    applyRemote: (layout, id) => {
-      if (normId(state.user?.id || "") !== id) return;
-      ensureServerOrbOrderLoaded(); serverOrbOrderEntries.splice(0, serverOrbOrderEntries.length, ...layout.order);
-      serverOrbFoldersById.clear(); for (const folder of layout.folders) serverOrbFoldersById.set(folder.id, { ...folder, serverIds: folder.serverIds.slice() });
-      if (openServerFolderId && !serverOrbFoldersById.has(openServerFolderId)) openServerFolderId = "";
-      persistServerOrbOrderToStorage(); persistServerOrbFoldersToStorage(); renderGroupsRail();
-    },
-    onError: () => showFriendRequestToast("Não foi possível sincronizar a ordem dos servidores. A ordem foi conservada neste dispositivo."),
-  });
-  return serverRailAccountSync;
-}
-
-function queueServerRailAccountSave() {
-  const sync = getServerRailAccountSync(); if (!sync) return;
-  sync.localChanged({ version: 1, order: serverOrbOrderEntries.slice(),
-    folders: Array.from(serverOrbFoldersById.values()).map(folder => ({ ...folder, serverIds: folder.serverIds.slice() })) });
-}
-
-function applyServerCategoryAccountPreferences(value, ownerId) {
-  if (normId(state.user?.id || "") !== ownerId) return;
-  const preferences = normalizeServerCategoryPreferences(value);
-  if (!preferences) return;
-  serverChannelCategoryCollapsedByServerId.clear();
-  for (const [serverId, categoryIds] of Object.entries(preferences.collapsed)) {
-    serverChannelCategoryCollapsedByServerId.set(serverId, new Set(categoryIds));
-  }
-  const { serverId, serverCtx } = getActiveServerChannelsRuntimeContext();
-  if (serverCtx && serverChannelListByServerId.has(serverId)) {
-    renderServerChannelsPanel(serverCtx, serverChannelListByServerId.get(serverId) || [],
-      serverMemberListByServerId.get(serverId) || [], serverChannelCategoryListByServerId.get(serverId) || []);
-    applyServerChannelUnreadDecorations(); refreshServerVoiceChannelBadges();
-  }
-}
-
-function getServerCategoryAccountSync() {
-  const ownerId = normId(state.user?.id || "");
-  if (serverCategoryAccountSyncOwner !== ownerId) {
-    serverCategoryAccountSync?.dispose(); serverCategoryAccountSync = null; serverCategoryAccountSyncOwner = ownerId;
-    serverChannelCategoryCollapsedByServerId.clear();
-  }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ownerId)) return null;
-  if (!serverCategoryAccountSync) serverCategoryAccountSync = createServerCategoryPreferenceSync({
-    client: supabase, getOwner: () => state.user?.id || "",
-    storage: {
-      getItem: async (key) => localStorage.getItem(key),
-      setItem: async (key, value) => { localStorage.setItem(key, value); },
-      removeItem: async (key) => { localStorage.removeItem(key); },
-    },
-    onChange: (preferences) => applyServerCategoryAccountPreferences(preferences, ownerId),
-    onTheme: (theme, id) => {
-      if (normId(state.user?.id || "") !== id) return;
-      const current = { ...(state.me?.theme_settings || {}) };
-      if (Object.prototype.hasOwnProperty.call(theme, "server_categories")) current.server_categories = theme.server_categories;
-      else delete current.server_categories;
-      state.me = { ...(state.me || {}), theme_settings: current };
-    },
-    onError: () => { if (normId(state.user?.id || "") === ownerId) showFriendRequestToast("Não foi possível confirmar a sincronização das categorias. Volta a tentar."); },
-  });
-  return serverCategoryAccountSync;
-}
-
-function refreshServerRailAccountPreferences() {
-  const categories = getServerCategoryAccountSync();
-  if (document.hidden || !state.user?.id) return;
-  if (categories) void categories.refresh().catch(() => {});
-  const sync = getServerRailAccountSync(); if (!sync) return;
-  ensureServerOrbOrderLoaded();
-  void sync.refresh({ legacySeed: serverRailLegacySeeds.get(normId(state.user.id)) }).catch(() => {});
-}
-
-function queueServerAccountPreferenceRefresh(fields, ownerId) {
-  if (document.hidden || normId(state.user?.id || "") !== ownerId) return;
-  if (serverPreferenceInvalidationOwner !== ownerId) {
-    serverPreferenceInvalidationQueue?.dispose();
-    serverPreferenceInvalidationQueue = null;
-    serverPreferenceInvalidationOwner = ownerId;
-  }
-  if (!serverPreferenceInvalidationQueue) {
-    serverPreferenceInvalidationQueue = createServerPreferenceInvalidationQueue({
-      isCurrent: () => !document.hidden && normId(state.user?.id || "") === ownerId,
-      onInvalidate: async ({ categories, rail }) => {
-        // The private event is only a hint. Authoritative, owner-checked reads
-        // preserve local pending edits and never apply received settings.
-        const reads = [];
-        if (categories) reads.push(getServerCategoryAccountSync()?.refresh());
-        if (rail) reads.push(getServerRailAccountSync()?.refresh({ invalidate: true }));
-        await Promise.allSettled(reads);
-      },
-    });
-  }
-  serverPreferenceInvalidationQueue.push(fields);
-}
-
-function bindServerRailAccountSyncOnce() {
-  if (serverRailAccountSyncBound) return;
-  serverRailAccountSyncBound = true;
-  window.addEventListener("focus", refreshServerRailAccountPreferences);
-  window.addEventListener("online", refreshServerRailAccountPreferences);
-  document.addEventListener("visibilitychange", refreshServerRailAccountPreferences);
-  // Profiles are not in the deployed realtime publication. Re-read only while
-  // visible; focus/resume also reconciles immediately after a connection gap.
-  serverRailAccountSyncTimer = setInterval(refreshServerRailAccountPreferences, 15000);
-  window.addEventListener("beforeunload", () => { clearInterval(serverRailAccountSyncTimer); serverRailAccountSync?.dispose(); serverCategoryAccountSync?.dispose(); serverPreferenceInvalidationQueue?.dispose(); });
 }
 
 function getServerOrbOrderStorageKey() {
@@ -102554,7 +101114,6 @@ function ensureServerOrbOrderLoaded() {
   serverOrbOrderEntries.length = 0;
   serverOrbFoldersById.clear();
   if (!userId) return;
-  if (typeof captureLegacyServerRailPreferences === "function") captureLegacyServerRailPreferences(userId);
   try {
     const raw = localStorage.getItem(getServerOrbOrderStorageKey());
     const parsed = raw ? JSON.parse(raw) : [];
@@ -102591,7 +101150,7 @@ function ensureServerOrbOrderLoaded() {
   } catch (_) {}
 }
 
-function persistServerOrbOrderToStorage({ sync = false } = {}) {
+function persistServerOrbOrderToStorage() {
   try {
     const payload = serverOrbOrderEntries
       .map((entryRaw) => {
@@ -102602,10 +101161,9 @@ function persistServerOrbOrderToStorage({ sync = false } = {}) {
       .slice(0, 500);
     localStorage.setItem(getServerOrbOrderStorageKey(), JSON.stringify(payload));
   } catch (_) {}
-  if (sync && typeof queueServerRailAccountSave === "function") queueServerRailAccountSave();
 }
 
-function persistServerOrbFoldersToStorage({ sync = false } = {}) {
+function persistServerOrbFoldersToStorage() {
   try {
     const payload = Array.from(serverOrbFoldersById.values())
       .map((folder) => normalizeServerFolderRecord(folder))
@@ -102613,7 +101171,6 @@ function persistServerOrbFoldersToStorage({ sync = false } = {}) {
       .slice(0, 200);
     localStorage.setItem(getServerOrbFoldersStorageKey(), JSON.stringify(payload));
   } catch (_) {}
-  if (sync && typeof queueServerRailAccountSave === "function") queueServerRailAccountSave();
 }
 
 function getServerOrbEntryNeighbors(entryToken = "", ignoredTokens = []) {
@@ -102911,8 +101468,8 @@ function moveServerOrbEntryInOrder(entryTokenInput, targetEntryToken, { after = 
   if (openServerFolderId && !serverOrbFoldersById.has(openServerFolderId)) openServerFolderId = "";
   // The manual move already changed memory; reconciliation can be a no-op, so save the move explicitly.
   if (persist && beforeSerialized !== afterSerialized) {
-    persistServerOrbOrderToStorage({ sync: true });
-    persistServerOrbFoldersToStorage({ sync: true });
+    persistServerOrbOrderToStorage();
+    persistServerOrbFoldersToStorage();
   }
   return beforeSerialized !== afterSerialized;
 }
@@ -102945,8 +101502,8 @@ function moveServerOrbEntryToEnd(entryTokenInput, { persist = true } = {}) {
   const afterSerialized = JSON.stringify(serverOrbOrderEntries) + JSON.stringify(Array.from(serverOrbFoldersById.values()));
   if (openServerFolderId && !serverOrbFoldersById.has(openServerFolderId)) openServerFolderId = "";
   if (persist && beforeSerialized !== afterSerialized) {
-    persistServerOrbOrderToStorage({ sync: true });
-    persistServerOrbFoldersToStorage({ sync: true });
+    persistServerOrbOrderToStorage();
+    persistServerOrbFoldersToStorage();
   }
   return beforeSerialized !== afterSerialized;
 }
@@ -103027,8 +101584,8 @@ function createServerOrbFolder(dragServerId, targetServerId, { persist = true } 
   syncServerOrbOrderWithServers(state.servers, { persist: false });
   const afterSerialized = JSON.stringify(serverOrbOrderEntries) + JSON.stringify(Array.from(serverOrbFoldersById.values()));
   if (persist && beforeSerialized !== afterSerialized) {
-    persistServerOrbOrderToStorage({ sync: true });
-    persistServerOrbFoldersToStorage({ sync: true });
+    persistServerOrbOrderToStorage();
+    persistServerOrbFoldersToStorage();
   }
   return beforeSerialized !== afterSerialized;
 }
@@ -103063,8 +101620,8 @@ function moveServerOrbIntoFolder(dragServerId, folderId, {
   syncServerOrbOrderWithServers(state.servers, { persist: false });
   const afterSerialized = JSON.stringify(serverOrbOrderEntries) + JSON.stringify(Array.from(serverOrbFoldersById.values()));
   if (persist && beforeSerialized !== afterSerialized) {
-    persistServerOrbOrderToStorage({ sync: true });
-    persistServerOrbFoldersToStorage({ sync: true });
+    persistServerOrbOrderToStorage();
+    persistServerOrbFoldersToStorage();
   }
   return beforeSerialized !== afterSerialized;
 }
@@ -103096,8 +101653,8 @@ function dissolveServerOrbFolder(folderId, { persist = true } = {}) {
   syncServerOrbOrderWithServers(state.servers, { persist: false });
   const afterSerialized = JSON.stringify(serverOrbOrderEntries) + JSON.stringify(Array.from(serverOrbFoldersById.values()));
   if (persist && beforeSerialized !== afterSerialized) {
-    persistServerOrbOrderToStorage({ sync: true });
-    persistServerOrbFoldersToStorage({ sync: true });
+    persistServerOrbOrderToStorage();
+    persistServerOrbFoldersToStorage();
   }
   return beforeSerialized !== afterSerialized;
 }
@@ -103111,7 +101668,7 @@ function renameServerOrbFolder(folderId, nextName = "", { persist = true } = {})
   if (String(folder.name || "") === normalizedName) return false;
   folder.name = normalizedName;
   serverOrbFoldersById.set(fid, folder);
-  if (persist) persistServerOrbFoldersToStorage({ sync: true });
+  if (persist) persistServerOrbFoldersToStorage();
   return true;
 }
 
@@ -103874,9 +102431,6 @@ async function syncDmFriendPreferencesFromCloud(friendsRows = state.friends, { f
   ensureDmClientStateLoaded();
   const meId = normId(state?.user?.id || "");
   if (!meId) return false;
-  const owner = captureDmE2eeUiOwner();
-  const sessionId = getDmLockAuthSessionId();
-  const friendsSequence = coldHydration.read("friends").sequence;
 
   const friendIds = Array.from(
     new Set(
@@ -103886,21 +102440,12 @@ async function syncDmFriendPreferencesFromCloud(friendsRows = state.friends, { f
     )
   ).sort();
 
-  const syncFp = `${getDmFriendPreferencesSyncFingerprint(meId, friendIds)}:${sessionId}:${dmE2eeUiGeneration}`;
+  const syncFp = getDmFriendPreferencesSyncFingerprint(meId, friendIds);
   const nowMs = Date.now();
   const syncFresh = dmFriendPreferencesCloudSyncFingerprint === syncFp
     && (nowMs - Number(dmFriendPreferencesCloudLastSyncAt || 0)) < 12_000;
   if (!force && syncFresh) return false;
-  if (!force && dmFriendPreferencesCloudSyncInFlight?.isCurrent()) return dmFriendPreferencesCloudSyncInFlight.promise;
-
-  const pending = { promise: null, isCurrent: null };
-  const stillCurrent = () => owner.isCurrent()
-    && normId(dmClientStateLoaded || "") === meId
-    && getDmLockAuthSessionId() === sessionId
-    && coldHydration.read("friends").sequence === friendsSequence
-    && dmFriendPreferencesCloudSyncInFlight === pending;
-  pending.isCurrent = stillCurrent;
-  dmFriendPreferencesCloudSyncInFlight = pending;
+  if (!force && dmFriendPreferencesCloudSyncInFlight) return dmFriendPreferencesCloudSyncInFlight;
 
   const run = (async () => {
     if (!friendIds.length) {
@@ -103914,8 +102459,6 @@ async function syncDmFriendPreferencesFromCloud(friendsRows = state.friends, { f
       .select("friend_user_id, is_best_friend, nickname")
       .eq("user_id", meId)
       .in("friend_user_id", friendIds);
-    // Auth retirement also invalidates A→B→A; a newer friends read can revoke a peer.
-    if (!stillCurrent()) return false;
 
     if (error) {
       if (isMissingDmFriendPreferencesTableError(error)) {
@@ -103939,9 +102482,8 @@ async function syncDmFriendPreferencesFromCloud(friendsRows = state.friends, { f
       });
     });
 
-    // This request may contain only part of the loaded friends collection.
-    const nextBestFriendIds = new Set(dmBestFriendUserIds);
-    const nextNicknames = new Map(dmFriendNicknameByUserId);
+    const nextBestFriendIds = new Set();
+    const nextNicknames = new Map();
     const rowsToBackfill = [];
 
     friendIds.forEach((uid) => {
@@ -103951,9 +102493,7 @@ async function syncDmFriendPreferencesFromCloud(friendsRows = state.friends, { f
 
       if (remote) {
         if (remote.isBestFriend) nextBestFriendIds.add(uid);
-        else nextBestFriendIds.delete(uid);
         if (remote.nickname) nextNicknames.set(uid, remote.nickname);
-        else nextNicknames.delete(uid);
         return;
       }
 
@@ -103969,7 +102509,6 @@ async function syncDmFriendPreferencesFromCloud(friendsRows = state.friends, { f
       }
     });
 
-    if (!stillCurrent()) return false;
     dmBestFriendUserIds.clear();
     nextBestFriendIds.forEach((uid) => dmBestFriendUserIds.add(uid));
     dmFriendNicknameByUserId.clear();
@@ -103981,11 +102520,9 @@ async function syncDmFriendPreferencesFromCloud(friendsRows = state.friends, { f
     dmFriendPreferencesCloudLastSyncAt = Date.now();
 
     if (rowsToBackfill.length) {
-      if (!stillCurrent()) return false;
       const { error: backfillErr } = await supabase
         .from("friend_user_preferences")
         .upsert(rowsToBackfill, { onConflict: "user_id,friend_user_id" });
-      if (!stillCurrent()) return false;
       if (backfillErr) {
         if (isMissingDmFriendPreferencesTableError(backfillErr)) {
           dmFriendPreferencesCloudAvailable = false;
@@ -103998,11 +102535,11 @@ async function syncDmFriendPreferencesFromCloud(friendsRows = state.friends, { f
     return true;
   })();
 
-  pending.promise = run;
+  dmFriendPreferencesCloudSyncInFlight = run;
   try {
     return await run;
   } finally {
-    if (dmFriendPreferencesCloudSyncInFlight === pending) {
+    if (dmFriendPreferencesCloudSyncInFlight === run) {
       dmFriendPreferencesCloudSyncInFlight = null;
     }
   }
@@ -104478,7 +103015,7 @@ function unhideDmUser(userId, { rerender = true } = {}) {
   if (rerender) queueLightweightDmListRenderFromState();
 }
 
-function pruneDmClientState(friendIds = new Set(), { authoritativeFriends = false, friendPreferenceIds = friendIds } = {}) {
+function pruneDmClientState(friendIds = new Set()) {
   ensureDmClientStateLoaded();
   const allowed = friendIds instanceof Set ? friendIds : new Set();
 
@@ -104499,15 +103036,11 @@ function pruneDmClientState(friendIds = new Set(), { authoritativeFriends = fals
     if (allowed.has(uid) && dmMutedUserIds.has(uid)) continue;
     dmMutedUserUntilById.delete(uid);
   }
-  // Cached/loading sidebar rows cannot establish that a friendship was removed.
-  if (authoritativeFriends) {
-    const validPreferences = friendPreferenceIds instanceof Set ? friendPreferenceIds : allowed;
-    for (const uid of Array.from(dmBestFriendUserIds.keys())) {
-      if (!validPreferences.has(uid)) dmBestFriendUserIds.delete(uid);
-    }
-    for (const uid of Array.from(dmFriendNicknameByUserId.keys())) {
-      if (!validPreferences.has(uid)) dmFriendNicknameByUserId.delete(uid);
-    }
+  for (const uid of Array.from(dmBestFriendUserIds.keys())) {
+    if (!allowed.has(uid)) dmBestFriendUserIds.delete(uid);
+  }
+  for (const uid of Array.from(dmFriendNicknameByUserId.keys())) {
+    if (!allowed.has(uid)) dmFriendNicknameByUserId.delete(uid);
   }
 
   persistDmActivityToStorage();
@@ -104746,24 +103279,6 @@ function getDmActivityScore(userId) {
   return Number(dmActivityByUserId.get(uid) || 0);
 }
 
-function syncDmListUnreadBadge(item, unreadCount = 0) {
-  if (!item) return;
-  const numericCount = Number(unreadCount);
-  const count = Number.isFinite(numericCount) ? Math.max(0, Math.min(999, Math.trunc(numericCount))) : 0;
-  let badge = item.querySelector(".dmUnreadBadge");
-  if (!count) {
-    badge?.remove();
-    return;
-  }
-  if (!badge) {
-    badge = document.createElement("span");
-    badge.className = "dmUnreadBadge";
-    item.insertBefore(badge, item.querySelector(".dm-item-remove"));
-  }
-  const label = formatGroupOrbUnreadBadgeCount(count);
-  if (badge.textContent !== label) badge.textContent = label;
-  badge.setAttribute("aria-label", count === 1 ? "1 unread message" : `${count} unread messages`);
-}
 function applyDmNotificationDecorations() {
   const dmList = document.getElementById("dmList");
   if (!dmList) {
@@ -104780,7 +103295,6 @@ function applyDmNotificationDecorations() {
     const hidePreview = !!lockRecord
       && (!lockConversationId || shouldBlockDmAccess(state.user?.id || "", lockConversationId));
     item.classList.toggle("has-notification", hasUnread);
-    syncDmListUnreadBadge(item, unread);
     if (hasUnread) {
       const text = hidePreview
         ? "New message in a locked DM"
@@ -104793,12 +103307,11 @@ function applyDmNotificationDecorations() {
     }
   });
 
-  dmList.querySelectorAll(".dm-item[data-dm-conversation]:not([data-dm-id])").forEach((item) => {
+  dmList.querySelectorAll(".dm-item[data-dm-conversation]").forEach((item) => {
     const convId = normId(item.getAttribute("data-dm-conversation"));
     const unread = getPrivateConversationUnreadCount(convId);
     const hasUnread = unread > 0;
     item.classList.toggle("has-notification", hasUnread);
-    syncDmListUnreadBadge(item, unread);
     if (hasUnread) {
       const text = unread > 1 ? `${unread} novas mensagens` : "Nova mensagem";
       item.setAttribute("data-notify-text", text);
@@ -105490,10 +104003,7 @@ async function loadDmList(options = {}) {
   pruneDmClientState(new Set([
     ...friends.map((f) => normId(f?.other_user_id || f?.id)).filter(Boolean),
     ...contacts.map((row) => normId(row?.other_user_id || row?.id)).filter(Boolean),
-  ]), {
-    authoritativeFriends: !hasPreloadedFriends && !friendsResult?.error && Array.isArray(friendsResult?.data),
-    friendPreferenceIds: new Set(friends.map((f) => normId(f?.other_user_id || f?.id)).filter(Boolean)),
-  });
+  ]));
   if (!opts.skipMessageRequestRowsRefresh) {
     await relationshipTraceMeasureAsync(trace, "loadDmList:message_request_rows", () => (
       ensureMessageRequestRowsFresh({
@@ -105577,7 +104087,7 @@ async function loadDmList(options = {}) {
   setDmListPanelTitle(getFriendsMessagesTitle(), { serverMode: false });
 
   const sidebarModel = buildFriendsMessagesSidebarRows({ friends, contacts, groupEntries });
-  const botRows = botInbox.getVisibleRows();
+  const botRows = botInbox.getRows();
   const {
     visiblePeopleRows = [],
     visibleBestFriendRows = [],
@@ -105839,7 +104349,14 @@ async function loadDmList(options = {}) {
 
   if (abortHomeSidebarRender("load_dm_list_final_server_guard")) return;
   dmList.innerHTML = sectionsHtml || `<div class="hint">Sem DMs fixas. Pesquisa um amigo para voltar a abrir chat.</div>`;
-  dmList.querySelectorAll("[data-bot-dm-key]").forEach(item => bindBotDirectMessageSidebarRow(item, botInbox));
+  dmList.querySelectorAll("[data-bot-dm-key]").forEach(item => {
+    const open = () => {
+      const row = botInbox.getRows().find(row => row.key === item.getAttribute("data-bot-dm-key"));
+      if (row) void openBotDirectMessage(row, row.serverId);
+    };
+    item.addEventListener("click", open);
+    item.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } });
+  });
   syncBotDirectMessageSidebarHighlight();
 
   dmList.querySelectorAll(".dm-item[data-dm-conversation]").forEach((item) => {
@@ -109596,15 +108113,6 @@ const serverOrbFoldersById = new Map();
 let serverLastChannelStateLoaded = false;
 let serverOrbOrderStateLoaded = false;
 let serverOrbOrderStateUserId = "";
-const serverRailLegacySeeds = new Map();
-let serverRailAccountSync = null;
-let serverRailAccountSyncOwner = "";
-let serverRailAccountSyncBound = false;
-let serverRailAccountSyncTimer = 0;
-let serverCategoryAccountSync = null;
-let serverCategoryAccountSyncOwner = "";
-let serverPreferenceInvalidationQueue = null;
-let serverPreferenceInvalidationOwner = "";
 let openServerFolderId = "";
 let serverHideMutedChannelsStateLoaded = false;
 let serverMutedStateLoaded = false;
@@ -111662,8 +110170,6 @@ async function sendVaultMediaFiles(entries, { conversationId, replyToId = null, 
 }
 
 function resetDmE2eeUiSession(userId = "") {
-  dmComposerMentionController?.close();
-  dmComposerMentionNavigationDraft = null;
   resetVaultMediaSession();
   dmE2eeUiGeneration += 1;
   dmE2eeUiUserId = String(userId || "");
@@ -120645,16 +119151,6 @@ function getAuthoritativeMessageContent(message = null, parsedInput = null) {
     return { type: "text", text: String(message?.content ?? ""), trustedTextKind: "optimistic" };
   }
   const parsed = parsedInput || safeParseMessageContent(message?.content);
-  // Bot timeline collections carry a caption beside the authoritative files.
-  // Keep the generic legacy parser unchanged for human and local messages.
-  if (isPersistedBotChannelMessageRow(message) && (parsed.type === "attachments" || parsed.type === "gif")) {
-    try {
-      const collection = JSON.parse(message?.content || "");
-      if (collection?.type === "attachments" && typeof collection.text === "string") {
-        return { ...parsed, text: collection.text.slice(0, 2000) };
-      }
-    } catch (_) {}
-  }
   if (!isParsedSystemChipMessage(parsed)) return parsed;
   if (isBotMessageRow(message) || isPersistedBotChannelMessageRow(message)) return parsed;
 
@@ -121563,15 +120059,11 @@ function reactionsHtmlForMessage(messageId) {
 
   if (!items.length) return "";
 
-  if (items.some(([emoji]) => isServerCustomReaction(emoji))) {
-    queueMicrotask(() => { void getServerExpressionView().refresh(); });
-  }
-
   return items.map(([emoji, count]) => {
     const mine = dmMineReactionKeys.has(reactionKey(mid, emoji));
     return `
       <button class="msg__reaction ${mine ? "is-on" : ""}" type="button" data-msg-react="${escAttr(mid)}" data-emoji="${escAttr(emoji)}" title="Reagir">
-        <span>${renderServerReactionEmoji(emoji)}</span>
+        <span>${esc(emoji)}</span>
         <span>${esc(count)}</span>
       </button>
     `;
@@ -121853,7 +120345,6 @@ function markDmMessagesRendered(conversationId = activeDmId, reason = "unknown")
   dmLastRenderedMessagesConversationId = convId;
   dmLastRenderedMessagesSignature = getDmMessagesRenderSignature(convId, dmMessagesCache);
   if (typeof dmMessageSelection !== "undefined") dmMessageSelection?.sync();
-  if (typeof scheduleConversationTranslationSync === "function") scheduleConversationTranslationSync();
   return dmLastRenderedMessagesSignature;
 }
 
@@ -122020,7 +120511,6 @@ function preserveComposerDuring(fn, { reason = "unknown" } = {}) {
 }
 
 function renderMessagesFromCache({ keepBottom = true, reason = "unknown", force = false } = {}) {
-  botComponentUi.syncContext(); botNativeComponentUi.syncContext();
   vaultMediaViewer?.prune();
   void force;
   const msgsBox = document.getElementById("dmMessages");
@@ -122533,7 +121023,6 @@ function showServerMessageCapabilityNotice(capability = "") {
 
 function renderMessageComposer(reason = "composer-permission", options = {}) {
   try { applyDmComposerEditUi({ reason, ...(options || {}) }); } catch (_) {}
-  if (dmComposerMentionController) void dmComposerMentionController.refresh(document.getElementById("dmInput"));
 }
 
 function patchActiveMessageTimelineCapabilityControls(reason = "message-capabilities") {
@@ -122678,39 +121167,7 @@ function scheduleComposerPermissionAutoRefresh(context = null, reason = "key-cha
   }, 0);
 }
 
-let botForumComposerMode=null,botForumComposerOwnedControls=[];
-function restoreForumComposerControls(){
-  for(const [element,property,value] of botForumComposerOwnedControls)if(element?.isConnected)element[property]=value;
-  botForumComposerOwnedControls=[];
-}
-function applyForumComposerMode(context,composer,input,sendBtn){
-  if(!composer)return;
-  botForumComposerMode ||= createForumComposerMode({rpc:(name,args)=>supabase.rpc(name,args),
-    getContext:()=>({...getActiveMessageComposerPermissionContext(),navigation:dmOpenIntentSeq}),
-    onChange:()=>applyMessageComposerPermissionUi()});
-  void botForumComposerMode.read();
-  const forum=botForumComposerMode.snapshot()?.mode==='forum';
-  composer.classList.toggle('is-forum-channel',forum);
-  let card=composer.querySelector('.forumChannelComposer');
-  if(!forum){card?.remove();return;}
-  if(!card){
-    card=document.createElement('div');card.className='forumChannelComposer';
-    const label=document.createElement('span');label.textContent=CHANNEL_THREADS_AND_MODES_ENABLED?'Fórum — abre uma publicação para conversar.':'As publicações deste canal estão temporariamente indisponíveis.';
-    card.append(label);
-    if(CHANNEL_THREADS_AND_MODES_ENABLED){
-      const open=document.createElement('button');open.type='button';open.className='btn primary';open.textContent='Abrir publicações';
-      open.addEventListener('click',()=>{
-        const current=getActiveMessageComposerPermissionContext();
-        if(CHANNEL_THREADS_AND_MODES_ENABLED&&botForumComposerMode.snapshot()?.mode==='forum')
-          void getBotPlatformSurfacesUi().openThreads({serverId:current.serverId,channelId:current.channelId,forum:true});
-      });card.append(open);
-    }
-    composer.append(card);
-  }
-  for(const [element,property] of [[input,'readOnly'],[sendBtn,'disabled']])if(element){botForumComposerOwnedControls.push([element,property,element[property]]);element[property]=true;}
-}
 function applyMessageComposerPermissionUi(options = {}) {
-  restoreForumComposerControls();
   ensureAttachmentPermissionFeedbackStyles();
   const stateSnapshot = activeMessageComposerPermissionState || {};
   const context = getActiveMessageComposerPermissionContext();
@@ -122782,7 +121239,6 @@ function applyMessageComposerPermissionUi(options = {}) {
   }
 
   if (input && (blocked || loading)) {
-    if(!input.disabled)input.dataset.permissionDisabled='1';
     input.disabled = true;
     input.readOnly = true;
     input.setAttribute("aria-disabled", "true");
@@ -122791,15 +121247,11 @@ function applyMessageComposerPermissionUi(options = {}) {
       if (input.placeholder !== placeholder) input.placeholder = placeholder;
     }
   } else if (input) {
-    if(input.dataset.permissionDisabled==='1'){input.disabled=false;delete input.dataset.permissionDisabled;}
     input.readOnly = false;
     input.removeAttribute("aria-disabled");
     input.removeAttribute("aria-label");
   }
 
-  // Restore only our permission hint; another component may replace the title.
-  const permissionButtonTitles = applyMessageComposerPermissionUi.permissionButtonTitles
-    || (applyMessageComposerPermissionUi.permissionButtonTitles = new WeakMap());
   [sendBtn, emojiBtn].forEach((btn) => {
     if (!btn) return;
     if (blocked || loading) {
@@ -122807,12 +121259,6 @@ function applyMessageComposerPermissionUi(options = {}) {
       else if (btn.dataset.permissionDisabled === "1") btn.dataset.permissionDisabled = "1";
       btn.disabled = true;
       btn.setAttribute("aria-disabled", "true");
-      const ownedTitle = permissionButtonTitles.get(btn);
-      const currentTitle = btn.getAttribute("title");
-      permissionButtonTitles.set(btn, {
-        originalTitle: ownedTitle && currentTitle === ownedTitle.appliedTitle ? ownedTitle.originalTitle : currentTitle,
-        appliedTitle: placeholder,
-      });
       btn.title = placeholder;
     } else if (btn.dataset.permissionDisabled === "1") {
       btn.disabled = false;
@@ -122820,16 +121266,6 @@ function applyMessageComposerPermissionUi(options = {}) {
       delete btn.dataset.permissionDisabled;
     } else if (btn.getAttribute("aria-disabled") === "true" && btn.disabled === false) {
       btn.removeAttribute("aria-disabled");
-    }
-    if (!blocked && !loading) {
-      const ownedTitle = permissionButtonTitles.get(btn);
-      if (ownedTitle) {
-        if (btn.getAttribute("title") === ownedTitle.appliedTitle) {
-          if (ownedTitle.originalTitle === null) btn.removeAttribute("title");
-          else btn.setAttribute("title", ownedTitle.originalTitle);
-        }
-        permissionButtonTitles.delete(btn);
-      }
     }
   });
 
@@ -122862,7 +121298,6 @@ function applyMessageComposerPermissionUi(options = {}) {
     }
   });
   syncDmAttachmentInputState();
-  applyForumComposerMode(context,composer,input,sendBtn);
 }
 async function refreshActiveMessageComposerPermission(options = {}) {
   const context = getActiveMessageComposerPermissionContext();
@@ -123803,7 +122238,6 @@ function beginServerChannelVisibilityAuthorityRefresh(serverId = "", reason = "s
 async function refreshServerChannelVisibilityAuthorityAfterRoleChange(serverId = "", reason = "server_role_authority") {
   const sid = normId(serverId || "");
   if (!sid) return { ok: false, changed: false, reason: "missing_server" };
-  const requestUserId = normId(state.user?.id || "");
   if (!serverChannelVisibilityAuthorityResolvingByServerId.has(sid)) {
     beginServerChannelVisibilityAuthorityRefresh(sid, reason);
   }
@@ -123830,9 +122264,6 @@ async function refreshServerChannelVisibilityAuthorityAfterRoleChange(serverId =
   }
   await categoriesPromise;
 
-  if (!requestUserId || requestUserId !== normId(state.user?.id || "")) {
-    return { ok: false, stale: true, changed: false, reason: "superseded_visibility_actor" };
-  }
   if (epoch !== Number(serverChannelVisibilityAuthorityEpochByServerId.get(sid) || 0)) {
     return { ok: false, stale: true, changed: false, reason: "superseded_visibility_epoch" };
   }
@@ -124849,9 +123280,7 @@ function scheduleActivePermissionsRefresh(reason = "permissions_realtime", paylo
     const latest = getActiveMessageComposerPermissionContext();
     if (latest.serverId && latest.serverId !== sid) return;
     recordServerRolePermissionSaveTiming("reconcile_start", { serverId: sid, reason });
-    // A later membership handler may replace the timer after visibility was
-    // invalidated. The replacement must still resolve that pending authority.
-    if (channelAccessMayHaveChanged || serverChannelVisibilityAuthorityResolvingByServerId.has(sid)) {
+    if (channelAccessMayHaveChanged) {
       const visibility = await refreshServerChannelVisibilityAuthorityAfterRoleChange(sid, `permissions:${reason}`);
       if (visibility?.authoritativeVisibility !== true) return;
     }
@@ -126885,7 +125314,6 @@ function activatePrivateDmComposerDraft(conversationId = "", navigationIntent = 
 }
 
 function resetPrivateDmComposerForNavigation() {
-  dmComposerMentionController?.close();
   dmReplyTarget = null;
   dmEditTarget = null;
   clearDmComposerColorRanges();
@@ -127729,6 +126157,10 @@ function positionServerMemberSubmenu(menuEl, actionEl, {
     menuEl.style.maxHeight = `${Math.max(96, viewport.height - (safeMargin * 2))}px`;
     const rect = menuEl.getBoundingClientRect?.() || {};
     const measuredWidth = Math.max(180, Number(fallbackWidth || 232), Math.ceil(Number(rect.width || menuEl.offsetWidth || 0)));
+    // Freeze the measured border box: auto width can grow after moving left,
+    // invalidating the viewport clamp on narrow screens.
+    menuEl.style.boxSizing = "border-box";
+    menuEl.style.width = `${measuredWidth}px`;
     const measuredHeight = Math.min(
       Math.max(96, viewport.height - (safeMargin * 2)),
       Math.max(1, Math.ceil(Number(rect.height || menuEl.offsetHeight || 0)))
@@ -130121,12 +128553,13 @@ function openDmUserListMenuAt({
     else if (!(moderationContext.actorIsOwner || moderationContext.targetBelowActor)) moderationMenuHint = getServerRoleActionReasonText("member_hierarchy");
     else moderationMenuHint = "Requires Manage Nicknames, Kick Members, Ban Members, or Timeout Members.";
   }
-  const canShowDmLockControls = isFriend && !serverVoiceServerId && canCreateLockedDmForCurrentUser();
+  const canShowDmLockControls = isFriend && !serverVoiceServerId;
   const dmLockRecord = canShowDmLockControls
     ? resolveDmLockRecordForMenuTarget({ userId: uid, username: resolvedUsername })
     : null;
   const dmLockConversationId = normId(dmLockRecord?.dmId || "");
   const dmLockUnlockedThisSession = !!dmLockConversationId && isDmUnlockedForSession(dmLockConversationId);
+  const dmLockCreateAllowed = canShowDmLockControls && canCreateLockedDmForCurrentUser();
   const dmLockCreateAction = "lock_dm";
   const dmLockCreateLabelHtml = "Lock DM";
   const dmLockControlHtml = !canShowDmLockControls
@@ -130268,7 +128701,6 @@ function openDmUserListMenuAt({
   menu.classList.add("is-open");
   menu.dataset.submenuSide = submenuSide;
   dmUserListMenuTargetUserId = uid;
-  void appendBotApplicationContextCommands(menu, "USER", uid);
   const openedAt = getContextMenuNow();
   dmUserListMenuState = {
     targetUserId: uid,
@@ -138236,7 +136668,6 @@ function renderEmojiPickerGrid() {
 
   if (!filtered.length) {
     grid.innerHTML = `<div class="hint emojiPickerHint">Sem resultados nessa categoria.</div>`;
-    if (cat === "all") void renderServerExpressionPicker(grid,q);
     return;
   }
 
@@ -138290,7 +136721,6 @@ function renderEmojiPickerGrid() {
     html.push(`<div class="hint emojiPickerHint">A mostrar ${visible.length} de ${ordered.length}. Usa a pesquisa para ver mais.</div>`);
   }
   grid.innerHTML = html.join("");
-  if (cat === "all") void renderServerExpressionPicker(grid,q);
 }
 
 function positionEmojiPicker(anchorEl, point = null) {
@@ -138341,7 +136771,7 @@ async function onEmojiPicked(emoji) {
   const em = String(emoji || "").trim();
   if (!em) return;
 
-  if (!isServerCustomReaction(em)) pushEmojiRecent(em);
+  pushEmojiRecent(em);
   if (emojiPickerContext.mode === "bot_dm") {
     const owner = emojiPickerContext.botContext;
     const current = botDirectMessageView?.getComposerContext();
@@ -138355,8 +136785,7 @@ async function onEmojiPicked(emoji) {
       } else botDirectMessageView.insertText(em,owner);
     }
   } else if (emojiPickerContext.mode === "reaction") {
-    const normalized=normalizeServerReactionEmoji(em);
-    if(normalized && (!isServerCustomReaction(normalized) || getServerExpressionScope().allowed))await toggleMessageReaction(emojiPickerContext.messageId, normalized);
+    await toggleMessageReaction(emojiPickerContext.messageId, em);
   } else {
     insertEmojiIntoComposer(em);
   }
@@ -138388,7 +136817,6 @@ function openEmojiPicker({ mode = "composer", messageId = null, anchorEl = null,
   setEmojiPickerNavigationDepth(0);
   picker.classList.remove("hidden");
   picker.setAttribute("aria-hidden", "false");
-  if (["composer","reaction"].includes(mode) && getServerExpressionScope().allowed) void getServerExpressionView().list({fresh:true});
   if (search) search.value = "";
   renderEmojiPickerCategories();
   renderEmojiPickerGrid();
@@ -138820,7 +137248,6 @@ function ensureMessageMenu() {
     const action = btn.getAttribute("data-msg-menu-act");
     const msgId = btn.getAttribute("data-msg-id");
     if (!action || !msgId) return;
-    const translationReturnFocus=altaraContextMenuDebugState.anchorEl || null;
 
     if (botDmMessageMenuContext) {
       const owner=botDmMessageMenuContext,snapshot=botDirectMessageSnapshot;
@@ -138830,7 +137257,7 @@ function ensureMessageMenu() {
       try {
         if(action==="copy")await copyTextWithPromptFallback(row.deleted_at?"":row.content,"Message");
         else if(action==="copy_id")await copyTextWithPromptFallback(row.id,"Message ID");
-        else if(getBotDirectMessageActions(row,snapshot).some(item=>item.action===action))await handleBotDirectMessageAction(action,row,snapshot,["translate_conversation","translation_settings"].includes(action) ? translationReturnFocus || btn : btn);
+        else if(getBotDirectMessageActions(row,snapshot).some(item=>item.action===action))await handleBotDirectMessageAction(action,row,snapshot,btn);
       }catch(_){if(isActiveBotDirectMessageOwner(owner))botDirectMessageView?.showNotice("Não foi possível confirmar a ação. Tenta novamente.");}
       return;
     }
@@ -138853,15 +137280,6 @@ function ensureMessageMenu() {
     else if (action === "edit") await editDmMessage(msgId);
     else if (action === "pin") await togglePinMessage(msgId);
     else if (action === "copy") await copyMessageText(msgId);
-    else if (action === "translate") {
-      closeMessageMenu();
-      await translateVisibleMessage(msgId);
-      return;
-    }
-    else if (action === "translate_conversation" || action === "translation_settings") {
-      closeMessageMenu();openMessageTranslationSettings(action === "translation_settings" ? msgId : '', {automatic:action === "translate_conversation",returnFocus:translationReturnFocus});return;
-    }
-    else if (action === "translate_stop") {closeMessageMenu();stopConversationTranslation();return;}
     else if (action === "copy_id") {
       const message = getMessageById(msgId);
       const context = getServerMessageModerationContext(message);
@@ -138935,7 +137353,6 @@ function openMessageMenu(messageId, anchorEl, point = null) {
     canEdit ? `<button class="msgMenu__item" data-msg-menu-act="edit" data-msg-id="${escAttr(m.id)}"><span>Editar</span><span>&#x270E;</span></button>` : "",
     canPin ? `<button class="msgMenu__item" data-msg-menu-act="pin" data-msg-id="${escAttr(m.id)}"><span>${isPinned ? "Unpin" : "Pin"}</span><span>&#x1F4CC;</span></button>` : "",
     parsed.type === "text" ? `<button class="msgMenu__item" data-msg-menu-act="copy" data-msg-id="${escAttr(m.id)}"><span>Copiar texto</span><span>&#x29C9;</span></button>` : "",
-    conversationTranslationMenuActions(getMessageTranslationInput(m)).map(item=>`<button class="msgMenu__item" type="button" data-msg-menu-act="${escAttr(item.action)}" data-msg-id="${escAttr(m.id)}"><span>${esc(item.label)}</span><span aria-hidden="true">${esc(item.icon)}</span></button>`).join(""),
     `<button class="msgMenu__item" data-msg-menu-act="copy_id" data-msg-id="${escAttr(m.id)}"><span>Copy Message ID</span><span>&#x29C9;</span></button>`,
     canReport ? `<button class="msgMenu__item msgMenu__item--danger" data-msg-menu-act="report" data-msg-id="${escAttr(m.id)}"><span>${esc(t("report.modal.title_message", "Report Message"))}</span></button>` : "",
     canSelectMessageForDeletion(m) ? `<button class="msgMenu__item" data-msg-menu-act="select" data-msg-id="${escAttr(m.id)}"><span>${esc(messageSelectionLabels(appLanguage).select)}</span><span aria-hidden="true">☑</span></button>` : "",
@@ -138943,7 +137360,6 @@ function openMessageMenu(messageId, anchorEl, point = null) {
   ].filter(Boolean).join("");
 
   menu.innerHTML = items;
-  void appendBotApplicationContextCommands(menu, "MESSAGE", isPersistedBotChannelMessageRow(m) ? getBotChannelMessageRawId(m) : m.id);
   menu.classList.add("is-open");
   msgMenuOpenFor = m.id;
   serverMessageModerationDebugState.targetMessageId = normId(m.id || "");
@@ -138970,37 +137386,6 @@ function openMessageMenu(messageId, anchorEl, point = null) {
 
   menu.style.left = `${Math.round(left)}px`;
   menu.style.top = `${Math.round(top)}px`;
-}
-
-async function appendBotApplicationContextCommands(menu, commandType, targetId) {
-  const context = getBotSlashPickerContext(), actor = normId(state.user?.id || ""), navigation = dmOpenIntentSeq;
-  if (!context || !normId(targetId) || !currentUserCanUseApplicationCommands(context.serverId)) return;
-  const ticket = crypto.randomUUID(); menu.dataset.botContextTicket = ticket;
-  const current = () => menu.isConnected && menu.classList.contains("is-open") && menu.dataset.botContextTicket === ticket && actor === normId(state.user?.id || "") && navigation === dmOpenIntentSeq && isBotConnectionModeContextActive(context);
-  const commands = await fetchServerSlashCommandsForComposer(context.serverId).catch(() => []);
-  if (!current()) return;
-  const supported = commands.filter(command => command.commandType === commandType).slice(0, 25);
-  if (!supported.length) return;
-  const group = document.createElement("div");
-  group.className = "botContextCommands";
-  group.innerHTML = `<div class="msgMenu__divider"></div><div class="botContextCommands__title">${esc(t("bots.app_commands", "Apps"))}</div>`;
-  for (const command of supported) {
-    const button = document.createElement("button"); button.type = "button"; button.className = "msgMenu__item";
-    button.textContent = `${command.name} · ${command.botName}`;
-    button.addEventListener("click", async event => {
-      event.preventDefault(); event.stopImmediatePropagation();
-      if (!current() || button.disabled) return;
-      button.disabled = true;
-      try {
-        await createBotRoutedCommandInteraction({ name: command.name, args: "", rawText: "" }, { ...command, targetId }, context, { structured: { options: [], cleanRawText: "" } });
-        if (current()) { closeMessageMenu(); closeDmListMenus("app_command"); }
-      } catch (_) {
-        if (current()) { button.disabled = false; showDmComposerNotice("Não foi possível executar esta ação. Verifica se o bot e o alvo continuam disponíveis.", { title: "Bots" }); }
-      }
-    });
-    group.appendChild(button);
-  }
-  menu.appendChild(group);
 }
 
 function updateMessageReactionsUi(messageId) {
@@ -139159,7 +137544,6 @@ function attachmentDeferredPreviewHtml(safe, {
 }
 
 const trustedRenderableAttachmentPayloads = new WeakSet();
-const trustedRenderableBotAttachmentRows = new WeakMap();
 const trustedAttachmentDeliveryRefreshQueue = createTrustedAttachmentDeliveryRefreshQueue({
   supabase,
   getContext: () => {
@@ -139239,9 +137623,6 @@ function resolveRenderableAttachmentPayload(raw, { messageRow = null } = {}) {
     previewUrl: authorizedPreviewUrl,
   };
   trustedRenderableAttachmentPayloads.add(resolved);
-  if (isPersistedBotChannelMessageRow(messageRow)) trustedRenderableBotAttachmentRows.set(resolved, {
-    row: messageRow, context: getDmAttachmentActionContext(), contentKey: getDmAttachmentActionContentKey(messageRow),
-  });
   return resolved;
 }
 
@@ -139579,32 +137960,6 @@ function readAttachmentFromNode(node) {
   return resolveRenderableAttachmentPayload(descriptor, { messageRow });
 }
 
-function getBotPublicComponentAttachment(row, uploadId) {
-  if (!row || !isPersistedBotChannelMessageRow(row) || row.deleted_at || row.is_deleted || normId(row.conversation_id) !== normId(activeDmId)) return null;
-  const parsed = getAuthoritativeMessageContent(row);
-  const items = parsed?.type === "gif" && parsed.attachment ? [sanitizeAttachmentPayload(parsed.attachment)] : extractParsedAttachments(parsed);
-  const index = items.findIndex(item => normId(item?.uploadId) === normId(uploadId));
-  return index < 0 ? null : { attachment: items[index], index };
-}
-function resolveBotPublicComponentMedia(row, uploadId) {
-  const found = getBotPublicComponentAttachment(row, uploadId);
-  return found ? resolveRenderableAttachmentPayload(found.attachment, { messageRow: row }) : null;
-}
-async function openBotPublicComponentMedia(uploadId, snapshot) {
-  if (snapshot.responseId || !snapshot.isCurrent?.()) return;
-  const row = dmMessagesCache.find(item => isPersistedBotChannelMessageRow(item) && normId(item.bot_channel_message_id || String(item.id || "").replace(/^bot:/, "")) === normId(snapshot.messageId));
-  const found = getBotPublicComponentAttachment(row, uploadId), context = getDmAttachmentActionContext();
-  if (!found || !context || row.metadata?.components_revision !== snapshot.revision) return;
-  const actor = normId(state.user?.id), navigation = dmOpenIntentSeq;
-  const current = () => actor === normId(state.user?.id) && navigation === dmOpenIntentSeq && context === getDmAttachmentActionContext()
-    && getMessageById(row.id)?.metadata?.components_revision === snapshot.revision;
-  const selection = { context, messageId: row.id, index: found.index, optimistic: false, uploadId, mediaKey: dmMediaKey(found.attachment), contentKey: getDmAttachmentActionContentKey(row) };
-  const safe = await resolveDmAttachmentAction(selection, { isCurrent: current });
-  if (!safe || !current()) return;
-  if (safe.kind === "image") openDmAttachmentModal(safe, selection);
-  else triggerAttachmentDownload(safe);
-}
-
 function getDmAttachmentActionContext() {
   const userId = normId(state.user?.id || "");
   const conversationId = normId(activeDmId || state.activeDm?.conversationId || "");
@@ -139699,28 +138054,10 @@ function isSpoilerAttachmentRevealed(messageId, url) {
 function triggerAttachmentDownload(att) {
   const safe = getTrustedRenderableAttachmentPayload(att);
   if (!safe) return false;
-  const botOwner = trustedRenderableBotAttachmentRows.get(safe);
-  let downloadUrl = safe.url;
-  if (botOwner) {
-    if (!botOwner.context || botOwner.context !== getDmAttachmentActionContext()) return false;
-    const current = getMessageById(botOwner.row.id);
-    if (!current || !isPersistedBotChannelMessageRow(current) || current.deleted_at || current.is_deleted
-      || normId(current.conversation_id) !== normId(activeDmId)
-      || getDmAttachmentActionContentKey(current) !== botOwner.contentKey) return false;
-    const authorizedUrl = resolveTrustedAttachmentDeliveryUrl(botOwner.row, safe);
-    if (!authorizedUrl) return false;
-    try {
-      // Storage's SDK applies this presentation option after signing; the
-      // admitted origin, object path and token keep their existing authority.
-      const url = new URL(authorizedUrl);
-      url.searchParams.set("download", safe.name || "ficheiro");
-      downloadUrl = url.toString();
-    } catch (_) { return false; }
-  }
   const a = document.createElement("a");
-  a.href = downloadUrl;
+  a.href = safe.url;
   a.download = safe.name || "ficheiro";
-  if (!botOwner) a.target = "_blank";
+  a.target = "_blank";
   a.rel = "noopener noreferrer";
   document.body.appendChild(a);
   a.click();
@@ -139971,9 +138308,6 @@ function getDmLightboxItems() {
         safe = { ...attachment, url, originalUrl: url,
           previewUrl: resolveTrustedAttachmentDeliveryUrl(row, attachment, { preview: true }) || "" };
         trustedRenderableAttachmentPayloads.add(safe);
-        if (isPersistedBotChannelMessageRow(row)) trustedRenderableBotAttachmentRows.set(safe, {
-          row, context: getDmAttachmentActionContext(), contentKey: getDmAttachmentActionContentKey(row),
-        });
       }
       const gif = !!provider || isGifLikeAttachment(attachment);
       const favorite = provider || (gif ? uploadedGifFavoriteFromAttachment(attachment) : null);
@@ -140004,9 +138338,6 @@ function getDmLightboxItems() {
         const updatedSafe = { ...updatedAttachment, url: updatedUrl, originalUrl: updatedUrl,
           previewUrl: resolveTrustedAttachmentDeliveryUrl(merged, updatedAttachment, { preview: true }) || "" };
         trustedRenderableAttachmentPayloads.add(updatedSafe);
-        if (isPersistedBotChannelMessageRow(merged)) trustedRenderableBotAttachmentRows.set(updatedSafe, {
-          row: merged, context: getDmAttachmentActionContext(), contentKey: getDmAttachmentActionContentKey(merged),
-        });
         return { ...entry, url: updatedUrl, preview: updatedSafe.previewUrl, download: favorite ? null : updatedSafe };
       }, download: favorite ? null : safe,
         kind: attachment.kind, zoomable: attachment.kind === "image" && !gif,
@@ -140574,6 +138905,7 @@ function attachmentBodyHtml(att, {
           ${isSpoilerMedia && !isRevealed ? `<button class="msg__attachmentSpoilerMask" type="button" data-att-reveal="1">Blur - clicar para revelar</button>` : ""}
           ${deleteCornerBtnHtml}
           ${loadOriginalBtnHtml}
+          ${isGif ? "" : `<button class="msg__attachmentCornerBtn" type="button" data-att-download="1" title="Download">Download</button>`}
         </div>
         <div class="msg__attachmentCaption">
           <span class="msg__attachmentInfo">${safe.spoiler ? "Blur - " : ""}${esc(meta)}</span>
@@ -140930,20 +139262,7 @@ function renderComposerPreviewTextHtml(text) {
   return out;
 }
 
-function renderServerMemberMentionTokenHtml(userId, displayName, serverId = "") {
-  const bot = findServerInstalledBot(serverId, {botId:userId});
-  if (!bot) return renderBotMentionTokenHtml(userId, displayName);
-  const profile = {
-    botId:userId, appId:bot.appId || bot.app_id || "", publicId:bot.publicId || bot.bot_public_id || "",
-    name:displayName, avatarUrl:bot.avatarUrl || bot.avatar_url || "", bannerUrl:bot.bannerUrl || "",
-    description:bot.botDescription || bot.description || "", isPublic:bot.isPublic === true,
-    presenceStatus:bot.presenceStatus || bot.effectiveStatus || "offline",
-    connectionMode:bot.connectionMode || "", voiceStatus:bot.voiceStatus || "",
-  };
-  return `<button class="msg__mention" type="button" data-bot-profile-open="1" ${getBotContextProfileAttrs(profile,serverId)} aria-label="Ver perfil de ${escAttr(displayName)}">${esc(`@${displayName}`)}</button>`;
-}
-
-function renderMessageTextSegmentHtml(text, { resolveBotMention = null, renderMentionToken = null, botMentionPositions = null, botMentionOffset = 0 } = {}) {
+function renderMessageTextSegmentHtml(text, { resolveBotMention = null, botMentionPositions = null, botMentionOffset = 0 } = {}) {
   const original = String(text || "");
   if (!original) return "";
   const mentions = [];
@@ -140955,7 +139274,7 @@ function renderMessageTextSegmentHtml(text, { resolveBotMention = null, renderMe
     const name = resolveBotMention(id.toLowerCase());
     if (typeof name !== "string" || !name.trim()) return literal;
     const token = `${mentionMarker}${mentions.length}\u0000`;
-    mentions.push([token, typeof renderMentionToken === "function" ? renderMentionToken(id.toLowerCase(), name) : renderBotMentionTokenHtml(id, name)]);
+    mentions.push([token, renderBotMentionTokenHtml(id, name)]);
     return token;
   }) : original;
   const src = replaceEmojiShortcodesInText(prepared);
@@ -140973,9 +139292,6 @@ function renderMessageTextSegmentHtml(text, { resolveBotMention = null, renderMe
   out = out.replace(/\[code\]([\s\S]*?)\[\/code\]/gi, (_all, inner) => put(`<code class="msg__codeInline">${inner}</code>`));
   out = out.replace(/\[spoiler\]([\s\S]*?)\[\/spoiler\]/gi, (_all, inner) => put(`<span class="msg__spoilerText">${inner}</span>`));
   out = out.replace(/\|\|([^|\n](?:[\s\S]*?[^|\n])?)\|\|/g, (_all, inner) => put(`<span class="msg__spoilerText">${inner}</span>`));
-  const beforeExpressions = out;
-  out = renderServerExpressionTokens(out, put);
-  if (out !== beforeExpressions) queueMicrotask(() => { void getServerExpressionView().refresh(); });
 
   out = out.replace(/\[color=(#[0-9a-f]{3,6})\]([\s\S]*?)\[\/color\]/gi, (_all, rawColor, inner) => {
     const safeColor = normalizeMessageColorHex(rawColor);
@@ -141080,13 +139396,13 @@ function hydrateInviteCards(container) {
   }
 }
 
-function renderMessageTextHtml(text, { allowRichEmbeds = true, resolveBotMention = null, renderMentionToken = null } = {}) {
+function renderMessageTextHtml(text, { allowRichEmbeds = true, resolveBotMention = null } = {}) {
   const src = String(text || "");
   if (!src) return "";
   // Scan the complete source once: a URL split must not expose part of a code
   // fence or a Markdown link label as ordinary mention text.
   const botMentionPositions = typeof resolveBotMention === "function" ? botMentionTokenPositions(src) : null;
-  const segment = (value, offset) => renderMessageTextSegmentHtml(value, { resolveBotMention, renderMentionToken, botMentionPositions, botMentionOffset: offset });
+  const segment = (value, offset) => renderMessageTextSegmentHtml(value, { resolveBotMention, botMentionPositions, botMentionOffset: offset });
 
   const urlRe = /(?:https?:\/\/|altara:\/\/)[^\s<>"']+/gi;
   let out = "";
@@ -141164,446 +139480,6 @@ function botThinkingBodyHtml() {
   return `<span class="msgBotThinking" role="status"><span>${esc(t("bots.thinking", "Thinking"))}</span><span class="msgBotThinking__dots" aria-hidden="true"><i></i><i></i><i></i></span></span>`;
 }
 
-let messageTranslationController = null;
-let localMessageTranslator = null;
-let messageTranslationActionsBound = false;
-let localTranslationConsentPromise = null;
-
-function getMessageTranslationInput(message, botSnapshot = null) {
-  if (!message?.id || message.deleted_at || message.deleted === true) return null;
-  let parsed, conversationId;
-  if (botSnapshot) {
-    if (!isActiveBotDirectMessageOwner(botSnapshot) || !botSnapshot.enabled) return null;
-    // Bot captions are literal text; only the canonical GIF envelope is rendered as media.
-    try {
-      const value = JSON.parse(message.content);
-      const canonical = value?.delivery === 'public-gif-provider-v1' && publicGifMessageContent(value?.attachment?.gifProvider);
-      if (canonical && JSON.parse(canonical).url === value.url) return null;
-    } catch (_) {}
-    parsed = { type: 'text', text: String(message.content ?? '') };
-    conversationId = 'bot-dm:' + botSnapshot.key;
-  } else {
-    if (isOptimisticDmMessage(message) || isLegacyCallRecordMessage(message)
-      || isBotCommandInvocationMessage(message) || isEncryptedDmPlaceholderMessage(message)) return null;
-    parsed = getAuthoritativeMessageContent(message);
-    if (parsed.e2eePending || isSystemChipMessage(parsed, message)) return null;
-    conversationId = String(message.conversation_id || activeDmId || '');
-  }
-  const text = typeof parsed.text === 'string' ? parsed.text : '';
-  // Translating hidden spoilers or fenced code as plain prose could reveal or alter them.
-  if (parsed.type !== 'text' || !text.trim() || !/[\p{L}\p{N}]/u.test(text)
-    || /\|\||\[spoiler\]|```/i.test(text) || /^https?:\/\/\S+$/i.test(text.trim())) return null;
-  return conversationId ? { id: String(message.id), conversation_id: conversationId, text,
-    revision: String(message.edited_at || message.updated_at || '') } : null;
-}
-
-function getCurrentMessageTranslationInput(messageId, conversationId = '') {
-  const botKey = getActiveBotDirectMessageKey();
-  if (botKey) {
-    const snapshot = botDirectMessageSnapshot;
-    if (!snapshot || (conversationId && conversationId !== 'bot-dm:' + botKey)) return null;
-    const row = [...snapshot.messages, ...(snapshot.pinnedMessages || [])].find(item => String(item.id) === String(messageId));
-    return getMessageTranslationInput(row, snapshot);
-  }
-  const row = getMessageById(messageId);
-  if (!row || (conversationId && String(row.conversation_id || activeDmId || '') !== conversationId)) return null;
-  return getMessageTranslationInput(row);
-}
-
-function getMessageTranslationTargetLocale() {
-  return ['en','pt-PT','pt-BR'].includes(messageTranslationTargetLocale) ? messageTranslationTargetLocale : appLanguage;
-}
-
-function getMessageTranslationOwnerKey() {
-  const context = getConversationTranslationContext();
-  return context ? JSON.stringify([context.userId,context.conversationId,context.navigationId]) : '';
-}
-
-function getConversationTranslationContext() {
-  const userId = String(state.user?.id || '');
-  if (!userId) return null;
-  const botKey = getActiveBotDirectMessageKey();
-  if (botKey && (!isActiveBotDirectMessageOwner(botDirectMessageSnapshot) || !botDirectMessageSnapshot?.enabled)) return null;
-  const conversationId = botKey ? 'bot-dm:' + botKey : String(activeDmId || '');
-  return conversationId ? { userId, conversationId, locale: getMessageTranslationTargetLocale(), navigationId: String(dmOpenIntentSeq) } : null;
-}
-
-function getConversationTranslationTimeline() {
-  const context = getConversationTranslationContext();
-  if (!context) return null;
-  const root = document.getElementById(context.conversationId.startsWith('bot-dm:') ? 'botDmMain' : 'dmMain');
-  if (!isElementActuallyVisible(root)) return null;
-  return root.querySelector('.dmMessages,#dmMessages');
-}
-
-function disconnectConversationTranslationObserver() {
-  conversationTranslationObserver?.disconnect();
-  conversationTranslationObserver = null;
-  conversationTranslationObservedTimeline = null;
-  conversationTranslationObservedRows.clear();
-  conversationTranslationVisibleRows.clear();
-}
-
-function observeConversationTranslationRows() {
-  const timeline = getConversationTranslationTimeline();
-  if (!timeline || !conversationTranslationController?.getStatus().enabled) { disconnectConversationTranslationObserver(); return; }
-  if (typeof IntersectionObserver !== 'function') return;
-  if (conversationTranslationObservedTimeline !== timeline) {
-    disconnectConversationTranslationObserver();
-    const observer = new IntersectionObserver(entries => {
-      if (conversationTranslationObserver !== observer) return;
-      for (const entry of entries) {
-        if (entry.isIntersecting) conversationTranslationVisibleRows.add(entry.target);
-        else conversationTranslationVisibleRows.delete(entry.target);
-      }
-      scheduleConversationTranslationSync(false);
-    }, { root: timeline, rootMargin: '160px 0px' });
-    conversationTranslationObserver = observer;
-    conversationTranslationObservedTimeline = timeline;
-  }
-  const current = new Set([...timeline.querySelectorAll('[data-msg-translation-slot]')].map(slot => slot.closest('.msg')).filter(Boolean));
-  for (const row of conversationTranslationObservedRows) if (!current.has(row)) {
-    conversationTranslationObserver.unobserve(row);
-    conversationTranslationObservedRows.delete(row); conversationTranslationVisibleRows.delete(row);
-  }
-  const viewport = timeline.getBoundingClientRect();
-  for (const row of current) if (!conversationTranslationObservedRows.has(row)) {
-    const rect = row.getBoundingClientRect();
-    // Seed new rows before the asynchronous first observer callback, preserving the initial request.
-    if (rect.bottom >= viewport.top - 160 && rect.top <= viewport.bottom + 160) conversationTranslationVisibleRows.add(row);
-    conversationTranslationObservedRows.add(row); conversationTranslationObserver.observe(row);
-  }
-}
-
-function getVisibleConversationTranslationMessages() {
-  if (document.visibilityState === 'hidden') return [];
-  const context = getConversationTranslationContext(), timeline = getConversationTranslationTimeline();
-  if (!context || !timeline) return [];
-  let rows;
-  if (conversationTranslationObservedTimeline === timeline && conversationTranslationObserver) rows = [...conversationTranslationVisibleRows];
-  else {
-    const viewport = timeline.getBoundingClientRect();
-    rows = [...timeline.querySelectorAll('.msg[data-msg-id]')].filter(row => {
-      const rect = row.getBoundingClientRect();
-      return rect.bottom >= viewport.top - 160 && rect.top <= viewport.bottom + 160;
-    });
-  }
-  return rows.filter(row => row.isConnected && timeline.contains(row)).map(row =>
-    getCurrentMessageTranslationInput(row.getAttribute('data-msg-id'), context.conversationId)).filter(Boolean);
-}
-
-function conversationTranslationCopy() {
-  const pt=appLanguage !== 'en', br=appLanguage === 'pt-BR';
-  return pt ? { title:'Tradução', translate:'Traduzir mensagem', conversation:'Traduzir esta conversa…', options:'Opções de tradução…', stop:'Desativar tradução automática', auto:br?'Detectar automaticamente':'Detetar automaticamente', source:'Idioma original', target:'Traduzir para', automatic:'Traduzir automaticamente nesta conversa', description:br?'Inclui novas mensagens e o histórico conforme aparece na tela.':'Inclui novas mensagens e o histórico à medida que aparece no ecrã.', privacy:'Gratuita e privada. O texto é traduzido neste dispositivo.', apply:'Aplicar', enable:'Ativar tradução automática', close:'Fechar', pending:br?'Traduzindo…':'A traduzir…', active:'Tradução automática ativa.', inactive:'A tradução automática está desligada.', waiting:'Algumas mensagens precisam do idioma original. As restantes continuam a ser traduzidas.', failed:'Não foi possível continuar a tradução. Tenta novamente.', choose:'Escolhe o idioma original para esta mensagem.' }
-    : { title:'Translation', translate:'Translate message', conversation:'Translate this conversation…', options:'Translation options…', stop:'Turn off automatic translation', auto:'Detect automatically', source:'Original language', target:'Translate to', automatic:'Automatically translate this conversation', description:'Includes new messages and older history as it comes into view.', privacy:'Free and private. Text is translated on this device.', apply:'Apply', enable:'Enable automatic translation', close:'Close', pending:'Translating…', active:'Automatic translation is on.', inactive:'Automatic translation is off.', waiting:'Some messages need the original language. Other messages keep translating.', failed:'Translation could not continue. Try again.', choose:'Choose the original language for this message.' };
-}
-
-function conversationTranslationMenuActions(input = null) {
-  const copy=conversationTranslationCopy(), status=conversationTranslationController?.getStatus();
-  const actions=[];
-  if (input) actions.push({action:'translate',label:copy.translate,icon:'↔'});
-  if (getConversationTranslationContext()) {
-    actions.push({action:'translate_conversation',label:status?.enabled ? copy.automatic : copy.conversation,icon:status?.enabled ? '✓' : '↔'});
-    if (status?.enabled) actions.push({action:'translate_stop',label:copy.stop,icon:'×'});
-  }
-  if (input && getMessageTranslations().get(input).visible) actions.push({action:'translation_settings',label:copy.options,icon:'↔'});
-  return actions;
-}
-
-function closeMessageTranslationSettings({ restoreFocus = true } = {}) {
-  const owner=messageTranslationSettings;
-  if (!owner) return;
-  messageTranslationSettings=null; owner.element.remove();
-  if (restoreFocus && owner.key === getMessageTranslationOwnerKey() && isElementActuallyVisible(owner.returnFocus)) owner.returnFocus.focus({preventScroll:true});
-}
-
-function syncConversationTranslationControls() {
-  // Translation lives in the message menu; no extra header controls or timeline strip.
-  for (const old of document.querySelectorAll('[data-conversation-translation-toggle],[data-conversation-translation-bar]')) old.remove();
-  const owner=messageTranslationSettings;
-  if (!owner) return;
-  if (owner.key !== getMessageTranslationOwnerKey() || (owner.messageId && !getCurrentMessageTranslationInput(owner.messageId))) { closeMessageTranslationSettings({restoreFocus:false}); return; }
-  const status=conversationTranslationController?.getStatus(), copy=conversationTranslationCopy();
-  owner.element.querySelector('[data-translation-settings-status]').textContent=status?.errorCode ? copy.failed : status?.pending ? copy.pending : status?.waitingForSource ? copy.waiting : status?.enabled ? copy.active : copy.inactive;
-}
-
-function openMessageTranslationSettings(messageId = '', { automatic = false, returnFocus = null } = {}) {
-  const key=getMessageTranslationOwnerKey(), input=messageId ? getCurrentMessageTranslationInput(messageId) : null;
-  if (!key || (messageId && !input) || !getConversationTranslationTimeline()) return;
-  closeMessageTranslationSettings({restoreFocus:false});
-  const copy=conversationTranslationCopy(), status=conversationTranslationController?.getStatus();
-  const messageState=input ? getMessageTranslations().get(input) : null;
-  const source=automatic ? status?.sourceLanguage || messageTranslationSourceLanguage : messageState?.sourceLanguage || messageState?.detectedSourceLanguage || messageTranslationSourceLanguage;
-  const modal=document.createElement('div');modal.className='modal messageTranslationSettings';
-  modal.id='messageTranslationSettings';modal.setAttribute('aria-hidden','false');
-  modal.innerHTML='<div class="modal__backdrop" data-translation-settings-close></div><form class="modalCard messageTranslationSettingsCard" role="dialog" aria-modal="true" aria-labelledby="translationSettingsTitle"><div class="modalTop"><div class="modalTitle" id="translationSettingsTitle">'+esc(copy.title)+'</div><button class="icon-btn" type="button" data-translation-settings-close aria-label="'+escAttr(copy.close)+'">×</button></div><div class="modal__body messageTranslationSettingsBody"><label class="messageTranslationSettingsField"><span>'+esc(copy.target)+'</span><select data-translation-setting-target><option value="en">English</option><option value="pt-PT">Português (Portugal)</option><option value="pt-BR">Português (Brasil)</option></select></label><label class="messageTranslationSettingsField"><span>'+esc(copy.source)+'</span><select data-translation-setting-source><option value="">'+esc(copy.auto)+'</option>'+messageTranslationSourceChoices(appLanguage).map(item=>'<option value="'+escAttr(item.code)+'">'+esc(item.label)+'</option>').join('')+'</select></label><label class="messageTranslationSettingsAuto"><input type="checkbox" data-translation-setting-auto><span>'+esc(copy.automatic)+'</span></label><p class="messageTranslationSettingsPrivacy">'+esc(automatic ? copy.description : appLanguage === 'en' ? 'The original message stays visible.' : 'A mensagem original mantém-se visível.')+'</p><p class="messageTranslationSettingsPrivacy">'+esc(copy.privacy)+'</p><div class="messageTranslationSettingsStatus" role="status" aria-live="polite" data-translation-settings-status></div></div><div class="messageTranslationSettingsActions"><button class="btn ghost" type="button" data-translation-settings-close>'+esc(copy.close)+'</button><button class="btn primary" type="submit" data-translation-settings-apply>'+esc(automatic && !status?.enabled ? copy.enable : input ? copy.translate : copy.apply)+'</button></div></form>';
-  const previous=returnFocus || document.activeElement;
-  const row=input ? [...getConversationTranslationTimeline().querySelectorAll('.msg[data-msg-id]')].find(node=>node.getAttribute('data-msg-id') === input.id) : null;
-  const focus=isElementActuallyVisible(previous) ? previous : [...(row?.querySelectorAll('[data-msg-more],[data-bot-dm-more]') || [])].find(isElementActuallyVisible);
-  const owner={element:modal,key,messageId:String(messageId || ''),signature:input ? JSON.stringify([input.text,input.revision]) : '',automatic,returnFocus:focus};
-  messageTranslationSettings=owner;
-  const target=modal.querySelector('[data-translation-setting-target]'), original=modal.querySelector('[data-translation-setting-source]'), auto=modal.querySelector('[data-translation-setting-auto]'), apply=modal.querySelector('[data-translation-settings-apply]');
-  target.value=getMessageTranslationTargetLocale();original.value=source || '';auto.checked=automatic;
-  const autoField=modal.querySelector('.messageTranslationSettingsAuto');
-  autoField.hidden=!automatic;if(!automatic)autoField.style.display='none';
-  const needsSource=messageState?.errorCode === 'source_language_unknown';
-  const update=()=>{apply.disabled=needsSource && !original.value; original.setAttribute('aria-invalid',String(needsSource && !original.value));if(needsSource && !original.value)modal.querySelector('[data-translation-settings-status]').textContent=copy.choose;};
-  modal.addEventListener('change',update);
-  modal.addEventListener('click',event=>{if(eventTargetElement(event)?.closest('[data-translation-settings-close]'))closeMessageTranslationSettings();});
-  modal.addEventListener('keydown',event=>{
-    if(event.key === 'Escape'){event.preventDefault();event.stopPropagation();closeMessageTranslationSettings();return;}
-    if(event.key !== 'Tab')return;
-    const controls=[...modal.querySelectorAll('button:not(:disabled),select,input')].filter(isElementActuallyVisible), first=controls[0],last=controls.at(-1);
-    if(event.shiftKey && document.activeElement === first){event.preventDefault();last?.focus();}
-    else if(!event.shiftKey && document.activeElement === last){event.preventDefault();first?.focus();}
-  });
-  modal.addEventListener('submit',async event=>{
-    event.preventDefault();
-    const current=owner.messageId ? getCurrentMessageTranslationInput(owner.messageId) : null;
-    const source=normalizeMessageTranslationSourceLanguage(original.value), locale=target.value, enable=auto.checked;
-    if(messageTranslationSettings !== owner || owner.key !== getMessageTranslationOwnerKey() || (owner.messageId && (!current || JSON.stringify([current.text,current.revision]) !== owner.signature))){closeMessageTranslationSettings({restoreFocus:false});return;}
-    if(source === null || !['en','pt-PT','pt-BR'].includes(locale) || (needsSource && !source))return;
-    messageTranslationTargetLocale=locale === appLanguage ? '' : locale;
-    if(owner.automatic || enable || !conversationTranslationController?.getStatus().enabled)messageTranslationSourceLanguage=source;
-    closeMessageTranslationSettings();
-    getMessageTranslations().syncContext();refreshMessageTranslationUi();
-    if(enable){await getConversationTranslations().enable({sourceLanguage:source});scheduleConversationTranslationSync();}
-    else if(owner.automatic)stopConversationTranslation();
-    else conversationTranslationController?.sync();
-    if(owner.messageId && owner.key === getMessageTranslationOwnerKey())await translateVisibleMessage(owner.messageId,{sourceLanguage:source,resetSource:!source});
-  });
-  document.body.appendChild(modal);syncConversationTranslationControls();update();
-  requestAnimationFrame(()=>{if(messageTranslationSettings === owner)(needsSource ? original : target).focus();});
-}
-
-function getConversationTranslations() {
-  return conversationTranslationController ||= createConversationTranslationController({
-    getContext:getConversationTranslationContext, getVisibleMessages:getVisibleConversationTranslationMessages,
-    getMessageController:getMessageTranslations, confirmEnable:confirmLocalTranslationDownload,
-    keepWarm:enabled=>localMessageTranslator?.setKeepWarm(enabled && document.visibilityState !== 'hidden'),
-    onChange:syncConversationTranslationControls,
-  });
-}
-
-function scheduleConversationTranslationSync(reconcile = true) {
-  conversationTranslationNeedsObservation ||= reconcile;
-  if (conversationTranslationSyncFrame) return;
-  conversationTranslationSyncFrame=requestAnimationFrame(()=>{
-    conversationTranslationSyncFrame=0;
-    const observe=conversationTranslationNeedsObservation; conversationTranslationNeedsObservation=false;
-    syncConversationTranslationControls();
-    if (conversationTranslationController?.getStatus().enabled) {
-      if (observe) observeConversationTranslationRows();
-      conversationTranslationController.sync();
-      if (!conversationTranslationController.getStatus().enabled) disconnectConversationTranslationObserver();
-    } else disconnectConversationTranslationObserver();
-  });
-}
-
-function stopConversationTranslation() {
-  conversationTranslationController?.disable({ hideTranslations:true });
-  disconnectConversationTranslationObserver();
-  syncConversationTranslationControls();
-}
-
-function bindConversationTranslationControlsOnce() {
-  if (conversationTranslationUiBound) return;
-  conversationTranslationUiBound=true;
-  document.addEventListener('click',event=>{
-    const control=eventTargetElement(event)?.closest('[data-msg-translation-settings]');
-    if(!control || !control.closest('#dmMessages,#botDmMain'))return;
-    event.preventDefault();event.stopPropagation();openMessageTranslationSettings(control.getAttribute('data-msg-translation-settings'),{returnFocus:control});
-  });
-  document.addEventListener('visibilitychange',()=>{
-    localMessageTranslator?.setKeepWarm(!!conversationTranslationController?.getStatus().enabled && document.visibilityState !== 'hidden');
-    conversationTranslationController?.sync();scheduleConversationTranslationSync(false);
-  });
-  window.addEventListener('resize',()=>{if(conversationTranslationController?.getStatus().enabled)scheduleConversationTranslationSync(false);});
-  document.addEventListener('scroll',event=>{
-    if(typeof IntersectionObserver !== 'function' && conversationTranslationController?.getStatus().enabled && event.target === getConversationTranslationTimeline())scheduleConversationTranslationSync(false);
-  },{capture:true,passive:true});
-  syncConversationTranslationControls();
-}
-
-function getMessageTranslationSourceContext(messageId, conversationId) {
-  const context = getConversationTranslationContext();
-  if (!context || context.conversationId !== conversationId) return '';
-  const botKey = getActiveBotDirectMessageKey();
-  let rows, identity;
-  if (botKey) {
-    const snapshot = botDirectMessageSnapshot;
-    if (!isActiveBotDirectMessageOwner(snapshot) || !snapshot.enabled || !Array.isArray(snapshot.messages)) return '';
-    rows = [...snapshot.messages, ...(Array.isArray(snapshot.pinnedMessages) ? snapshot.pinnedMessages : [])];
-    identity = row => ['bot', 'user'].includes(row?.sender) ? snapshot.key + ':' + row.sender : '';
-  } else {
-    if (typeof dmMessagesCache === 'undefined' || !Array.isArray(dmMessagesCache) || typeof getMessageSenderIdentityKey !== 'function') return '';
-    rows = dmMessagesCache;
-    identity = getMessageSenderIdentityKey;
-  }
-  const current = getCurrentMessageTranslationInput(messageId, conversationId);
-  if (!current) return '';
-  const index = rows.findIndex(row => String(row?.id || '') === current.id);
-  const currentRow = botKey ? rows[index] : getMessageById(current.id);
-  const author = currentRow && identity(currentRow);
-  if (index < 0 || !author) return '';
-  const used = new Set([current.id]), pieces = [];
-  let length = 0, letters = 0;
-  // Nearby original text only helps language identification. Complete inputs
-  // retain protected code/URLs for the runtime to exclude from that hint.
-  for (let distance = 1; distance <= 12 && pieces.length < 6; distance++) {
-    for (const nearbyIndex of [index - distance, index + distance]) {
-      const cached = rows[nearbyIndex], id = String(cached?.id || '');
-      if (!id || used.has(id)) continue;
-      used.add(id);
-      const row = botKey ? cached : getMessageById(id);
-      if (!row || identity(row) !== author) continue;
-      const input = getCurrentMessageTranslationInput(id, conversationId);
-      if (!input || input.conversation_id !== conversationId) continue;
-      const letterCount = input.text.match(/\p{L}/gu)?.length || 0;
-      const separator = pieces.length ? 1 : 0;
-      if (letterCount < 6 || length + separator + input.text.length > 2000) continue;
-      pieces.push({ index: nearbyIndex, text: input.text });
-      length += separator + input.text.length; letters += letterCount;
-      if (pieces.length >= 6) break;
-    }
-  }
-  return pieces.length >= 2 && letters >= 40 ? pieces.sort((a, b) => a.index - b.index).map(piece => piece.text).join('\n') : '';
-}
-
-function getMessageTranslations() {
-  return messageTranslationController ||= createMessageTranslationController({
-    getContext: () => ({ userId: String(state.user?.id || ''),
-      conversationId: getActiveBotDirectMessageKey() ? 'bot-dm:' + getActiveBotDirectMessageKey() : String(activeDmId || ''),
-      locale: getMessageTranslationTargetLocale(), navigationId: String(dmOpenIntentSeq) }),
-    getMessage: getCurrentMessageTranslationInput,
-    request: (body, options) => {
-      localMessageTranslator ||= createLocalMessageTranslator();
-      localMessageTranslator.setKeepWarm?.(!!conversationTranslationController?.getStatus().enabled && document.visibilityState !== 'hidden');
-      const letters = body.text.match(/\p{L}/gu) || [];
-      const sourceContext = !body.source_language && body.text.trim().split(/\s+/u).length <= 4
-        && letters.length && letters.every(letter => /\p{Script=Latin}/u.test(letter))
-        ? getMessageTranslationSourceContext(body.message_id, body.conversation_id) : '';
-      return localMessageTranslator.translate(body.text, body.target_locale, { ...options, sourceLanguage: body.source_language || '', sourceContext });
-    },
-    onChange: refreshMessageTranslationUi,
-  });
-}
-
-function messageTranslationSlotHtml(input) {
-  if (!input) return '';
-  return '<div data-msg-translation-slot="' + escAttr(input.id) + '" data-translation-conversation="'
-    + escAttr(input.conversation_id) + '">' + renderMessageTranslationHtml(getMessageTranslations(), input, { locale: appLanguage, automatic: !!conversationTranslationController?.getStatus().enabled }) + '</div>';
-}
-
-function captureTranslationViewport(timeline) {
-  if (!timeline) return null;
-  if (timeline.scrollHeight - timeline.clientHeight - timeline.scrollTop <= 4) return { timeline, followLatest:true };
-  const viewport = timeline.getBoundingClientRect();
-  const row = [...timeline.querySelectorAll('.msg[data-msg-id]')].find(node => {
-    const rect = node.getBoundingClientRect();
-    return rect.bottom > viewport.top && rect.top < viewport.bottom;
-  });
-  return { timeline, row, offset:row ? row.getBoundingClientRect().top - viewport.top : 0 };
-}
-
-function restoreTranslationViewport(anchor) {
-  if (!anchor || getConversationTranslationTimeline() !== anchor.timeline) return;
-  const { timeline, row } = anchor;
-  if (anchor.followLatest) timeline.scrollTop = Math.max(0,timeline.scrollHeight - timeline.clientHeight);
-  else if (row?.isConnected && timeline.contains(row)) {
-    const delta = row.getBoundingClientRect().top - timeline.getBoundingClientRect().top - anchor.offset;
-    if (Math.abs(delta) > 0.5) timeline.scrollTop += delta;
-  }
-}
-
-function refreshMessageTranslationUi(change = null) {
-  let viewport = null;
-  for (const slot of document.querySelectorAll('[data-msg-translation-slot]')) {
-    const id = slot.getAttribute('data-msg-translation-slot');
-    const conversationId = slot.getAttribute('data-translation-conversation');
-    if (change && (id !== change.messageId || conversationId !== change.conversationId)) continue;
-    const input = getCurrentMessageTranslationInput(id, conversationId);
-    if (!input) {
-      if (slot.hasChildNodes()) viewport ||= captureTranslationViewport(getConversationTranslationTimeline());
-      slot.replaceChildren(); continue;
-    }
-    const html = renderMessageTranslationHtml(getMessageTranslations(), input, { locale: appLanguage, automatic: !!conversationTranslationController?.getStatus().enabled });
-    if (slot.innerHTML === html) continue;
-    viewport ||= captureTranslationViewport(getConversationTranslationTimeline());
-    const focused = slot.contains(document.activeElement);
-    const focusAction = document.activeElement?.hasAttribute('data-msg-translation-hide')
-      ? 'data-msg-translation-hide' : 'data-msg-translate';
-    slot.innerHTML = html;
-    if (focused) {
-      const control = slot.querySelector('[' + focusAction + ']') || slot.querySelector('button');
-      const more = control ? null : [...(slot.closest('.msg')?.querySelectorAll('[data-msg-more],[data-bot-dm-more]') || [])]
-        .find(isElementActuallyVisible);
-      (control || more)?.focus({ preventScroll: true });
-    }
-  }
-  restoreTranslationViewport(viewport);
-}
-
-async function confirmLocalTranslationDownload() {
-  try { if (localStorage.getItem('altara_local_translation_models_v2') === 'allowed') return true; } catch (_) {}
-  if (localTranslationConsentPromise) return localTranslationConsentPromise;
-  const pt = appLanguage !== 'en';
-  const brazil = appLanguage === 'pt-BR';
-  localTranslationConsentPromise = requestAppConfirm(pt
-    ? (brazil ? 'A tradução é gratuita e acontece neste dispositivo. Baixamos apenas os modelos necessários: cerca de 120 MB para português → inglês, 520 MB para inglês → português e até 700 MB para outros idiomas (até 1,4 GB no total). O texto não é enviado para serviços de tradução. Pode usar 1–3 GB de RAM, com picos de cerca de 5–6 GB ao carregar ou reiniciar. Baixar e continuar?'
-      : 'A tradução é gratuita e acontece neste dispositivo. Descarregamos apenas os modelos necessários: cerca de 120 MB para português → inglês, 520 MB para inglês → português e até 700 MB para outros idiomas (até 1,4 GB no total). O texto não é enviado para serviços de tradução. Pode usar 1–3 GB de RAM, com picos de cerca de 5–6 GB ao carregar ou reiniciar. Descarregar e continuar?')
-    : 'Translation is free and runs on this device. Only the models you need are downloaded: about 120 MB for Portuguese → English, 520 MB for English → Portuguese and up to 700 MB for other languages (up to 1.4 GB total). Text is never sent to translation services. It can use 1–3 GB of RAM, with peaks around 5–6 GB while loading or restarting. Download and continue?', {
-      title: pt ? 'Tradução local' : 'Local translation',
-      confirmText: pt ? (brazil ? 'Baixar e traduzir' : 'Descarregar e traduzir') : 'Download and translate',
-      cancelText: pt ? 'Cancelar' : 'Cancel',
-    });
-  try {
-    const accepted = await localTranslationConsentPromise;
-    if (accepted) { try { localStorage.setItem('altara_local_translation_models_v2', 'allowed'); } catch (_) {} }
-    return accepted;
-  } finally { localTranslationConsentPromise = null; }
-}
-
-async function translateVisibleMessage(messageId, { sourceLanguage = '', resetSource = false } = {}) {
-  const input = getCurrentMessageTranslationInput(messageId);
-  if (!input) return;
-  const actor = String(state.user?.id || ''), navigation = dmOpenIntentSeq, locale = getMessageTranslationTargetLocale();
-  if (!await confirmLocalTranslationDownload()) return;
-  const current = getCurrentMessageTranslationInput(messageId, input.conversation_id);
-  if (!current || current.text !== input.text || current.revision !== input.revision
-    || actor !== String(state.user?.id || '') || navigation !== dmOpenIntentSeq || locale !== getMessageTranslationTargetLocale()) return;
-  conversationTranslationController?.claimManual(current);
-  const result=await getMessageTranslations().translate(current, { sourceLanguage: resetSource ? sourceLanguage : sourceLanguage || messageTranslationSourceLanguage, resetSource });
-  if (result?.errorCode === 'source_language_unknown' && actor === String(state.user?.id || '') && navigation === dmOpenIntentSeq && locale === getMessageTranslationTargetLocale()) openMessageTranslationSettings(messageId);
-}
-
-function bindMessageTranslationActionsOnce() {
-  if (messageTranslationActionsBound) return;
-  messageTranslationActionsBound = true;
-  document.addEventListener('click', event => {
-    const target = eventTargetElement(event);
-    const control = target?.closest('[data-msg-translate],[data-msg-translation-hide]');
-    if (!control || !control.closest('#dmMessages,#botDmMain')) return;
-    const slot = control.closest('[data-msg-translation-slot]');
-    const id = control.getAttribute('data-msg-translate') || control.getAttribute('data-msg-translation-hide');
-    const input = getCurrentMessageTranslationInput(id, slot?.getAttribute('data-translation-conversation') || '');
-    if (!input) return;
-    event.preventDefault(); event.stopPropagation();
-    if (control.hasAttribute('data-msg-translation-hide')) {
-      conversationTranslationController?.suppress(input);
-      getMessageTranslations().hide(input);
-    }
-    else void translateVisibleMessage(id, { sourceLanguage: slot?.querySelector('[data-msg-translation-source]')?.value || '' });
-  });
-  document.addEventListener('change', event => {
-    const select = eventTargetElement(event)?.closest('[data-msg-translation-source]');
-    const slot = select?.closest('[data-msg-translation-slot]');
-    if (!slot || !slot.closest('#dmMessages,#botDmMain')) return;
-    const button = slot.querySelector('[data-msg-translate]');
-    if (button) button.disabled = !select.value;
-  });
-}
-
 function messageHtml(m, opts = {}) {
   const mid = String(m?.id || "");
   if (isLegacyCallRecordMessage(m)) return historicalLegacyCallRecordHtml(m);
@@ -141613,17 +139489,12 @@ function messageHtml(m, opts = {}) {
   const compact = !!opts?.compact;
   const isMe = isOwnMessage(m);
   const isBotMsg = isBotMessageRow(m);
-  const humanMentionContext = !isBotMsg && m?.conversation_id && isServerConversationContext(m.conversation_id)
-    ? getServerPermissionContextForConversation(m.conversation_id) : null;
-  const mentionServerId = isBotMsg && isPersistedBotChannelMessageRow(m) ? normId(m?.server_id || m?.serverId || "")
-    : normId(humanMentionContext?.serverId || "");
+  const mentionServerId = isBotMsg && isPersistedBotChannelMessageRow(m) ? normId(m?.server_id || m?.serverId || "") : "";
   const mentionNames = new Map();
   const resolveBotMention = mentionServerId ? (userId) => {
     if (!mentionNames.has(userId)) {
       const member = getCachedServerMemberForUser(mentionServerId, userId);
-      const bot = !member && humanMentionContext ? findServerInstalledBot(mentionServerId, {botId:userId}) : null;
-      mentionNames.set(userId, member ? resolveServerDisplayName(mentionServerId, userId, member)
-        : String(bot?.displayName || bot?.name || bot?.bot_name || "").trim());
+      mentionNames.set(userId, member ? resolveServerDisplayName(mentionServerId, userId, member) : "");
     }
     return mentionNames.get(userId);
   } : null;
@@ -141692,8 +139563,7 @@ function messageHtml(m, opts = {}) {
     ? getEmojiOnlyMessageCount(parsed.text || "")
     : 0;
   const rawTextHtml = replaceRegionalFlagEmojiWithImagesInHtml(
-    renderMessageTextHtml(parsed.text || "", { allowRichEmbeds, resolveBotMention,
-      renderMentionToken:humanMentionContext ? (userId,name) => renderServerMemberMentionTokenHtml(userId,name,mentionServerId) : null }),
+    renderMessageTextHtml(parsed.text || "", { allowRichEmbeds, resolveBotMention }),
     "msg__emojiFlag"
   );
   // Avoid wrapping in <span> when we have a block-level invite card (div inside span = invalid HTML).
@@ -141715,15 +139585,12 @@ function messageHtml(m, opts = {}) {
     : ((parsed.type === "attachment" || parsed.type === "attachments"))
       ? attachmentCollectionBodyHtml(parsed, { messageId: mid, sourceArea: messageSourceArea, messageRow: m })
       : textBodyHtml;
-  if (isPersistedBotChannelMessageRow(m) && parsed.text && (parsed.type === "attachments" || parsed.type === "gif")) {
-    bodyHtml = textBodyHtml + bodyHtml;
-  }
-  if ((isServerMsg || isPersistedBotChannelMessageRow(m)) && pollMessageQuestion(m)) bodyHtml = getServerPollController().messageSlot(isPersistedBotChannelMessageRow(m) ? { ...m, id: m.bot_channel_message_id || String(m.id).replace(/^bot:/, "") } : m);
+  if (isServerMsg && pollMessageQuestion(m)) bodyHtml = getServerPollController().messageSlot(m);
   if (metadataAttachments) {
     bodyHtml += attachmentCollectionBodyHtml(metadataAttachments, { messageId: mid, sourceArea: messageSourceArea, messageRow: m });
   }
   if (isBotMsg && isPersistedBotChannelMessageRow(m)) bodyHtml += renderBotEmbeds(m, { resolveMention: resolveBotMention });
-  if (isBotMsg && isPersistedBotChannelMessageRow(m)) bodyHtml += renderBotComponents(m, { resolveMedia: uploadId => resolveBotPublicComponentMedia(m, uploadId) });
+  if (isBotMsg && isPersistedBotChannelMessageRow(m)) bodyHtml += renderBotComponents(m);
   const emojiOnlySizeClass = emojiOnlyCount
     ? ` msg__text--emojiOnly msg__text--emojiOnly-${Math.min(emojiOnlyCount, 4)}`
     : "";
@@ -141792,8 +139659,7 @@ function messageHtml(m, opts = {}) {
     isEditingCurrent ? "msg--editingTarget" : "",
     isServerMsg ? "msg--server" : "",
     isBotMsg ? "msg--bot" : "",
-    ((isBotMsg && isPersistedBotChannelMessageRow(m) && isCurrentUserBotNotificationMention(m))
-      || (humanMentionContext && isCurrentUserHumanNotificationMention(m, humanMentionContext))) ? "msg--mentioned" : "",
+    isBotMsg && isPersistedBotChannelMessageRow(m) && isCurrentUserBotNotificationMention(m) ? "msg--mentioned" : "",
     isBotThinking ? "msg--botThinking" : "",
     isCommandInvocation ? "msg--commandInvocation" : "",
     isOptimistic && !sendFailed ? "msg--sendPending" : "",
@@ -141804,7 +139670,7 @@ function messageHtml(m, opts = {}) {
     classes:msgClasses,
     attributes:`data-msg-id="${escAttr(m.id || "")}" data-message-area="${escAttr(messageSourceArea)}"${isServerMsg ? ' data-server-message="1"' : ""}${botMessageAttrs}${botContextAttrs}`,
     avatarColumnHtml:avatarColHtml,actionsHtml,metaHtml,replyHtml,bodyClass:bodyCls,
-    bodyHtml:messageBodyHtml+pendingSendStateHtml,afterBodyHtml:failedSendStateHtml+messageTranslationSlotHtml(getMessageTranslationInput(m)),
+    bodyHtml:messageBodyHtml+pendingSendStateHtml,afterBodyHtml:failedSendStateHtml,
     reactionsHtml,reactionsAttributes:`data-msg-reactions-for="${escAttr(mid)}"`,
   });
 }
@@ -142541,11 +140407,8 @@ function jumpToMessage(messageId) {
 async function toggleMessageReaction(messageId, emoji) {
   if (!dmFeatureCaps.messageReactions) return;
   const mid = String(messageId || "");
-  const em = normalizeServerReactionEmoji(emoji);
+  const em = String(emoji || "").trim();
   if (!mid || !em || !activeDmId || !state.user?.id) return;
-  if (isServerCustomReaction(em) && !getServerExpressionScope().allowed) return;
-  const conversationId=activeDmId,userId=state.user.id,navigation=dmOpenIntentSeq;
-  const current=()=>activeDmId===conversationId&&state.user?.id===userId&&dmOpenIntentSeq===navigation;
   if (!isPostgresUuid(mid)) {
     if (isAltaraLocalhostDebugContext() && typeof console !== "undefined" && typeof console.warn === "function") {
       console.warn("message reaction skipped for non-public-message id", { messageId: mid, emoji: em });
@@ -142567,7 +140430,7 @@ async function toggleMessageReaction(messageId, emoji) {
     return;
   }
 
-  const mutationKey = `${normId(conversationId)}:${mid}:${userId}:${em}`;
+  const mutationKey = `${normId(activeDmId)}:${mid}:${state.user.id}:${em}`;
   if (messageReactionMutationInFlight.has(mutationKey)) return;
   messageReactionMutationInFlight.add(mutationKey);
   serverMessagePermissionDebugState.lastReactionMutation = {
@@ -142583,25 +140446,23 @@ async function toggleMessageReaction(messageId, emoji) {
       const { error } = await supabase
         .from("message_reactions")
         .delete()
-        .eq("conversation_id", conversationId)
+        .eq("conversation_id", activeDmId)
         .eq("message_id", mid)
         .eq("emoji", em)
-        .eq("user_id", userId);
+        .eq("user_id", state.user.id);
       if (error) throw error;
-      if (!current()) return;
-      applyReactionDelta(mid, em, userId, false);
+      applyReactionDelta(mid, em, state.user.id, false);
     } else {
       const { error } = await supabase
         .from("message_reactions")
         .upsert({
-          conversation_id: conversationId,
+          conversation_id: activeDmId,
           message_id: mid,
-          user_id: userId,
+          user_id: state.user.id,
           emoji: em
         }, { onConflict: "message_id,user_id,emoji", ignoreDuplicates: true });
       if (error) throw error;
-      if (!current()) return;
-      applyReactionDelta(mid, em, userId, true);
+      applyReactionDelta(mid, em, state.user.id, true);
     }
     serverMessagePermissionDebugState.lastReactionMutation = {
       ...serverMessagePermissionDebugState.lastReactionMutation,
@@ -142610,7 +140471,6 @@ async function toggleMessageReaction(messageId, emoji) {
     };
     updateMessageReactionsUi(mid);
   } catch (error) {
-    if (!current()) return;
     const safePermissionError = String(error?.code || "") === "42501";
     serverMessagePermissionDebugState.lastReactionMutation = {
       ...serverMessagePermissionDebugState.lastReactionMutation,
@@ -142660,8 +140520,6 @@ function bindDmMessageActions() {
   const box = document.getElementById("dmMessages");
   if (!box || box.dataset.dmMsgActionsBound === "1") return;
   box.dataset.dmMsgActionsBound = "1";
-  bindMessageTranslationActionsOnce();
-  bindConversationTranslationControlsOnce();
   bindDmShiftHotkeysOnce();
   bindUserCardModalOnce();
   bindEmojiPickerOnce();
@@ -142929,7 +140787,7 @@ function bindDmMessageActions() {
   box.addEventListener("dblclick", (e) => {
     const target = eventTargetElement(e);
     if (!target) return;
-    if (target.closest("button,a,input,textarea,select,video,audio,[data-msg-actions-for],[data-msg-reactions-for],[data-msg-translation-slot]")) return;
+    if (target.closest("button,a,input,textarea,select,video,audio,[data-msg-actions-for],[data-msg-reactions-for]")) return;
     const msgNode = target.closest(".msg[data-msg-id]");
     if (!msgNode) return;
     const msgId = String(msgNode.getAttribute("data-msg-id") || "").trim();
@@ -142950,7 +140808,6 @@ function bindDmMessageActions() {
     const focusNode = selection.focusNode;
     const anchorEl = anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
     const focusEl = focusNode instanceof Element ? focusNode : focusNode?.parentElement;
-    if (anchorEl?.closest?.("[data-msg-translation-slot]") || focusEl?.closest?.("[data-msg-translation-slot]")) return;
     const anchorMsg = anchorEl?.closest?.(".msg[data-msg-id]");
     const focusMsg = focusEl?.closest?.(".msg[data-msg-id]");
     if (!anchorMsg || !focusMsg || anchorMsg !== focusMsg) return;
@@ -143023,7 +140880,6 @@ async function fetchMessages(conversationId, {
   const renderReason = normalizeRenderReason(reason);
   const convId = normId(conversationId || "");
   const initialVisibilityContext = getCurrentServerChannelVisibilityContextForConversation(convId);
-  const openingUserId = normId(state.user?.id || "");
   const loadToken = ++dmMessageLoadToken;
   const serverContext = getBotCommandServerTextContext(convId);
   const activeServerContextForLog = (typeof getActiveServerContext === "function") ? (getActiveServerContext() || null) : null;
@@ -143208,25 +141064,6 @@ async function fetchMessages(conversationId, {
     }
   }
 
-  if (openingUserId !== normId(state.user?.id || "") || loadToken !== dmMessageLoadToken
-    || normId(activeDmId || state.activeDm?.conversationId || "") !== convId
-    || (historyContext && !isServerMessageHistoryGenerationCurrent(convId, historyGeneration))) return;
-
-  // Restore the complete cached timeline before starting parallel authorized reads.
-  if (hydrateBots !== false) {
-    void hydrateBotTimelineForChannel(convId, {
-      reason: `${renderReason}-bot-hydration`,
-      baseRenderVersion: dmLastRenderedMessagesSignature,
-    }).catch((error) => {
-      logBotHydrationState("unhandled_error", {
-        reason: renderReason,
-        conversationId: convId,
-        token: loadToken,
-        message: String(error?.message || error || "unknown_error").slice(0, 220),
-      });
-    });
-  }
-
   let result;
   try {
     result = authoritativeHistoryPromise
@@ -143316,7 +141153,7 @@ async function fetchMessages(conversationId, {
         renderDenied: true,
       });
     } else if (msgsBox) {
-        setElementHtmlIfChanged(msgsBox, `<div class="hint">${esc(t("dm.access_denied", "You do not have access to this conversation."))}</div>`);
+        setElementHtmlIfChanged(msgsBox, `<div class="hint dmMessagesAccessDenied">${esc(t("dm.access_denied", "You do not have access to this conversation."))}</div>`);
         setDmJumpLatestVisible(false);
     }
     clearMessageLoadingFailOpen(convId);
@@ -143467,6 +141304,20 @@ async function fetchMessages(conversationId, {
       if (isDmInitialLatestActive(convId)) scheduleDmInitialLatestScrollPasses();
     }
     scheduleDmOpenAutoscroll(DM_OPEN_AUTOSCROLL_MS);
+  }
+
+  if (hydrateBots !== false) {
+    void hydrateBotTimelineForChannel(convId, {
+      reason: `${renderReason}-bot-hydration`,
+      baseRenderVersion: markDmMessagesRendered(convId, `${renderReason}-base-rendered`),
+    }).catch((error) => {
+      logBotHydrationState("unhandled_error", {
+        reason: renderReason,
+        conversationId: convId,
+        token: loadToken,
+        message: String(error?.message || error || "unknown_error").slice(0, 220),
+      });
+    });
   }
 }
 let activeConversationMessageRestoreWatchdog = {
@@ -145237,7 +143088,6 @@ function logBotPendingCleanupDebug(eventId = "", reason = "") {
 function isBotPendingEventResolvedInCache(eventId = "") {
   const eid = normId(eventId || "");
   if (!eid) return false;
-  if (hasCompletedPrivateBotInteraction(eid)) return true;
   return dmMessagesCache.some((row) => {
     if (isBotMessageRow(row) && getBotResponseEventId(row) === eid) return true;
     if (!isBotCommandInvocationMessage(row) || getBotCommandInvocationEventIdFromMessage(row) !== eid) return false;
@@ -145556,16 +143406,6 @@ function isBotConnectionModeContextActive(context = {}) {
     && normId(current.channelId || "") === normId(resolvedContext?.channelId || context?.channelId || "");
 }
 
-function getBotComponentPrivateContext(messageId = "") {
-  const context = getBotCommandServerTextContext(activeDmId || state.activeDm?.conversationId || "");
-  if (!context || !isBotConnectionModeContextActive(context) || !canCurrentUserRenderServerChannelConversation(context.conversationId)) return null;
-  const scope = { serverId: context.serverId, channelId: context.channelId, conversationId: context.conversationId, navigation: dmOpenIntentSeq };
-  const id = normId(messageId);
-  if (!id) return scope;
-  const source = dmMessagesCache.find(row => isPersistedBotChannelMessageRow(row) && getBotChannelMessageRawId(row) === id);
-  return source ? { ...scope, ...resolveBotAuthorForInteraction(source, getBotAuthorSeedBotId(source), context, source) } : scope;
-}
-
 function getBotResponseEventId(row = {}) {
   const metadata = normalizeBotRowMetadata(row);
   return normId(
@@ -145628,70 +143468,12 @@ function normalizeBotInteractionTimelineRow(row = {}, context = {}) {
   };
 }
 
-function resetBotPrivateInteractionCompletions() {
-  botConnectionPrivateCompletedByEventId.clear();
-  botConnectionPrivateCompletionOwner = "";
-}
-
-function getBotPrivateCompletionScope() {
-  const actor = normId(state.user?.id || ""), conversation = normId(activeDmId || state.activeDm?.conversationId || "");
-  const owner = actor && conversation ? `${actor}:${conversation}:${dmOpenIntentSeq}` : "";
-  if (owner !== botConnectionPrivateCompletionOwner) {
-    resetBotPrivateInteractionCompletions();
-    botConnectionPrivateCompletionOwner = owner;
-  }
-  return owner;
-}
-
-function hasCompletedPrivateBotInteraction(eventId = "") {
-  if (!getBotPrivateCompletionScope()) return false;
-  const eid = normId(eventId || ""), expiresAt = botConnectionPrivateCompletedByEventId.get(eid) || 0;
-  if (expiresAt <= Date.now()) { botConnectionPrivateCompletedByEventId.delete(eid); return false; }
-  return true;
-}
-
-function completeBotInteractionWithoutPublicResponse(eventId = "", { render = false } = {}) {
-  const eid = normId(eventId || "");
-  if (!eid) return false;
-  if (getBotPrivateCompletionScope()) {
-    // The real composer persists a normal human message, not a synthetic
-    // invocation row. Keep only bounded event IDs for this account/navigation.
-    botConnectionPrivateCompletedByEventId.set(eid, Date.now() + 15 * 60 * 1000);
-    while (botConnectionPrivateCompletedByEventId.size > 512) botConnectionPrivateCompletedByEventId.delete(botConnectionPrivateCompletedByEventId.keys().next().value);
-  }
-  let updated = false;
-  // A completed private interaction has no public message to hydrate. Remember
-  // only its public terminal status so an older pending snapshot cannot revive it.
-  dmMessagesCache = dmMessagesCache.map((message) => {
-    if (!isBotCommandInvocationMessage(message) || getBotCommandInvocationEventIdFromMessage(message) !== eid) return message;
-    const metadata = message?.metadata && typeof message.metadata === "object" ? message.metadata : {};
-    if (metadata.status === "responded" && !metadata.response_message_id) return message;
-    updated = true;
-    return { ...message, metadata: { ...metadata, status: "responded", response_message_id: null } };
-  });
-  const pendingId = botConnectionPendingMessageIdsByEventId.get(eid) || getBotRuntimeStableId(BOT_PENDING_MESSAGE_ID_PREFIX, eid);
-  const removed = removeBotConnectionPendingMessage(eid, { render: false, reason: "bot-private-interaction-completed" });
-  if (updated || removed) updateActiveConversationMessageCache({ persist: false, source: "bot-private-interaction-completed" });
-  let removedFromDom = false;
-  if (render && normId(activeDmId || state.activeDm?.conversationId || "")) {
-    // Authority revalidation freezes full timeline paints. Removing only this
-    // completed local indicator is safe; no new content bypasses that gate.
-    removedFromDom = removeDmMessageNodeById(pendingId, { keepBottom: true, reason: "bot-private-interaction-completed" });
-    if (updated || removed || removedFromDom) renderMessagesFromCache({ keepBottom: true, reason: "bot-private-interaction-completed", force: true });
-  }
-  return updated || removed || removedFromDom;
-}
-
 function syncBotPendingFromInteractionRows(rows = [], context = {}, registered = {}, { render = false } = {}) {
   (Array.isArray(rows) ? rows : []).forEach((row) => {
     const eventId = normId(row?.id || row?.event_id || row?.interaction_event_id || "");
     if (!eventId) return;
     const status = String(row?.status || "").trim().toLowerCase();
     const responseMessageId = normId(row?.response_message_id || "");
-    if (status === "responded" && !responseMessageId) {
-      completeBotInteractionWithoutPublicResponse(eventId, { render });
-      return;
-    }
     if (status === "responded" || responseMessageId) {
       const persistedResponseExists = dmMessagesCache.some((message) => isPersistedBotChannelMessageRow(message)
         && (getBotResponseEventId(message) === eventId || (responseMessageId && getBotChannelResponseMessageId(message) === responseMessageId)));
@@ -145733,7 +143515,6 @@ function syncBotPendingFromInteractionRows(rows = [], context = {}, registered =
       return;
     }
     if (["pending", "claimed", "deferred", "sent"].includes(status)) {
-      if (isBotPendingEventResolvedInCache(eventId)) return;
       const alreadyPending = dmMessagesCache.some((message) => getBotPendingEventIdFromMessage(message) === eventId);
       const alreadyResponded = dmMessagesCache.some((message) => isBotMessageRow(message) && getBotResponseEventId(message) === eventId);
       if (!alreadyPending && !alreadyResponded) {
@@ -145750,20 +143531,14 @@ function syncBotPendingFromInteractionRows(rows = [], context = {}, registered =
   reconcileBotConnectionPendingMessages(context, { render: false, reason: "bot-interaction-reconcile" });
 }
 
-function upsertLocalBotInteractionMessages(rows = [], context = {}, { render = true, keepBottom = true, source = "bot-interactions", progressive = false } = {}) {
+function upsertLocalBotInteractionMessages(rows = [], context = {}, { render = true, keepBottom = true, source = "bot-interactions" } = {}) {
   if (!isBotConnectionModeContextActive(context)) return false;
-  syncBotPendingFromInteractionRows(rows, context, {}, { render: progressive ? false : render !== false });
-  if (render) renderMessagesFromCache({ keepBottom, reason: source, force: !progressive });
+  syncBotPendingFromInteractionRows(rows, context, {}, { render: render !== false });
+  if (render) renderMessagesFromCache({ keepBottom, reason: source, force: true });
   return false;
 }
 
 async function fetchActiveBotChannelInteractions(context = {}, limit = 100, options = {}) {
-  const requestingUserId = normId(state.user?.id || "");
-  const navigationVersionAtStart = Number(serverChannelUserNavigationVersion || 0);
-  const isCurrent = () => requestingUserId === normId(state.user?.id || "")
-    && navigationVersionAtStart === Number(serverChannelUserNavigationVersion || 0)
-    && isBotConnectionModeContextActive(context);
-  if (!requestingUserId) return [];
   if (isAltaraBotTimelineDisabled()) {
     logBotHydrationState("interactions_disabled", { channelId: normId(context?.channelId || ""), conversationId: normId(context?.conversationId || "") });
     return [];
@@ -145774,19 +143549,18 @@ async function fetchActiveBotChannelInteractions(context = {}, limit = 100, opti
     force: false,
     reason: `${options?.source || "bot-interactions-refresh"}-history`,
   });
-  if (!preparedHistory?.ok || !isCurrent() || !canCurrentUserRenderServerChannelConversation(targetConversationId)) return [];
+  if (!preparedHistory?.ok) return [];
   const historyGeneration = Number(preparedHistory?.generation || 0);
   const requestLimit = Math.min(Math.max(Number(limit) || 100, 1), 100);
   const data = await dedupeRequest(
-    `bot-channel-interactions:${requestingUserId}:${normId(context.serverId || "")}:${normId(context.channelId || "")}:${historyGeneration}:${requestLimit}`,
+    `bot-channel-interactions:${normId(context.serverId || "")}:${normId(context.channelId || "")}:${historyGeneration}:${requestLimit}`,
     () => settingsDeveloperRpc("bots_list_channel_interactions", {
       p_server_id: normId(context.serverId || ""),
       p_channel_id: normId(context.channelId || ""),
       p_limit: requestLimit,
     })
   );
-  if (!isCurrent() || !canCurrentUserRenderServerChannelConversation(targetConversationId)
-    || !isServerMessageHistoryGenerationCurrent(targetConversationId, historyGeneration)) {
+  if (!isServerMessageHistoryGenerationCurrent(targetConversationId, historyGeneration)) {
     serverMessageHistoryDebugState.staleFetchDiscardedCount += 1;
     return [];
   }
@@ -145798,18 +143572,13 @@ async function fetchActiveBotChannelInteractions(context = {}, limit = 100, opti
     render: options?.render !== false,
     keepBottom: options?.keepBottom !== false,
     source: options?.source || "bot-interactions-refresh",
-    progressive: options?.progressive === true,
   });
   return rows;
 }
 
 async function fetchActiveBotChannelResponses(context = {}, limit = 50, options = {}) {
   const requestingUserId = normId(state.user?.id || '');
-  const navigationVersionAtStart = Number(serverChannelUserNavigationVersion || 0);
   const resolvedContext = resolveServerChannelTimelineContext(context);
-  const isCurrent = () => requestingUserId === normId(state.user?.id || "")
-    && navigationVersionAtStart === Number(serverChannelUserNavigationVersion || 0)
-    && isBotConnectionModeContextActive(resolvedContext);
   const targetCacheKey = getTimelineCacheKeyForServerChannel(resolvedContext);
   const debugBase = {
     rpc: "bots_list_channel_bot_messages",
@@ -145851,7 +143620,7 @@ async function fetchActiveBotChannelResponses(context = {}, limit = 50, options 
     force: false,
     reason: `${options?.source || "bot-channel-refresh"}-history`,
   });
-  if (!preparedHistory?.ok || !isCurrent() || !canCurrentUserRenderServerChannelConversation(targetCacheKey)) {
+  if (!preparedHistory?.ok) {
     serverMessageHistoryDebugState.lastBotFetch = {
       ...debugBase,
       phase: "history_verification_error",
@@ -145873,7 +143642,7 @@ async function fetchActiveBotChannelResponses(context = {}, limit = 50, options 
   try {
     const requestLimit = Math.min(Math.max(Number(limit) || 50, 1), 100);
     data = await dedupeRequest(
-      `bot-channel-messages:${requestingUserId}:${normId(resolvedContext.serverId || "")}:${normId(resolvedContext.channelId || "")}:${historyGeneration}:${requestLimit}`,
+      `bot-channel-messages:${normId(resolvedContext.serverId || "")}:${normId(resolvedContext.channelId || "")}:${historyGeneration}:${requestLimit}`,
       () => settingsDeveloperRpc("bots_list_channel_bot_messages", {
         p_server_id: normId(resolvedContext.serverId || ""),
         p_channel_id: normId(resolvedContext.channelId || ""),
@@ -145893,8 +143662,7 @@ async function fetchActiveBotChannelResponses(context = {}, limit = 50, options 
     };
     throw error;
   }
-  if (!isCurrent() || !canCurrentUserRenderServerChannelConversation(targetCacheKey)
-    || !isServerMessageHistoryGenerationCurrent(targetCacheKey, historyGeneration)) {
+  if (requestingUserId !== normId(state.user?.id || '') || !isServerMessageHistoryGenerationCurrent(targetCacheKey, historyGeneration)) {
     serverMessageHistoryDebugState.staleFetchDiscardedCount += 1;
     serverMessageHistoryDebugState.lastBotFetch = {
       ...debugBase,
@@ -145914,34 +143682,8 @@ async function fetchActiveBotChannelResponses(context = {}, limit = 50, options 
     targetCacheKey,
     Array.isArray(data) ? data : []
   );
-  const progressive = options?.progressive === true;
-  let originals = rows.map(row => normalizeBuiltinBotResponseRow(row, resolvedContext)).filter(Boolean);
-  if (progressive) {
-    const cachedById = new Map(getCachedBotChannelMessagesForContext(resolvedContext).map(row => [row.id, row]));
-    originals = originals.map(row => {
-      const cached = cachedById.get(row.id);
-      return cached && canonicalMediaContent(persistedTrustedMessageContent(cached.content)) === canonicalMediaContent(persistedTrustedMessageContent(row.content))
-        ? copyTrustedAttachmentDeliveryState(cached, { ...row, content: cached.content }) : row;
-    });
-    // Authorized text and inert file containers do not wait for delivery grants.
-    reconcilePersistedBotChannelMessageSnapshot(originals, resolvedContext, { render: false, source: (options?.source || "bot-channel-refresh") + "-snapshot" });
-    upsertLocalBotChannelMessages(originals, resolvedContext, { render: false, keepBottom: options?.keepBottom !== false, source: options?.source || "bot-channel-refresh" });
-    if (options?.render !== false) renderMessagesFromCache({ keepBottom: options?.keepBottom !== false, reason: options?.source || "bot-channel-refresh", force: false });
-  }
-  rows = await hydrateTrustedAttachmentRows({ supabase, rows: originals });
-  if (!isCurrent() || !canCurrentUserRenderServerChannelConversation(targetCacheKey)
-    || !isServerMessageHistoryGenerationCurrent(targetCacheKey, historyGeneration)) return [];
-  if (progressive) {
-    // Delivery completion must not replace a concurrent edit or resurrect a deletion.
-    const delivered = mergeTrustedAttachmentDeliveryRows(dmMessagesCache, originals, rows);
-    if (delivered.some((row, index) => row !== dmMessagesCache[index])) {
-      dmMessagesCache = delivered;
-      updateActiveConversationMessageCache({ persist: true, source: (options?.source || "bot-channel-refresh") + "-delivery" });
-      if (options?.render !== false) renderMessagesFromCache({ keepBottom: options?.keepBottom !== false, reason: (options?.source || "bot-channel-refresh") + "-delivery", force: false });
-    }
-    serverMessageHistoryDebugState.lastBotFetch = { ...debugBase, phase: "loaded", generation: historyGeneration, rowCount: rows.length, finishedAt: Date.now(), previousValidSnapshotPreserved: false, error: null };
-    return rows;
-  }
+  rows = await hydrateTrustedAttachmentRows({supabase,rows:rows.map(row=>normalizeBuiltinBotResponseRow(row,resolvedContext)).filter(Boolean)});
+  if(requestingUserId !== normId(state.user?.id || '') || !isServerMessageHistoryGenerationCurrent(targetCacheKey,historyGeneration)) return [];
   const normalizedCount = rows.map((row) => normalizeBuiltinBotResponseRow(row, resolvedContext)).filter(Boolean).length;
   const cacheBotCountBefore = getCachedBotChannelMessageCountForContext(resolvedContext);
   const reconciled = reconcilePersistedBotChannelMessageSnapshot(rows, resolvedContext, {
@@ -145993,7 +143735,6 @@ async function hydrateBotTimelineForChannel(conversationId = "", { reason = "bot
     return [];
   }
   const targetCacheKey = getTimelineCacheKeyForServerChannel(context) || convId;
-  const requestingUserId = normId(state.user?.id || "");
   const navigationVersionAtStart = Number(serverChannelUserNavigationVersion || 0);
   logBotHydrationState("start", {
     reason,
@@ -146004,12 +143745,10 @@ async function hydrateBotTimelineForChannel(conversationId = "", { reason = "bot
     userNavigationVersion: navigationVersionAtStart,
   });
   const [responsesResult, interactionsResult] = await Promise.allSettled([
-    fetchActiveBotChannelResponses(context, 100, { render: true, progressive: true, keepBottom: true, source: `${reason}-responses` }),
-    fetchActiveBotChannelInteractions(context, 100, { render: true, progressive: true, keepBottom: true, source: `${reason}-interactions` }),
+    fetchActiveBotChannelResponses(context, 100, { render: false, keepBottom: true, source: `${reason}-responses` }),
+    fetchActiveBotChannelInteractions(context, 100, { render: false, keepBottom: true, source: `${reason}-interactions` }),
   ]);
-  if (requestingUserId !== normId(state.user?.id || "")
-    || navigationVersionAtStart !== Number(serverChannelUserNavigationVersion || 0)
-    || !isBotConnectionModeContextActive(context) || !canCurrentUserRenderServerChannelConversation(convId)) {
+  if (navigationVersionAtStart !== Number(serverChannelUserNavigationVersion || 0) || !isBotConnectionModeContextActive(context)) {
     logBotHydrationState("abort_stale", {
       reason,
       conversationId: convId,
@@ -146031,7 +143770,15 @@ async function hydrateBotTimelineForChannel(conversationId = "", { reason = "bot
   const normalizedResponseCount = normalizedResponses.length;
   const reconciled = reconcileBotConnectionPendingMessages(context, { render: false, reason: `${reason}-reconcile` });
   const activeMatches = isBotConnectionModeContextActive(context);
-  const cacheBotCount = getCachedBotChannelMessageCountForContext(context);
+  let cacheBotCount = getCachedBotChannelMessageCountForContext(context);
+  if (activeMatches && normalizedResponseCount > 0 && cacheBotCount <= 0) {
+    upsertLocalBotChannelMessages(normalizedResponses, context, {
+      render: false,
+      keepBottom: true,
+      source: `${reason}-normalized-rescue`,
+    });
+    cacheBotCount = getCachedBotChannelMessageCountForContext(context);
+  }
   const contentLoading = isDmMessagesContentLoading();
   const hasPersistedBotRows = normalizedResponseCount > 0 || cacheBotCount > 0;
   const rendererAvailable = typeof renderMessagesFromCache === "function";
@@ -146040,7 +143787,7 @@ async function hydrateBotTimelineForChannel(conversationId = "", { reason = "bot
   let timelineStats = getBotTimelineVisibleStats(context);
   let domStats = getBotTimelineDomStats();
   if (shouldRender) {
-    renderMessagesFromCache({ keepBottom: true, reason, force: false });
+    renderMessagesFromCache({ keepBottom: true, reason, force: true });
     timelineStats = getBotTimelineVisibleStats(context);
     domStats = getBotTimelineDomStats();
     logMessageLoadState("bot_hydration_rendered", {
@@ -146496,14 +144243,6 @@ async function handleBotInteractionRealtimePayload(conversationId = "", payload 
     return false;
   }
   if (status === "responded" || responseMessageId) {
-    if (!responseMessageId) {
-      const privateContext = getBotPrivateResponseContext(eventId, context, row);
-      completeBotInteractionWithoutPublicResponse(eventId, { render: true });
-      if (privateContext && normId(row?.invoking_user_id || row?.user_id || "") === normId(state.user?.id || "")) {
-        await botComponentUi.checkSlashResponse(eventId, privateContext).catch(() => null);
-      }
-      return true;
-    }
     logBotLiveState("interaction_responded_realtime_received", {
       table: "bot_interaction_events",
       eventType: payload?.eventType || payload?.event || "",
@@ -146995,13 +144734,6 @@ function resolveBotAuthorForInteraction(interaction = {}, fallbackBotId = "", co
   };
 }
 
-function getBotPrivateResponseContext(eventId = "", context = {}, interaction = {}) {
-  const privateContext = getBotComponentPrivateContext();
-  if (!privateContext) return null;
-  const author = resolveBotAuthorForInteraction(interaction, getBotAuthorSeedBotId(interaction), context, getBotThinkingRowByEventId(eventId) || {});
-  return { ...privateContext, ...author };
-}
-
 function logBotThinkingIdentityState(action = "state", details = {}) {
   if (!isAltaraLocalhostDebugContext() || typeof console === "undefined" || typeof console.info !== "function") return;
   try { console.info("[bot-thinking-identity]", { action, ...(details || {}) }); } catch (_) {}
@@ -147201,11 +144933,10 @@ function appendBotConnectionPendingMessage(
   commandName = "",
   context = {},
   registered = {},
-  { render = true, startResponsePolling = true, timeoutMs = BOT_PENDING_TIMEOUT_MS } = {}
+  { render = true, startResponsePolling = true } = {}
 ) {
   const eid = normId(eventId || "");
   if (!eid || !isBotConnectionModeContextActive(context)) return false;
-  if (isBotPendingEventResolvedInCache(eid)) return false;
   const pendingId = botConnectionPendingMessageIdsByEventId.get(eid) || getBotRuntimeStableId(BOT_PENDING_MESSAGE_ID_PREFIX, eid);
   const existing = getBotThinkingRowByEventId(eid) || {};
   const oldAuthorName = String(existing?.bot_name || existing?.botName || existing?.authorName || existing?.profiles?.display_name || existing?.metadata?.bot_name || "").trim();
@@ -147248,7 +144979,7 @@ function appendBotConnectionPendingMessage(
   botConnectionPendingMessageIdsByEventId.set(eid, message.id);
   dmMessagesCache = sortConversationMessagesAsc(nextRows);
   updateActiveConversationMessageCache({ persist: false, source: inserted ? "bot-pending-update" : "bot-pending-create" });
-  scheduleBotConnectionPendingTimeout(eid, context, registered, timeoutMs);
+  scheduleBotConnectionPendingTimeout(eid, context, registered);
   logBotThinkingIdentityState(inserted ? "update" : "create", {
     interactionEventId: eid,
     commandName,
@@ -147305,31 +145036,21 @@ function startBotInteractionResponsePolling(eventId = "", context = {}, register
   const delaysMs = Array.isArray(options?.delaysMs) && options.delaysMs.length
     ? options.delaysMs.map((value) => Math.max(50, Number(value) || 0)).filter(Boolean)
     : BOT_FAST_RESPONSE_FETCH_DELAYS_MS;
-  const pollOwner = getBotPrivateCompletionScope();
   const existing = botConnectionResponsePollsByEventId.get(eid);
   if (existing) {
     const existingResponseId = normId(existing?.responseMessageId || "");
-    if (existing.pollOwner === pollOwner && (!responseMessageId || existingResponseId === responseMessageId)) return true;
+    if (!responseMessageId || existingResponseId === responseMessageId) return true;
     const existingTimer = existing && typeof existing === "object" ? existing.timer : existing;
     if (existingTimer) { try { window.clearTimeout(existingTimer); } catch (_) {} }
     botConnectionResponsePollsByEventId.delete(eid);
   }
   const startedAt = Date.now();
-  const pollToken = {};
   let attempt = 0;
   const setPollTimer = (timer) => {
-    botConnectionResponsePollsByEventId.set(eid, { timer, responseMessageId, source, startedAt, pollToken, pollOwner });
-  };
-  const currentPoll = () => {
-    if (botConnectionResponsePollsByEventId.get(eid)?.pollToken !== pollToken) return false;
-    if (getBotPrivateCompletionScope() !== pollOwner) {
-      botConnectionResponsePollsByEventId.delete(eid);
-      return false;
-    }
-    return true;
+    botConnectionResponsePollsByEventId.set(eid, { timer, responseMessageId, source, startedAt });
   };
   const poll = async () => {
-    if (!currentPoll()) return;
+    if (!botConnectionResponsePollsByEventId.has(eid)) return;
     if (!isBotConnectionModeContextActive(context)) {
       botConnectionResponsePollsByEventId.delete(eid);
       return;
@@ -147346,9 +145067,6 @@ function startBotInteractionResponsePolling(eventId = "", context = {}, register
       response_message_id: responseMessageId || null,
     });
     const hydrated = await hydrateInteractionResponseIntoTimeline(eid, context, { source, keepBottom: true, responseMessageId }).catch(() => false);
-    // Clearing a timer does not cancel a request already in flight. A retired
-    // callback must not reschedule itself or interfere with a newer poll.
-    if (!currentPoll()) return;
     if (hydrated || isBotPendingEventResolvedInCache(eid)) {
       removeBotConnectionPendingMessage(eid, { render: true, reason: source });
       botConnectionResponsePollsByEventId.delete(eid);
@@ -147375,50 +145093,26 @@ function startBotInteractionResponsePolling(eventId = "", context = {}, register
   setPollTimer(window.setTimeout(poll, delaysMs[0] || 150));
   return true;
 }
-async function waitForBotConnectionModeResponse(eventId = "", context = {}, registered = {}, options = {}) {
+async function waitForBotConnectionModeResponse(eventId = "", context = {}, registered = {}) {
   const eid = normId(eventId || "");
   if (!eid) return false;
-  const actor = normId(state.user?.id || ""), navigation = dmOpenIntentSeq;
-  const current = () => actor === normId(state.user?.id || "") && navigation === dmOpenIntentSeq && isBotConnectionModeContextActive(context);
-  const timeoutMs = options.deferred === true ? 5 * 60 * 1000 : Math.max(18000, BOT_PENDING_TIMEOUT_MS);
-  const deadline = Date.now() + timeoutMs;
-  const maxAttempts = Math.max(12, Math.ceil(timeoutMs / 1500));
-  const fail = (text, reason, status) => {
-    if (options.privateResponse === true) removeBotConnectionPendingMessage(eid, { render: true, reason });
-    else replaceBotConnectionPendingMessage(eid, text, context, registered, { render: true, reason, status });
-    return false;
-  };
+  const maxAttempts = Math.max(12, Math.ceil(BOT_PENDING_TIMEOUT_MS / 1500));
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    if (!current()) return false;
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
-    const delay = attempt === 0 ? 900 : options.deferred === true && attempt >= 6 ? 5000 : 1500;
-    await waitForAltaraBotDelay(Math.min(delay, remaining));
-    if (!current()) return false;
+    if (!isBotConnectionModeContextActive(context)) return false;
+    await waitForAltaraBotDelay(attempt === 0 ? 900 : 1500);
+    if (!isBotConnectionModeContextActive(context)) return false;
     if (dmMessagesCache.some((row) => isPersistedBotChannelMessageRow(row) && getBotResponseEventId(row) === eid)) {
       removeBotConnectionPendingMessage(eid, { render: true, reason: "bot-response-already-received" });
       return true;
     }
-    const privateContext = getBotPrivateResponseContext(eid, context, registered);
-    const ownResult = privateContext ? await botComponentUi.checkSlashResponse(eid, privateContext).catch(() => null) : null;
-    if (!current()) return false;
-    if (ownResult?.handled) {
-      completeBotInteractionWithoutPublicResponse(eid, { render: true });
-      return true;
-    }
-    const interactionRows = ownResult?.status ? [{ id: eid, status: ownResult.status, response_message_id: ownResult.responseMessageId }] : await fetchActiveBotChannelInteractions(context, 50, { render: false, keepBottom: true, source: "bot-interaction-poll" }).catch((error) => {
+    const interactionRows = await fetchActiveBotChannelInteractions(context, 50, { render: false, keepBottom: true, source: "bot-interaction-poll" }).catch((error) => {
       if (!isDeveloperPortalMissingSqlError(error)) console.warn("bot interaction status poll failed", error?.message || error);
       return [];
     });
-    if (!current()) return false;
     const interactionRow = (interactionRows || []).find((row) => normId(row?.id || row?.event_id || "") === eid) || null;
     const interactionStatus = String(interactionRow?.status || "").trim().toLowerCase();
     if (interactionRow?.response_message_id || interactionStatus === "responded") {
       const responseMessageId = normId(interactionRow?.response_message_id || interactionRow?.responseMessageId || "");
-      if (interactionStatus === "responded" && !responseMessageId) {
-        completeBotInteractionWithoutPublicResponse(eid, { render: true });
-        return true;
-      }
       const hydrated = await hydrateInteractionResponseIntoTimeline(eid, context, {
         source: "bot-interaction-poll-responded",
         keepBottom: true,
@@ -147432,12 +145126,21 @@ async function waitForBotConnectionModeResponse(eventId = "", context = {}, regi
       startBotInteractionResponsePolling(eid, context, registered, { source: "bot-interaction-poll-fallback", responseMessageId });
     }
     if (interactionStatus === "failed") {
-      return fail("Command failed.", "bot-interaction-failed", "failed");
+      replaceBotConnectionPendingMessage(eid, "Command failed.", context, registered, {
+        render: true,
+        reason: "bot-interaction-failed",
+        status: "failed",
+      });
+      return false;
     }
     if (interactionStatus === "expired" || interactionStatus === "timeout" || interactionStatus === "timed_out") {
-      return fail("Command timed out.", "bot-interaction-expired", "timeout");
+      replaceBotConnectionPendingMessage(eid, "Command timed out.", context, registered, {
+        render: true,
+        reason: "bot-interaction-expired",
+        status: "timeout",
+      });
+      return false;
     }
-    if (options.privateResponse === true) continue;
     const rows = await fetchActiveBotChannelResponses(context, 50, { keepBottom: true, source: "bot-response-poll" });
     if (rows.some((row) => getBotResponseEventId(row) === eid)) {
       removeBotConnectionPendingMessage(eid, { render: true, reason: "bot-response-poll" });
@@ -147445,19 +145148,20 @@ async function waitForBotConnectionModeResponse(eventId = "", context = {}, regi
       return true;
     }
   }
-  return fail("Command timed out.", "bot-pending-timeout", "timeout");
+  replaceBotConnectionPendingMessage(eid, "Command timed out.", context, registered, {
+    render: true,
+    reason: "bot-pending-timeout",
+    status: "timeout",
+  });
+  return false;
 }
 
-function showBotConnectionPendingNotice(commandName = "", context = {}, registered = {}, eventId = "", options = {}) {
-  return appendBotConnectionPendingMessage(eventId, commandName, context, registered, options);
+function showBotConnectionPendingNotice(commandName = "", context = {}, registered = {}, eventId = "") {
+  return appendBotConnectionPendingMessage(eventId, commandName, context, registered);
 }
 
 function getFriendlyBotConnectionModeErrorMessage(error = null) {
   const raw = String(error?.message || error?.code || error || "").toLowerCase();
-  if (/external_command_dispatch_disabled/.test(raw)) return "HTTPS command delivery is not enabled yet.";
-  if (/interaction_endpoint_not_verified|callback_endpoint_changed|command_delivery_mode_changed/.test(raw)) return "The bot's delivery settings changed. Its owner needs to check the HTTPS endpoint.";
-  if (/interaction_timeout|external_callback_failed|command_delivery_uncertain/.test(raw)) return "The bot did not confirm this command. It has not been sent again.";
-  if (/invalid_command_delivery_route|command_delivery_route_unavailable/.test(raw)) return "Could not check how this bot receives commands. Try again in a moment.";
   if (/bot_channel_access_denied/.test(raw)) return "This bot does not have permission to view this channel.";
   if (/bot_channel_permission_denied/.test(raw)) return "This bot does not have permission to send messages in this channel.";
   if (/missing_use_application_commands|application_command_permission_denied/.test(raw)) return "You do not have permission to use application commands in this server.";
@@ -147515,10 +145219,7 @@ function buildBotConnectionModeContextOption(parsed = {}, context = {}, { comman
   };
 }
 async function createBotConnectionModeInteraction(parsed = {}, registered = {}, context = {}, { commandMessageId = "", commandCreatedAt = "", structured: preparedStructured = null } = {}) {
-  const actor = normId(state.user?.id || ""), navigation = dmOpenIntentSeq;
-  const current = () => actor && actor === normId(state.user?.id || "") && navigation === dmOpenIntentSeq && isBotConnectionModeContextActive(context);
   const structured = preparedStructured || await buildBotConnectionModeStructuredOptions(parsed, registered, context);
-  if (!current()) return true;
   const structuredOptions = Array.isArray(structured?.options) ? structured.options : [];
   const shouldKeepRawFallback = !structuredOptions.length && String(parsed?.args || "").trim();
   const options = [
@@ -147536,16 +145237,14 @@ async function createBotConnectionModeInteraction(parsed = {}, registered = {}, 
     },
     willSubmitStructuredOptions: structuredOptions.length > 0,
   });
-  const advanced = structured?.advanced === true || registered.commandType && registered.commandType !== "CHAT_INPUT";
-  const data = await settingsDeveloperRpc(advanced ? "bots_create_advanced_interaction_v1" : "bots_create_interaction_event", {
+  const data = await settingsDeveloperRpc("bots_create_interaction_event", {
     p_server_id: context.serverId,
     p_channel_id: context.channelId,
     p_command_id: registered.commandId,
-    ...(advanced ? { p_target_id: registered.targetId || null, p_autocomplete: false, p_request_id: normId(commandMessageId) || crypto.randomUUID() } : { p_command_name: parsed.name }),
-    p_options: advanced ? structuredOptions : options,
+    p_command_name: parsed.name,
+    p_options: options,
   });
   const row = Array.isArray(data) ? data[0] : data;
-  if (!current()) return true;
   const eventId = normId(row?.event_id || "");
   if (!eventId) throw new Error("interaction_event_not_created");
   serverAppsPermissionsDebugState.lastCommandInvocation = {
@@ -147563,55 +145262,6 @@ async function createBotConnectionModeInteraction(parsed = {}, registered = {}, 
   void waitForBotConnectionModeResponse(eventId, context, registered).catch((error) => {
     removeBotConnectionPendingMessage(eventId, { render: true, reason: "bot-response-refresh-error" });
     console.warn("bot response refresh failed", error?.message || error);
-  });
-  return true;
-}
-let botCommandDelivery = null;
-async function createBotRoutedCommandInteraction(parsed, registered, context, options = {}) {
-  const actor = normId(state.user?.id || ""), navigation = dmOpenIntentSeq;
-  const current = () => actor && actor === normId(state.user?.id || "") && navigation === dmOpenIntentSeq && isBotConnectionModeContextActive(context);
-  botCommandDelivery ||= createBotCommandDelivery({
-    rpc: settingsDeveloperRpc,
-    getActor: () => normId(state.user?.id || ""),
-    getContext: getBotComponentPrivateContext,
-    queueSdk: createBotConnectionModeInteraction,
-    invoke: async (name, body) => {
-      const { data, error } = await supabase.functions.invoke(name, { body, signal: AbortSignal.timeout(20000) });
-      if (error || data?.ok !== true) {
-        let code = String(data?.error || "");
-        if (!code && error?.context?.clone) {
-          try { code = String((await error.context.clone().json())?.error || ""); } catch (_) {}
-        }
-        const safeCode = /^[a-z][a-z0-9_]{0,79}$/.test(code) ? code : "command_delivery_uncertain";
-        throw Error(safeCode);
-      }
-      return data;
-    },
-  });
-  let delivery;
-  try {
-    delivery = await botCommandDelivery({ parsed, registered, context: { ...context, navigation },
-      commandMessageId: options.commandMessageId, structured: options.structured, sdkOptions: options });
-  } catch (error) { if (!current()) return true; throw error; }
-  if (!current()) return true;
-  if (delivery.cancelled || delivery.mode === "bot_token") return delivery.handled !== false;
-  const eventId = delivery.eventId;
-  serverAppsPermissionsDebugState.lastCommandInvocation = {
-    ...serverAppsPermissionsDebugState.lastCommandInvocation, interactionEventId: eventId, deliveryMode: "https",
-  };
-  if (delivery.message && typeof delivery.message === "object" && normId(delivery.message.id || "")) {
-    appendLocalBotBuiltinResponse(delivery.message, context);
-    removeBotConnectionPendingMessage(eventId, { render: true, reason: "bot-https-response" });
-    return true;
-  }
-  // The same author-only completion path is used by SDK and HTTPS responses.
-  // An immediate private reply needs no provisional public timeline message.
-  if (delivery.privateResponse) removeBotConnectionPendingMessage(eventId, { render: true, reason: "bot-https-private-acknowledged" });
-  else showBotConnectionPendingNotice(parsed.name, context, {
-    ...registered, commandCreatedAt: options.commandCreatedAt,
-  }, eventId, delivery.deferred ? { timeoutMs: 5 * 60 * 1000, startResponsePolling: false } : {});
-  void waitForBotConnectionModeResponse(eventId, context, registered, delivery).catch(() => {
-    removeBotConnectionPendingMessage(eventId, { render: true, reason: "bot-https-response-refresh-error" });
   });
   return true;
 }
@@ -147791,8 +145441,6 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
   const context = getBotCommandServerTextContext(conversationId);
   if (!context || !state.user?.id) return false;
   const invocationActorId = normId(state.user.id);
-  const invocationNavigation = dmOpenIntentSeq;
-  const currentInvocation = () => normId(state.user?.id || "") === invocationActorId && dmOpenIntentSeq === invocationNavigation && isBotConnectionModeContextActive(context);
   const knownCommand = isKnownApplicationCommandName(context.serverId, parsed.name);
   const commandCapability = getCurrentApplicationCommandCapability(context);
   serverAppsPermissionsDebugState.selectedCommand = {
@@ -147820,12 +145468,11 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
   }
 
   let commands = await fetchServerSlashCommandsForComposer(context.serverId, { force: false });
-  if (!currentInvocation()) return true;
   let registered = (commands || []).find((cmd) => String(cmd?.name || "").trim().toLowerCase() === parsed.name);
   if (!registered?.commandId) {
     // A running bot can sync a new command while this composer keeps its cache.
     commands = await fetchServerSlashCommandsForComposer(context.serverId, { force: true });
-    if (!currentInvocation()) return true;
+    if (normId(state.user?.id || "") !== invocationActorId || !isBotConnectionModeContextActive(context)) return true;
     const refreshedCapability = getCurrentApplicationCommandCapability(context);
     if (!refreshedCapability.allowed) {
       showApplicationCommandPermissionDenied(refreshedCapability);
@@ -147854,7 +145501,6 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
   let preparedStructured = null;
   if (Array.isArray(registered?.options) && registered.options.length) {
     preparedStructured = await buildBotConnectionModeStructuredOptions(parsed, registered, context);
-    if (!currentInvocation()) return true;
     if (Array.isArray(preparedStructured?.missingRequiredOptions) && preparedStructured.missingRequiredOptions.length && !String(parsed?.args || "").trim()) {
       const missingName = preparedStructured.missingRequiredOptions[0] || "";
       showDmComposerNotice(getBotSlashMissingRequiredOptionHint(missingName), { title: "Bots" });
@@ -147870,7 +145516,6 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
   }
 
   const commandMessage = await persistBotSlashCommandInvocationMessage(conversationId, parsed);
-  if (!currentInvocation()) return true;
   const commandMessageId = normId(commandMessage?.id || "");
   serverAppsPermissionsDebugState.lastCommandInvocation = {
     ...serverAppsPermissionsDebugState.lastCommandInvocation,
@@ -147902,7 +145547,7 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
       { title: "Bots", okText: t("bots.enable", "Enable bots"), cancelText: t("common.cancel", "Cancel") }
     );
     // The confirmation can stay open while the account or channel changes.
-    if (!currentInvocation()) return true;
+    if (enable && (normId(state.user?.id || "") !== invocationActorId || !isBotConnectionModeContextActive(context))) return true;
     if (!enable || !enableAltaraBotsOnDevice()) {
       showDmComposerNotice(t("bots.disabled_on_device", "Bot features are disabled on this device."), { title: "Bots" });
       serverAppsPermissionsDebugState.lastCommandInvocation = {
@@ -147926,8 +145571,7 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
   }
 
   try {
-    const handled = await createBotRoutedCommandInteraction(parsed, registered, context, { commandMessageId, commandCreatedAt: commandMessage?.created_at || "", structured: preparedStructured });
-    if (!currentInvocation()) return true;
+    const handled = await createBotConnectionModeInteraction(parsed, registered, context, { commandMessageId, commandCreatedAt: commandMessage?.created_at || "", structured: preparedStructured });
     serverAppsPermissionsDebugState.lastCommandInvocation = {
       ...serverAppsPermissionsDebugState.lastCommandInvocation,
       phase: handled ? "queued" : "not_handled",
@@ -147935,7 +145579,6 @@ async function tryDispatchBotSlashCommandFromComposer(conversationId, text = "")
     };
     return handled;
   } catch (error) {
-    if (!currentInvocation()) return true;
     logBotCommandRejectionReason(error, parsed, context);
     updateAltaraBotCommandDebug({
       currentServerId: context.serverId,
@@ -147995,100 +145638,6 @@ function bindDmAttachmentActionsOnce() {
   }, true);
 }
 
-var dmComposerMentionController = null;
-var dmComposerMentionNavigationDraft = null;
-
-function getDmComposerMentionIdentityKey(input) {
-  if (!input || input !== document.getElementById("dmInput") || globalDmMessageAuthSuspended) return "";
-  const context = getActiveMessageComposerPermissionContext();
-  if (!context.isServerTextChannel || !context.userId || !context.conversationId
-    || input.dataset.dmDraftUserId !== context.userId || input.dataset.dmDraftConversationId !== context.conversationId) return "";
-  // Draft ownership survives a temporary permission check; lookup and sending
-  // still require the separately validated authority context below.
-  return `${context.userId}:${context.conversationId}:${context.serverId}:${context.channelId}:${dmOpenIntentSeq}:${dmE2eeUiGeneration}`;
-}
-
-function getDmComposerMentionContext(input) {
-  if (!input || input !== document.getElementById("dmInput") || input.disabled || input.readOnly
-    || !isElementActuallyVisible(input) || !isElementActuallyVisible(document.getElementById("dmMain"))
-    || globalDmMessageAuthSuspended) return null;
-  const context = getActiveMessageComposerPermissionContext();
-  const permission = activeMessageComposerPermissionState || {};
-  if (!context.isServerTextChannel || !context.userId || !context.conversationId
-    || input.dataset.dmDraftUserId !== context.userId || input.dataset.dmDraftConversationId !== context.conversationId
-    || permission.key !== context.key || permission.loading || permission.canSend !== true
-    || !canCurrentUserViewServerChannelSync(context.serverId, context.channelId)) return null;
-  const channel = findServerChannelContextByConversationId(context.conversationId)?.channel;
-  if (!channel || normId(channel.id || "") !== context.channelId) return null;
-  return {
-    ...context,
-    isPrivate: channel.isPrivate === true,
-    identityKey: getDmComposerMentionIdentityKey(input),
-    key: `${context.key}:${context.conversationId}:${dmOpenIntentSeq}:${dmE2eeUiGeneration}:${serverChannelVisibilityAuthorityEpochByServerId.get(context.serverId) || 0}:${getServerBotChannelMemberAuthorityStamp(context.serverId)}`,
-  };
-}
-
-async function loadDmComposerMentionMembers(context) {
-  const current = () => getDmComposerMentionContext(document.getElementById("dmInput"))?.key === context.key;
-  if (!current()) return [];
-  let people = [];
-  let bots = [];
-  if (context.isPrivate) {
-    const accessible = await loadPrivateChannelAccessibleMembers(context.serverId, context.channelId, {
-      conversationId: context.conversationId,
-    });
-    // Never expose the whole server roster when a private channel lookup fails.
-    if (!current() || !accessible?.loaded || accessible.error) return [];
-    people = accessible.rows || [];
-  } else {
-    people = serverMemberListByServerId.get(context.serverId) || [];
-    if (!people.length) people = await fetchServerMembersForSidebar(context.serverId, {force:false});
-    if (!current()) return [];
-    const installed = serverBotInstallListByServerId.get(context.serverId)
-      || await fetchServerBotsForSidebar(context.serverId, {force:false});
-    const allowed = getCachedServerBotChannelMemberIds(context.serverId, context.channelId)
-      || await fetchServerBotChannelMemberIds(context.serverId, context.channelId);
-    if (!current()) return [];
-    bots = (installed || []).filter(bot => allowed.has(normId(bot.botId || bot.userId || "")));
-  }
-  const normalize = (member, isBot = false) => {
-    const id = normId(isBot ? (member.botId || member.userId || "") : (member.userId || member.user_id || member.id || ""));
-    return {
-      id,
-      label: isBot ? String(member.displayName || member.name || member.username || "Bot").trim()
-        : resolveServerDisplayName(context.serverId, id, member, "Member"),
-      username: String(member.username || "").trim(),
-      avatarUrl: String(member.avatarUrl || member.avatar_url || "").trim(),
-      isBot,
-    };
-  };
-  return [...(people || []).map(member => normalize(member)), ...bots.map(member => normalize(member, true))];
-}
-
-function getDmComposerMentionController() {
-  if (!dmComposerMentionController) dmComposerMentionController = createComposerMentionController({
-    getContext: getDmComposerMentionContext,
-    getIdentityKey: getDmComposerMentionIdentityKey,
-    loadMembers: loadDmComposerMentionMembers,
-    onDraftChange(input, change = {}) {
-      if (typeof change.remapRanges === "function") {
-        dmComposerColorRanges = change.remapRanges(dmComposerColorRanges);
-        dmComposerSizeRanges = change.remapRanges(dmComposerSizeRanges);
-        for (const mode of DM_COMPOSER_STYLE_ORDER) dmComposerStyleRanges[mode] = change.remapRanges(dmComposerStyleRanges[mode]);
-        dmComposerColorRangesSnapshotText = input.value;
-        dmComposerSizeRangesSnapshotText = input.value;
-        dmComposerStyleRangesSnapshotText = input.value;
-        dmComposerBeforeInputEdit = null;
-      }
-    },
-  });
-  return dmComposerMentionController;
-}
-
-function prepareDmComposerMentions(input, text = input?.value || "") {
-  return getDmComposerMentionController().prepare(input, text);
-}
-
 function wireDmComposer() {
   getServerPollController();
   bindDmAttachmentActionsOnce();
@@ -148110,8 +145659,6 @@ function wireDmComposer() {
   bindDmDragDropOnce();
   bindDmComposerArrowUpOnce();
   bindDmComposerFormatToolbarOnce(input);
-  const mentionController = getDmComposerMentionController();
-  mentionController.bind(input);
   restoreAltaraOfflineComposerDraft(activeDmId || state.activeDm?.conversationId || "", input);
   {
     const seed = parseComposerTextWithFormattingRanges(String(input.value || ""));
@@ -148130,7 +145677,6 @@ function wireDmComposer() {
       dmComposerStyleRangesSnapshotText = seed.text;
     }
   }
-  void mentionController.refresh(input);
   let isSending = false;
   let draftRevision = 0;
 
@@ -148143,7 +145689,6 @@ function wireDmComposer() {
     const submittedAttachments = dmPendingAttachments.map((item) => Object.freeze({ ...item }));
     let submissionAccepted = false;
     closeDmEmojiShortcodeMenu();
-    mentionController.close();
     const rawInputText = String(input.value || "");
     persistAltaraOfflineComposerDraft(activeDmId || state.activeDm?.conversationId || "", rawInputText);
     const expandedInputText = replaceEmojiShortcodesInText(rawInputText);
@@ -148153,12 +145698,11 @@ function wireDmComposer() {
       reconcileDmComposerSizeRanges(expandedInputText);
       reconcileDmComposerStyleRanges(expandedInputText);
     }
-    const mentionDraft = prepareDmComposerMentions(input, expandedInputText);
     const serializedInputText = serializeComposerTextWithFormattingRanges(
-      mentionDraft.text,
-      mentionDraft.remapRanges(dmComposerColorRanges),
-      mentionDraft.remapRanges(dmComposerSizeRanges),
-      Object.fromEntries(DM_COMPOSER_STYLE_ORDER.map(mode => [mode, mentionDraft.remapRanges(dmComposerStyleRanges[mode])])),
+      expandedInputText,
+      dmComposerColorRanges,
+      dmComposerSizeRanges,
+      dmComposerStyleRanges,
     );
     const text = serializedInputText.trim();
     const hasPendingAttachments = dmPendingAttachments.length > 0;
@@ -148431,7 +145975,6 @@ function wireDmComposer() {
   });
   send.addEventListener("click", doSend);
   input.addEventListener("input", () => {
-    dmComposerMentionNavigationDraft = null;
     draftRevision += 1;
     persistAltaraOfflineComposerDraft(activeDmId || state.activeDm?.conversationId || "", input.value);
     updateActiveMessageRequestDraftText(input.value);
@@ -148509,7 +146052,6 @@ function wireDmComposer() {
     if (e.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter" && e.repeat) { e.preventDefault(); return; }
     if (handleBotSlashCommandPickerKeydown(e, input)) return;
-    if (mentionController.handleKeydown(e, input)) return;
     if (e.key === "Escape") hideBotSlashCommandPicker();
     if (handleDmEmojiShortcodeMenuKeydown(e, input)) return;
     if (!e.altKey && !e.ctrlKey && !e.metaKey && e.key === "*") {
@@ -150669,8 +148211,8 @@ const SPATIAL_AUDIO_DATA_MESSAGE_TYPES = Object.freeze({
   AUTO_ARRANGE: "altara.spatial.room.auto_arrange",
 });
 const SPATIAL_AUDIO_SHARED_LAYOUT_STATE_TIMEOUT_MS = 900;
-const FREE_SPATIAL_PARTICIPANT_LIMIT = Number.POSITIVE_INFINITY;
-const CORE_SPATIAL_PARTICIPANT_LIMIT = Number.POSITIVE_INFINITY;
+const FREE_SPATIAL_PARTICIPANT_LIMIT = 4;
+const CORE_SPATIAL_PARTICIPANT_LIMIT = 10;
 const NOVA_SPATIAL_PARTICIPANT_LIMIT = Number.POSITIVE_INFINITY;
 const SPATIAL_AUDIO_LISTENER_POSITION = Object.freeze({ x: 0.5, y: 0.72 });
 const SPATIAL_AUDIO_DEFAULT_PRESET = "balanced";
@@ -150679,14 +148221,14 @@ const SPATIAL_AUDIO_LAYOUT_SOURCES = Object.freeze(["personal"]);
 const SPATIAL_AUDIO_PLACEMENT_MODES = Object.freeze(["manual"]);
 const SPATIAL_AUDIO_PRESET_DEFINITIONS = Object.freeze({
   balanced: { label: "Balanced", tier: "free", blend: 80, roomSize: 4, mode: "arc" },
-  focus: { label: "Focus", tier: "free", blend: 65, roomSize: 3, mode: "front" },
-  gaming: { label: "Gaming", tier: "free", blend: 92, roomSize: 6, mode: "wide" },
-  podcast: { label: "Podcast", tier: "free", blend: 45, roomSize: 2, mode: "close" },
-  circle: { label: "Circle", tier: "free", blend: 90, roomSize: 5, mode: "circle" },
-  stage: { label: "Stage", tier: "free", blend: 86, roomSize: 6, mode: "stage" },
-  cinema: { label: "Cinema", tier: "free", blend: 88, roomSize: 7, mode: "cinema" },
-  dnd_table: { label: "D&D Table", tier: "free", blend: 90, roomSize: 5, mode: "table" },
-  conference: { label: "Conference", tier: "free", blend: 70, roomSize: 4, mode: "conference" },
+  focus: { label: "Focus", tier: "core", blend: 65, roomSize: 3, mode: "front" },
+  gaming: { label: "Gaming", tier: "core", blend: 92, roomSize: 6, mode: "wide" },
+  podcast: { label: "Podcast", tier: "core", blend: 45, roomSize: 2, mode: "close" },
+  circle: { label: "Circle", tier: "nova", blend: 90, roomSize: 5, mode: "circle" },
+  stage: { label: "Stage", tier: "nova", blend: 86, roomSize: 6, mode: "stage" },
+  cinema: { label: "Cinema", tier: "nova", blend: 88, roomSize: 7, mode: "cinema" },
+  dnd_table: { label: "D&D Table", tier: "nova", blend: 90, roomSize: 5, mode: "table" },
+  conference: { label: "Conference", tier: "nova", blend: 70, roomSize: 4, mode: "conference" },
 });
 const SPATIAL_AUDIO_MIN_GAIN = 0.42;
 let dmStageResizeActive = false;
@@ -156609,7 +154151,7 @@ async function saveDesktopBehaviorSettingsPatch(patch = {}) {
       }
 
       if (hasAccountPatch) {
-        const saved = await persistThemeSettings(accountThemePatch, { showSuccess: false, showError: false, allowReduceMotionChange: typeof patch.reducedMotion === 'boolean' });
+        const saved = await persistThemeSettings(accountThemePatch, { showSuccess: false, showError: false });
         if (!saved) throw new Error("account performance settings save failed");
         nextSettings = getEffectiveDesktopBehaviorSettings(nextSettings, state.me?.theme_settings);
         fallbackSettingsOnError = nextSettings;
@@ -157446,8 +154988,8 @@ function getSpatialAudioTierInfo(statusInput = null) {
   const status = statusInput && typeof statusInput === "object"
     ? normalizeAltaraPlusClientState(statusInput)
     : getCurrentUserAltaraPlusStatus();
-  const nova = hasAltaraPlusNovaAccess(status);
-  const core = nova || hasAltaraPlusCoreAccess(status);
+  const nova = canUseAltaraPlusFeature("spatial_audio_hd", status);
+  const core = nova || canUseAltaraPlusFeature("spatial_audio_more_participants", status);
   return {
     tier: nova ? "nova" : (core ? "core" : "free"),
     hasCore: !!core,
@@ -157712,7 +155254,7 @@ function normalizeSpatialAudioSharedLayout(layout = null) {
     version: Math.max(0, Math.round(Number(source.version || 0) || 0)),
     updatedAt: Math.max(0, Math.round(Number(source.updatedAt || source.updated_at || 0) || 0)),
     updatedBy: normId(source.updatedBy || source.updated_by || ""),
-    roomSize: Math.round(clampSpatialAudioNumber(source.roomSize, 1, 10, SPATIAL_AUDIO_DEFAULT_SETTINGS.roomSize)),
+    roomSize: tierInfo.canUsePersonalTuning ? Math.round(clampSpatialAudioNumber(source.roomSize, 1, 10, SPATIAL_AUDIO_DEFAULT_SETTINGS.roomSize)) : SPATIAL_AUDIO_DEFAULT_SETTINGS.roomSize,
     positions: normalizeSpatialAudioPositions(source.positions || source.participants || {}),
   };
 }
@@ -160550,8 +158092,10 @@ function getSpatialAudioParticipantLimitState(context = null) {
     spatializedCount,
     limited,
     allowedUserIds,
-    canUnlockMore: false,
-    label: "All speakers spatialized",
+    canUnlockMore: tierInfo.tier === "free" || tierInfo.tier === "core",
+    label: tierInfo.tier === "nova"
+      ? "All speakers spatialized"
+      : String(spatializedCount) + " speakers spatialized" + (tierInfo.tier === "free" && limited ? " ? ALTARA+ Core unlocks more" : ""),
   };
 }
 
@@ -160948,6 +158492,10 @@ function ensureSpatialAudioPrototypeUi() {
             '<button class="btn ghost spatialAudioPanelBtn" type="button" data-spatial-layout-action="delete">Delete</button>' +
           '</div>' +
         '</div>' +
+        '<div class="spatialAudioPlusList" aria-label="Spatial Audio ALTARA+ features">' +
+          '<div class="spatialAudioPlusRow" data-spatial-lock="core"><b>ALTARA+ Core</b><span>Save personal layouts, use Core presets, tune room size, and spatialize up to 10 speakers.</span></div>' +
+          '<div class="spatialAudioPlusRow" data-spatial-lock="nova"><b>ALTARA+ Nova</b><span>HD Spatial Audio, smart auto-arrange, advanced presets, context profiles, and import/export.</span></div>' +
+        '</div>' +
         '</div></details>' +
       '</section>';
     popover.querySelector(".spatialAudioAdvanced")?.addEventListener("toggle", positionSpatialAudioPopover);
@@ -160990,7 +158538,7 @@ function ensureSpatialAudioPrototypeUi() {
             '<details class="spatialAudioAdvanced"><summary>More options</summary><div class="spatialAudioAdvanced__content">' +
             '<label class="spatialAudioField"><span><span>Voice distance</span><b class="spatialAudioValue" data-spatial-value="roomSize">4</b></span><small>Bring voices closer or spread them out.</small><input type="range" min="1" max="10" step="1" data-spatial-setting="roomSize" /></label>' +
             '<label class="spatialAudioToggleRow spatialAudioToggleRow--compact">' +
-              '<span><strong>Spatial Audio HD</strong><small>More depth for your personal mix.</small></span>' +
+              '<span><strong>Spatial Audio HD</strong><small>Requires ALTARA+ Nova.</small></span>' +
               '<input type="checkbox" data-spatial-setting="hdEnabled" />' +
               '<span class="spatialAudioSwitch" aria-hidden="true"></span>' +
             '</label>' +
@@ -161001,6 +158549,10 @@ function ensureSpatialAudioPrototypeUi() {
                 '<button class="btn ghost spatialAudioPanelBtn" type="button" data-spatial-layout-action="rename">Rename</button>' +
                 '<button class="btn ghost spatialAudioPanelBtn" type="button" data-spatial-layout-action="delete">Delete</button>' +
               '</div>' +
+            '</div>' +
+            '<div class="spatialAudioPlusList">' +
+              '<div class="spatialAudioPlusRow" data-spatial-lock="core"><b>Core personal layouts</b><span>Save layouts, Core presets, room tuning, and 10 spatialized speakers.</span></div>' +
+              '<div class="spatialAudioPlusRow" data-spatial-lock="nova"><b>Nova personal tools</b><span>HD, auto-arrange, advanced presets, context profiles, and import/export.</span></div>' +
             '</div>' +
           '<button id="btnSpatialAudioRoomResetMyLayout" class="btn ghost spatialAudioRoom__btn" type="button">Reset positions</button>' +
           '<button id="btnSpatialAudioRoomDisable" class="btn ghost spatialAudioRoom__btn spatialAudioRoom__btn--danger" type="button">Disable</button>' +
@@ -161400,7 +158952,7 @@ function syncSpatialAudioSettingControls(settings = null, controlInfo = null) {
     if (el instanceof HTMLInputElement) {
       el.value = String(safe.roomSize);
       el.disabled = !tierInfo.canUsePersonalTuning;
-      el.title = tierInfo.canUsePersonalTuning ? "" : "Room tuning is unavailable.";
+      el.title = tierInfo.canUsePersonalTuning ? "" : "Tune room size with ALTARA+ Core.";
       el.closest?.(".spatialAudioField")?.classList.toggle("is-disabled", !tierInfo.canUsePersonalTuning);
     }
   });
@@ -161441,13 +158993,13 @@ function syncSpatialAudioSettingControls(settings = null, controlInfo = null) {
     const isAction = el.hasAttribute("data-spatial-layout-action");
     el.disabled = isAction ? !savedLayouts.length : false;
     el.classList.toggle("is-disabled", !!el.disabled || (!isAction && !tierInfo.canSaveLayouts));
-    el.title = isAction ? (savedLayouts.length ? "" : "No saved layouts yet.") : (tierInfo.canSaveLayouts ? "" : "Saved layouts are unavailable.");
+    el.title = isAction ? (savedLayouts.length ? "" : "No saved layouts yet.") : (tierInfo.canSaveLayouts ? "" : "Save layouts with ALTARA+ Core.");
   });
   document.querySelectorAll("#btnSpatialAudioPopoverAutoArrange, #btnSpatialAudioRoomAutoArrange").forEach((el) => {
     if (!(el instanceof HTMLButtonElement)) return;
     el.disabled = !tierInfo.canAutoArrange;
     el.classList.toggle("is-disabled", !tierInfo.canAutoArrange);
-    el.title = tierInfo.canAutoArrange ? "Auto-arrange your personal layout." : "Auto-arrange is unavailable.";
+    el.title = tierInfo.canAutoArrange ? "Auto-arrange your personal layout." : "Requires ALTARA+ Nova.";
   });
   document.querySelectorAll("#btnSpatialAudioRoomResetMyLayout, #btnSpatialAudioResetMyLayout").forEach((el) => {
     if (el instanceof HTMLButtonElement) {
@@ -161455,6 +159007,14 @@ function syncSpatialAudioSettingControls(settings = null, controlInfo = null) {
       el.classList.remove("is-disabled");
       el.title = "Clears only your personal layout.";
     }
+  });
+  document.querySelectorAll("[data-spatial-lock='core']").forEach((el) => {
+    el.classList.toggle("is-locked", !tierInfo.hasCore);
+    el.classList.toggle("is-unlocked", !!tierInfo.hasCore);
+  });
+  document.querySelectorAll("[data-spatial-lock='nova']").forEach((el) => {
+    el.classList.toggle("is-locked", !tierInfo.hasNova);
+    el.classList.toggle("is-unlocked", !!tierInfo.hasNova);
   });
   document.querySelectorAll("#spatialAudioLimitText").forEach((el) => {
     el.textContent = limitState.label;
@@ -168790,7 +166350,6 @@ async function persistServerVoiceScreensharePresetState(conversationId = null, p
       try {
         await layer.setStreamPreset(normalizedState.streamPreset, {
           triggerReason: `${String(reason || "").trim() || "preset_saved"}_persist_sync`,
-          fpsPreset: normalizedState.fpsPreset,
           applyLive: false,
         });
       } catch (_) {}
@@ -168909,26 +166468,18 @@ function syncDesktopSharePickerServerVoicePresetUi() {
 
 function syncDesktopSharePickerFooterActionsUi() {
   const stopBtn = document.getElementById("desktopSharePickerStopBtn");
-  const confirmBtn = document.getElementById("desktopSharePickerConfirmBtn");
+  if (!stopBtn) return;
   const isServerVoiceMode = isServerVoiceDesktopSharePickerMode();
+  if (!isServerVoiceMode) {
+    stopBtn.hidden = true;
+    stopBtn.style.display = "none";
+    stopBtn.disabled = true;
+    return;
+  }
   const localShareActive = !!desktopSharePickerServerVoiceLocalShareActive;
-  const pending = !!desktopSharePickerConfirmInFlight;
-  if (stopBtn) {
-    stopBtn.hidden = !isServerVoiceMode || !localShareActive;
-    stopBtn.style.display = stopBtn.hidden ? "none" : "";
-    stopBtn.disabled = !isServerVoiceMode || !localShareActive || pending;
-  }
-  if (confirmBtn) {
-    const hasSelectedSource = desktopSharePickerSources.some((source) => source.id === desktopSharePickerSelectedSourceId);
-    const canContinueToBrowser = !canUseDesktopSharePicker() && !desktopSharePickerServerVoiceSourceOnly;
-    confirmBtn.hidden = !isServerVoiceMode;
-    confirmBtn.style.display = isServerVoiceMode ? "" : "none";
-    confirmBtn.disabled = !isServerVoiceMode || !(hasSelectedSource || canContinueToBrowser) || pending;
-    confirmBtn.setAttribute("aria-busy", pending ? "true" : "false");
-    confirmBtn.textContent = pending
-      ? (localShareActive ? "Switching…" : "Starting…")
-      : getDesktopSharePickerPrimaryActionLabel();
-  }
+  stopBtn.hidden = !localShareActive;
+  stopBtn.style.display = localShareActive ? "" : "none";
+  stopBtn.disabled = !localShareActive;
 }
 
 function syncDesktopSharePickerModeUi() {
@@ -168957,7 +166508,7 @@ function syncDesktopSharePickerModeUi() {
   if (hintEl) {
     if (isServerVoiceMode) {
       hintEl.textContent = desktopSharePickerFlowMode === DESKTOP_SHARE_PICKER_FLOW_MODE.CHANGE_SHARE_SOURCE
-        ? "Adjust quality/FPS/audio or select another source, then click Switch Stream. Your current stream stays live until the changes are ready."
+        ? "Select a source, then click Switch Stream once. Your current stream stays live until the replacement is ready."
         : "Select what to share, tune quality/FPS/audio, then click Start Streaming. Actual quality may depend on your device, display and connection.";
     } else {
       hintEl.textContent = t("call.share.picker.hint", "Select a window or screen to share");
@@ -169705,7 +167256,7 @@ function bindDesktopSharePickerOnce() {
           source: "desktop_picker_quality_button",
           reason: "desktop_picker_quality_selected",
           callerFunction: "bindDesktopSharePickerOnce",
-          syncLayer: false,
+          syncLayer: true,
         }
       );
       syncDesktopSharePickerServerVoicePresetUi();
@@ -169750,7 +167301,7 @@ function bindDesktopSharePickerOnce() {
           source: "desktop_picker_fps_button",
           reason: "desktop_picker_fps_selected",
           callerFunction: "bindDesktopSharePickerOnce",
-          syncLayer: false,
+          syncLayer: true,
         }
       );
       syncDesktopSharePickerServerVoicePresetUi();
@@ -169899,10 +167450,7 @@ async function openDesktopSharePicker({
   desktopSharePickerAttemptCount = 0;
   desktopSharePickerLastAttempt = null;
   desktopSharePickerSelectionResetCount = 0;
-  desktopSharePickerSelectedSourceId = desktopSharePickerMode === "server_voice" && localShareActive
-    ? desktopSharePickerCurrentSourceId
-    : "";
-  if (desktopSharePickerSelectedSourceId.startsWith("window:")) desktopSharePickerTab = "window";
+  desktopSharePickerSelectedSourceId = "";
   desktopSharePickerConfirmInFlight = false;
   const freshCachedGroups = ["screen", "window"]
     .map((sourceType) => readFreshDesktopSharePickerSourceCache(sourceType))
@@ -169962,14 +167510,13 @@ async function openDesktopSharePicker({
           paintedAt - Number(desktopSharePickerPerformanceDiagnostics.openedAtPerformanceMs || paintedAt),
         );
       }
-      const initialSourceType = desktopSharePickerTab;
-      if (desktopSharePickerLoadedSourceTypes.has(initialSourceType)) return;
+      if (desktopSharePickerLoadedSourceTypes.has("screen")) return;
       logDesktopSharePickerUiEvent("screenshare.preview_snapshot_refresh", {
         triggerReason: "picker_open_initial",
       });
       void reloadDesktopSharePickerSources({
         triggerReason: "picker_open_initial",
-        sourceType: initialSourceType,
+        sourceType: "screen",
       });
     };
     // Give Chromium one frame to paint the cancellable modal shell before the
@@ -177130,7 +174677,6 @@ function syncCallShareMenuUi() {
       ? (localAudioState?.active ?? serverVoiceLayer?.isLocalShareAudioActive?.() === true)
       : !!serverVoicePrefs?.shareAudioEnabled;
     const shareAudioPending = serverVoiceLocalShareActive && localAudioState?.pending === true;
-    const shareAudioUnavailable = serverVoiceLocalShareActive && localAudioState?.status === "unavailable";
     const audioCapability = getDesktopScreenShareAudioCapability();
     if (primaryBtn) {
       primaryBtn.hidden = false;
@@ -177154,11 +174700,9 @@ function syncCallShareMenuUi() {
     if (audioStateEl) {
       audioStateEl.textContent = shareAudioPending
         ? (localAudioState.requested ? t("call.share.audio_starting", "Starting…") : t("call.share.audio_stopping", "Stopping…"))
-        : shareAudioUnavailable
-          ? t("call.share.audio_unavailable", "Unavailable")
-          : shareAudioEnabledNow
-            ? t("call.share.audio_state_on", "On")
-            : t("call.share.audio_state_off", "Off");
+        : shareAudioEnabledNow
+          ? t("call.share.audio_state_on", "On")
+          : t("call.share.audio_state_off", "Off");
     }
     if (audioLblEl) {
       audioLblEl.textContent = audioCapability?.scope === "system"
@@ -186766,7 +184310,6 @@ async function openServerVoiceScreenshareFullPicker(conversationId = null, {
   const previousShareAudioEnabled = !!previousPrefs?.shareAudioEnabled;
   await traceServerVoiceScreenshareUiAwait("picker_stream_preset_commit", () => layer.setStreamPreset?.(nextStreamPreset, {
     triggerReason: `${triggerReason}_picker_stream_preset`,
-    fpsPreset: nextPresetState.fpsPreset,
     applyLive: false,
     notifyUi: false,
   }));
@@ -186861,19 +184404,14 @@ async function openServerVoiceScreenshareFullPicker(conversationId = null, {
         restoreFocusIfPreviouslyFocused: true,
       });
     }
-  }
-  if (!shouldRestartForSource) {
-    await layer.setStreamPreset?.(nextStreamPreset, {
-      triggerReason: `${triggerReason}_picker_settings_apply`,
-      fpsPreset: nextPresetState.fpsPreset,
-      applyLive: true,
-      notifyUi: false,
+    showSafeScreenShareAudioUnavailableFeedback(layer, picked?.sourceKind, {
+      conversationId: convId,
+      sessionKey: privateStatusSessionKey,
     });
+    refreshCallUI();
+    settleDesktopSharePickerStartUi({ published: true });
+    return !!layer.isLocalShareActive?.();
   }
-  showSafeScreenShareAudioUnavailableFeedback(layer, picked?.sourceKind, {
-    conversationId: convId,
-    sessionKey: privateStatusSessionKey,
-  });
   refreshCallUI();
   settleDesktopSharePickerStartUi({ published: true });
   return !!layer.isLocalShareActive?.();
@@ -202815,6 +200353,33 @@ async function joinServerVoiceChannelV2({
   await teardownLegacyServerVoiceMeshState(resolvedConvId, { reason: "voice_v2_livekit_takeover" });
   if (operationTiming) operationTiming.preTransportCleanupDone = Date.now();
   throwIfServerVoiceJoinOperationStale(operation, "legacy_transport_teardown");
+  // Once obsolete media is gone, device acquisition can safely overlap the
+  // fail-closed token/admission request. Publication uses that returned admission.
+  if (voicePermissionDecision?.speak === true) {
+    if (operationTiming) {
+      operationTiming.microphoneStart = Date.now();
+      operationTiming.deviceValidationStart = operationTiming.microphoneStart;
+    }
+    preparedLocalAudioPromise = Promise.resolve()
+      .then(() => getLocalAudioStream())
+      .then((stream) => {
+        if (operationTiming) {
+          operationTiming.microphoneDone = Date.now();
+          operationTiming.deviceValidationDone = operationTiming.microphoneDone;
+        }
+        if (!isServerVoiceJoinOperationCurrent(operation)) {
+          try { stream?.getTracks?.().forEach((track) => track.stop()); } catch (_) {}
+          return { stream: null, error: Object.assign(new Error("server_voice_join_stale"), { code: "server_voice_join_stale" }) };
+        }
+        return { stream, error: null };
+      }, (error) => {
+        if (operationTiming) {
+          operationTiming.microphoneDone = Date.now();
+          operationTiming.deviceValidationDone = operationTiming.microphoneDone;
+        }
+        return { stream: null, error };
+      });
+  }
   markServerVoiceJoinAttemptStarted(resolvedConvId, joinAttemptId);
   invalidateOtherServerVoiceJoinAttempts(resolvedConvId, joinAttemptId);
 
@@ -202843,42 +200408,6 @@ async function joinServerVoiceChannelV2({
     });
     throwIfServerVoiceJoinOperationStale(operation, "token_resolved");
     hydrateServerVoiceModerationFromToken(joinPayload, resolvedConvId, sid);
-    // Only an explicit microphone grant may acquire a device before Room connect.
-    // Older or ambiguous grants defer to the connected participant permission.
-    if (voicePermissionDecision?.speak === true
-      && joinPayload?.voicePermissions?.speak === true
-      && !isServerVoiceSelfMuted(resolvedConvId)
-      && !getEffectiveLocalMicMuted(resolvedConvId)
-      && joinPayload?.participantGrant?.canPublish === true
-      && Array.isArray(joinPayload.participantGrant.canPublishSources)
-      && joinPayload.participantGrant.canPublishSources.includes("microphone")) {
-      if (operationTiming) {
-        operationTiming.microphoneStart = Date.now();
-        operationTiming.deviceValidationStart = operationTiming.microphoneStart;
-      }
-      preparedLocalAudioPromise = Promise.resolve()
-        .then(() => {
-          throwIfServerVoiceJoinOperationStale(operation, "microphone_prepare_start");
-          return getLocalAudioStream();
-        })
-        .then((stream) => {
-          if (operationTiming) {
-            operationTiming.microphoneDone = Date.now();
-            operationTiming.deviceValidationDone = operationTiming.microphoneDone;
-          }
-          if (!isServerVoiceJoinOperationCurrent(operation)) {
-            try { stream?.getTracks?.().forEach((track) => track.stop()); } catch (_) {}
-            return { stream: null, error: Object.assign(new Error("server_voice_join_stale"), { code: "server_voice_join_stale" }) };
-          }
-          return { stream, error: null };
-        }, (error) => {
-          if (operationTiming) {
-            operationTiming.microphoneDone = Date.now();
-            operationTiming.deviceValidationDone = operationTiming.microphoneDone;
-          }
-          return { stream: null, error };
-        });
-    }
     voiceV2DebugInfo("[voice-v2-join] token_done", { serverId: sid, voiceChannelId, elapsedMs: voiceV2JoinTiming.tokenDone - voiceV2JoinTiming.tokenStart });
     if (operationTiming) operationTiming.roomConstructionStart = Date.now();
     const liveKitUrl = String(joinPayload.url || "").trim();
@@ -210996,19 +208525,6 @@ async function startGroupDmRevocationBroadcastListener({ force = false, reason =
           void reconcileGlobalDmMessageUnreadAfterReconnect({ queueIfRunning: true });
         });
     })
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "bot_channel_messages" }, (payload) => {
-      const isCurrent = () => groupDmRevocationBroadcastChannel === channel
-        && groupDmRevocationBroadcastGeneration === generation
-        && userId === normId(state.user?.id || "") && !globalDmMessageAuthSuspended;
-      if (!isCurrent()) return;
-      recordAltaraRuntimeActivity("realtime_callback_message", "global_bot_insert");
-      return onGlobalBotChannelMessageInserted(payload?.new || null, {isCurrent}).catch((error) => {
-        logNotificationDebug("bot_global_realtime_callback_failed", {
-          sourceTable: "bot_channel_messages",
-          skippedReason: getSafeAuthErrorCode(error, "bot_global_realtime_callback"),
-        }, { level: "warn" });
-      });
-    })
     .on("broadcast", { event: "group_dm_typing" }, (event) => {
       const payload = event?.payload || {};
       if (logGroupDmUserEventDelivery("group_dm_typing", event, payload)) return;
@@ -214243,11 +211759,12 @@ function applyRealtimeProfileUpdate(profileRow) {
   if (patchedStatus) {
     const meId = normId(state.user?.id || "");
     const localStatus = normalizeManualPresenceStatus(resolveMyPresenceStatus(state.me));
-    const pendingOwnIntent = uid === meId
+    const inLocalGrace = uid === meId
       && patchedStatus !== localStatus
-      && isCurrentPresenceStatusIntent(meStatusPendingIntent);
-    if (pendingOwnIntent) {
-      logPresenceDebug("profile/status event deferred during manual save", {
+      && (isCurrentPresenceStatusIntent(meStatusPendingIntent)
+        || Date.now() - Number(lastManualPresenceStatusChangeAt || 0) < PRESENCE_STATUS_LOCAL_CHANGE_GRACE_MS);
+    if (inLocalGrace) {
+      logPresenceDebug("profile/status event ignored during local grace", {
         userId: uid,
         localStatus,
         remoteStatus: patchedStatus,
@@ -214711,17 +212228,6 @@ async function startGlobalProfileListener(options = {}) {
     };
     const channel = supabase
       .channel(channelName, { config: { private: true } })
-      .on("broadcast", { event: "server_preferences_changed" }, (event) => {
-        if (globalProfileChannel !== channel || generation !== globalProfileListenerGeneration
-          || normId(state.user?.id || "") !== userId) return;
-        const fields = parseServerPreferenceInvalidation(event);
-        if (fields) queueServerAccountPreferenceRefresh(fields, userId);
-      })
-      .on("broadcast", { event: "presence_status_changed" }, (event) => {
-        if (globalProfileChannel !== channel || generation !== globalProfileListenerGeneration
-          || normId(state.user?.id || "") !== userId || !parsePresenceStatusInvalidation(event)) return;
-        void refreshCurrentUserPresenceStatusFromAccount({ reason: "status-account-invalidation" });
-      })
       .on("postgres_changes", {
         event: "INSERT",
         schema: "public",
@@ -214758,10 +212264,6 @@ async function startGlobalProfileListener(options = {}) {
       if (globalProfileChannelStatus === "SUBSCRIBED") {
         globalProfileRestartAttempt = 0;
         void reconcilePublicProfilesAfterSubscription(userId);
-        queueServerAccountPreferenceRefresh({ categories: true, rail: true }, userId);
-        if (normId(state.user?.id || "") === userId) {
-          void refreshCurrentUserPresenceStatusFromAccount({ reason: "status-account-subscribed" });
-        }
         return;
       }
       if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(globalProfileChannelStatus)) {
@@ -215931,13 +213433,11 @@ function handleGlobalDmMessageChannelStatus(status, error) {
   }
 }
 
-async function onGlobalBotChannelMessageInserted(row, {isCurrent = () => true} = {}) {
-  if (!row || !state.user?.id || globalDmMessageAuthSuspended || !isCurrent()) return;
+async function onGlobalBotChannelMessageInserted(row) {
+  if (!row || !state.user?.id) return;
   const accountId = normId(state.user.id);
-  const syncGeneration = globalDmMessageSyncGeneration;
   const context = await getIncomingMessageContext(row, { sourceTable: "bot_channel_messages" });
-  if (globalDmMessageAuthSuspended || globalDmMessageSyncGeneration !== syncGeneration || !isCurrent()
-    || normId(state.user?.id || '') !== accountId || context.type !== "bot_server_channel"
+  if (normId(state.user?.id || '') !== accountId || context.type !== "bot_server_channel"
     || !canCurrentUserViewServerChannelSync(context.serverId, context.channelId)) return;
   if (!claimIncomingBotChannelMessageNotification(row, context)) return {unreadApplied:false,soundPlayed:false,skippedReason:"duplicate_event"};
   const conversationId = getTimelineCacheKeyForServerChannel(context);
@@ -216561,7 +214061,7 @@ async function showDm(conversationId, opts = {}) {
     ? startDirectDmOpenHistoryFetch(conversationId, {
       initialLatest: true,
       reason: channelOpenMessageLoadReason,
-      hydrateBots: true,
+      hydrateBots: false,
       requestGeneration: messageOpenToken?.generation || 0,
       serverNavigationTraceId: opts?.serverNavigationTraceId || "",
     })
@@ -216976,7 +214476,7 @@ async function showDm(conversationId, opts = {}) {
   } else if (earlyMessageLoadPromise) {
     await earlyMessageLoadPromise;
   } else {
-    await fetchMessages(conversationId, { initialLatest: true, reason: channelOpenMessageLoadReason, hydrateBots: true });
+    await fetchMessages(conversationId, { initialLatest: true, reason: channelOpenMessageLoadReason, hydrateBots: false });
   }
   if (!isShowRequestStale() && !isServerConversation && isDmConversationActivelyViewed(conversationId)) {
     clearDmUnreadForActiveConversation();
@@ -216994,6 +214494,17 @@ async function showDm(conversationId, opts = {}) {
   if (isShowRequestStale()) return;
   const botRealtimeContext = isServerVoiceConversation ? null : getBotCommandServerTextContext(conversationId);
   const botRealtimeChannelId = normId(botRealtimeContext?.channelId || "");
+  if (botRealtimeContext) {
+    void hydrateBotTimelineForChannel(conversationId, {
+      reason: "channel-open-bot-hydration",
+      baseRenderVersion: dmLastRenderedMessagesSignature,
+    }).catch((error) => {
+      logBotHydrationState("channel_open_error", {
+        conversationId: normId(conversationId || ""),
+        message: String(error?.message || error || "unknown_error").slice(0, 220),
+      });
+    });
+  }
   if (!isServerVoiceConversation) startDmReactionsSync(conversationId);
   if (!isServerVoiceConversation && dmPinsPanelOpen) await openDmPinsModal();
   else if (!isServerVoiceConversation && dmProfilePanelOpen) await openDmProfilePanel();
@@ -219850,15 +217361,12 @@ async function saveAvatarUrlForUser(userId, avatarUrl, crop = undefined) {
   const normalizedUrl = String(avatarUrl || "").trim();
   const normalizedCrop = crop === undefined ? undefined : normalizeMediaCropSnapshot(crop, "avatar");
   const currentTheme = normalizeThemeSettings(state.me?.theme_settings || {});
-  let nextTheme = crop === undefined ? currentTheme : buildThemeWithAvatarCrop(currentTheme, normalizedCrop);
+  const nextTheme = crop === undefined ? currentTheme : buildThemeWithAvatarCrop(currentTheme, normalizedCrop);
   const updatePayload = crop === undefined
     ? { avatar_url: normalizedUrl || null }
     : { avatar_url: normalizedUrl || null, theme_settings: nextTheme };
 
-  const saved = crop === undefined ? await supabase.from("profiles").update(updatePayload).eq("id", uid)
-    : await saveOwnedProfileThemePatch(uid, updatePayload);
-  const { error } = saved;
-  if (!error && saved.theme) nextTheme = saved.theme;
+  const { error } = await supabase.from("profiles").update(updatePayload).eq("id", uid);
   setProfileDebug({ avatar_url_save: { error, url: normalizedUrl } });
   if (error) throw error;
   return {
@@ -219876,14 +217384,14 @@ async function saveBannerUrlForUser(userId, bannerUrl, crop = undefined) {
   const tryBannerColumn = profileBannerUrlSupported !== false;
   if (tryBannerColumn) {
     const currentTheme = normalizeThemeSettings(state.me?.theme_settings || {});
-    let themeForColumn = crop === undefined ? currentTheme : buildThemeWithBannerCrop(currentTheme, normalizedCrop);
+    const themeForColumn = crop === undefined ? currentTheme : buildThemeWithBannerCrop(currentTheme, normalizedCrop);
     const updatePayload = crop === undefined
       ? { banner_url: normalizedUrl || null }
       : { banner_url: normalizedUrl || null, theme_settings: themeForColumn };
-    const saved = crop === undefined ? await supabase.from("profiles").update(updatePayload).eq("id", uid)
-      : await saveOwnedProfileThemePatch(uid, updatePayload);
-    const { error } = saved;
-    if (!error && saved.theme) themeForColumn = saved.theme;
+    const { error } = await supabase
+      .from("profiles")
+      .update(updatePayload)
+      .eq("id", uid);
 
     setProfileDebug({ banner_url_save: { via: "banner_url", error, url: normalizedUrl } });
 
@@ -219898,13 +217406,14 @@ async function saveBannerUrlForUser(userId, bannerUrl, crop = undefined) {
   }
 
   const currentTheme = normalizeThemeSettings(state.me?.theme_settings || {});
-  let nextTheme = buildThemeWithBannerCrop({
+  const nextTheme = buildThemeWithBannerCrop({
     ...currentTheme,
     banner_url: normalizedUrl,
   }, normalizedCrop);
-  const saved = await saveOwnedProfileThemePatch(uid, { theme_settings: nextTheme });
-  const themeError = saved.error;
-  if (!themeError) nextTheme = saved.theme;
+  const { error: themeError } = await supabase
+    .from("profiles")
+    .update({ theme_settings: nextTheme })
+    .eq("id", uid);
 
   setProfileDebug({ banner_url_save: { via: "theme_settings", error: themeError, url: normalizedUrl } });
 
@@ -220098,7 +217607,8 @@ let meStatusIntentSequence = 0;
 let meStatusPendingIntent = null;
 let currentUserPresenceStatusSyncTimer = null;
 let currentUserPresenceStatusSyncInFlight = false;
-let currentUserPresenceStatusSyncQueued = false;
+let lastManualPresenceStatusChangeAt = 0;
+const PRESENCE_STATUS_LOCAL_CHANGE_GRACE_MS = 10000;
 const PRESENCE_SESSION_ID = (() => {
   try {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -221677,24 +219187,6 @@ function openMeStatusMenuAt(point, options = {}) {
   return true;
 }
 
-function parsePresenceStatusInvalidation(event) {
-  try {
-    const dataFields = (value) => {
-      if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-      const fields = Object.getOwnPropertyDescriptors(value);
-      if (Reflect.ownKeys(value).some((key) => typeof key !== "string")
-        || Object.values(fields).some((field) => !("value" in field))) return null;
-      return fields;
-    };
-    const wrapper = dataFields(event), fields = dataFields(wrapper?.payload?.value);
-    if (!fields || Object.keys(fields).some((key) => !["version", "id"].includes(key))
-      || fields.version?.value !== 1) return false;
-    // Some Realtime versions add only this transport message UUID.
-    return !fields.id || typeof fields.id.value === "string"
-      && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fields.id.value);
-  } catch (_) { return false; }
-}
-
 function isCurrentPresenceStatusIntent(intent) {
   return !!intent
     && intent.userId === normId(state.user?.id || "")
@@ -221706,42 +219198,6 @@ async function persistMyPresenceStatusToAccount(statusInput, intent) {
   const status = normalizeManualPresenceStatus(statusInput);
   const uid = intent?.userId || "";
   if (!uid || !isCurrentPresenceStatusIntent(intent)) return false;
-
-  try {
-    const { data, error } = await supabase.auth.getSession();
-    if (error || normId(data?.session?.user?.id) !== uid || !isCurrentPresenceStatusIntent(intent)) return false;
-  } catch (_) { return false; }
-
-  let result;
-  try {
-    result = await awaitWithTimeout(supabase.rpc("set_my_presence_status_v1", { p_status: status }),
-      RPC_SOFT_TIMEOUT_MS, "save account presence status");
-  } catch (error) { result = { error }; }
-  if (!isCurrentPresenceStatusIntent(intent)) return false;
-  if (!result?.error) {
-    const receipt = Array.isArray(result?.data) && result.data.length === 1 ? result.data[0] : null;
-    const fields = receipt && typeof receipt === "object" && !Array.isArray(receipt)
-      ? Object.getOwnPropertyDescriptors(receipt) : null;
-    if (fields && Reflect.ownKeys(receipt).length === 2
-      && fields.id?.value === uid && fields.presence_status?.value === status) {
-      cacheProfileRow({ id: uid, status });
-      return true;
-    }
-  }
-  const missingRpc = result?.error?.code === "PGRST202"
-    && String(result.error.message || "").includes("set_my_presence_status_v1");
-  if (!missingRpc) {
-    // A lost reply may already have committed. Confirm through a fresh owned
-    // account read; never replay it through a second, legacy write.
-    try {
-      const row = await getMyProfile(uid);
-      if (!isCurrentPresenceStatusIntent(intent) || normId(row?.id) !== uid) return false;
-      const confirmed = readPresenceStatusValue(row.status) || readPresenceStatusValue(row.theme_settings?.presence_status);
-      if (confirmed !== status) return false;
-      cacheProfileRow({ id: uid, status });
-      return true;
-    } catch (_) { return false; }
-  }
 
   if (profileStatusSupported !== false) {
     const { error } = await supabase
@@ -221763,13 +219219,14 @@ async function persistMyPresenceStatusToAccount(statusInput, intent) {
     profileStatusSupported = false;
   }
 
-  let nextTheme = normalizeThemeSettings({
+  const nextTheme = normalizeThemeSettings({
     ...(state.me?.theme_settings || {}),
     presence_status: status,
   });
-  const saved = await saveOwnedProfileThemePatch(uid, { theme_settings: nextTheme }, () => isCurrentPresenceStatusIntent(intent), { allowPresenceStatusChange: true });
-  const themeError = saved.error;
-  if (!themeError) nextTheme = saved.theme;
+  const { error: themeError } = await supabase
+    .from("profiles")
+    .update({ theme_settings: nextTheme })
+    .eq("id", uid);
   if (!isCurrentPresenceStatusIntent(intent)) return false;
   if (themeError) {
     console.warn("status save fallback failed:", themeError?.message || themeError);
@@ -221802,25 +219259,31 @@ function getCurrentUserPresenceStatusSyncIntervalMs() {
 
 async function refreshCurrentUserPresenceStatusFromAccount({ reason = "status-sync" } = {}) {
   const uid = normId(state.user?.id || "");
-  if (!uid) return;
-  // Keep one trailing account invalidation. Repeated fallback ticks must not
-  // turn a slow read or a pending manual save into a polling loop.
-  if (reason === "status-account-invalidation") currentUserPresenceStatusSyncQueued = true;
-  if (currentUserPresenceStatusSyncInFlight) return;
+  if (!uid || currentUserPresenceStatusSyncInFlight) return;
   if (typeof navigator !== "undefined" && navigator.onLine === false) return;
   if (isCurrentPresenceStatusIntent(meStatusPendingIntent)) return;
   const intentAtStart = { userId: uid, sessionEpoch: presenceSessionEpoch, sequence: meStatusIntentSequence };
-  currentUserPresenceStatusSyncQueued = false;
   currentUserPresenceStatusSyncInFlight = true;
   try {
-    const row = await getMyProfile(uid);
+    const rows = await fetchProfilesByIds([uid], { includeBio: false, force: true }).catch(() => []);
     if (!isCurrentPresenceStatusIntent(intentAtStart) || isCurrentPresenceStatusIntent(meStatusPendingIntent)) return;
-    if (!row || normId(row.id) !== uid) return;
+    const row = Array.isArray(rows) ? (rows[0] || getCachedProfile(uid)) : getCachedProfile(uid);
+    if (!row) return;
     const remoteStatus = readPresenceStatusValue(row.status)
       || readPresenceStatusValue(row.theme_settings?.presence_status);
     if (!remoteStatus) return;
     const localStatus = normalizeManualPresenceStatus(resolveMyPresenceStatus(state.me));
     if (remoteStatus !== localStatus) {
+      const inLocalGrace = Date.now() - Number(lastManualPresenceStatusChangeAt || 0) < PRESENCE_STATUS_LOCAL_CHANGE_GRACE_MS;
+      if (inLocalGrace) {
+        logPresenceDebug("remote status update ignored during local grace", {
+          userId: uid,
+          localStatus,
+          remoteStatus,
+          reason: String(reason || "status-sync"),
+        });
+        return;
+      }
       logPresenceDebug("remote status update received", {
         userId: uid,
         previousStatus: localStatus,
@@ -221837,10 +219300,6 @@ async function refreshCurrentUserPresenceStatusFromAccount({ reason = "status-sy
     });
   } finally {
     currentUserPresenceStatusSyncInFlight = false;
-    if (currentUserPresenceStatusSyncQueued && uid === normId(state.user?.id || "")
-      && intentAtStart.sessionEpoch === presenceSessionEpoch && !isCurrentPresenceStatusIntent(meStatusPendingIntent)) {
-      void refreshCurrentUserPresenceStatusFromAccount({ reason: "status-account-drain" });
-    }
   }
 }
 
@@ -229004,6 +226463,7 @@ async function setMyPresenceStatusEverywhere(statusInput, { persistAccount = tru
   };
   if (!intent.userId) return previousStatus;
   meStatusPendingIntent = intent;
+  lastManualPresenceStatusChangeAt = Date.now();
   logPresenceDebug("set manual status start", {
     userId: normId(state.user?.id || ""),
     previousStatus,
@@ -229060,6 +226520,7 @@ async function setMyPresenceStatusEverywhere(statusInput, { persistAccount = tru
   if (persistAccount && persisted !== true) {
     // This selection was rejected. Let the existing account refresh restore
     // confirmed status; a newer intent still fences that asynchronous result.
+    lastManualPresenceStatusChangeAt = 0;
     state.me.status = setMyStatus(previousStatus, state.user?.id);
     if (state.user?.id) cacheProfileRow({ id: state.user.id, status: previousStatus });
     syncSpotifyPollingFromAccounts({ immediate: true });
@@ -229098,10 +226559,6 @@ async function setMyPresenceStatusEverywhere(statusInput, { persistAccount = tru
       manualStatus: status,
       error: String(error?.message || error || "unknown"),
     });
-  } finally {
-    if (isCurrentPresenceStatusIntent(intent) && currentUserPresenceStatusSyncQueued) {
-      void refreshCurrentUserPresenceStatusFromAccount({ reason: "status-account-drain" });
-    }
   }
   return status;
 }
@@ -230092,7 +227549,7 @@ function clearPresenceForSignedOutSession(reason = "auth:signed_out") {
   presenceTransitionRuntime = {};
   meStatusPendingIntent = null;
   meStatusPersistQueue = Promise.resolve();
-  currentUserPresenceStatusSyncQueued = false;
+  lastManualPresenceStatusChangeAt = 0;
   preparedPresenceBootstrapGeneration = 0;
   realtimeStartupBarrier.reset({ resolveWaiters: true, cancelWaiting: true });
   void privateCallInboxController.stop({ reason, clearLedger: true }).catch(() => {});
@@ -230132,10 +227589,7 @@ function startPresenceAuthStateListener() {
   try {
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       const authUserId = normId(session?.user?.id || "");
-      authIdentityTransition.observe(authUserId, { signedOut: String(event || "").toUpperCase() === "SIGNED_OUT" });
       const hasAccessToken = !!String(session?.access_token || "").trim();
-      handleAltaraBillingDetailsAuthChange(authUserId);
-      handleAltaraPlusBillingPortalAuthChange(authUserId);
       updatePresenceDiagnosticAuth(session);
       if (String(event || "").toUpperCase() === "TOKEN_REFRESHED") {
         recordPresenceLiveDiagnosticEvent("TOKEN_REFRESHED", {
@@ -230171,15 +227625,16 @@ function startPresenceAuthStateListener() {
         notifyServerVoiceStartupDependencyChange("auth-signed-out");
         clearPresenceForSignedOutSession("auth:signed_out");
         botComponentUi.reset();
-        botNativeComponentUi.reset();
         return;
       }
       if (!authUserId || !hasAccessToken) return;
       const expectedUserId = normId(state.user?.id || "");
       if (expectedUserId && authUserId !== expectedUserId) {
+        profileActivityHistory.reset();
+        closeUserCardModal();
+        suspendCommunityThemesForAccountChange();
         resetBotDirectMessages();
         botComponentUi.reset();
-        botNativeComponentUi.reset();
         stopGlobalDmNotificationsForAuthChange();
         clearConversationMessageMemoryCache({ userSwitch: true });
         serverVoiceStartupReadyUserId = "";
@@ -230202,35 +227657,6 @@ function startPresenceAuthStateListener() {
     }, { error: true });
   }
 }
-
-const authIdentityTransition = createAuthIdentityTransition({
-  getUserId: () => state.user?.id || "",
-  readSessionUserId: async () => {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) throw error;
-    return data?.session?.user?.id || "";
-  },
-  retire: () => {
-    widgetPersonalNotesDesktop?.deactivate();
-    widgetNotesTextCache = "";
-    widgetNotesStorageKey = "";
-    profileActivityHistory.reset();
-    closeUserCardModal();
-    suspendCommunityThemesForAccountChange();
-    beginMainContentNavigationIntent({ reason: "auth-user-changed" });
-    resetBotDirectMessages();
-    messageTranslationController?.clear();
-    localMessageTranslator?.reset();
-    vaultMediaViewer?.clear();
-    botDmMediaView?.reset();
-    clearConversationMessageMemoryCache({ userSwitch: true });
-    document.getElementById("dmMessages")?.replaceChildren();
-    const panel = document.querySelector(".panel.mid");
-    if (panel) panel.style.visibility = "hidden";
-  },
-  reload: () => window.location.reload(),
-  onError: (error) => logPresenceStartupLifecycle("auth identity recovery failed", { error: getSafeAuthErrorCode(error, "auth_identity_recovery") }, { error: true }),
-});
 
 function bindPresenceVisibilityRefreshOnce() {
   if (presenceVisibilityListenerBound || typeof document === "undefined") return;
@@ -230308,9 +227734,7 @@ function bindDesktopCallShutdownOnce() {
 
 setAccountSwitchCleanup(async () => {
   suspendCommunityThemesForAccountChange();
-  closeBotServerSettingsModal({ force: true, restoreFocus: false });
   botComponentUi.reset();
-        botNativeComponentUi.reset();
   widgetMarketplaceController?.dispose();
   widgetMarketplaceController = null;
   if (window.altaraDesktop?.isDesktopApp) return; // Native quit already owns this handshake.
@@ -231166,11 +228590,6 @@ async function startPresenceOnce(suppliedSession = null, { realtimeAuthApplied =
       renderSettingsAccountLoadStatus();
     }
   }
-
-  bindServerRailAccountSyncOnce();
-  refreshServerRailAccountPreferences();
-  bindWidgetPersonalNotesSyncOnce();
-  void getWidgetPersonalNotesDesktop().activate();
 
   void initialAltaraPlusRefreshPromise.catch(() => createFreeAltaraPlusStatus());
   if (shouldHandleAltaraPlusReturnSignals) {

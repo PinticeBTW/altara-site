@@ -11,18 +11,17 @@ export function eventScheduleLabel(event,locale='en-GB') {
   const sameDay=end&&start.toDateString()===end.toDateString();
   return `${day.format(start)} · ${time.format(start)}${end?` – ${sameDay?'':day.format(end)+' · '}${time.format(end)}`:''}`;
 }
-export function renderServerEventCard(event,{text=(en)=>en,channels=[],interested=false,manage=false,busy=false,compact=false,lifecycle=''}={}) {
+export function renderServerEventCard(event,{text=(en)=>en,channels=[],interested=false,manage=false,busy=false,compact=false}={}) {
   const locale=text('en-GB','pt-PT'),date=new Date(event.starts_at);
   const count=Number(event.altara_server_event_interests_v1?.[0]?.count||0);
-  const started=date.getTime()<=Date.now()||(event.lifecycle_supported&&event.lifecycle_status!=='scheduled');
-  const explicit=event.lifecycle_supported?({active:text('In progress','A decorrer'),completed:text('Ended','Terminado'),canceled:text('Canceled','Cancelado'),unknown:text('State unavailable','Estado indisponível')})[event.lifecycle_status]:null;
-  const status=explicit||(started?(event.ends_at?(new Date(event.ends_at)>new Date()?text('In progress','A decorrer'):text('Ended','Terminado')):text('Started','Já começou')):'');
+  const started=date.getTime()<=Date.now();
+  const status=started?(event.ends_at?(new Date(event.ends_at)>new Date()?text('In progress','A decorrer'):text('Ended','Terminado')):text('Started','Já começou')):'';
   const channel=channels.find(row=>row.id===event.channel_id);
   const location=event.channel_id ? channel
     ? `<button type="button" class="eventPlace" data-home-action="event-channel" data-id="${esc(channel.id)}" title="${text('Open channel','Abrir canal')}">${channel.type==='voice'?icon('voice'):'<span aria-hidden="true">#</span>'}<span>${esc(channel.name)}</span>${icon('arrow')}</button>`
     : `<span class="eventPlace is-restricted" title="${text('You can see this event, but you do not have access to its channel.','Podes ver este evento, mas não tens acesso ao canal.')}" aria-label="${text('Restricted channel. You do not have access to this channel.','Canal restrito. Não tens acesso a este canal.')}">${icon('lock')}${text('Restricted channel','Canal restrito')}</span>`
     : event.location ? `<span class="eventPlace">${icon('pin')}<span>${esc(event.location)}</span></span>`:'';
-  return `<article data-event-id="${esc(event.id)}" class="eventSummary${compact?' is-compact':''}"><div class="eventSummaryHeading"><div class="eventDay" aria-hidden="true"><span>${esc(new Intl.DateTimeFormat(locale,{month:'short'}).format(date))}</span><b>${date.getDate()}</b></div><div class="eventSummaryTitle"><h3>${esc(event.title)}</h3><time datetime="${esc(event.starts_at)}">${esc(eventScheduleLabel(event,locale))}${status?` · ${status}`:''}</time></div></div>${event.description?`<p class="eventSummaryDescription">${esc(event.description)}</p>`:''}${location?`<div class="eventSummaryLocation">${location}</div>`:''}${renderEventMaps(event,text)}${renderEventAttendees(event,text)}<div class="eventSummaryActions">${renderEventResponses(event,{text,busy,started})}${renderEventCalendarMenu(event,text,interested)}${manage?`<button type="button" class="eventEdit" data-home-action="edit" data-id="${esc(event.id)}" ${busy?'disabled':''}>${text('Edit event','Editar evento')}</button>`:''}${lifecycle}</div></article>`;
+  return `<article data-event-id="${esc(event.id)}" class="eventSummary${compact?' is-compact':''}"><div class="eventSummaryHeading"><div class="eventDay" aria-hidden="true"><span>${esc(new Intl.DateTimeFormat(locale,{month:'short'}).format(date))}</span><b>${date.getDate()}</b></div><div class="eventSummaryTitle"><h3>${esc(event.title)}</h3><time datetime="${esc(event.starts_at)}">${esc(eventScheduleLabel(event,locale))}${status?` · ${status}`:''}</time></div></div>${event.description?`<p class="eventSummaryDescription">${esc(event.description)}</p>`:''}${location?`<div class="eventSummaryLocation">${location}</div>`:''}${renderEventMaps(event,text)}${renderEventAttendees(event,text)}<div class="eventSummaryActions">${renderEventResponses(event,{text,busy,started})}${renderEventCalendarMenu(event,text,interested)}${manage?`<button type="button" class="eventEdit" data-home-action="edit" data-id="${esc(event.id)}" ${busy?'disabled':''}>${text('Edit event','Editar evento')}</button>`:''}</div></article>`;
 }
 
 // Preserve card and button nodes for interest/count changes (focus and scroll included).

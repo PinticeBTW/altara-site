@@ -1,24 +1,24 @@
 <!doctype html>
 <html lang="en">
 <head>
-<script src="./lib/browserAccountContext.js"></script>
+<script src="/app/lib/browserAccountContext.js"></script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ALTARA</title>
-  <link rel="icon" href="/app/build/icon.ico" sizes="any" />
-  <link rel="icon" href="/app/build/icon.png?v=0.1.165" type="image/png" />
-  <link rel="stylesheet" href="style.css?v=human-mentions-v2" />
-  <link rel="stylesheet" href="lib/serverPolls.css" />
-  <link rel="stylesheet" href="lib/streamPointer.css" />
-  <link rel="stylesheet" href="lib/widgetMarketplace.css" />
+  <link rel="icon" href="/app/build/icon.ico?v=0.1.165" sizes="any" />
+  <link rel="icon" href="/app/build/icon.png?v=0.1.165" type="image/png" sizes="1024x1024" />
+  <link rel="stylesheet" href="/app/style.css?v=bot-inbox-controls-v10" />
+  <link rel="stylesheet" href="/app/lib/serverPolls.css" />
+  <link rel="stylesheet" href="/app/lib/streamPointer.css" />
+  <link rel="stylesheet" href="/app/lib/widgetMarketplace.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600;700;800&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" media="print" onload="this.media='all'" />
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600;700;800&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" /></noscript>
-  <link rel="stylesheet" href="runtimeChrome.css" />
-  <link rel="stylesheet" href="lib/communityThemes.css" />
-  <link rel="modulepreload" href="./ui.js" />
-  <link rel="modulepreload" href="./supabaseClient.js" />
+  <link rel="stylesheet" href="/app/runtimeChrome.css" />
+  <link rel="stylesheet" href="/app/lib/communityThemes.css" />
+  <link rel="modulepreload" href="/app/ui.js" />
+  <link rel="modulepreload" href="/app/supabaseClient.js" />
   <style id="serverPermissionsInvitesV1Styles">
     .serverSettingsInvitesRoot{min-height:0;overflow:auto}
     .serverSettingsInvitesToolbar{display:grid;grid-template-columns:minmax(180px,1fr) auto auto auto;gap:8px;align-items:center;margin-bottom:12px}
@@ -1420,7 +1420,7 @@
             <div class="settingsCardSection settingsAltaraPlusCard">
               <div id="settingsSectionAltaraPlus" class="settingsSectionTitle">ALTARA+</div>
               <div id="settingsAltaraPlusHint" class="settingsHint">
-                ALTARA+ adds higher server, upload and saved profile/layout limits, advanced screen sharing and supporter recognition. Focus, Spatial Audio, Best Friends and DM locks are free.
+                ALTARA+ unlocks higher usage limits, personal Focus tools, personal Spatial Audio upgrades, better screen sharing, and supporter recognition while helping ALTARA keep growing.
               </div>
 
               <section class="settingsAltaraPlusStatusCard">
@@ -1446,7 +1446,7 @@
                   </div>
                 </div>
                 <div id="settingsAltaraPlusStatusDescription" class="settingsAltaraPlusStatusDescription">
-                  Free includes messages, calls, widgets, Focus with 3 saved profiles, Spatial Audio with 1 saved layout, Best Friends and DM locks.
+                  Free includes basic ALTARA, basic Focus, basic personal Spatial Audio, and standard calls, messages, and widgets.
                 </div>
                 <div id="settingsAltaraPlusCancelNotice" class="settingsAltaraPlusCancelNotice" hidden>
                   <div id="settingsAltaraPlusCancelNoticeText" class="settingsAltaraPlusCancelNoticeText"></div>
@@ -1458,15 +1458,13 @@
                 </div>
               </section>
 
-              <section id="settingsBillingCountry" aria-label="Billing country" hidden></section>
-
               <button id="btnSettingsAltaraPlusRetryCatalog" class="btn ghost" type="button" hidden></button>
               <div id="settingsAltaraPlusPlanOptions" class="settingsAltaraPlusPlanOptions">
                 <article class="settingsAltaraPlusPlanCard" data-plan-root="core">
                   <div class="settingsAltaraPlusPlanCardTop">
                     <div>
                       <div class="settingsAltaraPlusPlanName">ALTARA+ Core</div>
-                      <div class="settingsAltaraPlusPlanSubtitle" data-altara-i18n="settings.altara_plus.core.subtitle">More capacity for files, servers and saved profiles/layouts.</div>
+                      <div class="settingsAltaraPlusPlanSubtitle" data-altara-i18n="settings.altara_plus.core.subtitle">The main paid tier for powerful personal features and supporter perks.</div>
                     </div>
                     <span class="settingsAltaraPlusPlanBadge">Core</span>
                   </div>
@@ -1482,14 +1480,16 @@
                   </div>
                   <ul class="settingsAltaraPlusFeatureList">
                     <li data-altara-i18n="settings.altara_plus.core.badge">Core profile badge</li>
-                    <li data-altara-i18n="settings.altara_plus.core.higher_limits">Join up to 150 servers</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.focus_profiles">Focus Profiles</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.schedule_focus">Schedule Focus</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.saved_spatial">Saved Spatial Audio layouts</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.more_spatial">More Spatial Audio speakers</li>
+                    <li data-altara-i18n="settings.altara_plus.core.higher_limits">Higher limits for servers, Best Friends, and saved presets</li>
                     <li data-altara-i18n="settings.altara_plus.core.uploads">Larger uploads up to 50 MB</li>
-                    <li data-altara-i18n="settings.altara_plus.core.focus_capacity">Save up to 10 Focus profiles</li>
-                    <li data-altara-i18n="settings.altara_plus.core.spatial_capacity">Save up to 5 Spatial layouts</li>
                     <li data-altara-i18n="settings.altara_plus.feature.advanced_share">Advanced screen share quality</li>
                     <li data-altara-i18n="settings.altara_plus.feature.fund_updates">Helps fund future updates</li>
                   </ul>
-                  <div class="settingsHint settingsAltaraPlusPlanNote" data-altara-i18n="settings.altara_plus.core.note">Focus and Spatial Audio work on every plan. Core adds capacity for 10 saved Focus profiles and 5 Spatial layouts.</div>
+                  <div class="settingsHint settingsAltaraPlusPlanNote" data-altara-i18n="settings.altara_plus.core.note">Core unlocks advanced personal tools without changing the basics everyone can use.</div>
                   <div class="settingsAltaraPlusIntervalActions">
                     <button class="btn primary settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="core" data-interval="monthly">Support with Core monthly</button>
                     <button class="btn ghost settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="core" data-interval="yearly">Support with Core yearly</button>
@@ -1500,7 +1500,7 @@
                   <div class="settingsAltaraPlusPlanCardTop">
                     <div>
                       <div class="settingsAltaraPlusPlanName">ALTARA+ Nova</div>
-                      <div class="settingsAltaraPlusPlanSubtitle" data-altara-i18n="settings.altara_plus.nova.subtitle">The highest file, server and saved profile/layout limits.</div>
+                      <div class="settingsAltaraPlusPlanSubtitle" data-altara-i18n="settings.altara_plus.nova.subtitle">The premium tier for automation, high-end audio, and extra supporter recognition.</div>
                     </div>
                     <span class="settingsAltaraPlusPlanBadge settingsAltaraPlusPlanBadge--nova">Nova</span>
                   </div>
@@ -1517,13 +1517,16 @@
                   <ul class="settingsAltaraPlusFeatureList">
                     <li data-altara-i18n="settings.altara_plus.nova.badge">Nova profile badge</li>
                     <li data-altara-i18n="settings.altara_plus.nova.everything_core">Everything in Core</li>
-                    <li data-altara-i18n="settings.altara_plus.nova.highest_limits">Join up to 200 servers</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.auto_focus">Auto Focus</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.app_focus">App-based Focus</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.spatial_hd">Spatial Audio HD</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.auto_spatial">Auto Arrange Spatial Audio</li>
+                    <li data-altara-i18n="settings.altara_plus.feature.advanced_spatial">Advanced Spatial presets</li>
+                    <li data-altara-i18n="settings.altara_plus.nova.highest_limits">Highest limits for servers, Best Friends, and saved presets</li>
                     <li data-altara-i18n="settings.altara_plus.nova.uploads">Highest uploads up to 1 GB</li>
-                    <li data-altara-i18n="settings.altara_plus.nova.focus_capacity">Save up to 25 Focus profiles</li>
-                    <li data-altara-i18n="settings.altara_plus.nova.spatial_capacity">Save up to 15 Spatial layouts</li>
                     <li data-altara-i18n="settings.altara_plus.feature.extra_recognition">Extra supporter recognition</li>
                   </ul>
-                  <div class="settingsHint settingsAltaraPlusPlanNote" data-altara-i18n="settings.altara_plus.nova.note">Nova raises saved capacity to 25 Focus profiles and 15 Spatial layouts.</div>
+                  <div class="settingsHint settingsAltaraPlusPlanNote" data-altara-i18n="settings.altara_plus.nova.note">Nova includes Core and unlocks the most advanced ALTARA features.</div>
                   <div class="settingsAltaraPlusIntervalActions">
                     <button class="btn primary settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="nova" data-interval="monthly">Support with Nova monthly</button>
                     <button class="btn ghost settingsAltaraPlusCheckoutBtn" type="button" data-altara-plus-checkout="1" data-plan="nova" data-interval="yearly">Support with Nova yearly</button>
@@ -1542,27 +1545,27 @@
                   <div data-altara-i18n="settings.altara_plus.compare.supports">Supports ALTARA</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.more">More</div>
                   <div data-altara-i18n="settings.altara_plus.compare.profile_badge">Profile badge</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.core_badge">Core badge</div><div data-altara-i18n="settings.altara_plus.compare.nova_badge">Nova badge</div>
                   <div data-altara-i18n="settings.altara_plus.compare.servers">Servers joined</div><div>100</div><div>150</div><div>200</div>
-                  <div data-altara-i18n="settings.altara_plus.compare.best_friends">Best Friends</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
-                  <div data-altara-i18n="settings.altara_plus.compare.basic_focus">Focus</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
-                  <div data-altara-i18n="settings.altara_plus.feature.focus_profiles">Focus Profiles</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.best_friends">Best Friends</div><div>10</div><div>15</div><div>25</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.basic_focus">Basic Focus</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.focus_profiles">Focus Profiles</div><div data-altara-i18n="settings.altara_plus.compare.basic">Basic</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
                   <div data-altara-i18n="settings.altara_plus.compare.saved_focus">Saved Focus profiles</div><div>3</div><div>10</div><div>25</div>
-                  <div data-altara-i18n="settings.altara_plus.feature.schedule_focus">Schedule Focus</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
-                  <div data-altara-i18n="settings.altara_plus.feature.auto_focus">Auto Focus</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
-                  <div data-altara-i18n="settings.altara_plus.feature.app_focus">App-based Focus</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
-                  <div data-altara-i18n="settings.altara_plus.compare.basic_spatial">Spatial Audio</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
-                  <div data-altara-i18n="settings.altara_plus.compare.spatial_speakers">Spatial Audio speakers</div><div data-altara-i18n="settings.altara_plus.compare.highest_all">All</div><div data-altara-i18n="settings.altara_plus.compare.highest_all">All</div><div data-altara-i18n="settings.altara_plus.compare.highest_all">All</div>
-                  <div data-altara-i18n="settings.altara_plus.compare.saved_spatial">Saved Spatial layouts</div><div>1</div><div>5</div><div>15</div>
-                  <div data-altara-i18n="settings.altara_plus.feature.spatial_hd">Spatial Audio HD</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
-                  <div data-altara-i18n="settings.altara_plus.feature.auto_spatial">Auto Arrange Spatial</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.schedule_focus">Schedule Focus</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.auto_focus">Auto Focus</div><div>-</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.app_focus">App-based Focus</div><div>-</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.basic_spatial">Basic Spatial Audio</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.spatial_speakers">Spatial Audio speakers</div><div data-altara-i18n="settings.altara_plus.compare.basic_limit">Basic limit</div><div data-altara-i18n="settings.altara_plus.compare.more">More</div><div data-altara-i18n="settings.altara_plus.compare.highest_all">Highest / All</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.saved_spatial">Saved Spatial layouts</div><div>-</div><div>5</div><div>15</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.spatial_hd">Spatial Audio HD</div><div>-</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.feature.auto_spatial">Auto Arrange Spatial</div><div>-</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
                   <div data-altara-i18n="settings.altara_plus.compare.upload_size">Upload/file size</div><div>25 MB</div><div>50 MB</div><div>1 GB</div>
-                  <div data-altara-i18n="settings.altara_plus.compare.server_folders">Server folders</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
+                  <div data-altara-i18n="settings.altara_plus.compare.server_folders">Server folders</div><div data-altara-i18n="settings.altara_plus.compare.basic">Basic</div><div data-altara-i18n="settings.altara_plus.compare.advanced">Advanced</div><div data-altara-i18n="settings.altara_plus.compare.advanced_icons">Advanced + custom icons</div>
                   <div data-altara-i18n="settings.altara_plus.feature.advanced_share">Advanced screen share quality</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div><div data-altara-i18n="settings.altara_plus.compare.yes">Yes</div>
                   <div data-altara-i18n="settings.altara_plus.compare.recognition">Supporter recognition</div><div>-</div><div data-altara-i18n="settings.altara_plus.compare.core_supporter">Core supporter</div><div data-altara-i18n="settings.altara_plus.compare.nova_supporter">Nova supporter</div>
                 </div>
               </div>
 
               <div id="settingsAltaraPlusCtaHint" class="settingsHint">
-                Payments are handled securely by Stripe. You can manage or cancel your subscription through the billing portal. Core supports larger uploads and more servers; Nova includes Core with the highest server and upload limits.
+                Payments are handled securely by Stripe. You can manage or cancel your subscription through the billing portal. Core raises key limits and unlocks advanced personal tools; Nova includes Core plus the highest limits, automation, and HD Spatial Audio.
               </div>
             </div>
           </div>
@@ -1933,7 +1936,7 @@
                 <div id="settingsFocusPlusSection" class="settingsFocusPlus">
                   <div class="settingsFocusPlus__head">
                     <div>
-                      <div id="settingsFocusPlusTitle" class="settingsSectionSubtitle">Focus profiles and automation</div>
+                      <div id="settingsFocusPlusTitle" class="settingsSectionSubtitle">ALTARA+ Focus</div>
                       <div id="settingsFocusPlusHint" class="settingsHint">Create Focus Profiles, schedule quiet time, and automatically enter Focus when you open selected apps.</div>
                     </div>
                     <div id="settingsFocusPlusPlanBadge" class="settingsFocusPlusBadge">Free</div>
@@ -3787,7 +3790,6 @@
         </div>
         <div class="desktopSharePickerFooter__actions">
           <button id="desktopSharePickerCancelBtn" class="btn ghost" type="button" data-desktop-share-cancel="1">Cancel</button>
-          <button id="desktopSharePickerConfirmBtn" class="btn primary" type="button" data-desktop-share-act="confirm" hidden disabled>Start Streaming</button>
           <button id="desktopSharePickerStopBtn" class="btn danger" type="button" data-desktop-share-act="stop" hidden>Stop Streaming</button>
         </div>
       </div>
@@ -3929,6 +3931,6 @@
       }
     });
   </script>
-  <script type="module" src="/app/app.js?release=0.1.165&amp;v=server-read-message-history-ux-v3-bot-platform-v2-20261003-native-inbox-controls-v10-human-mentions-v3-thread-drafts-v1-bot-dm-history-v1-bot-dm-retention-mandatory-v1-private-interactions-ui-v5-https-command-route-v1&amp;hotfix=offline-auth-reconnect-v1"></script>
+  <script type="module" src="/app/app.js?release=0.1.165&amp;patch=stream-pointer-20261025&amp;v=server-read-message-history-ux-v3-bot-platform-v2-20261003-native-inbox-controls-v10&amp;hotfix=offline-auth-reconnect-v1"></script>
 </body>
 </html>

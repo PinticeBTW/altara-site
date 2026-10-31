@@ -1,0 +1,12 @@
+:root { color-scheme: dark; font: var(--altara-widget-font-size, 14px)/var(--altara-widget-line-height, 1.5) var(--altara-widget-font-family, system-ui, sans-serif); color: var(--altara-widget-text, #eee8de); }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--altara-widget-background, #1c1b19); }
+main { padding: clamp(var(--altara-widget-spacing, 14px), 5vw, 28px); }
+.eyebrow { color: var(--altara-widget-muted, #cab99d); font-size: 10px; letter-spacing: .15em; }
+h1 { margin: 10px 0; font-size: clamp(15px, 6vw, 24px); }
+output { display: block; font-size: clamp(30px, 14vw, 64px); font-weight: 700; line-height: 1.2; margin: 10px 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+button { padding: 8px 16px; border: var(--altara-widget-border-width, 1px) solid var(--altara-widget-border, #514838); border-radius: var(--altara-widget-radius, 10px); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+#increment { background: var(--altara-widget-accent, #ead1ad); color: var(--altara-widget-accent-text, #201b15); }
+button:focus-visible { outline: 2px solid var(--altara-widget-accent, #ead1ad); outline-offset: 3px; }
+#status { font-size: 11px; color: var(--altara-widget-muted, #aaa296); }

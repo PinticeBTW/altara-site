@@ -1,0 +1,9 @@
+{
+  "manifest_version": 1,
+  "name": "My daily counter",
+  "description": "A counter made with ordinary HTML, CSS and JavaScript.",
+  "version": "1.0.0",
+  "entry": "./index.html",
+  "icon": "./icon.svg",
+  "permissions": ["storage"]
+}

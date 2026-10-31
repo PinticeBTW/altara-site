@@ -77,8 +77,8 @@
     {
       "source": "lib/widget-starter.zip",
       "path": "widget-starter.zip",
-      "sha256": "e74fa124afb68447155c0a9a8493df2fe52259fcde10f43417ff71c1e20af793",
-      "bytes": 36819
+      "sha256": "ddf9bc97893583f090127788142c067d060751f7e8035b842293118c8b9e10c4",
+      "bytes": 36881
     },
     {
       "source": "lib/widget-starter/_headers",

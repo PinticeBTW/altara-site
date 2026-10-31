@@ -180,8 +180,7 @@ supports text of up to 2000 characters and structured cards. Optional grants
 enable link previews, reactions, pins, bounded history and own-message actions.
 The SDK also supports buttons, string menus, text-input modals and scoped
 message/member-join events; see the SDK and components guides. Public attachment
-delivery uses the separate Attach Files grant and channel access checks. This
-is not a full Discord Gateway adapter.
+permission remains reserved/disabled. This is not a full Discord Gateway adapter.
 
 The example clients retry temporary connection and command-sync failures with backoff, respect polling rate-limit hints, and stop when the token is rejected or revoked. Node requests have a 20-second timeout by default, including the response body; `bot.stop()` cancels pending requests. Python requests use a 20-second HTTP timeout and `bot.stop()` wakes the polling delay.
 
@@ -200,7 +199,3 @@ human interactions. See ALTARA_BOTS_MUSIC.md for the real Node audio starter.
 ## Advanced Webhook Mode
 
 The Interaction Endpoint / Webhook flow is optional Advanced mode. Use it only when you want an inbound public HTTPS endpoint or a serverless-style deployment.
-
-The [HTTPS starter guide](ALTARA_BOTS_HTTPS_QUICKSTART.md) covers its complete
-Node download, explicit non-removing command registration, private configuration
-and endpoint verification. The ordinary downloads above keep Bot Token Connection.

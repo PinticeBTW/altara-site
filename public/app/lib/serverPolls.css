@@ -16,7 +16,6 @@
 .serverPollActions:empty { display:none; }
 .serverPollActions .btn { font-size:11px; min-height:28px; padding:5px 9px; }
 .serverPollMuted,.serverPollEmpty p { color:var(--altara-text-muted,var(--text-muted)); font-size:12px; line-height:1.5; }
-.serverPollChoiceHint { margin:8px 0 0; color:var(--altara-text-muted,var(--text-muted)); font-size:11px; line-height:1.5; }
 .serverPollError { color:var(--altara-danger,#e98d8d); font-size:12px; line-height:1.45; }
 .serverPollWidget { display:flex; flex-direction:column; gap:12px; }
 .serverPollWidgetList { min-height:0; flex:1; overflow:auto; overscroll-behavior:contain; }
@@ -34,5 +33,4 @@
 .serverPollDialog input,.serverPollDialog select { box-sizing:border-box; width:100%; min-width:0; min-height:40px; padding:9px 11px; border:1px solid var(--altara-border,var(--stroke)); border-radius:9px; background:var(--altara-input,var(--surface-2)); color:inherit; font:inherit; }
 .serverPollDialog [data-poll-draft-options] { display:grid; gap:12px; }.serverPollDialog [data-poll-draft-option] > div { display:flex; gap:8px; }
 .serverPollDialog [data-poll-form-error]:empty { display:none; }.serverPollDialog footer { justify-content:flex-end; }
-.serverPollDialog .serverPollMultiChoice { display:flex; align-items:center; gap:9px; }.serverPollDialog .serverPollMultiChoice input { width:16px; min-height:16px; margin:0; }.serverPollDialog [data-poll-choice-limit][hidden] { display:none; }
 @media(prefers-reduced-motion:reduce) { .serverPollBar { transition:none; } }

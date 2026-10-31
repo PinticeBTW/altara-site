@@ -17,7 +17,6 @@ export function nativeAttachmentCaptionHtml({meta} = {}) {
 
 export function createBotDirectMessageMediaView({document: doc = globalThis.document, host,
   resolve, isCurrent, getName = item => item.name, metaLabel = item => item.name,
-  items: attachmentItems = botDirectMessageAttachmentItems,
   sizeLabel = item => `${item.size} B`, onImageOpen, onDownload, onDeleteAttachment, canDelete, onError, bindPlayers,
   maxConcurrent = 2, rootMargin = 240} = {}) {
   if (!doc?.createElement || typeof resolve !== 'function' || typeof isCurrent !== 'function') throw new TypeError('invalid_bot_dm_media_view');
@@ -145,7 +144,7 @@ export function createBotDirectMessageMediaView({document: doc = globalThis.docu
   }
   function downloadButton(state, className) {
     const control = button(className, 'Download');
-    control.innerHTML=downloadIcon;
+    if(state.kind === 'image')control.textContent='Download';else control.innerHTML=downloadIcon;
     control.disabled = !state.snapshot.enabled;
     control.addEventListener('click', event => {event.preventDefault(); event.stopPropagation(); action(state, true);}); return control;
   }
@@ -170,7 +169,7 @@ export function createBotDirectMessageMediaView({document: doc = globalThis.docu
   }
   function render(row, snapshot) {
     if (destroyed || row?.deleted_at) return null;
-    const items = attachmentItems(row); if (!items.length) return null;
+    const items = botDirectMessageAttachmentItems(row); if (!items.length) return null;
     const mediaCount = items.filter(item => /^(image|video)\//.test(item.mime)).length;
     const collection = node('div', `msg__attachmentsList${mediaCount === items.length && items.length > 1 ? ' msg__attachmentsList--media' : ''}`);
     collection.dataset.count = String(items.length);
@@ -206,7 +205,7 @@ export function createBotDirectMessageMediaView({document: doc = globalThis.docu
         state.retry.addEventListener('click', () => {if (!valid(state)) return; state.failed=false; state.loaded=false; state.retry.hidden=true; state.frame.dataset.mediaState='pending'; hydrateState(state);});
         state.frame.append(state.preview, state.status, state.retry);
         const remove=deleteButton(state,'msg__attachmentCornerBtn msg__attachmentCornerBtn--danger msg__attachmentCornerBtn--left');
-        if(remove)state.frame.append(remove);
+        if(remove)state.frame.append(remove); state.frame.append(downloadButton(state, 'msg__attachmentCornerBtn'));
         const caption = node('div', 'msg__attachmentCaption'); caption.innerHTML = nativeAttachmentCaptionHtml({meta}); holder.append(state.frame, caption);
       } else {
         state.frame = kind === 'video' ? node('div', 'msg__attachmentMedia') : holder;

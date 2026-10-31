@@ -1,4 +1,4 @@
-import { RoomEvent, Track } from "../node_modules/livekit-client/dist/livekit-client.esm.mjs";
+import { RoomEvent, Track } from "../vendor/livekit-client/livekit-client.esm.mjs";
 import { sanitizeCallVisibleName } from "./callVisibleIdentity.js";
 import { parseNativeScreenshareCompanionIdentity } from "./liveKitTechnicalParticipant.js";
 

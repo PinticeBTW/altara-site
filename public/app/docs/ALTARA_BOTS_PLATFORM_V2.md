@@ -8,23 +8,6 @@ Microphone capture remains unverified.
 Existing installations keep their previous grants; request new grants explicitly
 and have a server manager approve them. No Administrator shortcut is provided.
 
-## Bot mention notifications: local follow-up, 2026-10-04
-
-A real own-account test reproduced a missing notification consumer: bot messages
-arrived and highlighted correctly, but did not trigger the sound path. Bot INSERTs
-now share the already authorized private user channel used by normal messages.
-The rejected legacy topic remains unchanged. Account, authentication generation,
-channel ownership and access are revalidated after asynchronous lookup; queued
-audio also revalidates authentication, access and notification preferences.
-
-The local site and LEYLEY were started. After the local update, real tests confirmed
-one highlighted row per message, notification/SFX callbacks with the channel open,
-one server unread while another channel was open, and unread cleared on returning.
-The user confirmed hearing the second notification. The focused set of 160 tests
-passed, including bot rendering in Chrome, human DMs, private channel ownership
-and SFX integration. No hosted code, schema, infrastructure or grants were changed.
-Missed bot notifications during a disconnection are not caught up by this listener.
-
 ## Native bot DMs: hosted activation, 2026-10-03
 
 Bot DMs now reuse the existing DM shell, composer artwork, emoji/GIF selectors,
@@ -55,32 +38,10 @@ updates. Account changes clear drafts and stale operations; consent withdrawal
 blocks sends and new file grants. Download URLs are not stored as attachments.
 Existing URLs expire within 60 seconds, as with other signed Storage grants.
 
-The hosted enhanced history API supplies pages of at most 50 messages, including
-older pages through the cursor contract described below. Pinned messages can be
+The chat currently loads the latest 50 messages; pinned older messages can be
 viewed in the pins panel. Bot runtimes must implement their private-message
 handler to reply. Private bot calls, group calls and new bot event feeds for
 editing, deletion, reactions or pins are not provided by this change.
-
-### Private history pagination: hosted active, 2026-10-04
-
-With explicit operator approval, `20261004211958_bot_dm_history_pagination_v1.sql`
-and version 3 of `altara-bot-surfaces` activated older history pages. The local
-client presents these pages in the normal bot DM timeline. The actor API retains the same
-account/bot/server scope and rich projection, including replies, reactions,
-tombstones and admitted private attachments. The keyset cursor preserves exact
-PostgreSQL timestamp microseconds and the message ID. Each page contains at most
-50 messages, with a bounded 51-row lookahead for `has_more`.
-
-The client only enables older-page loading when the server advertises
-`history_pagination` and returns valid cursor metadata. Older servers remain
-compatible. The ACTIVE endpoint matches the reviewed source, preserves custom
-authentication and returns the bounded invalid-cursor error response. No new
-grant, public table, storage access or consent was introduced.
-Read-only hosted actor checks on the operator's own account confirmed the
-capability and history with a `before` cursor. The real DM has fewer than 50
-messages and correctly has no older-history control. Larger timelines and scroll
-anchoring were verified locally, without claiming a hosted UI test above 50 messages.
-See [the actor contract](ALTARA_BOT_DM_MESSAGE_ACTIONS.md#history-pagination-active-2026-10-04).
 
 ## Hosted activation: 2026-10-02
 
@@ -187,19 +148,6 @@ delivery and physical sound still require confirmation.
 
 ## Inventory
 
-### Thread draft isolation (local client, 2026-10-04)
-
-While the thread dialog is open, each thread owns its own draft. Switching to a
-different thread restores that thread's draft; creating a new thread starts with
-an empty composer. History refreshes preserve typed text. A successful send
-consumes only the exact submitted draft, retaining newer text after a late reply.
-Unknown-outcome retries retain the original payload and request UUID.
-
-Drafts live only in the open dialog session and are discarded on close, account
-change or parent-channel change. This is a local client fix using the existing
-actor API; it adds no backend permission or publication. The regression was
-reproduced before the fix and verified with the real UI module in isolated Chrome.
-
 | Surface | JavaScript methods | Permissions and limits |
 | --- | --- | --- |
 | Private file uploads | `uploadAttachment`, then `reply`, `sendMessage` or `editMessage` | `bot:attach_files`, channel Send Messages; 8 MiB/file, 10 files and 16 MiB/message; current channel access required to issue a 60-second download grant |
@@ -270,21 +218,6 @@ only online/idle/dnd/offline status is delivered, without activity or room secre
 | PRESENCE_UPDATE | presenceUpdate | presence_update |
 | THREAD_CREATE / UPDATE / MESSAGE_CREATE | threadCreate / threadUpdate / threadMessageCreate | thread_create / thread_update / thread_message_create |
 | DIRECT_MESSAGE_CREATE | directMessageCreate | direct_message_create |
-| DIRECT_MESSAGE_UPDATE / DELETE (new lifecycle feed) | directMessageUpdate / directMessageDelete | direct_message_update / direct_message_delete |
-| DIRECT_MESSAGE_REACTION_ADD / REMOVE (new lifecycle feed) | directMessageReactionAdd / directMessageReactionRemove | direct_message_reaction_add / direct_message_reaction_remove |
-| DIRECT_MESSAGE_PIN_UPDATE (new lifecycle feed) | directMessagePinUpdate | direct_message_pin_update |
-
-The additional private lifecycle feed was activated with explicit operator
-approval on 2026-10-05 (hosted migration `20261005171342_bot_dm_lifecycle_events_v1`,
-surfaces version 6). CREATE remains available through the existing private poll.
-Local callbacks and hosted catalog/authentication checks passed. A live test
-in the existing consented LEYLEY DM also confirmed all five new mutation types,
-six acknowledged deliveries, human/bot actors, redacted deletion, an idempotent
-private reply and continued normal ping. The observer requested only mutation
-types and altered/deleted only a newly created bot test message; access and
-the original CREATE poll/process were unchanged. See the
-[SDK lifecycle guide](ALTARA_BOTS_SDK.md#private-dm-lifecycle-events-hosted-active-2026-10-05)
-for actor identity, recipient binding and current-state projection.
 
 Callbacks are awaited. Only successes are acknowledged, with a separate private
 DM lease queue. Redelivery reuses the event ID; keep durable idempotency for

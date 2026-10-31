@@ -95,9 +95,9 @@ export function MarketingAnalytics() {
           <div>
             <strong>Help us improve this website?</strong>
             <p>
-              With your permission, Microsoft Clarity uses analytics cookies and records visits, clicks and scrolls on ALTARA&apos;s
-              public website. We use it to spot confusing pages. It stays off until you accept, and
-              you can change your choice here later. <Link href="/privacy">Privacy policy</Link>
+              With your permission, Microsoft Clarity uses analytics cookies and records visits,
+              clicks and scrolls on ALTARA&apos;s public website. We use it to spot confusing pages.
+              It stays off until you accept, and you can change your choice here later. <Link href="/privacy">Privacy policy</Link>
             </p>
           </div>
           <div className="marketing-consent-actions">

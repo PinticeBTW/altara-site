@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.git/
+.env
+.env.*
+*.log
+/output/
+/work/
+/REFERENCIAS/
+/tests/
+/docs/
+/AGENTS.md
+/CLAUDE.md

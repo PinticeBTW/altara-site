@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node scripts/patch-altara-app-shell.cjs && node scripts/sync-widget-assets.cjs && node scripts/sync-theme-assets.cjs",
+    "prebuild": "node scripts/patch-altara-app-shell.cjs && node scripts/sync-widget-assets.cjs --source public/app --check && node scripts/sync-theme-assets.cjs --check",
     "sync:themes": "node scripts/sync-theme-assets.cjs",
     "build": "next build",
     "start": "next start",
@@ -16,7 +16,6 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "framer-motion": "^12.38.0",
-    "livekit-server-sdk": "2.19.2",
     "next": "16.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"

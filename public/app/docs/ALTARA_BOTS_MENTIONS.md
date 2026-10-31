@@ -1,37 +1,5 @@
 # Notificações de menções dos bots
 
-## Seleção de membros no chat do servidor
-
-No compositor normal dos canais do servidor, escrever `@` abre uma lista de
-membros desse canal. Nos canais públicos inclui também os bots com acesso
-aprovado ao canal. O nome ou username filtra a lista;
-setas percorrem os resultados, Enter ou Tab escolhe o membro e Escape fecha a
-lista. O primeiro Enter escolhe; o envio continua pela ação normal do chat.
-
-A escolha mostra `@nome` no rascunho, mas guarda a identidade e envia `<@UUID>`.
-Editar o nome escolhido desfaz essa associação. `@nome` escrito sem uma escolha
-continua a ser texto, sem procurar destinatários por nomes ambíguos. As ações
-“Mencionar” dos perfis e participantes usam também a identidade, não o nome.
-
-Os rascunhos guardam a forma canónica por conta e conversa. Revisões do elenco
-não apagam uma escolha; navegação e sessões invalidam pedidos antigos. Uma
-consulta que atualiza a revisão da autoridade pode repetir uma vez sob a revisão
-atual, descartando sempre os resultados antigos. Em canais privados a lista usa
-apenas a consulta dos membros com acesso, sem fallback para todo o servidor.
-
-Mensagens humanas persistidas passam a apresentar e notificar tokens visíveis de
-menção pelo percurso existente das mensagens do servidor. Som, acesso ao canal,
-Mute, Focus, DND e preferências continuam a ser revalidados; mensagens próprias,
-histórico e edições não geram novos avisos. A lista descrita aqui está nos canais
-do servidor; o contrato explícito dos bots continua na secção seguinte.
-
-Os testes `composer-mentions.test.mjs` e
-`composer-mention-authority-integration.test.mjs` cobrem seleção, texto seguro,
-teclado, IME, identidade do rascunho, formatação e resultados assíncronos antigos.
-Os testes de notificações e de rendering cobrem também os emissores humanos.
-
-## Contrato de notificações enviadas por bots
-
 Esta capacidade foi ativada no backend publicado, com autorização explícita do
 operador, em 2026-10-02. Foram verificados o catálogo, a autenticação e os acessos
 do pacote; o envio e a notificação de menções através do chat real autenticado não
@@ -105,21 +73,11 @@ O cliente apresenta tokens aprovados como menções com abertura do perfil e
 destaca a linha quando os metadados autorizados incluem a conta atual. Menções
 diretas de bots podem tocar som mesmo no canal aberto, sem aumentar o contador
 desse canal. Mute, notificações desativadas, Focus e DND continuam a aplicar-se.
-O consumidor global recebe INSERTs de `bot_channel_messages` no mesmo canal
-privado do utilizador que já recebe mensagens normais. O arranque, a reconexão
-e a remoção ao mudar de conta seguem o ciclo existente das DMs; não dependem
-do tópico legacy `global-bot-channel-messages`, que pode estar recusado pelo
-backend. Não é criada uma subscrição adicional nem alargada uma permissão.
-
-O consumidor deduplica INSERTs e revalida dono, canal, geração de autenticação
-e acesso depois de resolver o contexto. O áudio pendente revalida autenticação,
-acesso e preferências antes de tocar, incluindo uma mudança de “todas” para
-“só menções”. Histórico e UPDATEs nunca criam novos avisos. Este percurso não
-faz catch-up de notificações dos bots perdidas enquanto o cliente esteve desligado.
+O consumidor global deduplica INSERTs e revalida conta e acesso antes do áudio;
+histórico e UPDATEs nunca criam novos avisos.
 
 `tests/bot-mention-rendering.test.mjs` verifica o renderer real e o escape de
 nomes, código e URLs. `tests/bot-mention-notifications.test.mjs` cobre o caminho
-arranque real da subscrição partilhada até ao contador e à conclusão do áudio,
-incluindo replays, troca de conta, suspensão da autenticação, substituição do
-canal, revogação de acesso e falhas de carregamento. Estes testes locais não substituem
+global INSERT até ao contador e à conclusão do áudio, incluindo replays,
+revogação de acesso e falhas de carregamento. Estes testes locais não substituem
 a confirmação de som físico no chat real.

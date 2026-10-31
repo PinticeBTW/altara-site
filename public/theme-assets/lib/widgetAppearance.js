@@ -92,7 +92,6 @@ export function widgetAppearanceBootstrapSource() {
 }
 
 const brokers = new WeakMap();
-const materialBuffers = new WeakMap();
 const sensitiveSelector = '.altaraConfirmDialog:not(.hidden):not([hidden]),.modal:not(.hidden):not([hidden]),#profileOverlay:not(.hidden):not([hidden]),dialog[open],[data-theme-sensitive="true"]:not(.hidden):not([hidden])';
 const sensitiveCandidate = '.altaraConfirmDialog,.modal,#profileOverlay,dialog,[data-theme-sensitive]';
 const defaults = {background:'#101010',surface:'#20201e',surfaceRaised:'#2b2a27',input:'#181817',text:'#eeeae4',muted:'#b2aaa0',accent:'#e8cda7',accentText:'#251c16',border:'#514a42',success:'#6fc58c',warning:'#e7b86b',danger:'#ed8686'};
@@ -155,54 +154,25 @@ function readAppearance(doc) {
   const css = win.getComputedStyle(app);
   const token = name => css.getPropertyValue('--altara-widget-'+name).trim();
   const probe = doc.createElement('span'); probe.hidden = true; probe.setAttribute('data-widget-appearance-probe','');
+  // Resolves valid CSS colors once, without forwarding unresolved custom values.
+  app.append(probe);
+  const resolveColor = (value,fallback) => {
+    if (!value || value.length > 200 || /url\s*\(|[;{}<>]/i.test(value) || !win.CSS?.supports('color',value)) return fallback;
+    probe.style.color = value;
+    return win.getComputedStyle(probe).color || fallback;
+  };
   const fallbackTokens = {background:'--altara-bg',surface:'--altara-surface',surfaceRaised:'--altara-surface-elevated',input:'--altara-input',text:'--altara-text',muted:'--altara-text-muted',accent:'--altara-accent',accentText:'--ui-primary-text',border:'--altara-border',success:'--altara-success',warning:'--altara-warning',danger:'--altara-danger'};
   const kebab = value => value.replace(/[A-Z]/g,letter=>'-'+letter.toLowerCase());
-  const colors = {...defaults}, colorProbes = [];
-  // Set every color before connecting the probes. Alternating writes and
-  // getComputedStyle reads made each individual color invalidate style again.
-  for (const name of Object.keys(defaults)) {
-    const value = token(kebab(name)) || css.getPropertyValue(fallbackTokens[name]).trim();
-    if (!value || value.length > 200 || /url\s*\(|[;{}<>]/i.test(value) || !win.CSS?.supports('color',value)) continue;
-    const colorProbe = doc.createElement('span'); colorProbe.style.color = value;
-    probe.append(colorProbe); colorProbes.push([name,colorProbe]);
-  }
-  app.append(probe);
-  for (const [name,colorProbe] of colorProbes) colors[name] = win.getComputedStyle(colorProbe).color || defaults[name];
+  const colors = Object.fromEntries(Object.keys(defaults).map(name => [name,resolveColor(token(kebab(name)) || css.getPropertyValue(fallbackTokens[name]).trim(),defaults[name])]));
   probe.remove();
   const number = (name,fallback,min,max) => { const value = token(name); const parsed = /^\d+(?:\.\d+)?(?:px)?$/.test(value) ? parseFloat(value) : NaN; return Number.isFinite(parsed) ? Math.min(max,Math.max(min,parsed)) : fallback; };
   const preference = doc.body?.dataset.altaraThemeTransparency;
   const reducedTransparency = preference === 'solid' || (preference !== 'glass' && win.matchMedia?.('(prefers-reduced-transparency: reduce)').matches === true);
-  if (reducedTransparency) {
-    const surfaces = ['background','surface','surfaceRaised','input'];
-    const translucent = surfaces.filter(name => !/^#(?:[a-f\d]{3}|[a-f\d]{6})$|^(?:rgb|hsl|oklch|oklab|lch|lab|color)\([^/]*\)$/i.test(colors[name]));
-    // Opaque colors need no flattening. Reuse one small private canvas and one
-    // readback for the remaining surfaces, instead of four allocations/readbacks
-    // on every resize or theme notification, including an already opaque base.
-    if (translucent.length) {
-      let buffer = materialBuffers.get(doc);
-      if (!buffer) {
-        const canvas = doc.createElement('canvas'); canvas.width = 4; canvas.height = 1;
-        // Keep the former browser compositing path: software readback mode can
-        // round alpha differently, shifting the material by a color channel.
-        const context = canvas.getContext('2d', {willReadFrequently:false});
-        if (context) { buffer = {context,signature:'',colors:[]}; materialBuffers.set(doc,buffer); }
-      }
-      if (buffer) {
-        const base = css.colorScheme === 'light' ? '#fff' : '#101010';
-        const signature = JSON.stringify([base,...translucent.map(name=>colors[name])]);
-        // These are already computed, closed colors. Their compositing depends
-        // only on these values and the opaque base, not account or DOM state.
-        if (buffer.signature !== signature) {
-          const {context} = buffer;
-          context.fillStyle = base; context.fillRect(0,0,4,1);
-          translucent.forEach((name,index) => { context.fillStyle = colors[name]; context.fillRect(index,0,1,1); });
-          const rgba = context.getImageData(0,0,translucent.length,1).data;
-          buffer.colors = translucent.map((_,index) => { const offset = index * 4; return `rgb(${rgba[offset]}, ${rgba[offset+1]}, ${rgba[offset+2]})`; });
-          buffer.signature = signature;
-        }
-        translucent.forEach((name,index) => { colors[name] = buffer.colors[index]; });
-      }
-    }
+  if (reducedTransparency) for (const name of ['background','surface','surfaceRaised','input']) {
+    // Flatten onto a dark/light base through the browser, preserving the hue.
+    const canvas = doc.createElement('canvas'); canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d');
+    if (context) { context.fillStyle = css.colorScheme === 'light' ? '#fff' : '#101010'; context.fillRect(0,0,1,1); context.fillStyle = colors[name]; context.fillRect(0,0,1,1); const rgb = context.getImageData(0,0,1,1).data; colors[name] = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`; }
   }
   const stack = token('font-family');
   const fontFamily = ['Arial, Helvetica, sans-serif','Georgia, "Times New Roman", serif','Consolas, "SFMono-Regular", monospace'].includes(stack) ? stack : '"Segoe UI", system-ui, sans-serif';
@@ -222,44 +192,12 @@ function createBroker(doc) {
     for (const listener of listeners) { try { listener(current); } catch { /* Isolated delivery. */ } }
   };
   const schedule = () => { if (queued == null) queued = win.requestAnimationFrame ? win.requestAnimationFrame(refresh) : win.setTimeout(refresh,0); };
-  const relevant = element => element?.nodeType === 1 && !element.hasAttribute('data-widget-appearance-probe') && (element.matches(sensitiveCandidate) || element.querySelector(sensitiveCandidate));
-  const ownStyle = node => node?.nodeType === 1 && node.matches('[data-altara-native-widget-appearance]');
-  const attributes = ['class','style','hidden','open','data-theme','data-altara-community-theme','data-altara-theme-transparency','data-theme-sensitive'];
-  let app = doc.querySelector('.app'), anchors = new Set();
-  const observeTargets = () => {
-    observer.disconnect();
-    // Candidate creation through a class/marker must always remain observable.
-    // Ordinary widget style/hidden mutations need no palette work; watch those
-    // only on appearance roots and existing decisions plus their ancestors.
-    observer.observe(doc,{subtree:true,childList:true,attributes:true,attributeFilter:['class','data-theme-sensitive']});
-    observer.observe(doc.head,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class','style','media','disabled','href','rel']});
-    app = doc.querySelector('.app');
-    anchors = new Set([doc.documentElement,doc.body,app].filter(Boolean));
-    for (const candidate of doc.querySelectorAll(sensitiveCandidate)) {
-      for (let node = candidate; node; node = node.parentElement) anchors.add(node);
-    }
-    for (const node of anchors) if (node !== doc.head) observer.observe(node,{attributes:true,attributeFilter:attributes});
-  };
+  const relevant = element => element?.nodeType === 1 && (element.matches(sensitiveCandidate) || element.querySelector(sensitiveCandidate));
   const observer = new win.MutationObserver(records => {
-    let changed = false, targetsChanged = false;
-    for (const record of records) {
-      if (ownStyle(record.target) || ownStyle(record.target.parentElement)) continue;
-      if (doc.head.contains(record.target)) {
-        if (record.target !== doc.head || ![...record.addedNodes,...record.removedNodes].every(ownStyle)) changed = true;
-      } else if (record.type === 'attributes') {
-        const candidate = record.target.matches(sensitiveCandidate);
-        if (anchors.has(record.target) || candidate) changed = true;
-        if ((record.attributeName === 'class' || record.attributeName === 'data-theme-sensitive') && (candidate || anchors.has(record.target))) targetsChanged = true;
-      } else if (record.type === 'childList') {
-        const nodes = [...record.addedNodes,...record.removedNodes];
-        if (nodes.some(relevant)) changed = targetsChanged = true;
-        if (nodes.some(node => node === app || (node.nodeType === 1 && (node.matches('.app') || node.contains(app))))) changed = targetsChanged = true;
-      }
-    }
-    if (targetsChanged) observeTargets();
-    if (changed) schedule();
+    const ownStyle = node => node?.nodeType === 1 && node.matches('[data-altara-native-widget-appearance]');
+    if (records.some(record => !ownStyle(record.target) && !ownStyle(record.target.parentElement) && ((doc.head.contains(record.target) && !(record.target === doc.head && [...record.addedNodes,...record.removedNodes].every(ownStyle))) || (record.type === 'attributes' && ([doc.body,doc.documentElement,doc.querySelector('.app')].includes(record.target) || relevant(record.target))) || (record.type === 'childList' && [...record.addedNodes,...record.removedNodes].some(relevant))))) schedule();
   });
-  observeTargets();
+  observer.observe(doc.documentElement,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class','style','hidden','open','data-theme','data-altara-community-theme','data-altara-theme-transparency','data-theme-sensitive']});
   const media = ['(prefers-reduced-motion: reduce)','(prefers-reduced-transparency: reduce)','(prefers-color-scheme: light)'].map(query => win.matchMedia?.(query)).filter(Boolean);
   media.forEach(query=>query.addEventListener?.('change',schedule)); win.addEventListener('resize',schedule);
   return {get:()=>current,refresh,subscribe(listener) {

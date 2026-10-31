@@ -1,8 +1,8 @@
 {
   "format": "altara-theme-starter-kit",
   "version": 1,
-  "sha256": "3e8e1178430b6e2f05bef8999e09cc356fe7c047b06edf4de87fdfd229da3c7c",
-  "bytes": 102819,
+  "sha256": "a43665cd1264516947103e3aa83b630813a2048602fd1d256d369b69ecfe22d7",
+  "bytes": 104382,
   "files": [
     {
       "path": "README.md",
@@ -56,8 +56,8 @@
     },
     {
       "path": "lib/communityThemeLayout.js",
-      "bytes": 22459,
-      "sha256": "4bdc898a350cb28d2100a280b488bbcda3ad657dd6f9374c68cbb72b5689b695"
+      "bytes": 25678,
+      "sha256": "72c7dda1b4832216e702cd5e17d973acc2662432124901a442fd94da29666eed"
     },
     {
       "path": "lib/communityThemePackages.js",
