@@ -174,9 +174,8 @@ export default async function DownloadsPage({
                   </a>
                 </div>
                 <p>
-                  This release is ad-hoc signed and is not notarized by Apple.
-                  macOS may block the first launch. Updates are installed
-                  manually from this page.
+                  The macOS 0.1.165 installers are signed with Developer ID and
+                  notarized by Apple. Updates are installed manually from this page.
                 </p>
               </div>
 
